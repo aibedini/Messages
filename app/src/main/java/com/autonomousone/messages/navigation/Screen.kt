@@ -1,4 +1,5 @@
 package com.autonomousone.messages.navigation
+import com.autonomousone.messages.navigation.Screen
 
 sealed class Screen(val route: String) {
 

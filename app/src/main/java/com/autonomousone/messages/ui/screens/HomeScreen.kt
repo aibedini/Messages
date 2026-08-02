@@ -20,27 +20,27 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.autonomousone.messages.data.dummySms
+import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.ui.components.SmsItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    navController: NavController
+) {
 
     var search by remember {
         mutableStateOf("")
     }
 
     val filteredList = dummySms.filter {
-
-        it.sender.contains(search, true) ||
-                it.message.contains(search, true)
-
+        it.sender.contains(search, ignoreCase = true) ||
+                it.message.contains(search, ignoreCase = true)
     }
 
     Scaffold(
@@ -50,17 +50,17 @@ fun HomeScreen() {
             CenterAlignedTopAppBar(
 
                 title = {
-                    Text(
-                        text = "Messages"
-                    )
+                    Text("Messages")
                 },
 
                 actions = {
 
-                    IconButton(onClick = {}) {
+                    IconButton(
+                        onClick = { }
+                    ) {
                         Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = null
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Menu"
                         )
                     }
 
@@ -75,12 +75,14 @@ fun HomeScreen() {
         floatingActionButton = {
 
             FloatingActionButton(
-                onClick = { }
+                onClick = {
+                    // New conversation
+                }
             ) {
 
                 Icon(
-                    Icons.Default.Add,
-                    contentDescription = null
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "New Chat"
                 )
 
             }
@@ -96,41 +98,28 @@ fun HomeScreen() {
         ) {
 
             OutlinedTextField(
-
                 value = search,
-
                 onValueChange = {
                     search = it
                 },
-
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-
                 placeholder = {
                     Text("Search messages")
                 },
-
                 leadingIcon = {
-
                     Icon(
-                        Icons.Default.Search,
-                        contentDescription = null
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
                     )
-
                 },
-
                 singleLine = true
-
             )
 
             LazyColumn(
-
                 modifier = Modifier.fillMaxSize(),
-
                 contentPadding = PaddingValues(bottom = 90.dp),
-
                 verticalArrangement = Arrangement.spacedBy(4.dp)
-
             ) {
 
                 items(filteredList) { sms ->
@@ -138,6 +127,12 @@ fun HomeScreen() {
                     SmsItem(
                         sms = sms,
                         onClick = {
+
+                            navController.navigate(
+                                Screen.Conversation.createRoute(
+                                    sms.sender
+                                )
+                            )
 
                         }
                     )
