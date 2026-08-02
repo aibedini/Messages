@@ -1,12 +1,10 @@
 package com.autonomousone.messages.ui.components
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +24,12 @@ fun SmsItem(
     sms: Sms,
     onClick: () -> Unit
 ) {
+
+    val formattedTime = DateUtils.getRelativeTimeSpanString(
+        sms.date,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS
+    ).toString()
 
     Column(
         modifier = Modifier
@@ -75,7 +79,7 @@ fun SmsItem(
             ) {
 
                 Text(
-                    text = sms.time,
+                    text = formattedTime,
                     fontSize = 12.sp,
                     color = Color.Gray
                 )

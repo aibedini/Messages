@@ -9,8 +9,9 @@ import com.autonomousone.messages.ui.screens.HomeScreen
 import com.autonomousone.messages.navigation.Screen
 
 @Composable
-fun AppNavigation() {
-
+fun AppNavigation(
+    hasPermission: Boolean
+) {
     val navController = rememberNavController()
 
     NavHost(
@@ -20,7 +21,10 @@ fun AppNavigation() {
 
         composable(Screen.Home.route) {
 
-            HomeScreen(navController)
+            HomeScreen(
+                hasPermission = hasPermission,
+                navController = navController
+            )
 
         }
 
@@ -33,8 +37,7 @@ fun AppNavigation() {
             )
         ) {
 
-            val sender =
-                it.arguments?.getString("sender") ?: ""
+            val sender = it.arguments?.getString("sender") ?: ""
 
             ConversationScreen(
                 sender = sender,
@@ -42,7 +45,5 @@ fun AppNavigation() {
             )
 
         }
-
     }
-
 }

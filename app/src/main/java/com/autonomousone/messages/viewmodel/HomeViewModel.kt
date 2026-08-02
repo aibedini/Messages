@@ -1,8 +1,8 @@
 package com.autonomousone.messages.viewmodel
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
 import androidx.compose.runtime.mutableStateListOf
+import androidx.lifecycle.AndroidViewModel
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.SmsRepository
 
@@ -23,4 +23,5 @@ class HomeViewModel(
         )
 
     }
+
 }
