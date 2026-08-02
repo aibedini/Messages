@@ -2,8 +2,10 @@ package com.autonomousone.messages.model
 
 data class Sms(
     val id: Long,
+    val threadId: Long,
     val sender: String,
     val message: String,
-    val time: String,
-    val unread: Boolean = false
+    val date: Long,
+    val unread: Boolean,
+    val type: Int
 )
