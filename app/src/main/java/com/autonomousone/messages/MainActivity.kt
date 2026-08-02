@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.autonomousone.messages.ui.screens.HomeScreen
 import com.autonomousone.messages.ui.screens.SplashScreen
 import com.autonomousone.messages.ui.theme.MessagesTheme
 
@@ -34,8 +35,7 @@ class MainActivity : ComponentActivity() {
                 }
 
             } else {
-
-                // Your Home Screen Here
+                HomeScreen()
             }
         }
     }
