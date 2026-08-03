@@ -92,11 +92,10 @@ class ConversationViewModel(
                         (currentThreadId != 0L && incomingSms.threadId != 0L && incomingSms.threadId == currentThreadId)
 
                 if (isMatch) {
-                    val isDuplicate = messages.any { it.id == incomingSms.id || (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 2000) }
+                    val isDuplicate = messages.any { it.id == incomingSms.id || (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 5000) }
                     if (!isDuplicate) {
                         messages.add(incomingSms)
                     }
-                    refresh()
                 }
             }
         }
@@ -118,8 +117,14 @@ class ConversationViewModel(
                     if (currentThreadId == 0L) {
                         currentThreadId = firstMatch.threadId
                     }
+                    // Merge fresh database messages with unsaved pending real-time items
+                    val freshIds = freshMessages.map { it.id }.toSet()
+                    val unsavedPending = messages.filter { pending ->
+                        freshIds.none { it == pending.id } &&
+                                freshMessages.none { f -> f.message == pending.message && Math.abs(f.date - pending.date) < 5000 }
+                    }
                     messages.clear()
-                    messages.addAll(freshMessages)
+                    messages.addAll((freshMessages + unsavedPending).sortedBy { it.date })
                 }
             }
         }
@@ -161,7 +166,7 @@ class ConversationViewModel(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            delay(600)
+            delay(1000)
             refresh()
         }
     }
