@@ -13,12 +13,9 @@ class SmsSender(
         phone: String,
         text: String
     ) {
-
         try {
-
             val manager =
                 SmsManager.getDefault()
-
             manager.sendTextMessage(
                 phone,
                 null,
@@ -26,7 +23,6 @@ class SmsSender(
                 null,
                 null
             )
-
             Toast
                 .makeText(
                     context,
@@ -34,9 +30,7 @@ class SmsSender(
                     Toast.LENGTH_SHORT
                 )
                 .show()
-
         } catch (e: Exception) {
-
             Toast
                 .makeText(
                     context,
@@ -44,9 +38,6 @@ class SmsSender(
                     Toast.LENGTH_LONG
                 )
                 .show()
-
         }
-
     }
-
 }

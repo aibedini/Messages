@@ -19,30 +19,53 @@ class MainActivity : ComponentActivity() {
         setContent {
 
             var hasPermission by remember {
+
                 mutableStateOf(
+
                     ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.READ_SMS
-                    ) == PackageManager.PERMISSION_GRANTED
+                    ) == PackageManager.PERMISSION_GRANTED &&
+
+                            ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.SEND_SMS
+                            ) == PackageManager.PERMISSION_GRANTED
+
                 )
+
             }
 
             val permissionLauncher =
                 rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { granted ->
-                    hasPermission = granted
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+
+                    hasPermission =
+                        permissions[Manifest.permission.READ_SMS] == true &&
+                                permissions[Manifest.permission.SEND_SMS] == true
+
                 }
 
             LaunchedEffect(Unit) {
+
                 if (!hasPermission) {
-                    permissionLauncher.launch(Manifest.permission.READ_SMS)
+
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.READ_SMS,
+                            Manifest.permission.SEND_SMS
+                        )
+                    )
+
                 }
+
             }
 
             AppNavigation(
                 hasPermission = hasPermission
             )
+
         }
     }
 }

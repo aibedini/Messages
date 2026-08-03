@@ -1,6 +1,7 @@
 package com.autonomousone.messages.repository
 
 import android.content.Context
+import android.database.ContentObserver
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
@@ -72,7 +73,9 @@ class SmsRepository(
 
         val conversations = getAllSms()
             .groupBy { it.threadId }
-            .map { it.value.maxByOrNull { sms -> sms.date }!! }
+            .mapNotNull { (_, messages) ->
+                messages.maxByOrNull { it.date }
+            }
             .sortedByDescending { it.date }
 
         Log.d("SMS_DEBUG", "Total Conversations = ${conversations.size}")
@@ -85,5 +88,35 @@ class SmsRepository(
         return getAllSms()
             .filter { it.threadId == threadId }
             .sortedBy { it.date }
+
     }
+
+    /**
+     * Observe SMS database changes
+     */
+    fun registerObserver(
+        observer: ContentObserver
+    ) {
+
+        context.contentResolver.registerContentObserver(
+            Telephony.Sms.CONTENT_URI,
+            true,
+            observer
+        )
+
+    }
+
+    /**
+     * Stop observing SMS database
+     */
+    fun unregisterObserver(
+        observer: ContentObserver
+    ) {
+
+        context.contentResolver.unregisterContentObserver(
+            observer
+        )
+
+    }
+
 }
