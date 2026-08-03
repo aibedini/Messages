@@ -28,6 +28,7 @@ class ConversationViewModel(
     private var currentPhone = ""
 
     private val observer = SmsContentObserver {
+        // DB has committed — do a clean reload from ContentProvider
         refresh()
     }
 
@@ -71,9 +72,7 @@ class ConversationViewModel(
         }
     }
 
-    fun setPhone(
-        phone: String
-    ) {
+    fun setPhone(phone: String) {
         currentPhone = phone
         SmsEventBus.activeConversationPhone = phone
         if (phone.isNotBlank()) {
@@ -87,12 +86,19 @@ class ConversationViewModel(
                 val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
                 val normalizedCurrent = ContactRepository.normalizePhone(currentPhone)
 
-                val isMatch = (normalizedCurrent.isNotBlank() && normalizedIncoming.isNotBlank() &&
-                        (normalizedIncoming == normalizedCurrent || normalizedIncoming.endsWith(normalizedCurrent) || normalizedCurrent.endsWith(normalizedIncoming))) ||
-                        (incomingSms.sender.isNotBlank() && incomingSms.sender == currentPhone)
+                if (currentPhone.isBlank() && currentThreadId == 0L) return@collect
+
+                val isMatch = normalizedCurrent.isNotBlank() && normalizedIncoming.isNotBlank() &&
+                        (normalizedIncoming == normalizedCurrent ||
+                                normalizedIncoming.endsWith(normalizedCurrent) ||
+                                normalizedCurrent.endsWith(normalizedIncoming))
 
                 if (isMatch) {
-                    val isDuplicate = messages.any { it.id == incomingSms.id || (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 5000) }
+                    // Optimistically add to UI immediately
+                    val isDuplicate = messages.any {
+                        it.id == incomingSms.id ||
+                                (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 5000)
+                    }
                     if (!isDuplicate) {
                         messages.add(incomingSms)
                     }
@@ -128,7 +134,7 @@ class ConversationViewModel(
         val trimmedMsg = message.trim()
         if (trimmedMsg.isBlank()) return
 
-        var targetPhone = if (phone.isNotBlank()) phone else currentPhone
+        val targetPhone = if (phone.isNotBlank()) phone else currentPhone
         if (targetPhone.isBlank()) return
 
         currentPhone = targetPhone
@@ -137,7 +143,7 @@ class ConversationViewModel(
             currentThreadId = threadId
         }
 
-        // 1. Instant Optimistic UI Update
+        // Instant Optimistic UI Update
         val optimisticSms = Sms(
             id = System.currentTimeMillis(),
             threadId = currentThreadId,
@@ -145,18 +151,18 @@ class ConversationViewModel(
             message = trimmedMsg,
             date = System.currentTimeMillis(),
             unread = false,
-            type = 2 // 2 = Sent outgoing message
+            type = 2 // 2 = Sent
         )
         messages.add(optimisticSms)
 
-        // 2. Dispatch SMS send on IO thread
+        // Dispatch SMS send on IO thread, then refresh from DB
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 smsSender.send(targetPhone, trimmedMsg)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            delay(1000)
+            delay(1200)
             refresh()
         }
     }

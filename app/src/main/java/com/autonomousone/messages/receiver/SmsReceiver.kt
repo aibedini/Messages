@@ -1,7 +1,6 @@
 package com.autonomousone.messages.receiver
 
 import android.content.BroadcastReceiver
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
@@ -13,7 +12,14 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.utils.NotificationHelper
 
 /**
- * Production-ready BroadcastReceiver for real-time incoming SMS processing.
+ * Receives incoming SMS broadcasts.
+ *
+ * NOTE: We do NOT insert into Telephony.Sms.Inbox here.
+ * The system/default SMS app is responsible for persistence.
+ * We only:
+ *   1. Emit to SmsEventBus for immediate optimistic UI display.
+ *   2. Post a notification.
+ *   3. Let SmsContentObserver detect the DB write (done by system) and trigger a clean reload.
  */
 class SmsReceiver : BroadcastReceiver() {
 
@@ -22,77 +28,53 @@ class SmsReceiver : BroadcastReceiver() {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
         try {
-            val messages: Array<SmsMessage>? = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-            if (messages.isNullOrEmpty()) return
+            val pdus: Array<SmsMessage>? = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+            if (pdus.isNullOrEmpty()) return
 
-            // Extract sender address and timestamp from the first message segment
-            val firstMsg = messages.firstOrNull() ?: return
+            val firstMsg = pdus.first()
             val sender = firstMsg.originatingAddress ?: "Unknown"
             val timestamp = if (firstMsg.timestampMillis > 0) firstMsg.timestampMillis else System.currentTimeMillis()
 
-            // Extract subscription ID (SIM card) if present
-            val subId = intent.extras?.getInt("subscription", -1) ?: -1
-
-            // Concatenate message body segments for long/multipart SMS
-            val bodyBuilder = StringBuilder()
-            for (msg in messages) {
-                val bodyChunk = msg.messageBody
-                if (!bodyChunk.isNullOrEmpty()) {
-                    bodyBuilder.append(bodyChunk)
+            val body = buildString {
+                for (msg in pdus) {
+                    val chunk = msg.messageBody
+                    if (!chunk.isNullOrEmpty()) append(chunk)
                 }
             }
-            val fullBody = bodyBuilder.toString()
-            if (fullBody.isBlank()) return
+            if (body.isBlank()) return
 
-            Log.d("SMS_RECEIVER", "Incoming SMS from $sender (subId=$subId): $fullBody")
-
-            // Persist incoming SMS into Telephony.Sms.Inbox
-            val insertedId = try {
-                val values = ContentValues().apply {
-                    put(Telephony.Sms.ADDRESS, sender)
-                    put(Telephony.Sms.BODY, fullBody)
-                    put(Telephony.Sms.DATE, timestamp)
-                    put(Telephony.Sms.READ, 0)
-                    put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
-                }
-                val uri = context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
-                uri?.lastPathSegment?.toLongOrNull() ?: System.currentTimeMillis()
-            } catch (e: Exception) {
-                Log.e("SMS_RECEIVER", "Error persisting incoming SMS to ContentProvider", e)
-                System.currentTimeMillis()
-            }
+            Log.d("SMS_RECEIVER", "Incoming SMS from $sender: $body")
 
             val incomingSms = Sms(
-                id = insertedId,
+                id = System.currentTimeMillis(),
                 threadId = 0L,
                 sender = sender,
-                message = fullBody,
+                message = body,
                 date = timestamp,
                 unread = true,
-                type = 1 // 1 = Telephony.Sms.MESSAGE_TYPE_INBOX
+                type = 1
             )
 
-            // 1. Emit incoming SMS event to reactive event bus
+            // Emit immediately for optimistic UI — SmsContentObserver will do the authoritative reload
             SmsEventBus.emitSms(incomingSms)
 
-            // 2. Check foreground / active conversation status for notifications
+            // Notify unless user is actively viewing this conversation
             val isForeground = SmsEventBus.isAppInForeground
             val activePhone = SmsEventBus.activeConversationPhone
-
             val normalizedSender = ContactRepository.normalizePhone(sender)
-            val normalizedActivePhone = ContactRepository.normalizePhone(activePhone)
+            val normalizedActive = ContactRepository.normalizePhone(activePhone)
 
-            val isViewingThisConversation = isForeground &&
-                    activePhone.isNotBlank() &&
-                    (normalizedSender == normalizedActivePhone || sender == activePhone)
+            val isViewingThis = isForeground && activePhone.isNotBlank() &&
+                    (normalizedSender == normalizedActive ||
+                            normalizedSender.endsWith(normalizedActive) ||
+                            normalizedActive.endsWith(normalizedSender))
 
-            // Post notification if app is backgrounded OR user is on another screen
-            if (!isViewingThisConversation) {
+            if (!isViewingThis) {
                 NotificationHelper.showSmsNotification(context, incomingSms)
             }
 
         } catch (e: Exception) {
-            Log.e("SMS_RECEIVER", "Error processing incoming SMS PDU", e)
+            Log.e("SMS_RECEIVER", "Error processing incoming SMS", e)
         }
     }
 }
