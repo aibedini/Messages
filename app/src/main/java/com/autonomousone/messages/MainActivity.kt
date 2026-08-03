@@ -1,9 +1,12 @@
 package com.autonomousone.messages
 
 import android.Manifest
+import android.app.role.RoleManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Telephony
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -29,10 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Enable edge-to-edge system bars
         enableEdgeToEdge()
-
-        // Create notification channel on launch
         NotificationHelper.createNotificationChannel(this)
 
         setContent {
@@ -55,31 +55,33 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun checkPermissions(): Boolean {
-                        val readSmsGranted = ContextCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.READ_SMS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        val receiveSmsGranted = ContextCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.RECEIVE_SMS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        val sendSmsGranted = ContextCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.SEND_SMS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        val readContactsGranted = ContextCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.READ_CONTACTS
-                        ) == PackageManager.PERMISSION_GRANTED
+                        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+                                ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+                                ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
+                                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                    }
 
-                        return readSmsGranted && receiveSmsGranted && sendSmsGranted && readContactsGranted
+                    fun isDefaultSmsApp(): Boolean {
+                        return try {
+                            Telephony.Sms.getDefaultSmsPackage(this) == packageName
+                        } catch (e: Exception) {
+                            false
+                        }
                     }
 
                     var hasPermission by remember { mutableStateOf(checkPermissions()) }
+                    var isDefaultApp by remember { mutableStateOf(isDefaultSmsApp()) }
+
+                    // Launcher to request default SMS app role (Android Q+)
+                    val defaultAppLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.StartActivityForResult()
+                    ) {
+                        isDefaultApp = isDefaultSmsApp()
+                    }
 
                     val permissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
-                    ) { _ ->
+                    ) {
                         hasPermission = checkPermissions()
                     }
 
@@ -90,7 +92,23 @@ class MainActivity : ComponentActivity() {
                     }
 
                     AppNavigation(
-                        hasPermission = hasPermission
+                        hasPermission = hasPermission,
+                        isDefaultSmsApp = isDefaultApp,
+                        onRequestDefaultApp = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val roleManager = getSystemService(RoleManager::class.java)
+                                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS) &&
+                                    !roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
+                                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                                    defaultAppLauncher.launch(intent)
+                                }
+                            } else {
+                                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                                    putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                                }
+                                defaultAppLauncher.launch(intent)
+                            }
+                        }
                     )
                 }
             }

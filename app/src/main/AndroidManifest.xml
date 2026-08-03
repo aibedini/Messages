@@ -5,8 +5,8 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-permission android:name="android.permission.SEND_SMS"/>
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.WRITE_SMS"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -23,6 +23,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Messages">
 
+        <!-- Main launcher activity + compose intent filters (required for default SMS app) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,7 +34,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Required for default SMS app: compose new message -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SENDTO" />
@@ -47,24 +47,22 @@
         </activity>
 
         <!--
-            SMS_DELIVER is broadcast only to the default SMS app when SMS arrives.
-            SMS_RECEIVED is broadcast to all apps with the permission.
+            SMS_DELIVER fires only when this is the default SMS app.
+            SMS_RECEIVED fires for all apps (non-default listening).
         -->
         <receiver
             android:name=".receiver.SmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
-            <!-- Receives SMS when this app is NOT the default -->
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
-            <!-- Receives SMS when this app IS the default -->
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
             </intent-filter>
         </receiver>
 
-        <!-- Required for default SMS app: MMS/WAP push -->
+        <!-- WAP/MMS receiver required to be listed as default SMS app -->
         <receiver
             android:name=".receiver.MmsReceiver"
             android:exported="true"
@@ -75,6 +73,7 @@
             </intent-filter>
         </receiver>
 
+        <!-- Notification action receiver -->
         <receiver
             android:name=".receiver.NotificationActionReceiver"
             android:exported="false">
@@ -85,7 +84,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Required for default SMS app: respond via message from phone/dialer -->
+        <!-- Respond-via-message service required for default SMS app -->
         <service
             android:name=".service.HeadlessSmsSendService"
             android:exported="true"

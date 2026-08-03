@@ -17,7 +17,9 @@ import com.autonomousone.messages.ui.screens.SplashScreen
 
 @Composable
 fun AppNavigation(
-    hasPermission: Boolean
+    hasPermission: Boolean,
+    isDefaultSmsApp: Boolean,
+    onRequestDefaultApp: () -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -66,6 +68,8 @@ fun AppNavigation(
         composable(Screen.Home.route) {
             HomeScreen(
                 hasPermission = hasPermission,
+                isDefaultSmsApp = isDefaultSmsApp,
+                onRequestDefaultApp = onRequestDefaultApp,
                 navController = navController
             )
         }
