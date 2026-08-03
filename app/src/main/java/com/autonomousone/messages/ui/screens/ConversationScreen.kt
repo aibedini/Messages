@@ -5,15 +5,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,11 +24,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -40,18 +39,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,6 +70,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,6 +79,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.components.ChatBubble
@@ -94,7 +90,6 @@ import com.autonomousone.messages.viewmodel.ConversationViewModel
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -116,15 +111,15 @@ fun ConversationScreen(
     val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
     var message by remember { mutableStateOf("") }
+    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var attachedAudioUri by remember { mutableStateOf<Uri?>(null) }
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var isFetchingLocation by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // ── Camera capture ──────────────────────────────────────────────────────
-    // We create a temp file URI to pass to the camera app
     val cameraImageUri = remember {
         val photoFile = File(
             context.cacheDir,
@@ -137,8 +132,8 @@ fun ConversationScreen(
         ActivityResultContracts.TakePicture()
     ) { success ->
         if (success) {
-            val mapsLink = cameraImageUri.toString()
-            message = if (message.isBlank()) "[📷 Photo attached]" else "$message\n[📷 Photo attached]"
+            attachedAudioUri = null
+            attachedImageUri = cameraImageUri
         }
     }
 
@@ -147,14 +142,8 @@ fun ConversationScreen(
         ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            // Get display name of file
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            val fileName = cursor?.use { c ->
-                val nameIndex = c.getColumnIndex("_display_name")
-                if (c.moveToFirst() && nameIndex >= 0) c.getString(nameIndex) else "image"
-            } ?: "image"
-            cursor?.close()
-            message = if (message.isBlank()) "[🖼 $fileName]" else "$message\n[🖼 $fileName]"
+            attachedAudioUri = null
+            attachedImageUri = uri
         }
     }
 
@@ -163,13 +152,8 @@ fun ConversationScreen(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            val fileName = cursor?.use { c ->
-                val nameIndex = c.getColumnIndex("_display_name")
-                if (c.moveToFirst() && nameIndex >= 0) c.getString(nameIndex) else "audio"
-            } ?: "audio"
-            cursor?.close()
-            message = if (message.isBlank()) "[🎵 $fileName]" else "$message\n[🎵 $fileName]"
+            attachedImageUri = null
+            attachedAudioUri = uri
         }
     }
 
@@ -369,7 +353,95 @@ fun ConversationScreen(
                 }
             }
 
-            // Message input bar
+            // ── Attachment Preview Card ─────────────────────────────────────
+            AnimatedVisibility(
+                visible = attachedImageUri != null || attachedAudioUri != null,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    tonalElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (attachedImageUri != null) {
+                            AsyncImage(
+                                model = attachedImageUri,
+                                contentDescription = "Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Photo attached",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "Will be sent as MMS",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                            IconButton(onClick = { attachedImageUri = null }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove attachment",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        } else if (attachedAudioUri != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AudioFile,
+                                    contentDescription = "Audio",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Audio file attached",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "Will be sent as MMS",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                            IconButton(onClick = { attachedAudioUri = null }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove attachment",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Message Input Bar ───────────────────────────────────────────
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -401,7 +473,9 @@ fun ConversationScreen(
                     ) {
                         if (message.isEmpty()) {
                             Text(
-                                text = if (isFetchingLocation) "Fetching location…" else "SMS message...",
+                                text = if (isFetchingLocation) "Fetching location…"
+                                else if (attachedImageUri != null || attachedAudioUri != null) "Add caption (optional)..."
+                                else "SMS message...",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 fontSize = 16.sp
                             )
@@ -418,7 +492,7 @@ fun ConversationScreen(
                         )
                     }
 
-                    val canSend = message.isNotBlank()
+                    val canSend = message.isNotBlank() || attachedImageUri != null || attachedAudioUri != null
                     val sendScale by animateFloatAsState(
                         targetValue = if (canSend) 1f else 0.85f,
                         animationSpec = spring(stiffness = 400f),
@@ -427,15 +501,37 @@ fun ConversationScreen(
 
                     IconButton(
                         onClick = {
-                            if (message.isBlank()) return@IconButton
+                            if (!canSend) return@IconButton
                             val destination = if (recipientPhone.isNotBlank()) recipientPhone else phone
                             val msgToSend = message
+                            val currentImage = attachedImageUri
+                            val currentAudio = attachedAudioUri
+
                             message = ""
-                            viewModel.sendMessage(
-                                threadId = threadId,
-                                phone = destination,
-                                message = msgToSend
-                            )
+                            attachedImageUri = null
+                            attachedAudioUri = null
+
+                            if (currentImage != null) {
+                                viewModel.sendImageMessage(
+                                    threadId = threadId,
+                                    phone = destination,
+                                    imageUri = currentImage,
+                                    caption = msgToSend
+                                )
+                            } else if (currentAudio != null) {
+                                viewModel.sendAudioMessage(
+                                    threadId = threadId,
+                                    phone = destination,
+                                    audioUri = currentAudio,
+                                    caption = msgToSend
+                                )
+                            } else {
+                                viewModel.sendMessage(
+                                    threadId = threadId,
+                                    phone = destination,
+                                    message = msgToSend
+                                )
+                            }
                         },
                         enabled = canSend,
                         modifier = Modifier.scale(sendScale)
@@ -452,7 +548,7 @@ fun ConversationScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send SMS",
+                                contentDescription = "Send",
                                 tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .size(20.dp)
@@ -498,7 +594,7 @@ fun ConversationScreen(
                             onClick = {
                                 showAttachmentSheet = false
                                 galleryLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
                             }
                         )

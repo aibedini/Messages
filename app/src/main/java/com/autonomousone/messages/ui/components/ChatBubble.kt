@@ -1,5 +1,6 @@
 package com.autonomousone.messages.ui.components
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,9 +32,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.utils.formatMessageTime
 
@@ -41,6 +46,17 @@ fun ChatBubble(
     modifier: Modifier = Modifier
 ) {
     val incoming = sms.type == 1
+
+    // Parse image tag if present [IMAGE:uri]
+    val imageUriString = if (sms.message.contains("[IMAGE:")) {
+        sms.message.substringAfter("[IMAGE:").substringBefore("]")
+    } else null
+
+    val captionText = if (imageUriString != null) {
+        sms.message.substringAfter("]", "").trim()
+    } else {
+        sms.message
+    }
 
     // Asymmetrical rounded corner shape with bubble tail indicator
     val bubbleShape = if (incoming) {
@@ -85,17 +101,34 @@ fun ChatBubble(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Column {
-                    Text(
-                        text = sms.message,
-                        color = if (incoming) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            Color.White
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontSize = 15.sp,
-                        lineHeight = 21.sp
-                    )
+                    if (imageUriString != null) {
+                        AsyncImage(
+                            model = Uri.parse(imageUriString),
+                            contentDescription = "Attached Image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                        if (captionText.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+
+                    if (captionText.isNotBlank()) {
+                        Text(
+                            text = captionText,
+                            color = if (incoming) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                Color.White
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontSize = 15.sp,
+                            lineHeight = 21.sp
+                        )
+                    }
 
                     Row(
                         modifier = Modifier

@@ -1,10 +1,12 @@
 package com.autonomousone.messages.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ContactRepository
@@ -20,6 +22,7 @@ class ConversationViewModel(
 
     private val repository = SmsRepository(application)
     private val smsSender = SmsSender(application)
+    private val mmsSender = MmsSender(application)
 
     val messages = mutableStateListOf<Sms>()
 
@@ -165,15 +168,75 @@ class ConversationViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // persistToSent is called inside send() BEFORE the actual SmsManager dispatch
-                // so by the time SmsContentObserver fires, the sent SMS is already in the DB
                 val persistedId = smsSender.send(targetPhone, trimmedMsg)
                 persistedSentIds.add(persistedId)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            // refresh() will be called automatically by SmsContentObserver
-            // after persistToSent triggers DB change. No need for a manual delay+refresh.
+        }
+    }
+
+    fun sendImageMessage(threadId: Long, phone: String, imageUri: Uri, caption: String = "") {
+        val targetPhone = if (phone.isNotBlank()) phone else currentPhone
+        if (targetPhone.isBlank()) return
+
+        currentPhone = targetPhone
+        SmsEventBus.activeConversationPhone = targetPhone
+        if (threadId != 0L) currentThreadId = threadId
+
+        val now = System.currentTimeMillis()
+        val trimmedCaption = caption.trim()
+        val textBody = if (trimmedCaption.isNotBlank()) "[IMAGE:$imageUri]\n$trimmedCaption" else "[IMAGE:$imageUri]"
+
+        val optimisticSms = Sms(
+            id = now,
+            threadId = currentThreadId,
+            sender = targetPhone,
+            message = textBody,
+            date = now,
+            unread = false,
+            type = 2
+        )
+        messages.add(optimisticSms)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                mmsSender.sendImage(targetPhone, imageUri)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun sendAudioMessage(threadId: Long, phone: String, audioUri: Uri, caption: String = "") {
+        val targetPhone = if (phone.isNotBlank()) phone else currentPhone
+        if (targetPhone.isBlank()) return
+
+        currentPhone = targetPhone
+        SmsEventBus.activeConversationPhone = targetPhone
+        if (threadId != 0L) currentThreadId = threadId
+
+        val now = System.currentTimeMillis()
+        val trimmedCaption = caption.trim()
+        val textBody = if (trimmedCaption.isNotBlank()) "[AUDIO:$audioUri]\n$trimmedCaption" else "[AUDIO:$audioUri]"
+
+        val optimisticSms = Sms(
+            id = now,
+            threadId = currentThreadId,
+            sender = targetPhone,
+            message = textBody,
+            date = now,
+            unread = false,
+            type = 2
+        )
+        messages.add(optimisticSms)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                mmsSender.sendAudio(targetPhone, audioUri)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
