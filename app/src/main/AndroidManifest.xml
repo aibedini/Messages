@@ -18,7 +18,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Messages">
-        
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -37,6 +37,16 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.autonomousone.messages.ACTION_MARK_READ" />
+                <action android:name="com.autonomousone.messages.ACTION_REPLY" />
+                <action android:name="com.autonomousone.messages.ACTION_COPY_OTP" />
             </intent-filter>
         </receiver>
 

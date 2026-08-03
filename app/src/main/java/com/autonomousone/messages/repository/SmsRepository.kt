@@ -1,5 +1,6 @@
 package com.autonomousone.messages.repository
 
+import android.content.ContentValues
 import android.content.Context
 import android.database.ContentObserver
 import android.provider.Telephony
@@ -88,6 +89,32 @@ class SmsRepository(
         return getAllSms()
             .filter { ContactRepository.normalizePhone(it.sender) == normalized || it.sender == phone }
             .sortedBy { it.date }
+    }
+
+    fun markThreadAsRead(threadId: Long, phone: String) {
+        try {
+            val values = ContentValues().apply {
+                put(Telephony.Sms.READ, 1)
+            }
+            if (threadId > 0) {
+                context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    values,
+                    "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
+                    arrayOf(threadId.toString())
+                )
+            } else if (phone.isNotBlank()) {
+                val normalized = ContactRepository.normalizePhone(phone)
+                context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    values,
+                    "${Telephony.Sms.ADDRESS} LIKE ? AND ${Telephony.Sms.READ} = 0",
+                    arrayOf("%$normalized%")
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error marking thread as read", e)
+        }
     }
 
     /**
