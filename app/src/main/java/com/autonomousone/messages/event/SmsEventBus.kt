@@ -10,33 +10,34 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 /**
- * App-wide singleton event bus for real-time incoming SMS events and app state tracking.
- * Uses replay=1 so late collectors always get the latest SMS.
+ * App-wide singleton event bus for real-time SMS events and app state.
  */
 object SmsEventBus {
 
-    // Use a dedicated scope that outlives any single ViewModel
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // replay=1 ensures late subscribers (e.g. ViewModel collecting after SMS arrives) still get it
+    // replay=1: late collectors (e.g. ViewModel subscribing after SMS arrives) still get it
     private val _incomingSmsFlow = MutableSharedFlow<Sms>(replay = 1, extraBufferCapacity = 64)
     val incomingSmsFlow: SharedFlow<Sms> = _incomingSmsFlow.asSharedFlow()
 
-    // Flag indicating whether the application is currently in the foreground
+    // Signals ViewModels to reload from DB (fired on onResume)
+    private val _refreshFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val refreshFlow: SharedFlow<Unit> = _refreshFlow.asSharedFlow()
+
     @Volatile
     var isAppInForeground: Boolean = false
 
-    // Phone number or address of the active open conversation screen (blank if on Home/New screen)
     @Volatile
     var activeConversationPhone: String = ""
 
-    /**
-     * Broadcast an incoming SMS event to active subscribers.
-     * Emits on Main dispatcher so Compose SnapshotState mutations are safe.
-     */
     fun emitSms(sms: Sms) {
         scope.launch {
             _incomingSmsFlow.emit(sms)
         }
+    }
+
+    /** Call from onResume so all ViewModels reload fresh data from DB */
+    fun notifyResume() {
+        _refreshFlow.tryEmit(Unit)
     }
 }

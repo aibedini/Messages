@@ -11,7 +11,6 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,20 +26,20 @@ class ConversationViewModel(
     private var currentThreadId = 0L
     private var currentPhone = ""
 
+    // Track IDs of sent messages we've persisted so we can match them during refresh
+    private val persistedSentIds = mutableSetOf<Long>()
+
     private val observer = SmsContentObserver {
-        // DB has committed — do a clean reload from ContentProvider
         refresh()
     }
 
     init {
         repository.registerObserver(observer)
         observeIncomingSms()
+        observeRefreshSignal()
     }
 
-    fun loadConversation(
-        threadId: Long,
-        phone: String = ""
-    ) {
+    fun loadConversation(threadId: Long, phone: String = "") {
         currentThreadId = threadId
         if (phone.isNotBlank()) {
             currentPhone = phone
@@ -48,23 +47,22 @@ class ConversationViewModel(
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            val loadedMessages = if (currentPhone.isNotBlank()) {
-                repository.getMessagesByPhone(currentPhone)
-            } else if (threadId != 0L) {
-                repository.getMessagesByThread(threadId)
-            } else {
-                emptyList()
+            val loadedMessages = when {
+                currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone)
+                threadId != 0L -> repository.getMessagesByThread(threadId)
+                else -> emptyList()
             }
 
             withContext(Dispatchers.Main) {
                 messages.clear()
                 messages.addAll(loadedMessages)
                 if (loadedMessages.isNotEmpty()) {
-                    if (currentThreadId == 0L) {
-                        currentThreadId = loadedMessages.last().threadId
-                    }
+                    if (currentThreadId == 0L) currentThreadId = loadedMessages.last().threadId
                     if (currentPhone.isBlank()) {
-                        currentPhone = loadedMessages.first().sender
+                        // For received messages the sender is the contact; for sent it's the address
+                        val sampleMsg = loadedMessages.firstOrNull { it.type == 1 }
+                            ?: loadedMessages.first()
+                        currentPhone = sampleMsg.sender
                         SmsEventBus.activeConversationPhone = currentPhone
                     }
                 }
@@ -94,10 +92,10 @@ class ConversationViewModel(
                                 normalizedCurrent.endsWith(normalizedIncoming))
 
                 if (isMatch) {
-                    // Optimistically add to UI immediately
                     val isDuplicate = messages.any {
                         it.id == incomingSms.id ||
-                                (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 5000)
+                                (it.message == incomingSms.message &&
+                                        Math.abs(it.date - incomingSms.date) < 5000)
                     }
                     if (!isDuplicate) {
                         messages.add(incomingSms)
@@ -107,30 +105,39 @@ class ConversationViewModel(
         }
     }
 
+    /** Reload from DB whenever MainActivity.onResume fires */
+    private fun observeRefreshSignal() {
+        viewModelScope.launch {
+            SmsEventBus.refreshFlow.collect {
+                if (currentPhone.isNotBlank() || currentThreadId != 0L) {
+                    refresh()
+                }
+            }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            val freshMessages = if (currentPhone.isNotBlank()) {
-                repository.getMessagesByPhone(currentPhone)
-            } else if (currentThreadId != 0L) {
-                repository.getMessagesByThread(currentThreadId)
-            } else {
-                emptyList()
+            val freshMessages = when {
+                currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone)
+                currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
+                else -> emptyList()
             }
 
             withContext(Dispatchers.Main) {
                 if (freshMessages.isNotEmpty()) {
                     messages.clear()
                     messages.addAll(freshMessages)
+                    // Update thread ID if we had it as 0
+                    if (currentThreadId == 0L) {
+                        currentThreadId = freshMessages.last().threadId
+                    }
                 }
             }
         }
     }
 
-    fun sendMessage(
-        threadId: Long,
-        phone: String,
-        message: String
-    ) {
+    fun sendMessage(threadId: Long, phone: String, message: String) {
         val trimmedMsg = message.trim()
         if (trimmedMsg.isBlank()) return
 
@@ -139,31 +146,34 @@ class ConversationViewModel(
 
         currentPhone = targetPhone
         SmsEventBus.activeConversationPhone = targetPhone
-        if (threadId != 0L) {
-            currentThreadId = threadId
-        }
+        if (threadId != 0L) currentThreadId = threadId
 
-        // Instant Optimistic UI Update
+        val now = System.currentTimeMillis()
+
+        // Optimistic UI update with a temporary ID
+        val optimisticId = now
         val optimisticSms = Sms(
-            id = System.currentTimeMillis(),
+            id = optimisticId,
             threadId = currentThreadId,
             sender = targetPhone,
             message = trimmedMsg,
-            date = System.currentTimeMillis(),
+            date = now,
             unread = false,
-            type = 2 // 2 = Sent
+            type = 2
         )
         messages.add(optimisticSms)
 
-        // Dispatch SMS send on IO thread, then refresh from DB
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                smsSender.send(targetPhone, trimmedMsg)
+                // persistToSent is called inside send() BEFORE the actual SmsManager dispatch
+                // so by the time SmsContentObserver fires, the sent SMS is already in the DB
+                val persistedId = smsSender.send(targetPhone, trimmedMsg)
+                persistedSentIds.add(persistedId)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            delay(1200)
-            refresh()
+            // refresh() will be called automatically by SmsContentObserver
+            // after persistToSent triggers DB change. No need for a manual delay+refresh.
         }
     }
 

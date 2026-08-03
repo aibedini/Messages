@@ -21,15 +21,13 @@ class HomeViewModel(
 
     val conversations = mutableStateListOf<Sms>()
 
-    private val observer = SmsContentObserver {
-        // ContentObserver fires after DB commits (debounced 300 ms) — do a clean reload
-        loadSms()
-    }
+    private val observer = SmsContentObserver { loadSms() }
 
     init {
         repository.registerObserver(observer)
         loadSms()
         observeIncomingSms()
+        observeRefreshSignal()
     }
 
     fun loadSms() {
@@ -45,8 +43,6 @@ class HomeViewModel(
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                // Optimistically show the incoming SMS immediately at the top
-                // before the DB observer fires (which will do a clean reload shortly after)
                 val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
 
                 val existingIndex = conversations.indexOfFirst {
@@ -57,10 +53,17 @@ class HomeViewModel(
                                     normalizedIncoming.endsWith(norm))
                 }
 
-                if (existingIndex >= 0) {
-                    conversations.removeAt(existingIndex)
-                }
+                if (existingIndex >= 0) conversations.removeAt(existingIndex)
                 conversations.add(0, incomingSms)
+            }
+        }
+    }
+
+    /** Reload from DB whenever MainActivity.onResume fires */
+    private fun observeRefreshSignal() {
+        viewModelScope.launch {
+            SmsEventBus.refreshFlow.collect {
+                loadSms()
             }
         }
     }

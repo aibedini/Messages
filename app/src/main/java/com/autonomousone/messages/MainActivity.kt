@@ -29,11 +29,19 @@ import com.autonomousone.messages.utils.NotificationHelper
 
 class MainActivity : ComponentActivity() {
 
+    // Exposed as Compose-observable state so setters in onResume recompose the UI
+    private var _hasPermission = mutableStateOf(false)
+    private var _isDefaultApp = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
         NotificationHelper.createNotificationChannel(this)
+
+        // Initial check before Compose is set up
+        _hasPermission.value = checkPermissions()
+        _isDefaultApp.value = isDefaultSmsApp()
 
         setContent {
             MessagesTheme {
@@ -54,35 +62,22 @@ class MainActivity : ComponentActivity() {
                         }.toTypedArray()
                     }
 
-                    fun checkPermissions(): Boolean {
-                        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
-                                ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
-                                ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
-                                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-                    }
+                    // Read from the class-level mutableStateOf so onResume updates recompose
+                    val hasPermission by _hasPermission
+                    val isDefaultApp by _isDefaultApp
 
-                    fun isDefaultSmsApp(): Boolean {
-                        return try {
-                            Telephony.Sms.getDefaultSmsPackage(this) == packageName
-                        } catch (e: Exception) {
-                            false
-                        }
-                    }
-
-                    var hasPermission by remember { mutableStateOf(checkPermissions()) }
-                    var isDefaultApp by remember { mutableStateOf(isDefaultSmsApp()) }
-
-                    // Launcher to request default SMS app role (Android Q+)
                     val defaultAppLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
                     ) {
-                        isDefaultApp = isDefaultSmsApp()
+                        // Recheck immediately when user returns from system picker
+                        _isDefaultApp.value = isDefaultSmsApp()
+                        _hasPermission.value = checkPermissions()
                     }
 
                     val permissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
                     ) {
-                        hasPermission = checkPermissions()
+                        _hasPermission.value = checkPermissions()
                     }
 
                     LaunchedEffect(Unit) {
@@ -95,19 +90,7 @@ class MainActivity : ComponentActivity() {
                         hasPermission = hasPermission,
                         isDefaultSmsApp = isDefaultApp,
                         onRequestDefaultApp = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                val roleManager = getSystemService(RoleManager::class.java)
-                                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS) &&
-                                    !roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
-                                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-                                    defaultAppLauncher.launch(intent)
-                                }
-                            } else {
-                                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                                    putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-                                }
-                                defaultAppLauncher.launch(intent)
-                            }
+                            requestDefaultSmsApp(defaultAppLauncher)
                         }
                     )
                 }
@@ -118,10 +101,60 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         SmsEventBus.isAppInForeground = true
+        // Update observable states — Compose will recompose automatically
+        _hasPermission.value = checkPermissions()
+        _isDefaultApp.value = isDefaultSmsApp()
+        // Signal all ViewModels to reload fresh data
+        SmsEventBus.notifyResume()
     }
 
     override fun onPause() {
         super.onPause()
         SmsEventBus.isAppInForeground = false
+    }
+
+    private fun checkPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isDefaultSmsApp(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // RoleManager.isRoleHeld() is the authoritative check on Android 10+
+                // Telephony.Sms.getDefaultSmsPackage() can lag after role is granted
+                val roleManager = getSystemService(RoleManager::class.java)
+                roleManager.isRoleHeld(RoleManager.ROLE_SMS)
+            } else {
+                // Pre-Q: use the traditional default SMS package check
+                Telephony.Sms.getDefaultSmsPackage(this) == packageName
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun requestDefaultSmsApp(
+        launcher: androidx.activity.result.ActivityResultLauncher<Intent>
+    ) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                    launcher.launch(intent)
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                    putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                }
+                launcher.launch(intent)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
