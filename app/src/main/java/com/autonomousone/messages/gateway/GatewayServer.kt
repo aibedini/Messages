@@ -9,26 +9,32 @@ import android.util.Log
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpHandler
-import com.sun.net.httpserver.HttpServer
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.InputStream
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStream
 import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.Executors
 
+/**
+ * Native Android ServerSocket-based HTTP REST API Server for SMS & MMS Gateway.
+ * Does not depend on com.sun.net.httpserver which is absent in Android runtime.
+ */
 class GatewayServer(
     private val context: Context,
     private val port: Int,
     private val apiKey: String,
     private val onRequestLog: ((String) -> Unit)? = null
 ) {
+    private var serverSocket: ServerSocket? = null
+    private val executor = Executors.newFixedThreadPool(4)
+    private var isListening = false
 
-    private var server: HttpServer? = null
     private val smsSender = SmsSender(context)
     private val mmsSender = MmsSender(context)
     private val smsRepository = SmsRepository(context)
@@ -58,20 +64,30 @@ class GatewayServer(
 
     @Synchronized
     fun start() {
-        if (server != null) return
+        if (isListening) return
 
         try {
-            server = HttpServer.create(InetSocketAddress(port), 0).apply {
-                createContext("/api/v1/sms/send", SendSmsHandler())
-                createContext("/api/v1/mms/send", SendMmsHandler())
-                createContext("/api/v1/sms/inbox", InboxHandler())
-                createContext("/api/v1/status", StatusHandler())
-                executor = Executors.newFixedThreadPool(4)
-                start()
+            serverSocket = ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(port))
             }
-            Log.d(TAG, "GatewayServer started on port $port")
+            isListening = true
+            Log.d(TAG, "GatewayServer listening on port $port")
             onRequestLog?.invoke("✅ Server listening on http://${getLocalIpAddress()}:$port")
+
+            executor.execute {
+                while (isListening && serverSocket?.isClosed == false) {
+                    try {
+                        val clientSocket = serverSocket?.accept() ?: break
+                        executor.execute { handleClient(clientSocket) }
+                    } catch (e: Exception) {
+                        if (!isListening) break
+                        Log.e(TAG, "Error accepting client connection", e)
+                    }
+                }
+            }
         } catch (e: Exception) {
+            isListening = false
             Log.e(TAG, "Failed to start GatewayServer on port $port", e)
             onRequestLog?.invoke("❌ Start failed: ${e.message}")
         }
@@ -79,9 +95,10 @@ class GatewayServer(
 
     @Synchronized
     fun stop() {
+        isListening = false
         try {
-            server?.stop(0)
-            server = null
+            serverSocket?.close()
+            serverSocket = null
             Log.d(TAG, "GatewayServer stopped")
             onRequestLog?.invoke("🛑 Server stopped")
         } catch (e: Exception) {
@@ -89,174 +106,170 @@ class GatewayServer(
         }
     }
 
-    fun isRunning(): Boolean = server != null
+    fun isRunning(): Boolean = isListening && serverSocket != null && !serverSocket!!.isClosed
 
-    // ── Authentication Check ──────────────────────────────────────────────────
-    private fun authenticate(exchange: HttpExchange): Boolean {
-        if (apiKey.isBlank()) return true // No key configured = open
-        val clientKey = exchange.requestHeaders.getFirst("X-API-Key")
-            ?: exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-        return clientKey == apiKey
-    }
+    private fun handleClient(socket: Socket) {
+        try {
+            socket.soTimeout = 10000
+            val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val output = socket.getOutputStream()
 
-    // ── HTTP Handlers ─────────────────────────────────────────────────────────
+            // 1. Parse HTTP Request Line: "POST /api/v1/sms/send HTTP/1.1"
+            val requestLine = input.readLine() ?: return
+            val parts = requestLine.split(" ")
+            if (parts.size < 2) return
 
-    private inner class SendSmsHandler : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            val path = exchange.requestURI.path
-            val method = exchange.requestMethod
+            val method = parts[0]
+            val path = parts[1]
 
-            if (method != "POST") {
-                sendJsonResponse(exchange, 450, JSONObject().put("error", "Method not allowed"))
-                return
-            }
-
-            if (!authenticate(exchange)) {
-                onRequestLog?.invoke("⚠️ 401 Unauthorized request to $path")
-                sendJsonResponse(exchange, 401, JSONObject().put("error", "Unauthorized: Invalid X-API-Key"))
-                return
-            }
-
-            try {
-                val bodyText = exchange.requestBody.bufferedReader().use { it.readText() }
-                val json = JSONObject(bodyText)
-                val phone = json.optString("phone", "").trim()
-                val message = json.optString("message", "").trim()
-
-                if (phone.isBlank() || message.isBlank()) {
-                    sendJsonResponse(exchange, 400, JSONObject().put("error", "phone and message are required"))
-                    return
+            // 2. Parse HTTP Headers
+            val headers = mutableMapOf<String, String>()
+            var contentLength = 0
+            var line: String?
+            while (input.readLine().also { line = it } != null) {
+                if (line.isNullOrBlank()) break
+                val headerParts = line!!.split(":", limit = 2)
+                if (headerParts.size == 2) {
+                    val key = headerParts[0].trim().lowercase()
+                    val value = headerParts[1].trim()
+                    headers[key] = value
+                    if (key == "content-length") {
+                        contentLength = value.toIntOrNull() ?: 0
+                    }
                 }
+            }
 
-                val sentId = smsSender.send(phone, message)
-                onRequestLog?.invoke("📩 POST /api/v1/sms/send -> Sent to $phone")
-
-                val response = JSONObject().apply {
-                    put("status", "success")
-                    put("id", sentId)
-                    put("phone", phone)
-                    put("message", message)
+            // 3. Parse HTTP Body
+            val body = if (contentLength > 0) {
+                val buffer = CharArray(contentLength)
+                var read = 0
+                while (read < contentLength) {
+                    val r = input.read(buffer, read, contentLength - read)
+                    if (r <= 0) break
+                    read += r
                 }
-                sendJsonResponse(exchange, 200, response)
+                String(buffer, 0, read)
+            } else ""
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling send SMS", e)
-                sendJsonResponse(exchange, 500, JSONObject().put("error", e.message ?: "Internal error"))
-            }
-        }
-    }
+            // 4. Authenticate
+            val clientApiKey = headers["x-api-key"]
+                ?: headers["authorization"]?.removePrefix("Bearer ")?.trim()
 
-    private inner class SendMmsHandler : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            val method = exchange.requestMethod
-            if (method != "POST") {
-                sendJsonResponse(exchange, 405, JSONObject().put("error", "Method not allowed"))
+            if (apiKey.isNotBlank() && clientApiKey != apiKey) {
+                onRequestLog?.invoke("⚠️ 401 Unauthorized [$method $path]")
+                sendResponse(output, 401, JSONObject().put("error", "Unauthorized: Invalid X-API-Key"))
+                socket.close()
                 return
             }
 
-            if (!authenticate(exchange)) {
-                sendJsonResponse(exchange, 401, JSONObject().put("error", "Unauthorized: Invalid X-API-Key"))
-                return
-            }
+            // 5. Route request
+            when {
+                path == "/api/v1/sms/send" && method == "POST" -> {
+                    val json = JSONObject(body)
+                    val phone = json.optString("phone", "").trim()
+                    val message = json.optString("message", "").trim()
 
-            try {
-                val bodyText = exchange.requestBody.bufferedReader().use { it.readText() }
-                val json = JSONObject(bodyText)
-                val phone = json.optString("phone", "").trim()
-                val imageUrl = json.optString("imageUrl", "").trim()
-                val caption = json.optString("caption", "").trim()
-
-                if (phone.isBlank() || imageUrl.isBlank()) {
-                    sendJsonResponse(exchange, 400, JSONObject().put("error", "phone and imageUrl are required"))
-                    return
+                    if (phone.isBlank() || message.isBlank()) {
+                        sendResponse(output, 400, JSONObject().put("error", "phone and message required"))
+                    } else {
+                        val sentId = smsSender.send(phone, message)
+                        onRequestLog?.invoke("📩 POST /api/v1/sms/send -> $phone")
+                        sendResponse(output, 200, JSONObject().apply {
+                            put("status", "success")
+                            put("id", sentId)
+                            put("phone", phone)
+                            put("message", message)
+                        })
+                    }
                 }
+                path == "/api/v1/mms/send" && method == "POST" -> {
+                    val json = JSONObject(body)
+                    val phone = json.optString("phone", "").trim()
+                    val imageUrl = json.optString("imageUrl", "").trim()
 
-                val imageUri = Uri.parse(imageUrl)
-                val success = mmsSender.sendImage(phone, imageUri)
-                onRequestLog?.invoke("🖼 POST /api/v1/mms/send -> Sent to $phone (success=$success)")
-
-                val response = JSONObject().apply {
-                    put("status", if (success) "success" else "failed")
-                    put("phone", phone)
-                    put("imageUrl", imageUrl)
+                    if (phone.isBlank() || imageUrl.isBlank()) {
+                        sendResponse(output, 400, JSONObject().put("error", "phone and imageUrl required"))
+                    } else {
+                        val success = mmsSender.sendImage(phone, Uri.parse(imageUrl))
+                        onRequestLog?.invoke("🖼 POST /api/v1/mms/send -> $phone (success=$success)")
+                        sendResponse(output, if (success) 200 else 500, JSONObject().apply {
+                            put("status", if (success) "success" else "failed")
+                            put("phone", phone)
+                        })
+                    }
                 }
-                sendJsonResponse(exchange, if (success) 200 else 500, response)
-
-            } catch (e: Exception) {
-                sendJsonResponse(exchange, 500, JSONObject().put("error", e.message ?: "Internal error"))
-            }
-        }
-    }
-
-    private inner class InboxHandler : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            if (exchange.requestMethod != "GET") {
-                sendJsonResponse(exchange, 405, JSONObject().put("error", "Method not allowed"))
-                return
-            }
-
-            if (!authenticate(exchange)) {
-                sendJsonResponse(exchange, 401, JSONObject().put("error", "Unauthorized"))
-                return
-            }
-
-            try {
-                val smsList = smsRepository.getAllSms().take(50)
-                val jsonArray = JSONArray()
-                smsList.forEach { sms ->
-                    jsonArray.put(JSONObject().apply {
-                        put("id", sms.id)
-                        put("sender", sms.sender)
-                        put("message", sms.message)
-                        put("date", sms.date)
-                        put("type", if (sms.type == 1) "received" else "sent")
+                path == "/api/v1/sms/inbox" && method == "GET" -> {
+                    val smsList = smsRepository.getAllSms().take(50)
+                    val jsonArray = JSONArray()
+                    smsList.forEach { sms ->
+                        jsonArray.put(JSONObject().apply {
+                            put("id", sms.id)
+                            put("sender", sms.sender)
+                            put("message", sms.message)
+                            put("date", sms.date)
+                            put("type", if (sms.type == 1) "received" else "sent")
+                        })
+                    }
+                    onRequestLog?.invoke("📬 GET /api/v1/sms/inbox -> ${smsList.size} items")
+                    sendResponse(output, 200, JSONObject().apply {
+                        put("status", "success")
+                        put("count", smsList.size)
+                        put("messages", jsonArray)
                     })
                 }
+                path == "/api/v1/status" -> {
+                    val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                    val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                    val defaultSms = try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
+                            roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_SMS) == true
+                        } else {
+                            Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
+                        }
+                    } catch (e: Exception) { false }
 
-                onRequestLog?.invoke("📬 GET /api/v1/sms/inbox -> Returned ${smsList.size} items")
-                sendJsonResponse(exchange, 200, JSONObject().apply {
-                    put("status", "success")
-                    put("count", smsList.size)
-                    put("messages", jsonArray)
-                })
-
-            } catch (e: Exception) {
-                sendJsonResponse(exchange, 500, JSONObject().put("error", e.message ?: "Internal error"))
+                    onRequestLog?.invoke("ℹ️ GET /api/v1/status -> 200 OK")
+                    sendResponse(output, 200, JSONObject().apply {
+                        put("status", "online")
+                        put("version", "1.0")
+                        put("ip", getLocalIpAddress())
+                        put("port", port)
+                        put("batteryLevel", batteryLevel)
+                        put("isDefaultSmsApp", defaultSms)
+                        put("timestamp", System.currentTimeMillis())
+                    })
+                }
+                else -> {
+                    sendResponse(output, 404, JSONObject().put("error", "Endpoint not found"))
+                }
             }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Client handler exception", e)
+        } finally {
+            try { socket.close() } catch (e: Exception) {}
         }
     }
 
-    private inner class StatusHandler : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-            val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-
-            val defaultSms = try {
-                Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
-            } catch (e: Exception) { false }
-
-            val response = JSONObject().apply {
-                put("status", "online")
-                put("version", "1.0")
-                put("ip", getLocalIpAddress())
-                put("port", port)
-                put("batteryLevel", batteryLevel)
-                put("isDefaultSmsApp", defaultSms)
-                put("timestamp", System.currentTimeMillis())
-            }
-
-            onRequestLog?.invoke("ℹ️ GET /api/v1/status -> 200 OK")
-            sendJsonResponse(exchange, 200, response)
+    private fun sendResponse(output: OutputStream, statusCode: Int, json: JSONObject) {
+        val statusMsg = when (statusCode) {
+            200 -> "OK"
+            400 -> "Bad Request"
+            401 -> "Unauthorized"
+            404 -> "Not Found"
+            405 -> "Method Not Allowed"
+            else -> "Internal Server Error"
         }
-    }
+        val bodyBytes = json.toString(2).toByteArray(Charsets.UTF_8)
+        val header = "HTTP/1.1 $statusCode $statusMsg\r\n" +
+                "Content-Type: application/json; charset=utf-8\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Content-Length: ${bodyBytes.size}\r\n" +
+                "Connection: close\r\n\r\n"
 
-    private fun sendJsonResponse(exchange: HttpExchange, statusCode: Int, json: JSONObject) {
-        val bytes = json.toString(2).toByteArray(Charsets.UTF_8)
-        exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
-        exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
-        exchange.responseBody.use { os ->
-            os.write(bytes)
-        }
+        output.write(header.toByteArray(Charsets.UTF_8))
+        output.write(bodyBytes)
+        output.flush()
     }
 }
