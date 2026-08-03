@@ -1,5 +1,14 @@
 package com.autonomousone.messages.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -71,6 +80,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.model.Sms
@@ -80,6 +91,14 @@ import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.utils.formatDateHeader
 import com.autonomousone.messages.viewmodel.ConversationViewModel
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 sealed class ChatListItem {
     data class DateSeparator(val dateText: String) : ChatListItem()
@@ -98,10 +117,123 @@ fun ConversationScreen(
     val viewModel: ConversationViewModel = viewModel()
     var message by remember { mutableStateOf("") }
     var showAttachmentSheet by remember { mutableStateOf(false) }
+    var isFetchingLocation by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // ── Camera capture ──────────────────────────────────────────────────────
+    // We create a temp file URI to pass to the camera app
+    val cameraImageUri = remember {
+        val photoFile = File(
+            context.cacheDir,
+            "camera_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg"
+        )
+        FileProvider.getUriForFile(context, "${context.packageName}.provider", photoFile)
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            val mapsLink = cameraImageUri.toString()
+            message = if (message.isBlank()) "[📷 Photo attached]" else "$message\n[📷 Photo attached]"
+        }
+    }
+
+    // ── Gallery / Image picker ───────────────────────────────────────────────
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Get display name of file
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            val fileName = cursor?.use { c ->
+                val nameIndex = c.getColumnIndex("_display_name")
+                if (c.moveToFirst() && nameIndex >= 0) c.getString(nameIndex) else "image"
+            } ?: "image"
+            cursor?.close()
+            message = if (message.isBlank()) "[🖼 $fileName]" else "$message\n[🖼 $fileName]"
+        }
+    }
+
+    // ── Audio file picker ────────────────────────────────────────────────────
+    val audioLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            val fileName = cursor?.use { c ->
+                val nameIndex = c.getColumnIndex("_display_name")
+                if (c.moveToFirst() && nameIndex >= 0) c.getString(nameIndex) else "audio"
+            } ?: "audio"
+            cursor?.close()
+            message = if (message.isBlank()) "[🎵 $fileName]" else "$message\n[🎵 $fileName]"
+        }
+    }
+
+    // ── Location permission ──────────────────────────────────────────────────
+    val locationPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            isFetchingLocation = true
+            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+            val cts = CancellationTokenSource()
+            fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                .addOnSuccessListener { location: Location? ->
+                    isFetchingLocation = false
+                    if (location != null) {
+                        val lat = "%.6f".format(location.latitude)
+                        val lon = "%.6f".format(location.longitude)
+                        val mapsLink = "📍 My location: https://maps.google.com/?q=$lat,$lon"
+                        message = if (message.isBlank()) mapsLink else "$message\n$mapsLink"
+                    }
+                }
+                .addOnFailureListener {
+                    isFetchingLocation = false
+                }
+        }
+    }
+
+    fun shareLocation() {
+        val fineGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (fineGranted || coarseGranted) {
+            isFetchingLocation = true
+            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+            val cts = CancellationTokenSource()
+            val priority = if (fineGranted) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            fusedClient.getCurrentLocation(priority, cts.token)
+                .addOnSuccessListener { location: Location? ->
+                    isFetchingLocation = false
+                    if (location != null) {
+                        val lat = "%.6f".format(location.latitude)
+                        val lon = "%.6f".format(location.longitude)
+                        val mapsLink = "📍 My location: https://maps.google.com/?q=$lat,$lon"
+                        message = if (message.isBlank()) mapsLink else "$message\n$mapsLink"
+                    }
+                }
+                .addOnFailureListener { isFetchingLocation = false }
+        } else {
+            locationPermLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
 
     LaunchedEffect(threadId, phone) {
         if (threadId != 0L) {
@@ -113,7 +245,6 @@ fun ConversationScreen(
 
     val messages = viewModel.messages
 
-    // Group messages with date section headers using derivedStateOf for instant updates
     val chatItems by remember {
         derivedStateOf {
             val items = mutableListOf<ChatListItem>()
@@ -137,16 +268,23 @@ fun ConversationScreen(
     }
 
     val recipientPhone = remember(phone, messages.size) {
-        if (phone.isNotBlank()) phone else if (messages.isNotEmpty()) messages.first().sender else ""
+        if (phone.isNotBlank()) phone
+        else if (messages.isNotEmpty()) messages.first().sender
+        else ""
     }
 
     val title = remember(phone, name, recipientPhone) {
         try {
             val contactMap = ContactRepository(context).getContactNameMap()
             val norm = ContactRepository.normalizePhone(recipientPhone)
-            contactMap[norm] ?: contactMap[recipientPhone] ?: if (name.isNotBlank()) name else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
+            contactMap[norm] ?: contactMap[recipientPhone]
+                ?: if (name.isNotBlank()) name
+                else if (recipientPhone.isNotBlank()) recipientPhone
+                else "Conversation"
         } catch (e: Exception) {
-            if (name.isNotBlank()) name else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
+            if (name.isNotBlank()) name
+            else if (recipientPhone.isNotBlank()) recipientPhone
+            else "Conversation"
         }
     }
 
@@ -156,7 +294,10 @@ fun ConversationScreen(
                 title = title,
                 phone = recipientPhone,
                 onBackClick = { navController.popBackStack() },
-                onCallClick = {},
+                onCallClick = {
+                    val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$recipientPhone"))
+                    context.startActivity(callIntent)
+                },
                 onVideoClick = {}
             )
         }
@@ -228,7 +369,7 @@ fun ConversationScreen(
                 }
             }
 
-            // Flagship Compose Field Container
+            // Message input bar
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -243,9 +384,7 @@ fun ConversationScreen(
                         .padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = { showAttachmentSheet = true }
-                    ) {
+                    IconButton(onClick = { showAttachmentSheet = true }) {
                         Icon(
                             imageVector = Icons.Default.AddCircle,
                             contentDescription = "Add attachment",
@@ -262,12 +401,11 @@ fun ConversationScreen(
                     ) {
                         if (message.isEmpty()) {
                             Text(
-                                text = "SMS message...",
+                                text = if (isFetchingLocation) "Fetching location…" else "SMS message...",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 fontSize = 16.sp
                             )
                         }
-
                         BasicTextField(
                             value = message,
                             onValueChange = { message = it },
@@ -290,16 +428,9 @@ fun ConversationScreen(
                     IconButton(
                         onClick = {
                             if (message.isBlank()) return@IconButton
-
-                            val destination = if (recipientPhone.isNotBlank()) {
-                                recipientPhone
-                            } else {
-                                phone
-                            }
-
+                            val destination = if (recipientPhone.isNotBlank()) recipientPhone else phone
                             val msgToSend = message
                             message = ""
-
                             viewModel.sendMessage(
                                 threadId = threadId,
                                 phone = destination,
@@ -333,7 +464,7 @@ fun ConversationScreen(
             }
         }
 
-        // Bottom Attachment Sheet
+        // ── Attachment Bottom Sheet ──────────────────────────────────────────
         if (showAttachmentSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showAttachmentSheet = false },
@@ -364,25 +495,39 @@ fun ConversationScreen(
                             icon = Icons.Default.Image,
                             label = "Gallery",
                             color = Color(0xFF3B82F6),
-                            onClick = { showAttachmentSheet = false }
+                            onClick = {
+                                showAttachmentSheet = false
+                                galleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            }
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.CameraAlt,
                             label = "Camera",
                             color = Color(0xFFEC4899),
-                            onClick = { showAttachmentSheet = false }
+                            onClick = {
+                                showAttachmentSheet = false
+                                cameraLauncher.launch(cameraImageUri)
+                            }
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.AudioFile,
                             label = "Audio",
                             color = Color(0xFF8B5CF6),
-                            onClick = { showAttachmentSheet = false }
+                            onClick = {
+                                showAttachmentSheet = false
+                                audioLauncher.launch("audio/*")
+                            }
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.LocationOn,
                             label = "Location",
                             color = Color(0xFF10B981),
-                            onClick = { showAttachmentSheet = false }
+                            onClick = {
+                                showAttachmentSheet = false
+                                shareLocation()
+                            }
                         )
                     }
 

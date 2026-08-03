@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Cache directory for camera captured images -->
+    <cache-path name="camera_images" path="." />
+    <!-- External files directory for shared media -->
+    <external-files-path name="external_files" path="." />
+</paths>
