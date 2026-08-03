@@ -67,18 +67,19 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.utils.formatDateHeader
 import com.autonomousone.messages.viewmodel.ConversationViewModel
-import kotlinx.coroutines.launch
 
 sealed class ChatListItem {
     data class DateSeparator(val dateText: String) : ChatListItem()
@@ -93,6 +94,7 @@ fun ConversationScreen(
     name: String,
     navController: NavController
 ) {
+    val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
     var message by remember { mutableStateOf("") }
     var showAttachmentSheet by remember { mutableStateOf(false) }
@@ -134,17 +136,18 @@ fun ConversationScreen(
         }
     }
 
-    val title = when {
-        name.isNotBlank() -> name
-        messages.isNotEmpty() -> messages.first().sender
-        phone.isNotBlank() -> phone
-        else -> "Conversation"
+    val recipientPhone = remember(phone, messages.size) {
+        if (phone.isNotBlank()) phone else if (messages.isNotEmpty()) messages.first().sender else ""
     }
 
-    val recipientPhone = when {
-        phone.isNotBlank() -> phone
-        messages.isNotEmpty() -> messages.first().sender
-        else -> ""
+    val title = remember(phone, name, recipientPhone) {
+        try {
+            val contactMap = ContactRepository(context).getContactNameMap()
+            val norm = ContactRepository.normalizePhone(recipientPhone)
+            contactMap[norm] ?: contactMap[recipientPhone] ?: if (name.isNotBlank()) name else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
+        } catch (e: Exception) {
+            if (name.isNotBlank()) name else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
+        }
     }
 
     Scaffold(
@@ -290,8 +293,6 @@ fun ConversationScreen(
 
                             val destination = if (recipientPhone.isNotBlank()) {
                                 recipientPhone
-                            } else if (messages.isNotEmpty()) {
-                                messages.first().sender
                             } else {
                                 phone
                             }

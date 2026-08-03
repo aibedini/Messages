@@ -18,7 +18,6 @@ class HomeViewModel(
 ) : AndroidViewModel(application) {
 
     private val repository = SmsRepository(application)
-    private val contactRepository = ContactRepository(application)
 
     val conversations = mutableStateListOf<Sms>()
 
@@ -35,25 +34,9 @@ class HomeViewModel(
     fun loadSms() {
         viewModelScope.launch(Dispatchers.IO) {
             val list = repository.getConversations()
-            val contactMap = try {
-                contactRepository.getContactNameMap()
-            } catch (e: Exception) {
-                emptyMap()
-            }
-
-            val enrichedList = list.map { sms ->
-                val normalizedSender = ContactRepository.normalizePhone(sms.sender)
-                val contactName = contactMap[normalizedSender] ?: contactMap[sms.sender]
-                if (contactName != null) {
-                    sms.copy(sender = contactName)
-                } else {
-                    sms
-                }
-            }
-
             withContext(Dispatchers.Main) {
                 conversations.clear()
-                conversations.addAll(enrichedList)
+                conversations.addAll(list)
             }
         }
     }
@@ -61,28 +44,22 @@ class HomeViewModel(
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                val contactMap = try {
-                    contactRepository.getContactNameMap()
-                } catch (e: Exception) {
-                    emptyMap()
-                }
-
                 val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
-                val contactName = contactMap[normalizedIncoming] ?: contactMap[incomingSms.sender]
-                val displaySms = if (contactName != null) incomingSms.copy(sender = contactName) else incomingSms
 
-                // Instantly update UI list state by placing incoming conversation at top
+                // Match existing conversation by phone or threadId
                 val existingIndex = conversations.indexOfFirst {
                     val norm = ContactRepository.normalizePhone(it.sender)
-                    norm == normalizedIncoming || it.sender == incomingSms.sender || it.threadId == incomingSms.threadId
+                    (norm.isNotBlank() && normalizedIncoming.isNotBlank() &&
+                            (norm == normalizedIncoming || norm.endsWith(normalizedIncoming) || normalizedIncoming.endsWith(norm))) ||
+                            (it.threadId != 0L && incomingSms.threadId != 0L && it.threadId == incomingSms.threadId)
                 }
 
                 if (existingIndex >= 0) {
                     conversations.removeAt(existingIndex)
                 }
-                conversations.add(0, displaySms)
+                conversations.add(0, incomingSms)
 
-                // Sync with repository database in background
+                // Sync with background storage
                 loadSms()
             }
         }

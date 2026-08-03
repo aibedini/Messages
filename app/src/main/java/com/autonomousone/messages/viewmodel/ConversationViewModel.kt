@@ -87,12 +87,11 @@ class ConversationViewModel(
                 val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
                 val normalizedCurrent = ContactRepository.normalizePhone(currentPhone)
 
-                val isMatch = (normalizedCurrent.isNotBlank() && normalizedIncoming == normalizedCurrent) ||
-                        (incomingSms.sender.isNotBlank() && incomingSms.sender == currentPhone) ||
-                        (currentThreadId != 0L && incomingSms.threadId == currentThreadId)
+                val isMatch = (normalizedCurrent.isNotBlank() && normalizedIncoming.isNotBlank() &&
+                        (normalizedIncoming == normalizedCurrent || normalizedIncoming.endsWith(normalizedCurrent) || normalizedCurrent.endsWith(normalizedIncoming))) ||
+                        (currentThreadId != 0L && incomingSms.threadId != 0L && incomingSms.threadId == currentThreadId)
 
                 if (isMatch) {
-                    // Append incoming SMS to active conversation list instantly
                     val isDuplicate = messages.any { it.id == incomingSms.id || (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 2000) }
                     if (!isDuplicate) {
                         messages.add(incomingSms)
@@ -134,7 +133,7 @@ class ConversationViewModel(
         val trimmedMsg = message.trim()
         if (trimmedMsg.isBlank()) return
 
-        val targetPhone = if (phone.isNotBlank()) phone else currentPhone
+        var targetPhone = if (phone.isNotBlank()) phone else currentPhone
         if (targetPhone.isBlank()) return
 
         currentPhone = targetPhone

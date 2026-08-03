@@ -30,15 +30,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.theme.StatusError
 import com.autonomousone.messages.ui.theme.UnreadBadgeColor
 import com.autonomousone.messages.utils.formatConversationDate
@@ -52,6 +55,17 @@ fun SmsItem(
     onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val displayName = remember(sms.sender) {
+        try {
+            val contactMap = ContactRepository(context).getContactNameMap()
+            val norm = ContactRepository.normalizePhone(sms.sender)
+            contactMap[norm] ?: contactMap[sms.sender] ?: sms.sender
+        } catch (e: Exception) {
+            sms.sender
+        }
+    }
+
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
@@ -127,7 +141,7 @@ fun SmsItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Avatar(
-                            name = sms.sender,
+                            name = displayName,
                             size = AvatarSize.Medium
                         )
 
@@ -140,7 +154,7 @@ fun SmsItem(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = sms.sender,
+                                    text = displayName,
                                     fontWeight = if (sms.unread) FontWeight.ExtraBold else FontWeight.SemiBold,
                                     fontSize = 16.sp,
                                     color = MaterialTheme.colorScheme.onSurface,
