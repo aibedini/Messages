@@ -83,15 +83,18 @@ fun HomeScreen(
 
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { }
+                onClick = {
+                    navController.navigate(
+                        Screen.NewConversation.route
+                    )
+                }
             ) {
                 Icon(
                     Icons.Default.Add,
-                    contentDescription = null
+                    contentDescription = "New Conversation"
                 )
             }
         }
-
     ) { padding ->
 
         if (!hasPermission) {

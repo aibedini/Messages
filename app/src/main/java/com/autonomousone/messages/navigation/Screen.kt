@@ -1,14 +1,46 @@
 package com.autonomousone.messages.navigation
-import com.autonomousone.messages.navigation.Screen
+
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String) {
 
     object Home : Screen("home")
 
-    object Conversation : Screen("conversation/{threadId}") {
+    object NewConversation : Screen("new_conversation")
 
-        fun createRoute(threadId: Long): String {
+    object Conversation :
+        Screen("conversation/{threadId}?phone={phone}&name={name}") {
+
+        fun createRoute(
+            threadId: Long
+        ): String {
+
             return "conversation/$threadId"
+
         }
+
+        fun createNewRoute(
+            phone: String,
+            name: String
+        ): String {
+
+            val encodedPhone =
+                URLEncoder.encode(
+                    phone,
+                    StandardCharsets.UTF_8.toString()
+                )
+
+            val encodedName =
+                URLEncoder.encode(
+                    name,
+                    StandardCharsets.UTF_8.toString()
+                )
+
+            return "conversation/0?phone=$encodedPhone&name=$encodedName"
+
+        }
+
     }
+
 }

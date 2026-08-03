@@ -30,6 +30,11 @@ class MainActivity : ComponentActivity() {
                             ContextCompat.checkSelfPermission(
                                 this,
                                 Manifest.permission.SEND_SMS
+                            ) == PackageManager.PERMISSION_GRANTED &&
+
+                            ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.READ_CONTACTS
                             ) == PackageManager.PERMISSION_GRANTED
 
                 )
@@ -43,7 +48,8 @@ class MainActivity : ComponentActivity() {
 
                     hasPermission =
                         permissions[Manifest.permission.READ_SMS] == true &&
-                                permissions[Manifest.permission.SEND_SMS] == true
+                                permissions[Manifest.permission.SEND_SMS] == true &&
+                                permissions[Manifest.permission.READ_CONTACTS] == true
 
                 }
 
@@ -54,7 +60,8 @@ class MainActivity : ComponentActivity() {
                     permissionLauncher.launch(
                         arrayOf(
                             Manifest.permission.READ_SMS,
-                            Manifest.permission.SEND_SMS
+                            Manifest.permission.SEND_SMS,
+                            Manifest.permission.READ_CONTACTS
                         )
                     )
 

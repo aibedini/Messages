@@ -18,15 +18,13 @@ class ConversationViewModel(
 
     val messages = mutableStateListOf<Sms>()
 
-    private var currentThreadId: Long = 0L
+    private var currentThreadId = 0L
+
+    private var currentPhone = ""
 
     private val observer = SmsContentObserver {
 
-        if (currentThreadId != 0L) {
-
-            loadConversation(currentThreadId)
-
-        }
+        refresh()
 
     }
 
@@ -42,11 +40,74 @@ class ConversationViewModel(
 
         currentThreadId = threadId
 
-        val sms = repository.getMessagesByThread(threadId)
+        if (threadId != 0L) {
 
-        messages.clear()
+            messages.clear()
 
-        messages.addAll(sms)
+            messages.addAll(
+                repository.getMessagesByThread(threadId)
+            )
+
+            if (messages.isNotEmpty()) {
+
+                currentPhone = messages.first().sender
+
+            }
+
+        }
+
+    }
+
+    fun setPhone(
+        phone: String
+    ) {
+
+        currentPhone = phone
+
+    }
+
+    private fun refresh() {
+
+        if (currentThreadId != 0L) {
+
+            messages.clear()
+
+            messages.addAll(
+                repository.getMessagesByThread(currentThreadId)
+            )
+
+            return
+
+        }
+
+        if (currentPhone.isBlank())
+            return
+
+        val conversation =
+
+            repository
+                .getConversations()
+                .firstOrNull {
+
+                    it.sender == currentPhone
+
+                }
+
+        if (conversation != null) {
+
+            currentThreadId = conversation.threadId
+
+            messages.clear()
+
+            messages.addAll(
+
+                repository.getMessagesByThread(
+                    currentThreadId
+                )
+
+            )
+
+        }
 
     }
 
@@ -56,21 +117,25 @@ class ConversationViewModel(
         message: String
     ) {
 
-        if (message.isBlank()) return
+        if (message.isBlank())
+            return
+
+        currentPhone = phone
 
         smsSender.send(
-            phone = phone,
-            text = message
+            phone,
+            message
         )
 
-        // ContentObserver refreshes automatically.
-        // No need to call loadConversation() here.
+        refresh()
 
     }
 
     override fun onCleared() {
 
-        repository.unregisterObserver(observer)
+        repository.unregisterObserver(
+            observer
+        )
 
         super.onCleared()
 
