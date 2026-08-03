@@ -1,32 +1,68 @@
 package com.autonomousone.messages.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.*
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.autonomousone.messages.model.Contact
 import com.autonomousone.messages.navigation.Screen
+import com.autonomousone.messages.ui.components.AppSearchBar
+import com.autonomousone.messages.ui.components.Avatar
+import com.autonomousone.messages.ui.components.AvatarSize
 import com.autonomousone.messages.ui.components.ContactItem
+import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.viewmodel.NewConversationViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,12 +70,8 @@ import com.autonomousone.messages.viewmodel.NewConversationViewModel
 fun NewConversationScreen(
     navController: NavController
 ) {
-
     val viewModel: NewConversationViewModel = viewModel()
-
-    var search by remember {
-        mutableStateOf("")
-    }
+    var search by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.loadContacts()
@@ -47,202 +79,235 @@ fun NewConversationScreen(
 
     val contacts = viewModel.contacts
 
-    val filtered = contacts.filter {
-
-        it.name.contains(search, ignoreCase = true) ||
-                it.phone.contains(search)
-
+    val filteredContacts = remember(contacts, search) {
+        contacts.filter {
+            it.name.contains(search, ignoreCase = true) ||
+                    it.phone.contains(search)
+        }
     }
 
-    val canStartNewConversation =
-        search.isNotBlank() &&
-                search.any { it.isDigit() }
+    val canStartNewConversation = remember(search) {
+        search.isNotBlank() && search.any { it.isDigit() }
+    }
+
+    // Frequent contacts top row (first 6 contacts)
+    val frequentContacts = remember(contacts) {
+        contacts.take(6)
+    }
 
     Scaffold(
-
         topBar = {
-
             TopAppBar(
-
                 title = {
-                    Text("New Conversation")
+                    Text(
+                        text = "New Conversation",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
-
                 navigationIcon = {
-
-                    IconButton(
-                        onClick = {
-                            navController.popBackStack()
-                        }
-                    ) {
-
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
-                            Icons.Default.ArrowBack,
-                            contentDescription = null
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
                         )
-
                     }
-
-                }
-
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
             )
-
         }
-
     ) { padding ->
-
         Column(
-
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-
         ) {
-
-            OutlinedTextField(
-
-                value = search,
-
-                onValueChange = {
-                    search = it
-                },
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-
-                leadingIcon = {
-
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null
-                    )
-
-                },
-
-                placeholder = {
-
-                    Text("Search contact or phone")
-
-                },
-
-                singleLine = true
-
+            // Flagship Pill SearchBar
+            AppSearchBar(
+                query = search,
+                onQueryChange = { search = it },
+                placeholderText = "Type a name or phone number..."
             )
 
-            if (canStartNewConversation) {
-
+            // Hero Card for Direct Phone Number Messaging
+            AnimatedVisibility(
+                visible = canStartNewConversation,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
                 Card(
-
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .clickable {
-
                             navController.navigate(
-
                                 Screen.Conversation.createNewRoute(
                                     phone = search,
                                     name = search
                                 )
-
                             )
-
                         },
-
-                    elevation = CardDefaults.cardElevation(
-                        defaultElevation = 2.dp
-                    )
-
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-
                     Row(
-
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
-
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
 
-                        Icon(
-                            Icons.Default.PersonAdd,
-                            contentDescription = null
-                        )
+                        Spacer(modifier = Modifier.width(16.dp))
 
-                        Spacer(
-                            modifier = Modifier.width(16.dp)
-                        )
-
-                        Column {
-
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Text(
-                                text = "Send to",
-                                style = MaterialTheme.typography.bodyMedium
+                                text = "Send SMS to",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
-
-                            Spacer(
-                                modifier = Modifier.height(4.dp)
-                            )
-
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = search,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-
                         }
 
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
-
                 }
-
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
-
-                Divider()
-
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
-            ) {
-
-                items(
-
-                    items = filtered,
-
-                    key = {
-                        "${it.id}_${it.phone}"
-                    }
-
-                ) { contact ->
-
-                    ContactItem(
-
-                        contact = contact,
-
-                        onClick = {
-
-                            navController.navigate(
-
-                                Screen.Conversation.createNewRoute(
-                                    phone = contact.phone,
-                                    name = contact.name
-                                )
-
-                            )
-
-                        }
-
+            // Favorites / Frequent Contacts Carousel (shown when search query is empty)
+            if (search.isEmpty() && frequentContacts.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Frequent Contacts",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                     )
 
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        frequentContacts.forEach { contact ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .width(64.dp)
+                                    .clickable {
+                                        navController.navigate(
+                                            Screen.Conversation.createNewRoute(
+                                                phone = contact.phone,
+                                                name = contact.name
+                                            )
+                                        )
+                                    }
+                            ) {
+                                Avatar(
+                                    name = contact.name,
+                                    size = AvatarSize.Large
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = contact.name.split(" ").firstOrNull() ?: contact.name,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
                 }
-
             }
 
+            // Contact List Header
+            Text(
+                text = "All Contacts (${filteredContacts.size})",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+
+            if (filteredContacts.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyView(
+                        title = if (search.isNotBlank()) "No Contacts Found" else "No Contacts",
+                        subtitle = if (search.isNotBlank()) {
+                            "No contacts matching \"$search\"."
+                        } else {
+                            "No contacts were found on your device."
+                        },
+                        icon = Icons.Default.Contacts,
+                        buttonText = null,
+                        onButtonClick = null
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(
+                        items = filteredContacts,
+                        key = { "${it.id}_${it.phone}" }
+                    ) { contact ->
+                        ContactItem(
+                            contact = contact,
+                            onClick = {
+                                navController.navigate(
+                                    Screen.Conversation.createNewRoute(
+                                        phone = contact.phone,
+                                        name = contact.name
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+            }
         }
-
     }
-
 }
