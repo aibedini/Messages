@@ -162,9 +162,11 @@ class GatewayServer(
                 return
             }
 
+            val cleanPath = path.substringBefore("?").removeSuffix("/")
+
             // 5. Route request
             when {
-                path == "/api/v1/sms/send" && method == "POST" -> {
+                cleanPath == "/api/v1/sms/send" && method == "POST" -> {
                     val json = JSONObject(body)
                     val phone = json.optString("phone", "").trim()
                     val message = json.optString("message", "").trim()
@@ -182,7 +184,7 @@ class GatewayServer(
                         })
                     }
                 }
-                path == "/api/v1/mms/send" && method == "POST" -> {
+                cleanPath == "/api/v1/mms/send" && method == "POST" -> {
                     val json = JSONObject(body)
                     val phone = json.optString("phone", "").trim()
                     val imageUrl = json.optString("imageUrl", "").trim()
@@ -198,26 +200,35 @@ class GatewayServer(
                         })
                     }
                 }
-                path == "/api/v1/sms/inbox" && method == "GET" -> {
-                    val smsList = smsRepository.getAllSms().take(50)
-                    val jsonArray = JSONArray()
-                    smsList.forEach { sms ->
-                        jsonArray.put(JSONObject().apply {
-                            put("id", sms.id)
-                            put("sender", sms.sender)
-                            put("message", sms.message)
-                            put("date", sms.date)
-                            put("type", if (sms.type == 1) "received" else "sent")
+                cleanPath == "/api/v1/sms/inbox" && method == "GET" -> {
+                    try {
+                        val smsList = smsRepository.getAllSms().take(50)
+                        val jsonArray = JSONArray()
+                        smsList.forEach { sms ->
+                            jsonArray.put(JSONObject().apply {
+                                put("id", sms.id)
+                                put("sender", sms.sender)
+                                put("message", sms.message)
+                                put("date", sms.date)
+                                put("type", if (sms.type == 1) "received" else "sent")
+                            })
+                        }
+                        onRequestLog?.invoke("📬 GET /api/v1/sms/inbox -> ${smsList.size} items")
+                        sendResponse(output, 200, JSONObject().apply {
+                            put("status", "success")
+                            put("count", smsList.size)
+                            put("messages", jsonArray)
+                        })
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Inbox query failed", e)
+                        onRequestLog?.invoke("❌ GET /api/v1/sms/inbox error: ${e.message}")
+                        sendResponse(output, 500, JSONObject().apply {
+                            put("status", "error")
+                            put("error", e.message ?: "Failed to query SMS database")
                         })
                     }
-                    onRequestLog?.invoke("📬 GET /api/v1/sms/inbox -> ${smsList.size} items")
-                    sendResponse(output, 200, JSONObject().apply {
-                        put("status", "success")
-                        put("count", smsList.size)
-                        put("messages", jsonArray)
-                    })
                 }
-                path == "/api/v1/status" -> {
+                cleanPath == "/api/v1/status" -> {
                     val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                     val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
                     val defaultSms = try {
@@ -247,6 +258,10 @@ class GatewayServer(
 
         } catch (e: Exception) {
             Log.e(TAG, "Client handler exception", e)
+            try {
+                val output = socket.getOutputStream()
+                sendResponse(output, 500, JSONObject().put("error", e.message ?: "Internal server error"))
+            } catch (ignored: Exception) {}
         } finally {
             try { socket.close() } catch (e: Exception) {}
         }
