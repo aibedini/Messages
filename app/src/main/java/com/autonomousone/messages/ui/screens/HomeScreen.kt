@@ -89,19 +89,21 @@ fun HomeScreen(
         }
     }
 
-    val filteredList = remember(smsList, search, selectedFilter) {
-        smsList.filter { sms ->
-            val matchesSearch = search.isBlank() ||
-                    sms.sender.contains(search, ignoreCase = true) ||
-                    sms.message.contains(search, ignoreCase = true)
+    val filteredList by remember(search, selectedFilter) {
+        derivedStateOf {
+            smsList.filter { sms ->
+                val matchesSearch = search.isBlank() ||
+                        sms.sender.contains(search, ignoreCase = true) ||
+                        sms.message.contains(search, ignoreCase = true)
 
-            val matchesFilter = when (selectedFilter) {
-                ConversationFilter.All -> true
-                ConversationFilter.Unread -> sms.unread
-                ConversationFilter.Archived -> false
+                val matchesFilter = when (selectedFilter) {
+                    ConversationFilter.All -> true
+                    ConversationFilter.Unread -> sms.unread
+                    ConversationFilter.Archived -> false
+                }
+
+                matchesSearch && matchesFilter
             }
-
-            matchesSearch && matchesFilter
         }
     }
 

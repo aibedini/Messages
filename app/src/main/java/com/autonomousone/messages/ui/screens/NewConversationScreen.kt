@@ -28,7 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contacts
-import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,12 +35,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,14 +48,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.autonomousone.messages.model.Contact
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.Avatar
@@ -79,20 +76,26 @@ fun NewConversationScreen(
 
     val contacts = viewModel.contacts
 
-    val filteredContacts = remember(contacts, search) {
-        contacts.filter {
-            it.name.contains(search, ignoreCase = true) ||
-                    it.phone.contains(search)
+    val filteredContacts by remember(search) {
+        derivedStateOf {
+            contacts.filter {
+                it.name.contains(search, ignoreCase = true) ||
+                        it.phone.contains(search)
+            }
         }
     }
 
-    val canStartNewConversation = remember(search) {
-        search.isNotBlank() && search.any { it.isDigit() }
+    val canStartNewConversation by remember(search) {
+        derivedStateOf {
+            search.isNotBlank() && search.any { it.isDigit() }
+        }
     }
 
     // Frequent contacts top row (first 6 contacts)
-    val frequentContacts = remember(contacts) {
-        contacts.take(6)
+    val frequentContacts by remember {
+        derivedStateOf {
+            contacts.take(6)
+        }
     }
 
     Scaffold(
