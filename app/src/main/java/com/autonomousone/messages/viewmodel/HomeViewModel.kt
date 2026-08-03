@@ -32,6 +32,8 @@ class HomeViewModel(
 
     fun loadSms() {
         viewModelScope.launch(Dispatchers.IO) {
+            val contactRepo = ContactRepository(getApplication())
+            contactRepo.getContactNameMapAsync()
             val freshList = repository.getConversations()
             withContext(Dispatchers.Main) {
                 conversations.clear()

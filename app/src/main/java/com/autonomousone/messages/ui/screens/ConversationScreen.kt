@@ -258,17 +258,10 @@ fun ConversationScreen(
     }
 
     val title = remember(phone, name, recipientPhone) {
-        try {
-            val contactMap = ContactRepository(context).getContactNameMap()
-            val norm = ContactRepository.normalizePhone(recipientPhone)
-            contactMap[norm] ?: contactMap[recipientPhone]
-                ?: if (name.isNotBlank()) name
-                else if (recipientPhone.isNotBlank()) recipientPhone
-                else "Conversation"
-        } catch (e: Exception) {
-            if (name.isNotBlank()) name
-            else if (recipientPhone.isNotBlank()) recipientPhone
-            else "Conversation"
+        if (name.isNotBlank()) name
+        else {
+            val cached = ContactRepository(context).getCachedDisplayName(recipientPhone)
+            if (cached.isNotBlank()) cached else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
         }
     }
 

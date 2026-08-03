@@ -57,13 +57,7 @@ fun SmsItem(
 ) {
     val context = LocalContext.current
     val displayName = remember(sms.sender) {
-        try {
-            val contactMap = ContactRepository(context).getContactNameMap()
-            val norm = ContactRepository.normalizePhone(sms.sender)
-            contactMap[norm] ?: contactMap[sms.sender] ?: sms.sender
-        } catch (e: Exception) {
-            sms.sender
-        }
+        ContactRepository(context).getCachedDisplayName(sms.sender)
     }
 
     val dismissState = rememberSwipeToDismissBoxState(
