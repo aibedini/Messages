@@ -1,6 +1,7 @@
 package com.autonomousone.messages.receiver
 
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
@@ -45,8 +46,24 @@ class SmsReceiver : BroadcastReceiver() {
 
             Log.d("SMS_RECEIVER", "Incoming SMS from $sender (subId=$subId): $fullBody")
 
+            // Persist incoming SMS into Telephony.Sms.Inbox
+            val insertedId = try {
+                val values = ContentValues().apply {
+                    put(Telephony.Sms.ADDRESS, sender)
+                    put(Telephony.Sms.BODY, fullBody)
+                    put(Telephony.Sms.DATE, timestamp)
+                    put(Telephony.Sms.READ, 0)
+                    put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
+                }
+                val uri = context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                uri?.lastPathSegment?.toLongOrNull() ?: System.currentTimeMillis()
+            } catch (e: Exception) {
+                Log.e("SMS_RECEIVER", "Error persisting incoming SMS to ContentProvider", e)
+                System.currentTimeMillis()
+            }
+
             val incomingSms = Sms(
-                id = System.currentTimeMillis(),
+                id = insertedId,
                 threadId = 0L,
                 sender = sender,
                 message = fullBody,

@@ -35,18 +35,8 @@ class HomeViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val freshList = repository.getConversations()
             withContext(Dispatchers.Main) {
-                if (conversations.isEmpty()) {
-                    conversations.addAll(freshList)
-                } else {
-                    // Merge fresh database state with pending in-memory items
-                    val freshIds = freshList.map { it.id }.toSet()
-                    val pendingRealtimeItems = conversations.filter { pending ->
-                        freshIds.none { it == pending.id } &&
-                                freshList.none { f -> f.message == pending.message && Math.abs(f.date - pending.date) < 5000 }
-                    }
-                    conversations.clear()
-                    conversations.addAll((pendingRealtimeItems + freshList).sortedByDescending { it.date })
-                }
+                conversations.clear()
+                conversations.addAll(freshList)
             }
         }
     }
@@ -56,12 +46,12 @@ class HomeViewModel(
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
                 val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
 
-                // Match existing conversation by normalized phone or threadId
+                // Remove existing conversation for this phone number to avoid duplicates
                 val existingIndex = conversations.indexOfFirst {
                     val norm = ContactRepository.normalizePhone(it.sender)
                     (norm.isNotBlank() && normalizedIncoming.isNotBlank() &&
                             (norm == normalizedIncoming || norm.endsWith(normalizedIncoming) || normalizedIncoming.endsWith(norm))) ||
-                            (it.threadId != 0L && incomingSms.threadId != 0L && it.threadId == incomingSms.threadId)
+                            it.sender == incomingSms.sender
                 }
 
                 if (existingIndex >= 0) {

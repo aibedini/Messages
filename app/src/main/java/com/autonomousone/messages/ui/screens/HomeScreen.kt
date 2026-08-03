@@ -244,7 +244,7 @@ fun HomeScreen(
                             sms = sms,
                             onClick = {
                                 navController.navigate(
-                                    Screen.Conversation.createRoute(sms.threadId)
+                                    Screen.Conversation.createRoute(sms.threadId, sms.sender)
                                 )
                             },
                             onArchive = {

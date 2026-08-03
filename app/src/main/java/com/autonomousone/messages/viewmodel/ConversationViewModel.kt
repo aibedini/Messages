@@ -47,20 +47,20 @@ class ConversationViewModel(
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            val loadedMessages = if (threadId != 0L) {
-                repository.getMessagesByThread(threadId)
-            } else if (currentPhone.isNotBlank()) {
+            val loadedMessages = if (currentPhone.isNotBlank()) {
                 repository.getMessagesByPhone(currentPhone)
+            } else if (threadId != 0L) {
+                repository.getMessagesByThread(threadId)
             } else {
                 emptyList()
             }
 
             withContext(Dispatchers.Main) {
+                messages.clear()
+                messages.addAll(loadedMessages)
                 if (loadedMessages.isNotEmpty()) {
-                    messages.clear()
-                    messages.addAll(loadedMessages)
                     if (currentThreadId == 0L) {
-                        currentThreadId = loadedMessages.first().threadId
+                        currentThreadId = loadedMessages.last().threadId
                     }
                     if (currentPhone.isBlank()) {
                         currentPhone = loadedMessages.first().sender
@@ -76,8 +76,8 @@ class ConversationViewModel(
     ) {
         currentPhone = phone
         SmsEventBus.activeConversationPhone = phone
-        if (currentThreadId == 0L && phone.isNotBlank()) {
-            loadConversation(0L, phone)
+        if (phone.isNotBlank()) {
+            loadConversation(currentThreadId, phone)
         }
     }
 
@@ -89,7 +89,7 @@ class ConversationViewModel(
 
                 val isMatch = (normalizedCurrent.isNotBlank() && normalizedIncoming.isNotBlank() &&
                         (normalizedIncoming == normalizedCurrent || normalizedIncoming.endsWith(normalizedCurrent) || normalizedCurrent.endsWith(normalizedIncoming))) ||
-                        (currentThreadId != 0L && incomingSms.threadId != 0L && incomingSms.threadId == currentThreadId)
+                        (incomingSms.sender.isNotBlank() && incomingSms.sender == currentPhone)
 
                 if (isMatch) {
                     val isDuplicate = messages.any { it.id == incomingSms.id || (it.message == incomingSms.message && Math.abs(it.date - incomingSms.date) < 5000) }
@@ -103,28 +103,18 @@ class ConversationViewModel(
 
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            val freshMessages = if (currentThreadId != 0L) {
-                repository.getMessagesByThread(currentThreadId)
-            } else if (currentPhone.isNotBlank()) {
+            val freshMessages = if (currentPhone.isNotBlank()) {
                 repository.getMessagesByPhone(currentPhone)
+            } else if (currentThreadId != 0L) {
+                repository.getMessagesByThread(currentThreadId)
             } else {
                 emptyList()
             }
 
             withContext(Dispatchers.Main) {
                 if (freshMessages.isNotEmpty()) {
-                    val firstMatch = freshMessages.first()
-                    if (currentThreadId == 0L) {
-                        currentThreadId = firstMatch.threadId
-                    }
-                    // Merge fresh database messages with unsaved pending real-time items
-                    val freshIds = freshMessages.map { it.id }.toSet()
-                    val unsavedPending = messages.filter { pending ->
-                        freshIds.none { it == pending.id } &&
-                                freshMessages.none { f -> f.message == pending.message && Math.abs(f.date - pending.date) < 5000 }
-                    }
                     messages.clear()
-                    messages.addAll((freshMessages + unsavedPending).sortedBy { it.date })
+                    messages.addAll(freshMessages)
                 }
             }
         }

@@ -65,9 +65,15 @@ class SmsRepository(
         return smsList
     }
 
+    /**
+     * Group conversations by normalized phone address to eliminate duplicates.
+     */
     fun getConversations(): List<Sms> {
         val conversations = getAllSms()
-            .groupBy { it.threadId }
+            .groupBy {
+                val norm = ContactRepository.normalizePhone(it.sender)
+                if (norm.isNotBlank()) norm else it.sender
+            }
             .mapNotNull { (_, messages) ->
                 messages.maxByOrNull { it.date }
             }
@@ -85,9 +91,14 @@ class SmsRepository(
 
     fun getMessagesByPhone(phone: String): List<Sms> {
         if (phone.isBlank()) return emptyList()
-        val normalized = ContactRepository.normalizePhone(phone)
+        val targetNorm = ContactRepository.normalizePhone(phone)
         return getAllSms()
-            .filter { ContactRepository.normalizePhone(it.sender) == normalized || it.sender == phone }
+            .filter {
+                val norm = ContactRepository.normalizePhone(it.sender)
+                (norm.isNotBlank() && targetNorm.isNotBlank() &&
+                        (norm == targetNorm || norm.endsWith(targetNorm) || targetNorm.endsWith(norm))) ||
+                        it.sender == phone
+            }
             .sortedBy { it.date }
     }
 
@@ -96,20 +107,20 @@ class SmsRepository(
             val values = ContentValues().apply {
                 put(Telephony.Sms.READ, 1)
             }
-            if (threadId > 0) {
-                context.contentResolver.update(
-                    Telephony.Sms.CONTENT_URI,
-                    values,
-                    "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
-                    arrayOf(threadId.toString())
-                )
-            } else if (phone.isNotBlank()) {
+            if (phone.isNotBlank()) {
                 val normalized = ContactRepository.normalizePhone(phone)
                 context.contentResolver.update(
                     Telephony.Sms.CONTENT_URI,
                     values,
                     "${Telephony.Sms.ADDRESS} LIKE ? AND ${Telephony.Sms.READ} = 0",
                     arrayOf("%$normalized%")
+                )
+            } else if (threadId > 0) {
+                context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    values,
+                    "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
+                    arrayOf(threadId.toString())
                 )
             }
         } catch (e: Exception) {
