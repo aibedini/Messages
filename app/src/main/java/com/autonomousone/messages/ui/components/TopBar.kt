@@ -45,6 +45,7 @@ fun MainTopBar(
     onProfileClick: () -> Unit = {},
     onSearchClick: () -> Unit = {},
     onMarkAllReadClick: () -> Unit = {},
+    onGatewayClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -89,6 +90,13 @@ fun MainTopBar(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("SMS Gateway") },
+                        onClick = {
+                            showMenu = false
+                            onGatewayClick()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Mark all as read") },
                         onClick = {

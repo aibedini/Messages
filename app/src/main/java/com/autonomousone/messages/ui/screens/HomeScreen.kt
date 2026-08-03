@@ -127,6 +127,7 @@ fun HomeScreen(
                 onProfileClick = {},
                 onSearchClick = {},
                 onMarkAllReadClick = {},
+                onGatewayClick = { navController.navigate(Screen.Gateway.route) },
                 onSettingsClick = {}
             )
         },

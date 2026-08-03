@@ -99,6 +99,9 @@ class SmsReceiver : BroadcastReceiver() {
             // Emit immediately for optimistic UI update
             SmsEventBus.emitSms(incomingSms)
 
+            // Forward to Gateway Webhook if configured
+            com.autonomousone.messages.gateway.WebhookEngine.sendIncomingSmsWebhook(context, incomingSms)
+
             // Show notification unless user is actively viewing this conversation
             val activePhone = SmsEventBus.activeConversationPhone
             val normalizedSender = ContactRepository.normalizePhone(sender)

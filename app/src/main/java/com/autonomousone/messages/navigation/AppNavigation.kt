@@ -80,6 +80,12 @@ fun AppNavigation(
             )
         }
 
+        composable(Screen.Gateway.route) {
+            com.autonomousone.messages.ui.screens.GatewayScreen(
+                navController = navController
+            )
+        }
+
         composable(
             route = Screen.Conversation.route,
             arguments = listOf(
