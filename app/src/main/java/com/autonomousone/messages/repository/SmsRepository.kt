@@ -11,11 +11,9 @@ class SmsRepository(
 ) {
 
     fun getAllSms(): List<Sms> {
-
         val smsList = mutableListOf<Sms>()
 
         try {
-
             val projection = arrayOf(
                 Telephony.Sms._ID,
                 Telephony.Sms.THREAD_ID,
@@ -43,7 +41,6 @@ class SmsRepository(
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
                 while (cursor.moveToNext()) {
-
                     smsList.add(
                         Sms(
                             id = cursor.getLong(idIndex),
@@ -61,16 +58,13 @@ class SmsRepository(
             Log.d("SMS_DEBUG", "Total SMS Read = ${smsList.size}")
 
         } catch (e: Exception) {
-
             Log.e("SMS_DEBUG", "Error reading SMS", e)
-
         }
 
         return smsList
     }
 
     fun getConversations(): List<Sms> {
-
         val conversations = getAllSms()
             .groupBy { it.threadId }
             .mapNotNull { (_, messages) ->
@@ -79,16 +73,21 @@ class SmsRepository(
             .sortedByDescending { it.date }
 
         Log.d("SMS_DEBUG", "Total Conversations = ${conversations.size}")
-
         return conversations
     }
 
     fun getMessagesByThread(threadId: Long): List<Sms> {
-
         return getAllSms()
             .filter { it.threadId == threadId }
             .sortedBy { it.date }
+    }
 
+    fun getMessagesByPhone(phone: String): List<Sms> {
+        if (phone.isBlank()) return emptyList()
+        val normalized = ContactRepository.normalizePhone(phone)
+        return getAllSms()
+            .filter { ContactRepository.normalizePhone(it.sender) == normalized || it.sender == phone }
+            .sortedBy { it.date }
     }
 
     /**
@@ -97,13 +96,11 @@ class SmsRepository(
     fun registerObserver(
         observer: ContentObserver
     ) {
-
         context.contentResolver.registerContentObserver(
             Telephony.Sms.CONTENT_URI,
             true,
             observer
         )
-
     }
 
     /**
@@ -112,11 +109,8 @@ class SmsRepository(
     fun unregisterObserver(
         observer: ContentObserver
     ) {
-
         context.contentResolver.unregisterContentObserver(
             observer
         )
-
     }
-
 }

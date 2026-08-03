@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,7 +103,7 @@ fun ConversationScreen(
 
     LaunchedEffect(threadId, phone) {
         if (threadId != 0L) {
-            viewModel.loadConversation(threadId)
+            viewModel.loadConversation(threadId, phone)
         } else {
             viewModel.setPhone(phone)
         }
@@ -110,19 +111,21 @@ fun ConversationScreen(
 
     val messages = viewModel.messages
 
-    // Group messages with date section headers
-    val chatItems = remember(messages) {
-        val items = mutableListOf<ChatListItem>()
-        var lastDateHeader = ""
-        messages.forEach { sms ->
-            val header = formatDateHeader(sms.date)
-            if (header != lastDateHeader && header.isNotBlank()) {
-                items.add(ChatListItem.DateSeparator(header))
-                lastDateHeader = header
+    // Group messages with date section headers using derivedStateOf for instant updates
+    val chatItems by remember {
+        derivedStateOf {
+            val items = mutableListOf<ChatListItem>()
+            var lastDateHeader = ""
+            messages.forEach { sms ->
+                val header = formatDateHeader(sms.date)
+                if (header != lastDateHeader && header.isNotBlank()) {
+                    items.add(ChatListItem.DateSeparator(header))
+                    lastDateHeader = header
+                }
+                items.add(ChatListItem.MessageItem(sms))
             }
-            items.add(ChatListItem.MessageItem(sms))
+            items
         }
-        items
     }
 
     LaunchedEffect(chatItems.size) {
@@ -161,7 +164,7 @@ fun ConversationScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            if (messages.isEmpty()) {
+            if (chatItems.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -285,19 +288,22 @@ fun ConversationScreen(
                         onClick = {
                             if (message.isBlank()) return@IconButton
 
-                            val destination = if (messages.isNotEmpty()) {
+                            val destination = if (recipientPhone.isNotBlank()) {
+                                recipientPhone
+                            } else if (messages.isNotEmpty()) {
                                 messages.first().sender
                             } else {
                                 phone
                             }
 
+                            val msgToSend = message
+                            message = ""
+
                             viewModel.sendMessage(
                                 threadId = threadId,
                                 phone = destination,
-                                message = message
+                                message = msgToSend
                             )
-
-                            message = ""
                         },
                         enabled = canSend,
                         modifier = Modifier.scale(sendScale)
