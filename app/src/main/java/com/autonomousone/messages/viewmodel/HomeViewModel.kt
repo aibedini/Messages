@@ -1,6 +1,7 @@
 package com.autonomousone.messages.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import com.autonomousone.messages.model.Sms
@@ -16,12 +17,29 @@ class HomeViewModel(
 
     fun loadSms() {
 
-        conversations.clear()
+        Log.d("SMS_DEBUG", "loadSms() called")
 
-        conversations.addAll(
-            repository.getConversations()
-        )
+        try {
+
+            val smsList = repository.getConversations()
+
+            Log.d(
+                "SMS_DEBUG",
+                "Loaded ${smsList.size} conversations"
+            )
+
+            conversations.clear()
+            conversations.addAll(smsList)
+
+        } catch (e: Exception) {
+
+            Log.e(
+                "SMS_DEBUG",
+                "Error loading SMS",
+                e
+            )
+
+        }
 
     }
-
 }

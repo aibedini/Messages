@@ -31,16 +31,17 @@ fun AppNavigation(
         composable(
             route = Screen.Conversation.route,
             arguments = listOf(
-                navArgument("sender") {
-                    type = NavType.StringType
+                navArgument("threadId") {
+                    type = NavType.LongType
                 }
             )
         ) {
 
-            val sender = it.arguments?.getString("sender") ?: ""
+            val threadId =
+                it.arguments?.getLong("threadId") ?: 0L
 
             ConversationScreen(
-                sender = sender,
+                threadId = threadId,
                 navController = navController
             )
 

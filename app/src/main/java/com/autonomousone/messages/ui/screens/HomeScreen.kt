@@ -1,14 +1,32 @@
 package com.autonomousone.messages.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -39,55 +57,39 @@ fun HomeScreen(
 
     val smsList = viewModel.conversations
 
-    val filteredList = remember(search, smsList) {
-        smsList.filter {
-            it.sender.contains(search, true) ||
-                    it.message.contains(search, true)
-        }
+    // IMPORTANT: Don't wrap this in remember
+    val filteredList = smsList.filter {
+        it.sender.contains(search, ignoreCase = true) ||
+                it.message.contains(search, ignoreCase = true)
     }
 
     Scaffold(
 
         topBar = {
-
             CenterAlignedTopAppBar(
-
                 title = {
                     Text("Messages")
                 },
-
                 actions = {
-
                     IconButton(onClick = {}) {
-
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = null
                         )
-
                     }
-
                 }
-
             )
-
         },
 
         floatingActionButton = {
-
             FloatingActionButton(
-                onClick = {
-                    // New Conversation
-                }
+                onClick = { }
             ) {
-
                 Icon(
                     Icons.Default.Add,
                     contentDescription = null
                 )
-
             }
-
         }
 
     ) { padding ->
@@ -100,9 +102,7 @@ fun HomeScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-
                 Text("Please allow SMS permission.")
-
             }
 
             return@Scaffold
@@ -115,85 +115,68 @@ fun HomeScreen(
         ) {
 
             OutlinedTextField(
-
                 value = search,
-
                 onValueChange = {
                     search = it
                 },
-
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-
                 placeholder = {
-
                     Text("Search messages")
-
                 },
-
                 leadingIcon = {
-
                     Icon(
                         Icons.Default.Search,
                         contentDescription = null
                     )
-
                 },
-
                 singleLine = true
+            )
 
+            // Temporary debug
+            Text(
+                text = "Conversations: ${filteredList.size}",
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
 
             if (filteredList.isEmpty()) {
 
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-
                     Text("No conversations found")
-
                 }
 
             } else {
 
                 LazyColumn(
-
-                    modifier = Modifier.fillMaxSize(),
-
-                    contentPadding = PaddingValues(
-                        bottom = 90.dp
-                    )
-
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 90.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
 
-                    items(filteredList) { sms ->
+                    items(
+                        items = filteredList,
+                        key = { it.id }
+                    ) { sms ->
 
                         SmsItem(
-
                             sms = sms,
-
                             onClick = {
-
                                 navController.navigate(
                                     Screen.Conversation.createRoute(
-                                        sms.sender
+                                        sms.threadId
                                     )
                                 )
-
                             }
-
                         )
-
                     }
-
                 }
-
             }
-
         }
-
     }
-
 }

@@ -2,15 +2,13 @@ package com.autonomousone.messages.repository
 
 import android.content.Context
 import android.provider.Telephony
+import android.util.Log
 import com.autonomousone.messages.model.Sms
 
 class SmsRepository(
     private val context: Context
 ) {
 
-    /**
-     * Read all SMS from device
-     */
     fun getAllSms(): List<Sms> {
 
         val smsList = mutableListOf<Sms>()
@@ -27,77 +25,65 @@ class SmsRepository(
                 Telephony.Sms.TYPE
             )
 
-            val cursor = context.contentResolver.query(
+            context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 projection,
                 null,
                 null,
                 "${Telephony.Sms.DATE} DESC"
-            )
+            )?.use { cursor ->
 
-            cursor?.use {
+                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                val threadIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
+                val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
+                val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
-                val idIndex = it.getColumnIndexOrThrow(Telephony.Sms._ID)
-                val threadIndex = it.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
-                val addressIndex = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-                val bodyIndex = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
-                val dateIndex = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
-                val readIndex = it.getColumnIndexOrThrow(Telephony.Sms.READ)
-                val typeIndex = it.getColumnIndexOrThrow(Telephony.Sms.TYPE)
-
-                while (it.moveToNext()) {
+                while (cursor.moveToNext()) {
 
                     smsList.add(
-
                         Sms(
-                            id = it.getLong(idIndex),
-                            threadId = it.getLong(threadIndex),
-                            sender = it.getString(addressIndex) ?: "Unknown",
-                            message = it.getString(bodyIndex) ?: "",
-                            date = it.getLong(dateIndex),
-                            unread = it.getInt(readIndex) == 0,
-                            type = it.getInt(typeIndex)
+                            id = cursor.getLong(idIndex),
+                            threadId = cursor.getLong(threadIndex),
+                            sender = cursor.getString(addressIndex) ?: "Unknown",
+                            message = cursor.getString(bodyIndex) ?: "",
+                            date = cursor.getLong(dateIndex),
+                            unread = cursor.getInt(readIndex) == 0,
+                            type = cursor.getInt(typeIndex)
                         )
-
                     )
-
                 }
-
             }
+
+            Log.d("SMS_DEBUG", "Total SMS Read = ${smsList.size}")
 
         } catch (e: Exception) {
 
-            e.printStackTrace()
+            Log.e("SMS_DEBUG", "Error reading SMS", e)
 
         }
 
         return smsList
     }
 
-    /**
-     * Returns one item per conversation.
-     * The latest message of every thread is returned.
-     */
     fun getConversations(): List<Sms> {
 
-        return getAllSms()
+        val conversations = getAllSms()
             .groupBy { it.threadId }
-            .map { (_, messages) ->
-                messages.maxByOrNull { it.date }!!
-            }
+            .map { it.value.maxByOrNull { sms -> sms.date }!! }
             .sortedByDescending { it.date }
+
+        Log.d("SMS_DEBUG", "Total Conversations = ${conversations.size}")
+
+        return conversations
     }
 
-    /**
-     * Returns complete conversation by thread id
-     */
     fun getMessagesByThread(threadId: Long): List<Sms> {
+
         return getAllSms()
-            .filter {
-                it.threadId == threadId
-            }
-            .sortedBy {
-                it.date
-            }
+            .filter { it.threadId == threadId }
+            .sortedBy { it.date }
     }
 }

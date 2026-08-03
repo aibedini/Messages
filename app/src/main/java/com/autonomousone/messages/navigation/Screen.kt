@@ -5,10 +5,10 @@ sealed class Screen(val route: String) {
 
     object Home : Screen("home")
 
-    object Conversation : Screen("conversation/{sender}") {
+    object Conversation : Screen("conversation/{threadId}") {
 
-        fun createRoute(sender: String): String {
-            return "conversation/$sender"
+        fun createRoute(threadId: Long): String {
+            return "conversation/$threadId"
         }
     }
 }
