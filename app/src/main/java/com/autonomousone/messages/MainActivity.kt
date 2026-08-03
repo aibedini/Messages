@@ -2,6 +2,7 @@ package com.autonomousone.messages
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,8 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.navigation.AppNavigation
 import com.autonomousone.messages.ui.theme.MessagesTheme
+import com.autonomousone.messages.utils.NotificationHelper
 
 class MainActivity : ComponentActivity() {
 
@@ -29,48 +32,60 @@ class MainActivity : ComponentActivity() {
         // Enable edge-to-edge system bars
         enableEdgeToEdge()
 
+        // Create notification channel on launch
+        NotificationHelper.createNotificationChannel(this)
+
         setContent {
             MessagesTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var hasPermission by remember {
-                        mutableStateOf(
-                            ContextCompat.checkSelfPermission(
-                                this,
-                                Manifest.permission.READ_SMS
-                            ) == PackageManager.PERMISSION_GRANTED &&
-                                    ContextCompat.checkSelfPermission(
-                                        this,
-                                        Manifest.permission.SEND_SMS
-                                    ) == PackageManager.PERMISSION_GRANTED &&
-                                    ContextCompat.checkSelfPermission(
-                                        this,
-                                        Manifest.permission.READ_CONTACTS
-                                    ) == PackageManager.PERMISSION_GRANTED
-                        )
+                    val permissionsToRequest = remember {
+                        mutableListOf(
+                            Manifest.permission.READ_SMS,
+                            Manifest.permission.RECEIVE_SMS,
+                            Manifest.permission.SEND_SMS,
+                            Manifest.permission.READ_CONTACTS
+                        ).apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                add(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }.toTypedArray()
                     }
 
-                    val permissionLauncher =
-                        rememberLauncherForActivityResult(
-                            ActivityResultContracts.RequestMultiplePermissions()
-                        ) { permissions ->
-                            hasPermission =
-                                permissions[Manifest.permission.READ_SMS] == true &&
-                                        permissions[Manifest.permission.SEND_SMS] == true &&
-                                        permissions[Manifest.permission.READ_CONTACTS] == true
-                        }
+                    fun checkPermissions(): Boolean {
+                        val readSmsGranted = ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.READ_SMS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val receiveSmsGranted = ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.RECEIVE_SMS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val sendSmsGranted = ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.SEND_SMS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val readContactsGranted = ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.READ_CONTACTS
+                        ) == PackageManager.PERMISSION_GRANTED
+
+                        return readSmsGranted && receiveSmsGranted && sendSmsGranted && readContactsGranted
+                    }
+
+                    var hasPermission by remember { mutableStateOf(checkPermissions()) }
+
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestMultiplePermissions()
+                    ) { _ ->
+                        hasPermission = checkPermissions()
+                    }
 
                     LaunchedEffect(Unit) {
                         if (!hasPermission) {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.READ_SMS,
-                                    Manifest.permission.SEND_SMS,
-                                    Manifest.permission.READ_CONTACTS
-                                )
-                            )
+                            permissionLauncher.launch(permissionsToRequest)
                         }
                     }
 
@@ -80,5 +95,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SmsEventBus.isAppInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        SmsEventBus.isAppInForeground = false
     }
 }
