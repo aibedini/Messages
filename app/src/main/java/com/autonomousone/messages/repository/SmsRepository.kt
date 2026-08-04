@@ -102,20 +102,12 @@ class SmsRepository(
             .sortedBy { it.date }
     }
 
-    fun markThreadAsRead(threadId: Long, phone: String) {
+    fun markThreadAsRead(threadId: Long, phone: String = "") {
         try {
             val values = ContentValues().apply {
                 put(Telephony.Sms.READ, 1)
             }
-            if (phone.isNotBlank()) {
-                val normalized = ContactRepository.normalizePhone(phone)
-                context.contentResolver.update(
-                    Telephony.Sms.CONTENT_URI,
-                    values,
-                    "${Telephony.Sms.ADDRESS} LIKE ? AND ${Telephony.Sms.READ} = 0",
-                    arrayOf("%$normalized%")
-                )
-            } else if (threadId > 0) {
+            if (threadId > 0) {
                 context.contentResolver.update(
                     Telephony.Sms.CONTENT_URI,
                     values,
@@ -123,8 +115,34 @@ class SmsRepository(
                     arrayOf(threadId.toString())
                 )
             }
+            if (phone.isNotBlank()) {
+                val normalized = ContactRepository.normalizePhone(phone)
+                val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
+                context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    values,
+                    "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?) AND ${Telephony.Sms.READ} = 0",
+                    arrayOf("%$lastDigits%", phone)
+                )
+            }
         } catch (e: Exception) {
             Log.e("SMS_DEBUG", "Error marking thread as read", e)
+        }
+    }
+
+    fun markAllAsRead() {
+        try {
+            val values = ContentValues().apply {
+                put(Telephony.Sms.READ, 1)
+            }
+            context.contentResolver.update(
+                Telephony.Sms.CONTENT_URI,
+                values,
+                "${Telephony.Sms.READ} = 0",
+                null
+            )
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error marking all as read", e)
         }
     }
 

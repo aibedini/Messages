@@ -126,7 +126,7 @@ fun HomeScreen(
                 title = "Messages",
                 onProfileClick = {},
                 onSearchClick = {},
-                onMarkAllReadClick = {},
+                onMarkAllReadClick = { viewModel.markAllAsRead() },
                 onGatewayClick = { navController.navigate(Screen.Gateway.route) },
                 onSettingsClick = {}
             )

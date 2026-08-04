@@ -42,6 +42,13 @@ class HomeViewModel(
         }
     }
 
+    fun markAllAsRead() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.markAllAsRead()
+            loadSms()
+        }
+    }
+
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->

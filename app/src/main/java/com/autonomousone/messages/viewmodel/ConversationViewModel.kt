@@ -56,15 +56,23 @@ class ConversationViewModel(
                 else -> emptyList()
             }
 
+            val targetThreadId = if (currentThreadId != 0L) currentThreadId else loadedMessages.lastOrNull()?.threadId ?: 0L
+            val targetPhone = if (currentPhone.isNotBlank()) currentPhone else loadedMessages.firstOrNull()?.sender ?: ""
+
+            if (targetThreadId != 0L || targetPhone.isNotBlank()) {
+                repository.markThreadAsRead(targetThreadId, targetPhone)
+            }
+
+            val readMessages = loadedMessages.map { it.copy(unread = false) }
+
             withContext(Dispatchers.Main) {
                 messages.clear()
-                messages.addAll(loadedMessages)
-                if (loadedMessages.isNotEmpty()) {
-                    if (currentThreadId == 0L) currentThreadId = loadedMessages.last().threadId
+                messages.addAll(readMessages)
+                if (readMessages.isNotEmpty()) {
+                    if (currentThreadId == 0L) currentThreadId = readMessages.last().threadId
                     if (currentPhone.isBlank()) {
-                        // For received messages the sender is the contact; for sent it's the address
-                        val sampleMsg = loadedMessages.firstOrNull { it.type == 1 }
-                            ?: loadedMessages.first()
+                        val sampleMsg = readMessages.firstOrNull { it.type == 1 }
+                            ?: readMessages.first()
                         currentPhone = sampleMsg.sender
                         SmsEventBus.activeConversationPhone = currentPhone
                     }
@@ -101,7 +109,11 @@ class ConversationViewModel(
                                         Math.abs(it.date - incomingSms.date) < 5000)
                     }
                     if (!isDuplicate) {
-                        messages.add(incomingSms)
+                        val readIncoming = incomingSms.copy(unread = false)
+                        messages.add(readIncoming)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            repository.markThreadAsRead(currentThreadId, currentPhone)
+                        }
                     }
                 }
             }
@@ -127,13 +139,18 @@ class ConversationViewModel(
                 else -> emptyList()
             }
 
+            if (currentThreadId != 0L || currentPhone.isNotBlank()) {
+                repository.markThreadAsRead(currentThreadId, currentPhone)
+            }
+
+            val readMessages = freshMessages.map { it.copy(unread = false) }
+
             withContext(Dispatchers.Main) {
-                if (freshMessages.isNotEmpty()) {
+                if (readMessages.isNotEmpty()) {
                     messages.clear()
-                    messages.addAll(freshMessages)
-                    // Update thread ID if we had it as 0
+                    messages.addAll(readMessages)
                     if (currentThreadId == 0L) {
-                        currentThreadId = freshMessages.last().threadId
+                        currentThreadId = readMessages.last().threadId
                     }
                 }
             }
