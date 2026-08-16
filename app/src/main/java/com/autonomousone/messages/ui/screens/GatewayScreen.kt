@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +113,19 @@ fun GatewayScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
         ) {
+            // ── 0. Cloud Connection Card (new) ─────────────────────────────────────
+            item {
+                CloudConnectionCard(
+                    backendUrl = viewModel.backendUrl,
+                    gatewayId = viewModel.gatewayId,
+                    isRegistered = viewModel.isRegistered,
+                    connectionState = viewModel.cloudConnectionState,
+                    lastHeartbeatAt = viewModel.lastHeartbeatAt,
+                    onReconnect = { viewModel.reconnectNow() },
+                    onCopyGatewayId = { viewModel.copyToClipboard("Gateway ID", viewModel.gatewayId) }
+                )
+            }
+
             // ── 1. Server Status Card ───────────────────────────────────────
             item {
                 Card(
@@ -476,3 +493,127 @@ private fun EndpointItem(
         }
     }
 }
+
+@Composable
+private fun CloudConnectionCard(
+    backendUrl: String,
+    gatewayId: String,
+    isRegistered: Boolean,
+    connectionState: com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState,
+    lastHeartbeatAt: Long,
+    onReconnect: () -> Unit,
+    onCopyGatewayId: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when (connectionState) {
+                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTED ->
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTING ->
+                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when (connectionState) {
+                                    com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTED -> Color(0xFF10B981)
+                                    com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTING -> Color(0xFFF59E0B)
+                                    else -> Color(0xFFEF4444)
+                                }
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Cloud Backend Gateway",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = when (connectionState) {
+                                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTED -> "Online • Heartbeat active"
+                                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.CONNECTING -> "Connecting..."
+                                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.DISCONNECTED -> "Disconnected"
+                                com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState.ERROR -> "Connection Error"
+                                else -> if (isRegistered) "Registered" else "Not Registered"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(onClick = onReconnect) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Sync / Reconnect",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Backend URL
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Cloud,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = backendUrl,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (isRegistered && gatewayId.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "ID: $gatewayId",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(onClick = onCopyGatewayId, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy ID",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

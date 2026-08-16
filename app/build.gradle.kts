@@ -18,6 +18,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Production backend URL — override in local.properties via gradle.properties if needed
+        val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString()
+            ?: "https://gaitway.autonomousone.in"
+        buildConfigField("String", "GATEWAY_BACKEND_URL", "\"$backendUrl\"")
+        buildConfigField("String", "APP_VERSION", "\"1.0\"")
     }
 
     buildTypes {
@@ -35,6 +41,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

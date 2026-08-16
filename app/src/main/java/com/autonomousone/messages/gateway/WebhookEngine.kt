@@ -10,48 +10,122 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 object WebhookEngine {
 
     private const val TAG = "WEBHOOK_ENGINE"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * Called by SmsReceiver on every incoming SMS.
+     *
+     * 1. Fires to the user-configured local webhook URL (existing behaviour — unchanged).
+     * 2. Sends event to the cloud backend via BackendClient (new — cloud gateway).
+     *
+     * Both dispatches are fire-and-forget; failures are logged but don't block the receiver.
+     */
     fun sendIncomingSmsWebhook(context: Context, sms: Sms) {
         val prefs = GatewayPreferences(context)
+
+        // ── 1. Existing local webhook ──────────────────────────────────────
         val webhookUrl = prefs.webhookUrl.trim()
-        if (webhookUrl.isBlank()) return
+        if (webhookUrl.isNotBlank()) {
+            scope.launch { sendLocalWebhook(webhookUrl, sms) }
+        }
 
-        scope.launch {
-            try {
-                val json = JSONObject().apply {
-                    put("event", "sms_received")
-                    put("sender", sms.sender)
-                    put("message", sms.message)
-                    put("timestamp", sms.date)
-                    put("threadId", sms.threadId)
-                }
+        // ── 2. Cloud backend event upload ──────────────────────────────────
+        scope.launch { sendCloudEvent(prefs, sms) }
+    }
 
-                val url = URL(webhookUrl)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("User-Agent", "Android-SMS-Gateway/1.0")
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                    doOutput = true
-                }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Local webhook (existing — unchanged behaviour)
+    // ─────────────────────────────────────────────────────────────────────────
 
-                conn.outputStream.use { os ->
-                    os.write(json.toString().toByteArray(Charsets.UTF_8))
-                }
+    private fun sendLocalWebhook(webhookUrl: String, sms: Sms) {
+        try {
+            val json = JSONObject().apply {
+                put("event", "sms_received")
+                put("sender", sms.sender)
+                put("message", sms.message)
+                put("timestamp", sms.date)
+                put("threadId", sms.threadId)
+            }
 
-                val responseCode = conn.responseCode
-                Log.d(TAG, "Webhook dispatched to $webhookUrl, responseCode=$responseCode")
-                conn.disconnect()
+            val url = URL(webhookUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("User-Agent", "Android-SMS-Gateway/1.0")
+                connectTimeout = 8_000
+                readTimeout = 8_000
+                doOutput = true
+            }
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to dispatch webhook to $webhookUrl", e)
+            conn.outputStream.use { os -> os.write(json.toString().toByteArray(Charsets.UTF_8)) }
+            val responseCode = conn.responseCode
+            Log.d(TAG, "Local webhook dispatched → $webhookUrl, HTTP $responseCode")
+            conn.disconnect()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to dispatch local webhook to $webhookUrl", e)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Cloud backend event upload (new)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun sendCloudEvent(prefs: GatewayPreferences, sms: Sms) {
+        if (!prefs.isRegistered || prefs.gatewayToken.isBlank()) {
+            Log.d(TAG, "Cloud backend not registered — skipping cloud event upload")
+            return
+        }
+
+        // Generate a stable UUID for this SMS event — used for idempotency
+        // We derive it from the SMS content + timestamp so we generate the same UUID
+        // even if the process restarts before acknowledging the backend response.
+        val eventId = generateEventId(sms)
+
+        // Check local idempotency cache — avoid re-sending if already acknowledged
+        if (prefs.hasEventBeenSent(eventId)) {
+            Log.d(TAG, "Event $eventId already sent — skipping")
+            return
+        }
+
+        val payload = JSONObject().apply {
+            put("eventId", eventId)
+            put("type", "sms.received")
+            put("sender", sms.sender)
+            put("message", sms.message)
+            put("timestamp", sms.date)
+        }
+
+        val client = BackendClient(prefs)
+        val result = client.post("/api/gateways/events/sms", payload)
+
+        when (result) {
+            is BackendClient.Result.Success -> {
+                prefs.markEventSent(eventId)
+                Log.i(TAG, "Cloud event uploaded: $eventId")
+            }
+            is BackendClient.Result.Failure -> {
+                // Don't mark as sent — will be retried next time this SMS is re-processed
+                // In practice, SMS_DELIVER fires once so this just means the event is lost
+                // if the backend is permanently down. The backend-side retry handles
+                // downstream webhook delivery failures independently.
+                Log.w(TAG, "Cloud event upload failed: ${result.error}")
             }
         }
+    }
+
+    /**
+     * Derive a deterministic UUID from SMS data.
+     * If two processes both try to upload the same SMS, they'll generate the same ID
+     * and the backend will safely deduplicate via the eventId field.
+     */
+    private fun generateEventId(sms: Sms): String {
+        val seed = "${sms.sender}|${sms.date}|${sms.message.take(100)}"
+        return UUID.nameUUIDFromBytes(seed.toByteArray(Charsets.UTF_8)).toString()
     }
 }

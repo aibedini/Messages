@@ -24,6 +24,9 @@ class GatewayService : Service() {
 
     private var gatewayServer: GatewayServer? = null
     private lateinit var prefs: GatewayPreferences
+    private lateinit var backendClient: BackendClient
+    private lateinit var registrationManager: RegistrationManager
+    private lateinit var heartbeatManager: HeartbeatManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -62,6 +65,18 @@ class GatewayService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = GatewayPreferences(this)
+        backendClient = BackendClient(prefs)
+        registrationManager = RegistrationManager(this, prefs, backendClient) { msg ->
+            _logFlow.tryEmit(msg)
+        }
+        heartbeatManager = HeartbeatManager(
+            context = this,
+            prefs = prefs,
+            client = backendClient,
+            registrationManager = registrationManager,
+            scope = serviceScope,
+            onLog = { msg -> _logFlow.tryEmit(msg) }
+        )
         createNotificationChannel()
     }
 
@@ -89,7 +104,10 @@ class GatewayService : Service() {
     private fun startForegroundNotification() {
         val port = prefs.port
         val ip = GatewayServer.getLocalIpAddress()
-        val notification = buildNotification("SMS Gateway Active", "Listening on http://$ip:$port")
+        val notification = buildNotification(
+            "SMS Gateway Active",
+            "LAN: http://$ip:$port \u2022 Cloud: ${prefs.backendUrl}"
+        )
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -128,11 +146,23 @@ class GatewayService : Service() {
 
             val ip = GatewayServer.getLocalIpAddress()
             _logFlow.tryEmit("🚀 Gateway Service running at http://$ip:$port")
+
+            // Start cloud backend registration + heartbeat
+            val registered = registrationManager.ensureRegistered()
+            if (registered) {
+                heartbeatManager.start()
+                _logFlow.tryEmit("☁️ Cloud backend connected (${prefs.backendUrl})")
+            } else {
+                _logFlow.tryEmit("⚠️ Cloud registration failed — will retry automatically")
+                // HeartbeatManager will self-register on its first loop iteration
+                heartbeatManager.start()
+            }
         }
     }
 
     private fun stopServer() {
         serviceScope.launch {
+            heartbeatManager.stop()
             gatewayServer?.stop()
             gatewayServer = null
             isServiceRunning = false
