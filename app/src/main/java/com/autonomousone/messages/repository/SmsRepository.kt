@@ -147,6 +147,34 @@ class SmsRepository(
     }
 
     /**
+     * Permanently delete all messages belonging to [threadId] from the system SMS ContentProvider.
+     * If [threadId] is 0 (unknown), falls back to deleting by [phone] address.
+     */
+    fun deleteThread(threadId: Long, phone: String = "") {
+        try {
+            if (threadId > 0) {
+                context.contentResolver.delete(
+                    Telephony.Sms.CONTENT_URI,
+                    "${Telephony.Sms.THREAD_ID} = ?",
+                    arrayOf(threadId.toString())
+                )
+                Log.d("SMS_DEBUG", "Deleted thread $threadId")
+            } else if (phone.isNotBlank()) {
+                val normalized = ContactRepository.normalizePhone(phone)
+                val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
+                context.contentResolver.delete(
+                    Telephony.Sms.CONTENT_URI,
+                    "${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?",
+                    arrayOf("%$lastDigits%", phone)
+                )
+                Log.d("SMS_DEBUG", "Deleted messages for phone $phone")
+            }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error deleting thread $threadId", e)
+        }
+    }
+
+    /**
      * Observe SMS database changes
      */
     fun registerObserver(

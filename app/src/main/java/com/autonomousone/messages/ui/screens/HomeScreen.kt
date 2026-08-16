@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.SearchOff
@@ -35,14 +36,21 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +67,7 @@ import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
 import com.autonomousone.messages.ui.components.SmsItem
 import com.autonomousone.messages.viewmodel.HomeViewModel
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 enum class ConversationFilter(val label: String) {
@@ -76,6 +85,9 @@ fun HomeScreen(
     navController: NavController
 ) {
     val viewModel: HomeViewModel = viewModel()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }
 
@@ -91,6 +103,7 @@ fun HomeScreen(
     }
 
     val smsList = viewModel.conversations
+    val archivedList = viewModel.archivedConversations
 
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -102,9 +115,16 @@ fun HomeScreen(
         }
     }
 
-    val filteredList by remember(search, selectedFilter) {
+    // The base list to filter from depends on the selected tab
+    val sourceList by remember(selectedFilter) {
         derivedStateOf {
-            smsList.filter { sms ->
+            if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
+        }
+    }
+
+    val filteredList by remember(search, selectedFilter, smsList, archivedList) {
+        derivedStateOf {
+            sourceList.filter { sms ->
                 val matchesSearch = search.isBlank() ||
                         sms.sender.contains(search, ignoreCase = true) ||
                         sms.message.contains(search, ignoreCase = true)
@@ -112,7 +132,7 @@ fun HomeScreen(
                 val matchesFilter = when (selectedFilter) {
                     ConversationFilter.All -> true
                     ConversationFilter.Unread -> sms.unread
-                    ConversationFilter.Archived -> false
+                    ConversationFilter.Archived -> true   // archiveList is already filtered
                 }
 
                 matchesSearch && matchesFilter
@@ -121,6 +141,17 @@ fun HomeScreen(
     }
 
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    shape = RoundedCornerShape(12.dp),
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    actionColor = MaterialTheme.colorScheme.inversePrimary
+                )
+            }
+        },
         topBar = {
             MainTopBar(
                 title = "Messages",
@@ -220,6 +251,15 @@ fun HomeScreen(
                                 fontWeight = if (selectedFilter == filter) FontWeight.Bold else FontWeight.Normal
                             )
                         },
+                        leadingIcon = if (filter == ConversationFilter.Archived) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Archive,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else null,
                         shape = RoundedCornerShape(16.dp),
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -231,6 +271,8 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
+            val isInArchivedView = selectedFilter == ConversationFilter.Archived
+
             if (filteredList.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -239,16 +281,24 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     EmptyView(
-                        title = if (search.isNotBlank()) "No Results Found" else "No Conversations",
-                        subtitle = if (search.isNotBlank()) {
-                            "No messages matching \"$search\" were found. Try another search."
-                        } else {
-                            "You don't have any messages yet. Start a new conversation below."
+                        title = when {
+                            search.isNotBlank() -> "No Results Found"
+                            isInArchivedView -> "No Archived Conversations"
+                            else -> "No Conversations"
                         },
-                        icon = if (search.isNotBlank()) Icons.Default.SearchOff else Icons.Default.MarkEmailUnread,
-                        buttonText = "Start New Chat",
-                        onButtonClick = {
-                            navController.navigate(Screen.NewConversation.route)
+                        subtitle = when {
+                            search.isNotBlank() -> "No messages matching \"$search\" were found. Try another search."
+                            isInArchivedView -> "Swipe right on any conversation to archive it."
+                            else -> "You don't have any messages yet. Start a new conversation below."
+                        },
+                        icon = when {
+                            search.isNotBlank() -> Icons.Default.SearchOff
+                            isInArchivedView -> Icons.Default.Archive
+                            else -> Icons.Default.MarkEmailUnread
+                        },
+                        buttonText = if (isInArchivedView || search.isNotBlank()) null else "Start New Chat",
+                        onButtonClick = if (isInArchivedView || search.isNotBlank()) null else {
+                            { navController.navigate(Screen.NewConversation.route) }
                         }
                     )
                 }
@@ -264,13 +314,46 @@ fun HomeScreen(
                     ) { sms ->
                         SmsItem(
                             sms = sms,
+                            isArchived = isInArchivedView,
                             onClick = {
                                 navController.navigate(
                                     Screen.Conversation.createRoute(sms.threadId, sms.sender)
                                 )
                             },
-                            onArchive = {},
-                            onDelete = {}
+                            onArchive = {
+                                if (isInArchivedView) {
+                                    // Unarchive
+                                    viewModel.unarchiveConversation(sms)
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Conversation unarchived",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                } else {
+                                    // Archive
+                                    viewModel.archiveConversation(sms)
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Conversation archived",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                }
+                            },
+                            onDelete = {
+                                viewModel.deleteConversation(sms)
+                                scope.launch {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Conversation deleted",
+                                        actionLabel = "Undo",
+                                        duration = SnackbarDuration.Long   // ~4 s
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        viewModel.undoDelete(sms)
+                                    }
+                                }
+                            }
                         )
                     }
                 }
