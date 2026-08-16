@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
@@ -29,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -48,46 +52,53 @@ import kotlinx.coroutines.launch
 fun SplashScreen(
     onNavigate: () -> Unit
 ) {
-    val logoScale = remember { Animatable(0f) }
+    val logoScale = remember { Animatable(0.3f) }
     val logoAlpha = remember { Animatable(0f) }
     val contentAlpha = remember { Animatable(0f) }
+    var dynamicStatusText by remember { mutableStateOf("Initializing Gateway...") }
 
     val infiniteTransition = rememberInfiniteTransition(label = "splashTilt")
     val tiltRotation by infiniteTransition.animateFloat(
-        initialValue = -4f,
-        targetValue = 4f,
+        initialValue = -3f,
+        targetValue = 3f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = EaseInOut),
+            animation = tween(1400, easing = EaseInOut),
             repeatMode = RepeatMode.Reverse
         ),
         label = "tilt"
     )
 
     val ambientPulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.15f,
+        initialValue = 0.90f,
+        targetValue = 1.10f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = EaseInOut),
+            animation = tween(1000, easing = EaseInOut),
             repeatMode = RepeatMode.Reverse
         ),
         label = "ambientPulse"
     )
 
+    // Dynamic, fast initialization sequence (500ms total vs old static 2200ms delay)
     LaunchedEffect(Unit) {
         launch {
             logoScale.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                animationSpec = spring(dampingRatio = 0.7f, stiffness = 600f)
             )
         }
         launch {
-            logoAlpha.animateTo(1f, animationSpec = tween(600))
+            logoAlpha.animateTo(1f, animationSpec = tween(200))
         }
         launch {
-            delay(300)
-            contentAlpha.animateTo(1f, animationSpec = tween(800))
+            contentAlpha.animateTo(1f, animationSpec = tween(250))
         }
-        delay(2200)
+
+        // Dynamic progress steps
+        dynamicStatusText = "Connecting Cloud Gateway..."
+        delay(250)
+        dynamicStatusText = "Gateway Ready"
+        delay(200)
+        
         onNavigate()
     }
 
@@ -157,7 +168,7 @@ fun SplashScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             Column(
                 modifier = Modifier.alpha(contentAlpha.value),
@@ -170,22 +181,33 @@ fun SplashScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Simple • Secure • Fast",
+                    text = "Simple • Secure • Fast Gateway",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.sp
                 )
 
-                Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-                CircularProgressIndicator(
-                    modifier = Modifier.size(28.dp),
-                    strokeWidth = 3.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = dynamicStatusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
 

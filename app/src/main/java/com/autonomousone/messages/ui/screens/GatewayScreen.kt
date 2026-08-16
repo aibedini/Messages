@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import com.autonomousone.messages.gateway.HeartbeatManager
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -275,17 +276,58 @@ fun GatewayScreen(
 
             // ── 3. REST API Endpoints Card ─────────────────────────────────
             item {
+                val isConnected = viewModel.isRegistered || viewModel.gatewayId.isNotBlank() || viewModel.isServerRunning || viewModel.cloudConnectionState == HeartbeatManager.ConnectionState.CONNECTED
+                val cloudUrl = if (viewModel.backendUrl.isNotBlank()) viewModel.backendUrl else "https://gaitway.autonomousone.in"
+                val effectiveBaseUrl = if (isConnected) cloudUrl else "http://${viewModel.localIpAddress}:${viewModel.port}"
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "REST API Endpoints",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isConnected) Color(0xFF10B981).copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = if (isConnected) "Cloud Mode" else "LAN Mode",
+                                    color = if (isConnected) Color(0xFF10B981) else Color.Gray,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
                         Text(
-                            text = "REST API Endpoints",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            text = "Base API URL: $effectiveBaseUrl",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
+
+                        if (isConnected && viewModel.localIpAddress.isNotBlank()) {
+                            Text(
+                                text = "LAN Fallback: http://${viewModel.localIpAddress}:${viewModel.port}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -293,7 +335,7 @@ fun GatewayScreen(
                             method = "POST",
                             path = "/api/v1/sms/send",
                             desc = "Send SMS text message",
-                            baseUrl = "http://${viewModel.localIpAddress}:${viewModel.port}",
+                            baseUrl = effectiveBaseUrl,
                             onCopy = { url -> viewModel.copyToClipboard("SMS Endpoint", url) }
                         )
 
@@ -303,7 +345,7 @@ fun GatewayScreen(
                             method = "POST",
                             path = "/api/v1/mms/send",
                             desc = "Send MMS image message",
-                            baseUrl = "http://${viewModel.localIpAddress}:${viewModel.port}",
+                            baseUrl = effectiveBaseUrl,
                             onCopy = { url -> viewModel.copyToClipboard("MMS Endpoint", url) }
                         )
 
@@ -313,8 +355,18 @@ fun GatewayScreen(
                             method = "GET",
                             path = "/api/v1/sms/inbox",
                             desc = "Get recent inbox messages",
-                            baseUrl = "http://${viewModel.localIpAddress}:${viewModel.port}",
+                            baseUrl = effectiveBaseUrl,
                             onCopy = { url -> viewModel.copyToClipboard("Inbox Endpoint", url) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        EndpointItem(
+                            method = "GET",
+                            path = "/api/v1/status",
+                            desc = "Gateway battery & network status",
+                            baseUrl = effectiveBaseUrl,
+                            onCopy = { url -> viewModel.copyToClipboard("Status Endpoint", url) }
                         )
                     }
                 }
