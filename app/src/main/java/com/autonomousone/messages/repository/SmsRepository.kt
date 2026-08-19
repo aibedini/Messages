@@ -131,19 +131,70 @@ class SmsRepository(
 
     /**
      * Group conversations by normalized phone address to eliminate duplicates.
+     * Optimized to only load the most recent message per conversation.
      */
     fun getConversations(): List<Sms> {
-        val conversations = getAllSms()
-            .groupBy {
-                val norm = ContactRepository.normalizePhone(it.sender)
-                if (norm.isNotBlank()) norm else it.sender
-            }
-            .mapNotNull { (_, messages) ->
-                messages.maxByOrNull { it.date }
-            }
-            .sortedByDescending { it.date }
+        val conversations = mutableListOf<Sms>()
+        val conversationMap = mutableMapOf<String, Sms>()
 
-        Log.d("SMS_DEBUG", "Total Conversations = ${conversations.size}")
+        try {
+            val projection = arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.THREAD_ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+                Telephony.Sms.READ,
+                Telephony.Sms.TYPE
+            )
+
+            // Only load last 500 messages to prevent memory issues
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${Telephony.Sms.DATE} DESC LIMIT 500"
+            )?.use { cursor ->
+
+                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                val threadIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
+                val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
+                val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+
+                while (cursor.moveToNext()) {
+                    val sms = Sms(
+                        id = cursor.getLong(idIndex),
+                        threadId = cursor.getLong(threadIndex),
+                        sender = cursor.getString(addressIndex) ?: "Unknown",
+                        message = cursor.getString(bodyIndex) ?: "",
+                        date = cursor.getLong(dateIndex),
+                        unread = cursor.getInt(readIndex) == 0,
+                        type = cursor.getInt(typeIndex)
+                    )
+
+                    val norm = ContactRepository.normalizePhone(sms.sender)
+                    val key = if (norm.isNotBlank()) norm else sms.sender
+
+                    // Only keep the most recent message per conversation
+                    if (!conversationMap.containsKey(key)) {
+                        conversationMap[key] = sms
+                    }
+                }
+            }
+
+            conversations.addAll(conversationMap.values)
+            conversations.sortByDescending { it.date }
+
+            Log.d("SMS_DEBUG", "Total Conversations = ${conversations.size}")
+
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error reading conversations", e)
+        }
+
         return conversations
     }
 
