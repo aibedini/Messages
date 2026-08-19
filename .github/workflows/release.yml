@@ -25,7 +25,7 @@ jobs:
       
     - name: Decode Keystore
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\n\r' | base64 -d > ${{ github.workspace }}/keystore.jks
+        printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/keystore.jks
       if: ${{ env.KEYSTORE_BASE64 != '' }}
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
