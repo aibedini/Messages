@@ -228,6 +228,58 @@ class GatewayServer(
                         })
                     }
                 }
+                cleanPath == "/api/v1/sms" && method == "GET" -> {
+                    try {
+                        val queryParams = parseQueryParams(path)
+                        val limit = queryParams["limit"]?.toIntOrNull()
+                        val offset = queryParams["offset"]?.toIntOrNull()
+                        val type = queryParams["type"]
+                        val phone = queryParams["phone"] ?: queryParams["from"]
+                        val fromDateStr = queryParams["from_date"]
+                        val toDateStr = queryParams["to_date"]
+
+                        val fromDate = fromDateStr?.let { parseDateToMillis(it) }
+                        val toDate = toDateStr?.let { parseDateToMillis(it) }
+
+                        val smsList = smsRepository.getSmsWithFilters(
+                            limit = limit,
+                            offset = offset,
+                            type = type,
+                            phone = phone,
+                            fromDate = fromDate,
+                            toDate = toDate
+                        )
+
+                        val jsonArray = JSONArray()
+                        smsList.forEach { sms ->
+                            jsonArray.put(JSONObject().apply {
+                                put("id", sms.id)
+                                put("sender", sms.sender)
+                                put("message", sms.message)
+                                put("date", sms.date)
+                                put("type", if (sms.type == 1) "received" else "sent")
+                                put("threadId", sms.threadId)
+                                put("unread", sms.unread)
+                            })
+                        }
+
+                        onRequestLog?.invoke("📬 GET /api/v1/sms -> ${smsList.size} items (limit=$limit, offset=$offset)")
+                        sendResponse(output, 200, JSONObject().apply {
+                            put("status", "success")
+                            put("count", smsList.size)
+                            put("limit", limit ?: "all")
+                            put("offset", offset ?: 0)
+                            put("messages", jsonArray)
+                        })
+                    } catch (e: Exception) {
+                        Log.e(TAG, "SMS query failed", e)
+                        onRequestLog?.invoke("❌ GET /api/v1/sms error: ${e.message}")
+                        sendResponse(output, 500, JSONObject().apply {
+                            put("status", "error")
+                            put("error", e.message ?: "Failed to query SMS database")
+                        })
+                    }
+                }
                 cleanPath == "/api/v1/status" -> {
                     val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                     val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
@@ -286,5 +338,44 @@ class GatewayServer(
         output.write(header.toByteArray(Charsets.UTF_8))
         output.write(bodyBytes)
         output.flush()
+    }
+
+    private fun parseQueryParams(path: String): Map<String, String> {
+        val params = mutableMapOf<String, String>()
+        val queryStart = path.indexOf('?')
+        if (queryStart == -1 || queryStart == path.length - 1) return params
+
+        val query = path.substring(queryStart + 1)
+        query.split('&').forEach { param ->
+            val keyValue = param.split('=', limit = 2)
+            if (keyValue.size == 2) {
+                val key = java.net.URLDecoder.decode(keyValue[0], "UTF-8")
+                val value = java.net.URLDecoder.decode(keyValue[1], "UTF-8")
+                params[key] = value
+            }
+        }
+        return params
+    }
+
+    private fun parseDateToMillis(dateStr: String): Long? {
+        return try {
+            if (dateStr.matches(Regex("^\\d+$"))) {
+                dateStr.toLong()
+            } else {
+                val parts = dateStr.split('-')
+                if (parts.size == 3) {
+                    val year = parts[0].toInt()
+                    val month = parts[1].toInt()
+                    val day = parts[2].toInt()
+                    val cal = java.util.Calendar.getInstance()
+                    cal.set(year, month - 1, day, 0, 0, 0)
+                    cal.set(java.util.Calendar.MILLISECOND, 0)
+                    cal.timeInMillis
+                } else null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing date: $dateStr", e)
+            null
+        }
     }
 }

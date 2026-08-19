@@ -12,6 +12,17 @@ class SmsRepository(
 ) {
 
     fun getAllSms(): List<Sms> {
+        return getSmsWithFilters()
+    }
+
+    fun getSmsWithFilters(
+        limit: Int? = null,
+        offset: Int? = null,
+        type: String? = null,
+        phone: String? = null,
+        fromDate: Long? = null,
+        toDate: Long? = null
+    ): List<Sms> {
         val smsList = mutableListOf<Sms>()
 
         try {
@@ -25,11 +36,50 @@ class SmsRepository(
                 Telephony.Sms.TYPE
             )
 
+            val selectionParts = mutableListOf<String>()
+            val selectionArgs = mutableListOf<String>()
+
+            if (type != null) {
+                when (type.lowercase()) {
+                    "received" -> {
+                        selectionParts.add("${Telephony.Sms.TYPE} = ?")
+                        selectionArgs.add("1")
+                    }
+                    "sent" -> {
+                        selectionParts.add("${Telephony.Sms.TYPE} = ?")
+                        selectionArgs.add("2")
+                    }
+                }
+            }
+
+            if (phone != null && phone.isNotBlank()) {
+                selectionParts.add("${Telephony.Sms.ADDRESS} LIKE ?")
+                selectionArgs.add("%$phone%")
+            }
+
+            if (fromDate != null) {
+                selectionParts.add("${Telephony.Sms.DATE} >= ?")
+                selectionArgs.add(fromDate.toString())
+            }
+
+            if (toDate != null) {
+                selectionParts.add("${Telephony.Sms.DATE} <= ?")
+                selectionArgs.add(toDate.toString())
+            }
+
+            val selection = if (selectionParts.isNotEmpty()) {
+                selectionParts.joinToString(" AND ")
+            } else null
+
+            val selectionArgsArray = if (selectionArgs.isNotEmpty()) {
+                selectionArgs.toTypedArray()
+            } else null
+
             context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 projection,
-                null,
-                null,
+                selection,
+                selectionArgsArray,
                 "${Telephony.Sms.DATE} DESC"
             )?.use { cursor ->
 
@@ -41,7 +91,20 @@ class SmsRepository(
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
+                var count = 0
+                val skipCount = offset ?: 0
+                val takeCount = limit
+
                 while (cursor.moveToNext()) {
+                    if (count < skipCount) {
+                        count++
+                        continue
+                    }
+
+                    if (takeCount != null && count >= skipCount + takeCount) {
+                        break
+                    }
+
                     smsList.add(
                         Sms(
                             id = cursor.getLong(idIndex),
@@ -53,13 +116,14 @@ class SmsRepository(
                             type = cursor.getInt(typeIndex)
                         )
                     )
+                    count++
                 }
             }
 
-            Log.d("SMS_DEBUG", "Total SMS Read = ${smsList.size}")
+            Log.d("SMS_DEBUG", "SMS Read with filters = ${smsList.size}")
 
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error reading SMS", e)
+            Log.e("SMS_DEBUG", "Error reading SMS with filters", e)
         }
 
         return smsList
