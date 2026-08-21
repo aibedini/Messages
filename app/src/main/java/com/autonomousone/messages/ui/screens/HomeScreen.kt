@@ -82,6 +82,7 @@ fun HomeScreen(
     hasPermission: Boolean,
     isDefaultSmsApp: Boolean,
     onRequestDefaultApp: () -> Unit,
+    onRequestPermissions: () -> Unit,
     navController: NavController
 ) {
     val viewModel: HomeViewModel = viewModel()
@@ -159,7 +160,7 @@ fun HomeScreen(
                 onSearchClick = {},
                 onMarkAllReadClick = { viewModel.markAllAsRead() },
                 onGatewayClick = { navController.navigate(Screen.Gateway.route) },
-                onSettingsClick = {}
+                onSettingsClick = { navController.navigate(Screen.Settings.route) }
             )
         },
         floatingActionButton = {
@@ -197,8 +198,8 @@ fun HomeScreen(
                     title = "SMS Permission Required",
                     subtitle = "Messages requires permission to access your SMS and contacts to display your conversations.",
                     icon = Icons.Default.MarkEmailUnread,
-                    buttonText = null,
-                    onButtonClick = null
+                    buttonText = "Grant Permissions",
+                    onButtonClick = onRequestPermissions
                 )
             }
             return@Scaffold

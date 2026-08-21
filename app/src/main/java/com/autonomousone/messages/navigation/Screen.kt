@@ -11,6 +11,8 @@ sealed class Screen(val route: String) {
 
     object Gateway : Screen("gateway")
 
+    object Settings : Screen("settings")
+
     object Conversation :
         Screen("conversation/{threadId}?phone={phone}&name={name}") {
 

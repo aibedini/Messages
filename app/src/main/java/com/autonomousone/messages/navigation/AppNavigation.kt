@@ -13,13 +13,15 @@ import androidx.navigation.navArgument
 import com.autonomousone.messages.ui.screens.ConversationScreen
 import com.autonomousone.messages.ui.screens.HomeScreen
 import com.autonomousone.messages.ui.screens.NewConversationScreen
+import com.autonomousone.messages.ui.screens.SettingsScreen
 import com.autonomousone.messages.ui.screens.SplashScreen
 
 @Composable
 fun AppNavigation(
     hasPermission: Boolean,
     isDefaultSmsApp: Boolean,
-    onRequestDefaultApp: () -> Unit
+    onRequestDefaultApp: () -> Unit,
+    onRequestPermissions: () -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -70,6 +72,7 @@ fun AppNavigation(
                 hasPermission = hasPermission,
                 isDefaultSmsApp = isDefaultSmsApp,
                 onRequestDefaultApp = onRequestDefaultApp,
+                onRequestPermissions = onRequestPermissions,
                 navController = navController
             )
         }
@@ -82,6 +85,16 @@ fun AppNavigation(
 
         composable(Screen.Gateway.route) {
             com.autonomousone.messages.ui.screens.GatewayScreen(
+                navController = navController
+            )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                hasPermission = hasPermission,
+                isDefaultSmsApp = isDefaultSmsApp,
+                onRequestPermissions = onRequestPermissions,
+                onRequestDefaultApp = onRequestDefaultApp,
                 navController = navController
             )
         }

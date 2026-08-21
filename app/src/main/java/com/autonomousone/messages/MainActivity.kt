@@ -91,6 +91,9 @@ class MainActivity : ComponentActivity() {
                         isDefaultSmsApp = isDefaultApp,
                         onRequestDefaultApp = {
                             requestDefaultSmsApp(defaultAppLauncher)
+                        },
+                        onRequestPermissions = {
+                            permissionLauncher.launch(permissionsToRequest)
                         }
                     )
                 }
