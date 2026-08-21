@@ -23,3 +23,4 @@ keystore-final.txt
 password.txt
 alias.txt
 app/release/
+keystore.properties
