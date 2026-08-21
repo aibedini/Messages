@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -14,7 +16,7 @@ android {
         create("release") {
             // Prefer environment variables (CI); fall back to a gitignored
             // keystore.properties file for local release builds.
-            val props = java.util.Properties()
+            val props = Properties()
             val propsFile = rootProject.file("keystore.properties")
             if (propsFile.exists()) {
                 propsFile.inputStream().use { props.load(it) }
@@ -52,7 +54,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val props = java.util.Properties()
+            val props = Properties()
             val propsFile = rootProject.file("keystore.properties")
             if (propsFile.exists()) {
                 propsFile.inputStream().use { props.load(it) }
