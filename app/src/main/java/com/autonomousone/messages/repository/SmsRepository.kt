@@ -148,13 +148,12 @@ class SmsRepository(
                 Telephony.Sms.TYPE
             )
 
-            // Only load last 500 messages to prevent memory issues
             context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 projection,
                 null,
                 null,
-                "${Telephony.Sms.DATE} DESC LIMIT 500"
+                "${Telephony.Sms.DATE} DESC"
             )?.use { cursor ->
 
                 val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
@@ -199,22 +198,78 @@ class SmsRepository(
     }
 
     fun getMessagesByThread(threadId: Long): List<Sms> {
-        return getAllSms()
-            .filter { it.threadId == threadId }
-            .sortedBy { it.date }
+        if (threadId <= 0) return emptyList()
+        return querySms(
+            selection = "${Telephony.Sms.THREAD_ID} = ?",
+            selectionArgs = arrayOf(threadId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} ASC"
+        )
     }
 
     fun getMessagesByPhone(phone: String): List<Sms> {
         if (phone.isBlank()) return emptyList()
-        val targetNorm = ContactRepository.normalizePhone(phone)
-        return getAllSms()
-            .filter {
-                val norm = ContactRepository.normalizePhone(it.sender)
-                (norm.isNotBlank() && targetNorm.isNotBlank() &&
-                        (norm == targetNorm || norm.endsWith(targetNorm) || targetNorm.endsWith(norm))) ||
-                        it.sender == phone
+        val normalized = ContactRepository.normalizePhone(phone)
+        val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
+        return querySms(
+            selection = "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?)",
+            selectionArgs = arrayOf("%$lastDigits%", phone),
+            sortOrder = "${Telephony.Sms.DATE} ASC"
+        )
+    }
+
+    /**
+     * Shared low-level query: read SMS rows matching [selection] into [Sms] models.
+     */
+    private fun querySms(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String
+    ): List<Sms> {
+        val smsList = mutableListOf<Sms>()
+        try {
+            val projection = arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.THREAD_ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+                Telephony.Sms.READ,
+                Telephony.Sms.TYPE
+            )
+
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                val threadIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
+                val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
+                val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+
+                while (cursor.moveToNext()) {
+                    smsList.add(
+                        Sms(
+                            id = cursor.getLong(idIndex),
+                            threadId = cursor.getLong(threadIndex),
+                            sender = cursor.getString(addressIndex) ?: "Unknown",
+                            message = cursor.getString(bodyIndex) ?: "",
+                            date = cursor.getLong(dateIndex),
+                            unread = cursor.getInt(readIndex) == 0,
+                            type = cursor.getInt(typeIndex)
+                        )
+                    )
+                }
             }
-            .sortedBy { it.date }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error querying SMS", e)
+        }
+        return smsList
     }
 
     fun markThreadAsRead(threadId: Long, phone: String = "") {

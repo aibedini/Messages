@@ -67,7 +67,7 @@ You can view or regenerate your API Key inside the app under **3-Dots Menu → S
 ```bash
 curl -X POST http://<PHONE_IP>:8080/api/v1/sms/send \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gw_c1b21bef24864bb1" \
+  -H "X-API-Key: your_generated_api_key" \
   -d '{
     "phone": "+919876543210",
     "message": "Hello! Your OTP verification code is 482910."
@@ -93,7 +93,7 @@ curl -X POST http://<PHONE_IP>:8080/api/v1/sms/send \
 ```bash
 curl -X POST http://<PHONE_IP>:8080/api/v1/mms/send \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gw_c1b21bef24864bb1" \
+  -H "X-API-Key: your_generated_api_key" \
   -d '{
     "phone": "+919876543210",
     "imageUrl": "https://picsum.photos/300/300",
@@ -116,7 +116,7 @@ curl -X POST http://<PHONE_IP>:8080/api/v1/mms/send \
 
 #### Request (cURL)
 ```bash
-curl -H "X-API-Key: gw_c1b21bef24864bb1" http://<PHONE_IP>:8080/api/v1/sms/inbox
+curl -H "X-API-Key: your_generated_api_key" http://<PHONE_IP>:8080/api/v1/sms/inbox
 ```
 
 #### Response (200 OK)
@@ -150,7 +150,7 @@ curl -H "X-API-Key: gw_c1b21bef24864bb1" http://<PHONE_IP>:8080/api/v1/sms/inbox
 
 #### Request (cURL)
 ```bash
-curl -H "X-API-Key: gw_c1b21bef24864bb1" http://<PHONE_IP>:8080/api/v1/status
+curl -H "X-API-Key: your_generated_api_key" http://<PHONE_IP>:8080/api/v1/status
 ```
 
 #### Response (200 OK)
@@ -195,7 +195,7 @@ When an incoming SMS is received on the device, the app dispatches an HTTP `POST
 ### Option A: Testing on Emulator (ADB Port Forwarding)
 ```bash
 adb forward tcp:8080 tcp:8080
-curl -H "X-API-Key: gw_c1b21bef24864bb1" http://localhost:8080/api/v1/status
+curl -H "X-API-Key: your_generated_api_key" http://localhost:8080/api/v1/status
 ```
 
 ### Option B: Cloudflare Tunnel (Free Public HTTPS Domain)
@@ -218,6 +218,39 @@ Starting with **Android 13/14**, side-loaded APKs with SMS permissions require g
 
 ---
 
+## 🔐 Signing the APK (Keystore Security)
+
+The release keystore must **never** be committed to the repository or shared publicly —
+anyone with the keystore + password can publish malicious updates as this app.
+
+Generate a keystore **locally** with a strong random password (do not reuse any previous password):
+
+```bash
+keytool -genkey -v \
+  -keystore release-key.jks \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -alias sms-key \
+  -storepass "$(openssl rand -hex 16)" \
+  -keypass "$(openssl rand -hex 16)" \
+  -dname "CN=SMS Center, OU=Dev, O=YourName, L=City, ST=State, C=IR"
+```
+
+Then add the credentials to **GitHub Secrets** (never to source files):
+
+| Secret | Value |
+|---|---|
+| `KEYSTORE_BASE64` | `base64 -w0 release-key.jks` |
+| `KEYSTORE_PASSWORD` | your store password |
+| `KEY_ALIAS` | `sms-key` |
+| `KEY_PASSWORD` | your key password |
+
+Local release builds read the same values from environment variables:
+`KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+
+Keep `release-key.jks` out of the repo — it is already listed in `.gitignore`.
+
+---
+
 ## 💻 Code Examples
 
 ### Python (Send SMS)
@@ -225,7 +258,7 @@ Starting with **Android 13/14**, side-loaded APKs with SMS permissions require g
 import requests
 
 url = "http://192.168.1.4:8080/api/v1/sms/send"
-headers = {"X-API-Key": "gw_c1b21bef24864bb1", "Content-Type": "application/json"}
+headers = {"X-API-Key": "your_generated_api_key", "Content-Type": "application/json"}
 payload = {
     "phone": "+919876543210",
     "message": "Hello from Python Script!"
@@ -245,7 +278,7 @@ async function sendSms() {
         message: 'Hello from Node.js!'
     }, {
         headers: {
-            'X-API-Key': 'gw_c1b21bef24864bb1',
+            'X-API-Key': 'your_generated_api_key',
             'Content-Type': 'application/json'
         }
     });

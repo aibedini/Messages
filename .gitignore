@@ -13,3 +13,13 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# ── Signing secrets — NEVER commit keystores or passwords ──
+*.jks
+*.keystore
+keystore-base64.txt
+keystore-base64-clean.txt
+keystore-final.txt
+password.txt
+alias.txt
+app/release/

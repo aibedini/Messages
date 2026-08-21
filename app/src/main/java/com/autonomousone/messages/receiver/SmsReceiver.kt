@@ -57,7 +57,7 @@ class SmsReceiver : BroadcastReceiver() {
             }
             if (body.isBlank()) return
 
-            Log.d("SMS_RECEIVER", "Incoming SMS [action=$action] from $sender: $body")
+            Log.d("SMS_RECEIVER", "Incoming SMS [action=$action] from $sender (${body.length} chars)")
 
             var persistedId = System.currentTimeMillis()
 

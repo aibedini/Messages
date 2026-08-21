@@ -19,6 +19,8 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
@@ -41,6 +43,13 @@ class GatewayServer(
 
     companion object {
         private const val TAG = "GATEWAY_SERVER"
+
+        // ── Brute-force protection state (per client IP) ──
+        // value = [consecutiveFailures, windowStartMs, lockedUntilMs]
+        private val authFailures = ConcurrentHashMap<String, LongArray>()
+        private const val MAX_AUTH_FAILURES = 8
+        private const val AUTH_WINDOW_MS = 60_000L
+        private const val LOCKOUT_MS = 30_000L
 
         fun getLocalIpAddress(): String {
             try {
@@ -151,15 +160,27 @@ class GatewayServer(
                 String(buffer, 0, read)
             } else ""
 
-            // 4. Authenticate
+            // 4. Authenticate — constant-time comparison + per-IP rate limiting
             val clientApiKey = headers["x-api-key"]
                 ?: headers["authorization"]?.removePrefix("Bearer ")?.trim()
 
-            if (apiKey.isNotBlank() && clientApiKey != apiKey) {
-                onRequestLog?.invoke("⚠️ 401 Unauthorized [$method $path]")
-                sendResponse(output, 401, JSONObject().put("error", "Unauthorized: Invalid X-API-Key"))
-                socket.close()
-                return
+            if (apiKey.isNotBlank()) {
+                val clientIp = socket.inetAddress?.hostAddress ?: "unknown"
+                when (checkAuth(clientApiKey, clientIp)) {
+                    AuthResult.Locked -> {
+                        onRequestLog?.invoke("⛔ 429 Too Many Requests [$method $path]")
+                        sendResponse(output, 429, JSONObject().put("error", "Too many failed attempts, try again later"))
+                        socket.close()
+                        return
+                    }
+                    AuthResult.Denied -> {
+                        onRequestLog?.invoke("⚠️ 401 Unauthorized [$method $path]")
+                        sendResponse(output, 401, JSONObject().put("error", "Unauthorized: Invalid X-API-Key"))
+                        socket.close()
+                        return
+                    }
+                    AuthResult.Ok -> { /* proceed */ }
+                }
             }
 
             val cleanPath = path.substringBefore("?").removeSuffix("/")
@@ -319,6 +340,40 @@ class GatewayServer(
         }
     }
 
+    private enum class AuthResult { Ok, Denied, Locked }
+
+    /**
+     * Constant-time API-key comparison with per-IP brute-force throttling.
+     */
+    private fun checkAuth(clientApiKey: String?, clientIp: String): AuthResult {
+        val now = System.currentTimeMillis()
+
+        val record = authFailures[clientIp]
+        // Lockout still active?
+        if (record != null && record[2] > now) {
+            return AuthResult.Locked
+        }
+
+        // Window expired → reset the failure counter
+        var failures = if (record == null || now - record[1] > AUTH_WINDOW_MS) 0 else record[0].toInt()
+
+        val authorized = clientApiKey != null && MessageDigest.isEqual(
+            apiKey.toByteArray(Charsets.UTF_8),
+            clientApiKey.toByteArray(Charsets.UTF_8)
+        )
+
+        return if (authorized) {
+            authFailures.remove(clientIp)
+            AuthResult.Ok
+        } else {
+            failures++
+            val windowStart = if (failures == 1) now else (record?.get(1) ?: now)
+            val lockedUntil = if (failures >= MAX_AUTH_FAILURES) now + LOCKOUT_MS else 0L
+            authFailures[clientIp] = longArrayOf(failures.toLong(), windowStart, lockedUntil)
+            AuthResult.Denied
+        }
+    }
+
     private fun sendResponse(output: OutputStream, statusCode: Int, json: JSONObject) {
         val statusMsg = when (statusCode) {
             200 -> "OK"
@@ -326,12 +381,12 @@ class GatewayServer(
             401 -> "Unauthorized"
             404 -> "Not Found"
             405 -> "Method Not Allowed"
+            429 -> "Too Many Requests"
             else -> "Internal Server Error"
         }
         val bodyBytes = json.toString(2).toByteArray(Charsets.UTF_8)
         val header = "HTTP/1.1 $statusCode $statusMsg\r\n" +
                 "Content-Type: application/json; charset=utf-8\r\n" +
-                "Access-Control-Allow-Origin: *\r\n" +
                 "Content-Length: ${bodyBytes.size}\r\n" +
                 "Connection: close\r\n\r\n"
 

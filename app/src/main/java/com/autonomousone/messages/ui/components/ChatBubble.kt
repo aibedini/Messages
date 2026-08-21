@@ -101,6 +101,17 @@ fun ChatBubble(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Column {
+                    if (!incoming) {
+                        Text(
+                            text = "You",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(bottom = 2.dp)
+                        )
+                    }
                     if (imageUriString != null) {
                         AsyncImage(
                             model = Uri.parse(imageUriString),
