@@ -35,8 +35,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -44,7 +44,7 @@ android {
         val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString()
             ?: "https://gaitway.autonomousone.in"
         buildConfigField("String", "GATEWAY_BACKEND_URL", "\"$backendUrl\"")
-        buildConfigField("String", "APP_VERSION", "\"1.1.1\"")
+        buildConfigField("String", "APP_VERSION", "\"1.1.2\"")
     }
 
     buildTypes {
