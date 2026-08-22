@@ -3,6 +3,7 @@ package com.autonomousone.messages.repository
 import android.content.ContentValues
 import android.content.Context
 import android.database.ContentObserver
+import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
@@ -330,7 +331,7 @@ class SmsRepository(
                 Telephony.Mms.Addr.TYPE
             )
             context.contentResolver.query(
-                Telephony.Mms.Addr.CONTENT_URI,
+                Uri.parse("content://mms/addr"),
                 projection,
                 "${Telephony.Mms.Addr.MSG_ID} = ?",
                 arrayOf(msgId.toString()),
@@ -362,7 +363,7 @@ class SmsRepository(
         try {
             val projection = arrayOf(
                 Telephony.Mms.Part.MSG_ID,
-                Telephony.Mms.Part.CT,
+                Telephony.Mms.Part.CONTENT_TYPE,
                 Telephony.Mms.Part.TEXT
             )
             context.contentResolver.query(
@@ -372,7 +373,7 @@ class SmsRepository(
                 arrayOf(msgId.toString()),
                 null
             )?.use { cursor ->
-                val ctIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.CT)
+                val ctIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
                 val textIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.TEXT)
                 while (cursor.moveToNext()) {
                     val ct = cursor.getString(ctIndex)?.lowercase() ?: ""
