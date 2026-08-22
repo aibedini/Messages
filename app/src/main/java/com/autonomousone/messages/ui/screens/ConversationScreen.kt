@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -285,7 +286,28 @@ fun ConversationScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            if (chatItems.isEmpty()) {
+            if (viewModel.isLoading && chatItems.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        viewModel.loadStatus?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else if (chatItems.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

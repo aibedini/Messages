@@ -2,7 +2,10 @@ package com.autonomousone.messages.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.event.SmsEventBus
@@ -10,6 +13,7 @@ import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
 import kotlinx.coroutines.Dispatchers
@@ -26,11 +30,20 @@ class ConversationViewModel(
 
     val messages = mutableStateListOf<Sms>()
 
+    var isLoading by mutableStateOf(false)
+        private set
+
+    var loadStatus by mutableStateOf<String?>(null)
+        private set
+
     private var currentThreadId = 0L
     private var currentPhone = ""
 
     // Track IDs of sent messages we've persisted so we can match them during refresh
     private val persistedSentIds = mutableSetOf<Long>()
+
+    // Optimistic sent rows not yet confirmed in the provider DB (kept visible on refresh).
+    private val optimisticMessages = mutableListOf<Sms>()
 
     private val observer = SmsContentObserver {
         refresh()
@@ -50,32 +63,50 @@ class ConversationViewModel(
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            val loadedMessages = when {
-                currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone)
-                threadId != 0L -> repository.getMessagesByThread(threadId)
-                else -> emptyList()
-            }
-
-            val targetThreadId = if (currentThreadId != 0L) currentThreadId else loadedMessages.lastOrNull()?.threadId ?: 0L
-            val targetPhone = if (currentPhone.isNotBlank()) currentPhone else loadedMessages.firstOrNull()?.sender ?: ""
-
-            if (targetThreadId != 0L || targetPhone.isNotBlank()) {
-                repository.markThreadAsRead(targetThreadId, targetPhone)
-            }
-
-            val readMessages = loadedMessages.map { it.copy(unread = false) }
-
-            withContext(Dispatchers.Main) {
-                messages.clear()
-                messages.addAll(readMessages)
-                if (readMessages.isNotEmpty()) {
-                    if (currentThreadId == 0L) currentThreadId = readMessages.last().threadId
-                    if (currentPhone.isBlank()) {
-                        val sampleMsg = readMessages.firstOrNull { it.type == 1 }
-                            ?: readMessages.first()
-                        currentPhone = sampleMsg.sender
-                        SmsEventBus.activeConversationPhone = currentPhone
+            isLoading = true
+            try {
+                val progressListener = ProgressListener { p ->
+                    val label = when (p.phase) {
+                        "sms" -> "Reading messages"
+                        "mms" -> "Reading multimedia"
+                        else -> "Loading"
                     }
+                    loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
+                }
+                val loadedMessages = when {
+                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone, progressListener)
+                    threadId != 0L -> repository.getMessagesByThread(threadId, progressListener)
+                    else -> emptyList()
+                }
+
+                val targetThreadId = if (currentThreadId != 0L) currentThreadId else loadedMessages.lastOrNull()?.threadId ?: 0L
+                val targetPhone = if (currentPhone.isNotBlank()) currentPhone else loadedMessages.firstOrNull()?.sender ?: ""
+
+                if (targetThreadId != 0L || targetPhone.isNotBlank()) {
+                    repository.markThreadAsRead(targetThreadId, targetPhone)
+                }
+
+                val readMessages = loadedMessages.map { it.copy(unread = false) }
+
+                withContext(Dispatchers.Main) {
+                    messages.clear()
+                    messages.addAll(readMessages)
+                    // Keep unconfirmed optimistic sends visible until the provider reports them.
+                    messages.addAll(mergeOptimistic(readMessages))
+                    if (readMessages.isNotEmpty()) {
+                        if (currentThreadId == 0L) currentThreadId = readMessages.last().threadId
+                        if (currentPhone.isBlank()) {
+                            val sampleMsg = readMessages.firstOrNull { it.type == 1 }
+                                ?: readMessages.first()
+                            currentPhone = sampleMsg.sender
+                            SmsEventBus.activeConversationPhone = currentPhone
+                        }
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isLoading = false
+                    loadStatus = null
                 }
             }
         }
@@ -146,15 +177,30 @@ class ConversationViewModel(
             val readMessages = freshMessages.map { it.copy(unread = false) }
 
             withContext(Dispatchers.Main) {
-                if (readMessages.isNotEmpty()) {
-                    messages.clear()
-                    messages.addAll(readMessages)
-                    if (currentThreadId == 0L) {
-                        currentThreadId = readMessages.last().threadId
-                    }
+                messages.clear()
+                messages.addAll(readMessages)
+                // Never wipe optimistic sends that the provider hasn't confirmed yet.
+                messages.addAll(mergeOptimistic(readMessages))
+                if (currentThreadId == 0L && readMessages.isNotEmpty()) {
+                    currentThreadId = readMessages.last().threadId
                 }
             }
         }
+    }
+
+    /**
+     * Returns optimistic sent messages not yet present in [persisted] and prunes
+     * the ones that have now been confirmed. Matching is by message text plus
+     * timestamp proximity because the optimistic row uses a synthetic id.
+     */
+    private fun mergeOptimistic(persisted: List<Sms>): List<Sms> {
+        if (optimisticMessages.isEmpty()) return emptyList()
+        val remaining = optimisticMessages.filter { opt ->
+            persisted.none { it.message == opt.message && Math.abs(it.date - opt.date) < 5000L }
+        }
+        optimisticMessages.clear()
+        optimisticMessages.addAll(remaining)
+        return remaining.sortedBy { it.date }
     }
 
     fun sendMessage(threadId: Long, phone: String, message: String) {
@@ -182,6 +228,7 @@ class ConversationViewModel(
             type = 2
         )
         messages.add(optimisticSms)
+        optimisticMessages.add(optimisticSms)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -215,6 +262,7 @@ class ConversationViewModel(
             type = 2
         )
         messages.add(optimisticSms)
+        optimisticMessages.add(optimisticSms)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -247,6 +295,7 @@ class ConversationViewModel(
             type = 2
         )
         messages.add(optimisticSms)
+        optimisticMessages.add(optimisticSms)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {

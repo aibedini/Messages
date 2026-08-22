@@ -13,6 +13,7 @@ import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ArchiveRepository
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,6 +41,12 @@ class HomeViewModel(
 
     /** True while the conversation list is being refreshed (drives the loading spinner). */
     var isLoading by mutableStateOf(false)
+        private set
+
+    /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
+    var loadStatus by mutableStateOf<String?>(null)
+        private set
+
     private var loadJob: Job? = null
 
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
@@ -69,9 +76,19 @@ class HomeViewModel(
         isLoading = true
         loadJob = viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Report row-by-row progress ("X of Y") so the user sees what is
+                // happening instead of an indeterminate spinner.
+                val progressListener = ProgressListener { p ->
+                    val label = when (p.phase) {
+                        "sms" -> "Reading messages"
+                        "mms" -> "Reading multimedia"
+                        else -> "Loading"
+                    }
+                    loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
+                }
                 val contactRepo = ContactRepository(getApplication())
                 contactRepo.getContactNameMapAsync()
-                val freshList = repository.getConversations()
+                val freshList = repository.getConversations(progressListener)
                 val archived = archiveRepository.getArchivedIds()
 
                 withContext(Dispatchers.Main) {
@@ -91,7 +108,10 @@ class HomeViewModel(
             } finally {
                 // Always clear the spinner, even if a query throws, so the list
                 // never stays stuck in a loading state.
-                withContext(Dispatchers.Main) { isLoading = false }
+                withContext(Dispatchers.Main) {
+                    isLoading = false
+                    loadStatus = null
+                }
             }
         }
     }

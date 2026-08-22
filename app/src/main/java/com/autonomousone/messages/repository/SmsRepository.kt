@@ -8,6 +8,24 @@ import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
 
+/**
+ * Progress emitted while a bulk SMS/MMS read is in flight.
+ *
+ * @param phase one of "sms", "mms" or "contacts" so the UI can show a friendly label.
+ * @param loaded how many rows have been read so far.
+ * @param total  total rows the provider reported for this phase (0 when unknown).
+ */
+data class LoadProgress(
+    val phase: String,
+    val loaded: Int,
+    val total: Int
+)
+
+/** Receives [LoadProgress] updates while the repository iterates a content cursor. */
+fun interface ProgressListener {
+    fun onProgress(progress: LoadProgress)
+}
+
 class SmsRepository(
     private val context: Context
 ) {
@@ -135,15 +153,15 @@ class SmsRepository(
      * Merges SMS + MMS so MMS-only threads appear and the latest message per
      * conversation (whether SMS or MMS) is shown.
      */
-    fun getConversations(): List<Sms> {
+    fun getConversations(progress: ProgressListener? = null): List<Sms> {
         val conversationMap = mutableMapOf<String, Sms>()
 
         try {
             // Both queries return most-recent-first. We keep the row with the
             // highest date per normalized phone key regardless of source.
             val allMessages = mutableListOf<Sms>()
-            allMessages.addAll(querySms(null, null, "${Telephony.Sms.DATE} DESC"))
-            allMessages.addAll(queryMms(null, null, "${Telephony.Mms.DATE} DESC"))
+            allMessages.addAll(querySms(null, null, "${Telephony.Sms.DATE} DESC", progress))
+            allMessages.addAll(queryMms(null, null, "${Telephony.Mms.DATE} DESC", progress))
 
             for (sms in allMessages) {
                 val norm = ContactRepository.normalizePhone(sms.sender)
@@ -163,23 +181,25 @@ class SmsRepository(
         return conversationMap.values.sortedByDescending { it.date }
     }
 
-    fun getMessagesByThread(threadId: Long): List<Sms> {
+    fun getMessagesByThread(threadId: Long, progress: ProgressListener? = null): List<Sms> {
         if (threadId <= 0) return emptyList()
         val sms = querySms(
             selection = "${Telephony.Sms.THREAD_ID} = ?",
             selectionArgs = arrayOf(threadId.toString()),
-            sortOrder = "${Telephony.Sms.DATE} ASC"
+            sortOrder = "${Telephony.Sms.DATE} ASC",
+            progress = progress
         )
         // Merge MMS rows belonging to the same thread
         val mms = queryMms(
             selection = "${Telephony.Mms.THREAD_ID} = ?",
             selectionArgs = arrayOf(threadId.toString()),
-            sortOrder = "${Telephony.Mms.DATE} ASC"
+            sortOrder = "${Telephony.Mms.DATE} ASC",
+            progress = progress
         )
         return (sms + mms).sortedBy { it.date }
     }
 
-    fun getMessagesByPhone(phone: String): List<Sms> {
+    fun getMessagesByPhone(phone: String, progress: ProgressListener? = null): List<Sms> {
         if (phone.isBlank()) return emptyList()
         val normalized = ContactRepository.normalizePhone(phone)
         val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
@@ -187,13 +207,15 @@ class SmsRepository(
         val sms = querySms(
             selection = "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?)",
             selectionArgs = arrayOf("%$lastDigits%", phone),
-            sortOrder = "${Telephony.Sms.DATE} ASC"
+            sortOrder = "${Telephony.Sms.DATE} ASC",
+            progress = progress
         )
         // MMS addresses live in a separate Addr table, so match on the resolved address in memory
         val mms = queryMms(
             selection = null,
             selectionArgs = null,
-            sortOrder = "${Telephony.Mms.DATE} ASC"
+            sortOrder = "${Telephony.Mms.DATE} ASC",
+            progress = progress
         ).filter { mmsMsg ->
             val n = ContactRepository.normalizePhone(mmsMsg.sender)
             n.isNotBlank() && (n == normalized || n.endsWith(lastDigits) || lastDigits.endsWith(n))
@@ -207,7 +229,8 @@ class SmsRepository(
     private fun querySms(
         selection: String?,
         selectionArgs: Array<String>?,
-        sortOrder: String
+        sortOrder: String,
+        progress: ProgressListener? = null
     ): List<Sms> {
         val smsList = mutableListOf<Sms>()
         try {
@@ -236,6 +259,8 @@ class SmsRepository(
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
+                val total = cursor.count
+                var lastEmitted = -1
                 while (cursor.moveToNext()) {
                     smsList.add(
                         Sms(
@@ -248,6 +273,13 @@ class SmsRepository(
                             type = cursor.getInt(typeIndex)
                         )
                     )
+                    if (progress != null && (smsList.size == total || smsList.size - lastEmitted >= 50)) {
+                        lastEmitted = smsList.size
+                        progress.onProgress(LoadProgress("sms", smsList.size, total))
+                    }
+                }
+                if (progress != null && total == 0) {
+                    progress.onProgress(LoadProgress("sms", 0, 0))
                 }
             }
         } catch (e: Exception) {
@@ -268,7 +300,8 @@ class SmsRepository(
     private fun queryMms(
         selection: String? = null,
         selectionArgs: Array<String>? = null,
-        sortOrder: String = "${Telephony.Mms.DATE} ASC"
+        sortOrder: String = "${Telephony.Mms.DATE} ASC",
+        progress: ProgressListener? = null
     ): List<Sms> {
         val mmsList = mutableListOf<Sms>()
         try {
@@ -304,6 +337,8 @@ class SmsRepository(
                 val boxIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.READ)
                 val subIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
+                val total = cursor.count
+                var lastEmitted = -1
                 while (cursor.moveToNext()) {
                     rows.add(
                         Row(
@@ -315,6 +350,13 @@ class SmsRepository(
                             subject = cursor.getString(subIndex)
                         )
                     )
+                    if (progress != null && (rows.size == total || rows.size - lastEmitted >= 50)) {
+                        lastEmitted = rows.size
+                        progress.onProgress(LoadProgress("mms", rows.size, total))
+                    }
+                }
+                if (progress != null && total == 0) {
+                    progress.onProgress(LoadProgress("mms", 0, 0))
                 }
             }
 

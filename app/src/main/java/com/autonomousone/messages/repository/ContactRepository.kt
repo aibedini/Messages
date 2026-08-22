@@ -85,7 +85,7 @@ class ContactRepository(
         return map[norm] ?: map[phone] ?: phone
     }
 
-    fun getContacts(): List<Contact> {
+    fun getContacts(progress: ProgressListener? = null): List<Contact> {
         val contacts = mutableListOf<Contact>()
         val addedNumbers = HashSet<String>()
 
@@ -107,7 +107,16 @@ class ContactRepository(
                 val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
                 val phoneIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
 
+                val total = cursor.count
+                var readCount = 0
+                var lastEmitted = -1
                 while (cursor.moveToNext()) {
+                    readCount++
+                    if (progress != null && (readCount == total || readCount - lastEmitted >= 50)) {
+                        lastEmitted = readCount
+                        progress.onProgress(LoadProgress("contacts", readCount, total))
+                    }
+
                     val id = if (idIndex >= 0) cursor.getLong(idIndex) else 0L
                     val rawName = if (nameIndex >= 0) cursor.getString(nameIndex)?.trim() else null
                     var phone = if (phoneIndex >= 0) cursor.getString(phoneIndex)?.trim() ?: "" else ""
@@ -126,6 +135,9 @@ class ContactRepository(
                             )
                         )
                     }
+                }
+                if (progress != null && total == 0) {
+                    progress.onProgress(LoadProgress("contacts", 0, 0))
                 }
             }
         } catch (e: Exception) {

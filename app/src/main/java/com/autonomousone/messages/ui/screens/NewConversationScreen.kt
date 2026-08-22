@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -269,7 +270,28 @@ fun NewConversationScreen(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
             )
 
-            if (filteredContacts.isEmpty()) {
+            if (viewModel.isLoading && filteredContacts.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        viewModel.loadStatus?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else if (filteredContacts.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

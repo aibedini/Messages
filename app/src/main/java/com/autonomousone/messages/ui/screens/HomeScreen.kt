@@ -282,7 +282,19 @@ fun HomeScreen(
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        viewModel.loadStatus?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             } else if (filteredList.isEmpty()) {
                 Box(
