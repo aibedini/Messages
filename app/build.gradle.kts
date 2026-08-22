@@ -7,10 +7,7 @@ plugins {
 
 android {
     namespace = "com.autonomousone.messages"
-    compileSdk {
-        version = release(37) {
-        }
-    }
+    compileSdk = 37
 
     signingConfigs {
         create("release") {
@@ -35,8 +32,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.1.2"
+        versionCode = 5
+        versionName = "1.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -44,7 +41,7 @@ android {
         val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString()
             ?: "https://gaitway.autonomousone.in"
         buildConfigField("String", "GATEWAY_BACKEND_URL", "\"$backendUrl\"")
-        buildConfigField("String", "APP_VERSION", "\"1.1.2\"")
+        buildConfigField("String", "APP_VERSION", "\"1.1.3\"")
     }
 
     buildTypes {

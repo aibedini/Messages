@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -274,7 +275,16 @@ fun HomeScreen(
 
             val isInArchivedView = selectedFilter == ConversationFilter.Archived
 
-            if (filteredList.isEmpty()) {
+            if (viewModel.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (filteredList.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

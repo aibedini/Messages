@@ -1,8 +1,11 @@
 package com.autonomousone.messages.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.event.SmsEventBus
@@ -35,6 +38,10 @@ class HomeViewModel(
 
     private val observer = SmsContentObserver { loadSms() }
 
+    /** True while the conversation list is being refreshed (drives the loading spinner). */
+    var isLoading by mutableStateOf(false)
+    private var loadJob: Job? = null
+
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
     private val pendingDeletes = mutableMapOf<Long, Job>()
 
@@ -56,13 +63,18 @@ class HomeViewModel(
     }
 
     fun loadSms() {
-        viewModelScope.launch(Dispatchers.IO) {
+        // Cancel any in-flight reload so a newer observer/refresh tick wins and
+        // the loading state is never left dangling.
+        loadJob?.cancel()
+        isLoading = true
+        loadJob = viewModelScope.launch(Dispatchers.IO) {
             val contactRepo = ContactRepository(getApplication())
             contactRepo.getContactNameMapAsync()
             val freshList = repository.getConversations()
             val archived = archiveRepository.getArchivedIds()
 
             withContext(Dispatchers.Main) {
+                isLoading = false
                 conversations.clear()
                 archivedConversations.clear()
                 archivedIds.clear()
