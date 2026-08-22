@@ -68,25 +68,30 @@ class HomeViewModel(
         loadJob?.cancel()
         isLoading = true
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            val contactRepo = ContactRepository(getApplication())
-            contactRepo.getContactNameMapAsync()
-            val freshList = repository.getConversations()
-            val archived = archiveRepository.getArchivedIds()
+            try {
+                val contactRepo = ContactRepository(getApplication())
+                contactRepo.getContactNameMapAsync()
+                val freshList = repository.getConversations()
+                val archived = archiveRepository.getArchivedIds()
 
-            withContext(Dispatchers.Main) {
-                isLoading = false
-                conversations.clear()
-                archivedConversations.clear()
-                archivedIds.clear()
-                archivedIds.addAll(archived)
+                withContext(Dispatchers.Main) {
+                    conversations.clear()
+                    archivedConversations.clear()
+                    archivedIds.clear()
+                    archivedIds.addAll(archived)
 
-                freshList.forEach { sms ->
-                    if (sms.threadId in archived) {
-                        archivedConversations.add(sms)
-                    } else {
-                        conversations.add(sms)
+                    freshList.forEach { sms ->
+                        if (sms.threadId in archived) {
+                            archivedConversations.add(sms)
+                        } else {
+                            conversations.add(sms)
+                        }
                     }
                 }
+            } finally {
+                // Always clear the spinner, even if a query throws, so the list
+                // never stays stuck in a loading state.
+                withContext(Dispatchers.Main) { isLoading = false }
             }
         }
     }

@@ -281,6 +281,16 @@ class SmsRepository(
                 Telephony.Mms.SUBJECT
             )
 
+            data class Row(
+                val id: Long,
+                val threadId: Long,
+                val date: Long,
+                val box: Int,
+                val read: Int,
+                val subject: String?
+            )
+
+            val rows = mutableListOf<Row>()
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI,
                 projection,
@@ -294,19 +304,39 @@ class SmsRepository(
                 val boxIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.READ)
                 val subIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
-
                 while (cursor.moveToNext()) {
-                    val msgId = cursor.getLong(idIndex)
-                    val box = cursor.getInt(boxIndex)
+                    rows.add(
+                        Row(
+                            id = cursor.getLong(idIndex),
+                            threadId = cursor.getLong(threadIndex),
+                            date = cursor.getLong(dateIndex),
+                            box = cursor.getInt(boxIndex),
+                            read = cursor.getInt(readIndex),
+                            subject = cursor.getString(subIndex)
+                        )
+                    )
+                }
+            }
+
+            // The MMS cursor is now closed. Resolve addresses and bodies in bulk with
+            // one query each — per-message nested queries inside the cursor loop can
+            // deadlock the MMS provider and hang the conversation load.
+            if (rows.isNotEmpty()) {
+                val ids = rows.map { it.id }
+                val addressMap = loadMmsAddresses(ids)
+                val bodyMap = loadMmsBodies(ids)
+                for (row in rows) {
                     mmsList.add(
                         Sms(
-                            id = -msgId,
-                            threadId = cursor.getLong(threadIndex),
-                            sender = resolveMmsAddress(msgId, box).ifBlank { "Unknown" },
-                            message = resolveMmsBody(msgId, cursor.getString(subIndex)),
-                            date = cursor.getLong(dateIndex),
-                            unread = cursor.getInt(readIndex) == 0,
-                            type = if (box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
+                            id = -row.id,
+                            threadId = row.threadId,
+                            sender = (addressMap[row.id] ?: "").ifBlank { "Unknown" },
+                            message = bodyMap[row.id]
+                                ?: row.subject?.takeIf { it.isNotBlank() }
+                                ?: "[MMS]",
+                            date = row.date,
+                            unread = row.read == 0,
+                            type = if (row.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
                         )
                     )
                 }
@@ -318,48 +348,60 @@ class SmsRepository(
     }
 
     /**
-     * Resolve the counterpart phone number for an MMS row. MMS stores parties in
-     * the separate Addr table, using TYPE 137 (FROM) for the sender of a received
-     * message and TYPE 151 (TO) for the recipient of a sent message.
+     * Bulk-resolve counterpart phone numbers for a set of MMS ids from the Addr
+     * table. Prefers the FROM address (TYPE 137) and falls back to TO (151).
      */
-    private fun resolveMmsAddress(msgId: Long, msgBox: Int): String {
-        var address = ""
-        var preferred: String? = null
+    private fun loadMmsAddresses(msgIds: List<Long>): Map<Long, String> {
+        val result = mutableMapOf<Long, String>()
+        if (msgIds.isEmpty()) return result
         try {
             val projection = arrayOf(
+                Telephony.Mms.Addr.MSG_ID,
                 Telephony.Mms.Addr.ADDRESS,
                 Telephony.Mms.Addr.TYPE
             )
             context.contentResolver.query(
                 Uri.parse("content://mms/addr"),
                 projection,
-                "${Telephony.Mms.Addr.MSG_ID} = ?",
-                arrayOf(msgId.toString()),
+                "${Telephony.Mms.Addr.MSG_ID} IN (${msgIds.joinToString(",")})",
+                null,
                 null
             )?.use { cursor ->
+                val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.MSG_ID)
                 val addrIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.ADDRESS)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.TYPE)
+                val from = mutableMapOf<Long, String>()
+                val to = mutableMapOf<Long, String>()
+                val other = mutableMapOf<Long, String>()
                 while (cursor.moveToNext()) {
-                    val addr = cursor.getString(addrIndex) ?: ""
+                    val id = cursor.getLong(msgIdIndex)
+                    val addr = cursor.getString(addrIndex)?.trim() ?: ""
                     if (addr.isBlank()) continue
-                    val preferredType = if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX) 137 else 151
-                    if (cursor.getInt(typeIndex) == preferredType) preferred = addr
-                    if (address.isBlank()) address = addr
+                    when (cursor.getInt(typeIndex)) {
+                        137 -> if (!from.containsKey(id)) from[id] = addr
+                        151 -> if (!to.containsKey(id)) to[id] = addr
+                        else -> if (!other.containsKey(id)) other[id] = addr
+                    }
+                }
+                val allIds = (from.keys + to.keys + other.keys).distinct()
+                for (id in allIds) {
+                    val addr = from[id] ?: to[id] ?: other[id] ?: ""
+                    if (addr.isNotBlank()) result[id] = addr
                 }
             }
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error resolving MMS address for $msgId", e)
+            Log.e("SMS_DEBUG", "Error loading MMS addresses", e)
         }
-        return preferred ?: address
+        return result
     }
 
     /**
-     * Resolve the display body for an MMS row: prefer the text/plain part, then an
-     * attachment placeholder, then the subject.
+     * Bulk-resolve the display body for a set of MMS ids from the Part table.
+     * Prefers the text/plain part, then an attachment placeholder.
      */
-    private fun resolveMmsBody(msgId: Long, subject: String?): String {
-        var text: String? = null
-        var hasAttachment = false
+    private fun loadMmsBodies(msgIds: List<Long>): Map<Long, String> {
+        val result = mutableMapOf<Long, String>()
+        if (msgIds.isEmpty()) return result
         try {
             val projection = arrayOf(
                 Telephony.Mms.Part.MSG_ID,
@@ -369,34 +411,41 @@ class SmsRepository(
             context.contentResolver.query(
                 Telephony.Mms.Part.CONTENT_URI,
                 projection,
-                "${Telephony.Mms.Part.MSG_ID} = ?",
-                arrayOf(msgId.toString()),
+                "${Telephony.Mms.Part.MSG_ID} IN (${msgIds.joinToString(",")})",
+                null,
                 null
             )?.use { cursor ->
+                val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.MSG_ID)
                 val ctIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
                 val textIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.TEXT)
+                val text = mutableMapOf<Long, String>()
+                val attachments = mutableSetOf<Long>()
                 while (cursor.moveToNext()) {
+                    val id = cursor.getLong(msgIdIndex)
                     val ct = cursor.getString(ctIndex)?.lowercase() ?: ""
                     when {
                         ct == "text/plain" -> {
                             val body = cursor.getString(textIndex)
-                            if (!body.isNullOrBlank()) text = body
+                            if (!body.isNullOrBlank() && !text.containsKey(id)) text[id] = body
                         }
                         ct.startsWith("image/") || ct.startsWith("audio/") || ct.startsWith("video/") -> {
-                            hasAttachment = true
+                            attachments.add(id)
                         }
+                    }
+                }
+                val allIds = (text.keys + attachments).distinct()
+                for (id in allIds) {
+                    val body = text[id]
+                    when {
+                        body != null -> result[id] = body
+                        id in attachments -> result[id] = "[MMS]"
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error resolving MMS body for $msgId", e)
+            Log.e("SMS_DEBUG", "Error loading MMS bodies", e)
         }
-        return when {
-            !text.isNullOrBlank() -> text
-            hasAttachment -> "[MMS]"
-            !subject.isNullOrBlank() -> subject
-            else -> "[MMS]"
-        }
+        return result
     }
 
     fun markThreadAsRead(threadId: Long, phone: String = "") {
