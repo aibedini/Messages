@@ -55,6 +55,30 @@ class SmsSender(
      */
     fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long {
         val sentId = persistToSent(phone, text)
+        dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = true)
+        return sentId
+    }
+
+    /**
+     * Silent variant for machine callers (e.g. the EVE send queue):
+     * persists + dispatches without user-facing toasts.
+     * @return persisted row id on successful hand-off to telephony,
+     *         or null when dispatch failed.
+     */
+    fun sendForResult(phone: String, text: String): Long? {
+        val sentId = persistToSent(phone, text)
+        return if (dispatch(sentId, phone, text, null, null, showToast = false)) sentId else null
+    }
+
+    /** Dispatches via the selected SIM/SMSC; updates STATUS on failure. */
+    private fun dispatch(
+        sentId: Long,
+        phone: String,
+        text: String,
+        subscriptionIdOverride: Int?,
+        smscOverride: String?,
+        showToast: Boolean
+    ): Boolean {
         val manager = resolveSmsManager(subscriptionIdOverride)
 
         // Effective SMSC: per-request override → user preference → network default.
@@ -92,13 +116,15 @@ class SmsSender(
                 "SMS queued to $phone (id=$sentId, subId=$effectiveSubId, " +
                     "smsc=${if (scAddress != null) "custom" else "network"}, reports=$wantReports)"
             )
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending SMS to $phone", e)
             updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
-            Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
+            if (showToast) {
+                Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
+            }
+            return false
         }
-
-        return sentId
     }
 
     /**

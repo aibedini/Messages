@@ -83,6 +83,48 @@ All require HTTPS; plaintext URLs are rejected by the client.
 
 ---
 
+## EVE integration (Custom HTTP provider)
+
+This gateway implements the **EVE panel "Custom HTTP" SMS provider** contract
+out of the box. In the EVE SMS settings choose:
+
+| Setting | Value |
+|---|---|
+| Provider | `Custom HTTP` |
+| Base URL | `http://<device-ip>:8080` (or your tunnel/domain URL) |
+| API Key | the same `gw_…` key from the Gateway screen |
+| Timeout | `15` |
+
+Then run **Test Connection** → **Send Test SMS** → enable SMS Automation.
+
+### Endpoints
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/health` | none | 200 when the service is up |
+| GET | `/ready` | Bearer | 200 ready · 401 bad key · 503 not default-SMS-app |
+| POST | `/send` | Bearer + `Idempotency-Key` | body `{to, text, priority}`; replay-safe |
+| GET | `/send/status/{requestId}` | Bearer | `queued→active→sent/failed`, `terminal/successful` flags |
+| POST | `/send/cancel/{requestId}` | Bearer | cancels while still queued |
+| GET | `/send/capacity` | Bearer | pending counts + announcement bucket |
+
+Priority → level mapping: `critical`=1, `expired`=3, `expiring`=6, `announcement`=10.
+Duplicate Idempotency Keys never create duplicate messages. Queue state survives
+app restarts (persisted). Capacity guard returns `429` with `Retry-After: 30`
+once 500 pending messages are reached.
+
+Example:
+
+```bash
+curl -X POST http://192.168.1.20:8080/send \
+  -H "Authorization: Bearer gw_..." \
+  -H "Idempotency-Key: eve-2026-08-23-001" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"09123456789","text":"Your subscription expires soon","priority":"expiring"}'
+```
+
+---
+
 ## Tests
 
 Two layers:

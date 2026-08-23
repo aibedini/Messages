@@ -6,6 +6,8 @@ import android.os.BatteryManager
 import android.os.Build
 import android.provider.Telephony
 import android.util.Log
+import com.autonomousone.messages.eve.EveSmsQueue
+import com.autonomousone.messages.eve.eveIsoTimestamp
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
@@ -105,6 +107,9 @@ class GatewayServer(
             Log.d(TAG, "GatewayServer listening on ${bindAddress ?: "0.0.0.0"}:$port")
             onRequestLog?.invoke("✅ Server listening on http://${bindAddress ?: "0.0.0.0"}:$port")
 
+            // EVE send queue: persists requests, sends highest-priority-first.
+            EveSmsQueue.start(context) { to, text -> smsSender.sendForResult(to, text) != null }
+
             acceptExecutor.execute {
                 while (isListening && serverSocket?.isClosed == false) {
                     try {
@@ -126,6 +131,7 @@ class GatewayServer(
     @Synchronized
     fun stop() {
         isListening = false
+        EveSmsQueue.stop()
         try {
             serverSocket?.close()
             serverSocket = null
@@ -193,7 +199,16 @@ class GatewayServer(
                 else -> ""
             }
 
-            // 4. Authenticate — constant-time comparison + per-IP rate limiting
+            // 4. EVE health probe — reachable WITHOUT authentication (spec).
+            val earlyPath = path.substringBefore("?").removeSuffix("/")
+            if (earlyPath == "/health") {
+                onRequestLog?.invoke("💚 GET /health -> 200")
+                sendResponse(output, 200, JSONObject().put("status", "ok"))
+                socket.close()
+                return
+            }
+
+            // 5. Authenticate — constant-time comparison + per-IP rate limiting
             val clientApiKey = headers["x-api-key"]
                 ?: headers["authorization"]?.removePrefix("Bearer ")?.trim()
 
@@ -218,8 +233,37 @@ class GatewayServer(
 
             val cleanPath = path.substringBefore("?").removeSuffix("/")
 
-            // 5. Route request
+            // 6. Route request
             when {
+                // ── EVE provider endpoints (Custom HTTP SMS contract) ──
+                cleanPath == "/ready" && method == "GET" -> {
+                    val ready = isListening && isDefaultSmsApp() && EveSmsQueue.isRunning
+                    if (ready) {
+                        sendResponse(output, 200, JSONObject().put("status", "ready"))
+                    } else {
+                        sendResponse(
+                            output, 503,
+                            JSONObject()
+                                .put("error", "not_ready")
+                                .put("serverRunning", isListening)
+                                .put("defaultSmsApp", isDefaultSmsApp())
+                                .put("queueRunning", EveSmsQueue.isRunning)
+                        )
+                    }
+                }
+                cleanPath == "/send" && method == "POST" -> {
+                    handleEveSend(body, headers["idempotency-key"], output)
+                }
+                cleanPath.startsWith("/send/status/") && method == "GET" -> {
+                    handleEveStatus(cleanPath.removePrefix("/send/status/"), output)
+                }
+                cleanPath.startsWith("/send/cancel/") && method == "POST" -> {
+                    handleEveCancel(cleanPath.removePrefix("/send/cancel/"), output)
+                }
+                cleanPath == "/send/capacity" && method == "GET" -> {
+                    handleEveCapacity(output)
+                }
+
                 cleanPath == "/api/v1/sms/send" && method == "POST" -> {
                     val json = JSONObject(body)
                     val phone = json.optString("phone", "").trim()
@@ -364,14 +408,6 @@ class GatewayServer(
                 cleanPath == "/api/v1/status" -> {
                     val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                     val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-                    val defaultSms = try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
-                            roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_SMS) == true
-                        } else {
-                            Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
-                        }
-                    } catch (e: Exception) { false }
 
                     onRequestLog?.invoke("ℹ️ GET /api/v1/status -> 200 OK")
                     sendResponse(output, 200, JSONObject().apply {
@@ -380,7 +416,7 @@ class GatewayServer(
                         put("ip", getLocalIpAddress())
                         put("port", port)
                         put("batteryLevel", batteryLevel)
-                        put("isDefaultSmsApp", defaultSms)
+                        put("isDefaultSmsApp", isDefaultSmsApp())
                         put("timestamp", System.currentTimeMillis())
                     })
                 }
@@ -402,6 +438,170 @@ class GatewayServer(
     }
 
     private enum class AuthResult { Ok, Denied, Locked }
+
+    // ── EVE provider handlers (Custom HTTP SMS contract) ─────────────────────
+
+    private fun isDefaultSmsApp(): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
+            roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_SMS) == true
+        } else {
+            Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
+        }
+    } catch (e: Exception) { false }
+
+    private fun handleEveSend(body: String, idempotencyKey: String?, output: java.io.OutputStream) {
+        try {
+            if (EveSmsQueue.totalPending() >= EveSmsQueue.ANNOUNCEMENT_LIMIT) {
+                onRequestLog?.invoke("🚦 POST /send -> 429 rate limited")
+                sendResponse(
+                    output, 429,
+                    JSONObject()
+                        .put("error", "rate_limited")
+                        .put("retryAfterSeconds", EveSmsQueue.RETRY_AFTER_SECONDS),
+                    extraHeaders = mapOf("Retry-After" to EveSmsQueue.RETRY_AFTER_SECONDS.toString())
+                )
+                return
+            }
+
+            val json = JSONObject(body)
+            val to = json.optString("to", "").trim()
+            val text = json.optString("text", "").trim()
+            val priority = json.optString("priority", "").trim().lowercase()
+
+            val digitsOnly = to.filter { it.isDigit() }
+            val invalidTo = to.isBlank() || digitsOnly.length < 10
+            val invalidPriority = priority.isNotBlank() && !EveSmsQueue.PRIORITY_LEVELS.containsKey(priority)
+
+            when {
+                invalidTo || text.isBlank() -> {
+                    sendResponse(output, 400, JSONObject().put("error", "invalid_request"))
+                }
+                invalidPriority -> {
+                    sendResponse(output, 400, JSONObject().put("error", "invalid_priority"))
+                }
+                else -> {
+                    val effectivePriority = priority.ifBlank { "announcement" }
+                    val result = EveSmsQueue.enqueue(to, text, effectivePriority, idempotencyKey)
+                    onRequestLog?.invoke("📨 POST /send -> $to (${result.record.priority}, ${result.record.status})")
+                    sendResponse(
+                        output, if (result.created) 202 else 200,
+                        eveAcceptedJson(result.record).put("queuePosition", queuePosition(result.record))
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "EVE /send failed", e)
+            sendResponse(output, 400, JSONObject().put("error", "invalid_request"))
+        }
+    }
+
+    /** 1-based position among queued jobs that will be sent no later than this one. */
+    private fun queuePosition(record: com.autonomousone.messages.eve.EveSmsQueue.Record): Int {
+        return EveSmsQueue.pendingByPriority().entries
+            .filter { (EveSmsQueue.PRIORITY_LEVELS[it.key] ?: 99) <= record.priorityLevel }
+            .sumOf { it.value }
+            .coerceAtLeast(1)
+    }
+
+    private fun handleEveStatus(requestId: String, output: java.io.OutputStream) {
+        val rec = EveSmsQueue.status(requestId)
+        if (rec == null) {
+            sendResponse(output, 404, JSONObject().put("error", "not_found"))
+            return
+        }
+        onRequestLog?.invoke("🔍 GET /send/status/${rec.requestId} -> ${rec.status}")
+        val json = JSONObject()
+            .put("requestId", rec.requestId)
+            .put("jobId", rec.jobId)
+            .put("status", eveStatusString(rec.status))
+            .put("state", eveStateString(rec.status))
+            .put("stage", eveStage(rec))
+            .put("terminal", rec.terminal)
+            .put("successful", rec.successful)
+            .put("priority", rec.priority)
+            .put("priorityLevel", rec.priorityLevel)
+            .put("submittedOnce", rec.submittedOnce || rec.terminal)
+            .put("requestedTo", rec.to)
+            .put("sentTo", rec.to)
+            .put("sentAt", rec.sentAt.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL)
+            .put("failedReason", rec.failedReason ?: JSONObject.NULL)
+        sendResponse(output, 200, json)
+    }
+
+    private fun handleEveCancel(requestId: String, output: java.io.OutputStream) {
+        val result = EveSmsQueue.cancel(requestId)
+        if (result == null) {
+            sendResponse(output, 404, JSONObject().put("error", "not_found"))
+            return
+        }
+        onRequestLog?.invoke("✋ POST /send/cancel/$requestId -> ok=${result.ok}")
+        if (result.ok) {
+            val rec = EveSmsQueue.status(requestId)
+            sendResponse(output, 200, JSONObject()
+                .put("ok", true)
+                .put("status", "cancelled")
+                .put("state", "cancelled")
+                .put("terminal", true)
+                .put("successful", false))
+            rec?.let { /* persisted via queue */ }
+        } else {
+            val rec = EveSmsQueue.status(requestId)
+            sendResponse(output, 200, JSONObject()
+                .put("ok", false)
+                .put("reason", result.reason ?: "not_cancellable")
+                .put("status", rec?.let { eveStatusString(it.status) } ?: "unknown")
+                .put("terminal", rec?.terminal ?: false))
+        }
+    }
+
+    private fun handleEveCapacity(output: java.io.OutputStream) {
+        val pending = EveSmsQueue.pendingByPriority()
+        val announcementPending = pending["announcement"] ?: 0
+        val available = (EveSmsQueue.ANNOUNCEMENT_LIMIT - announcementPending).coerceAtLeast(0)
+        onRequestLog?.invoke("📊 GET /send/capacity -> $pending")
+        sendResponse(output, 200, JSONObject()
+            .put("priorities", JSONObject(pending.toString()))
+            .put("announcement", JSONObject()
+                .put("limit", EveSmsQueue.ANNOUNCEMENT_LIMIT)
+                .put("pending", announcementPending)
+                .put("available", available)
+                .put("recommendedBatchSize", minOf(EveSmsQueue.RECOMMENDED_BATCH_SIZE, available))))
+    }
+
+    private fun eveStatusString(status: com.autonomousone.messages.eve.EveSmsQueue.Status): String =
+        when (status) {
+            com.autonomousone.messages.eve.EveSmsQueue.Status.QUEUED -> "queued"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.ACTIVE -> "active"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.SENT -> "sent"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.FAILED -> "failed"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.CANCELLED -> "cancelled"
+        }
+
+    private fun eveStateString(status: com.autonomousone.messages.eve.EveSmsQueue.Status): String =
+        when (status) {
+            com.autonomousone.messages.eve.EveSmsQueue.Status.QUEUED -> "queued"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.ACTIVE -> "running"
+            else -> "completed"
+        }
+
+    private fun eveStage(rec: com.autonomousone.messages.eve.EveSmsQueue.Record): String =
+        when (rec.status) {
+            com.autonomousone.messages.eve.EveSmsQueue.Status.QUEUED -> "queue"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.ACTIVE -> "provider_send"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.SENT -> "provider_delivery"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.FAILED -> "sending_failed"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.CANCELLED -> "cancelled"
+        }
+
+    private fun eveAcceptedJson(rec: com.autonomousone.messages.eve.EveSmsQueue.Record): JSONObject =
+        JSONObject()
+            .put("requestId", rec.requestId)
+            .put("jobId", rec.jobId)
+            .put("statusUrl", "/send/status/${rec.requestId}")
+            .put("status", eveStatusString(rec.status))
+            .put("priority", rec.priority)
+            .put("priorityLevel", rec.priorityLevel)
 
     /**
      * Constant-time API-key comparison with per-IP brute-force throttling.
@@ -442,20 +642,30 @@ class GatewayServer(
         }
     }
 
-    private fun sendResponse(output: OutputStream, statusCode: Int, json: JSONObject) {
+    private fun sendResponse(
+        output: OutputStream,
+        statusCode: Int,
+        json: JSONObject,
+        extraHeaders: Map<String, String> = emptyMap()
+    ) {
         val statusMsg = when (statusCode) {
             200 -> "OK"
+            201 -> "Created"
+            202 -> "Accepted"
             400 -> "Bad Request"
             401 -> "Unauthorized"
             404 -> "Not Found"
             405 -> "Method Not Allowed"
             413 -> "Payload Too Large"
             429 -> "Too Many Requests"
+            503 -> "Service Unavailable"
             else -> "Internal Server Error"
         }
         val bodyBytes = json.toString(2).toByteArray(Charsets.UTF_8)
+        val extra = extraHeaders.entries.joinToString("") { (k, v) -> "$k: $v\r\n" }
         val header = "HTTP/1.1 $statusCode $statusMsg\r\n" +
                 "Content-Type: application/json; charset=utf-8\r\n" +
+                extra +
                 "Content-Length: ${bodyBytes.size}\r\n" +
                 "Connection: close\r\n\r\n"
 
