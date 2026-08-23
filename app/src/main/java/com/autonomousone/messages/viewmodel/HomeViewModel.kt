@@ -46,6 +46,12 @@ class HomeViewModel(
     var isLoading by mutableStateOf(false)
         private set
 
+    /** Real sync progress for the banner: "Syncing messages… 120/340". Null when idle. */
+    data class SyncProgress(val phase: String, val loaded: Int, val total: Int)
+
+    var syncProgress by mutableStateOf<SyncProgress?>(null)
+        private set
+
     /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
     var loadStatus by mutableStateOf<String?>(null)
         private set
@@ -54,6 +60,9 @@ class HomeViewModel(
 
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
     private val pendingDeletes = mutableMapOf<Long, Job>()
+
+    /** Delays the spinner so quick reloads never flash the progress bar. */
+    private var loadingShowJob: Job? = null
 
     init {
         repository.registerObserver(observer)
@@ -83,14 +92,20 @@ class HomeViewModel(
     }
 
     private suspend fun performLoad() {
-        isLoading = true
+        // Only surface the loading UI when the load actually takes a moment;
+        // instant reloads (single new SMS) stay silent and seamless.
+        loadingShowJob?.cancel()
+        loadingShowJob = viewModelScope.launch {
+            delay(250)
+            isLoading = true
+        }
         try {
             val progressListener = ProgressListener { progress ->
                 val label = when (progress.phase) {
                     "threads" -> "Loading conversations"
-                    "sms" -> "Reading messages"
-                    "mms" -> "Reading multimedia"
-                    else -> "Loading"
+                    "sms" -> "Syncing messages"
+                    "mms" -> "Syncing multimedia"
+                    else -> "Syncing"
                 }
                 viewModelScope.launch {
                     loadStatus = if (progress.total > 0) {
@@ -98,6 +113,7 @@ class HomeViewModel(
                     } else {
                         "$label…"
                     }
+                    syncProgress = SyncProgress(progress.phase, progress.loaded, progress.total)
                 }
             }
 
@@ -117,8 +133,10 @@ class HomeViewModel(
         } catch (error: Exception) {
             Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
         } finally {
+            loadingShowJob?.cancel()
             isLoading = false
             loadStatus = null
+            syncProgress = null
         }
     }
 
@@ -260,6 +278,9 @@ class HomeViewModel(
                 if (incomingSms.threadId !in archivedIds) {
                     conversations.add(0, incomingSms)
                 }
+                // Reconcile with the provider right away (conflated + debounced),
+                // so the freshly prepended row is confirmed/updated ASAP.
+                loadSms()
             }
         }
     }

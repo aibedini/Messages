@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
@@ -269,7 +270,10 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             if (viewModel.isLoading && filteredList.isNotEmpty()) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                SyncBanner(
+                    progress = viewModel.syncProgress,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             val isInArchivedView = selectedFilter == ConversationFilter.Archived
@@ -372,6 +376,49 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Determinate sync indicator: "Syncing messages… 120/340" with a real
+ * progress bar. Falls back to an indeterminate bar when totals are unknown.
+ */
+@Composable
+private fun SyncBanner(progress: HomeViewModel.SyncProgress?, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+        val total = progress?.total ?: 0
+        val loaded = progress?.loaded ?: 0
+        if (total > 0) {
+            val fraction = (loaded.toFloat() / total).coerceIn(0f, 1f)
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Syncing messages… $loaded / $total",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Updating conversations…",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
