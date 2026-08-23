@@ -46,11 +46,16 @@ class GatewayViewModel(
     var port by mutableIntStateOf(prefs.port)
     var apiKey by mutableStateOf(prefs.apiKey)
     var webhookUrl by mutableStateOf(prefs.webhookUrl)
+    var webhookSecret by mutableStateOf(prefs.webhookSecret)
+    var bindAllInterfaces by mutableStateOf(prefs.bindAllInterfaces)
+        private set
     var localIpAddress by mutableStateOf(GatewayServer.getLocalIpAddress())
         private set
 
     // ── Cloud backend state (new) ──────────────────────────────────────────
     var backendUrl by mutableStateOf(prefs.backendUrl)
+        private set
+    var registrationSecret by mutableStateOf(prefs.registrationSecret)
         private set
     var gatewayId by mutableStateOf(prefs.gatewayId)
         private set
@@ -144,7 +149,8 @@ class GatewayViewModel(
     fun generateNewApiKey() {
         val newKey = prefs.generateNewApiKey()
         apiKey = newKey
-        addLog("🔑 Generated new API Key: $newKey")
+        // Never log the full key value.
+        addLog("🔑 Generated new API Key (${newKey.take(7)}…${newKey.takeLast(4)})")
     }
 
     fun saveWebhookUrl(newUrl: String) {
@@ -152,6 +158,35 @@ class GatewayViewModel(
         prefs.webhookUrl = webhookUrl
         addLog("🔗 Saved Webhook URL: $webhookUrl")
         Toast.makeText(getApplication(), "Webhook URL saved", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveWebhookSecret(newSecret: String) {
+        webhookSecret = newSecret.trim()
+        prefs.webhookSecret = webhookSecret
+        addLog(
+            if (webhookSecret.isBlank()) "🔓 Webhook signing disabled"
+            else "🔒 Webhook HMAC signing enabled (X-Signature header)"
+        )
+        Toast.makeText(getApplication(), "Webhook secret saved", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveRegistrationSecret(newSecret: String) {
+        registrationSecret = newSecret.trim()
+        prefs.registrationSecret = registrationSecret
+        addLog(
+            if (registrationSecret.isBlank()) "⚠️ Registration secret cleared — backend must allow open registration"
+            else "🔐 Registration secret saved (sent as X-Registration-Secret)"
+        )
+        Toast.makeText(getApplication(), "Registration secret saved", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveBindAllInterfaces(bindAll: Boolean) {
+        bindAllInterfaces = bindAll
+        prefs.bindAllInterfaces = bindAll
+        addLog(
+            if (bindAll) "🌐 Server will bind to all interfaces (0.0.0.0) on next start"
+            else "🏠 Server will bind to the LAN address only (recommended) on next start"
+        )
     }
 
     fun savePort(newPort: Int) {

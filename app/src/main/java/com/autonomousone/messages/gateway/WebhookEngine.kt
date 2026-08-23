@@ -31,7 +31,11 @@ object WebhookEngine {
         // ── 1. Existing local webhook ──────────────────────────────────────
         val webhookUrl = prefs.webhookUrl.trim()
         if (webhookUrl.isNotBlank()) {
-            scope.launch { sendLocalWebhook(webhookUrl, sms) }
+            if (!webhookUrl.startsWith("https://")) {
+                Log.w(TAG, "Webhook URL rejected — HTTPS required (got $webhookUrl)")
+            } else {
+                scope.launch { sendLocalWebhook(webhookUrl, sms, prefs.webhookSecret) }
+            }
         }
 
         // ── 2. Cloud backend event upload ──────────────────────────────────
@@ -42,7 +46,7 @@ object WebhookEngine {
     // Local webhook (existing — unchanged behaviour)
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun sendLocalWebhook(webhookUrl: String, sms: Sms) {
+    private fun sendLocalWebhook(webhookUrl: String, sms: Sms, signingSecret: String) {
         try {
             val json = JSONObject().apply {
                 put("event", "sms_received")
@@ -56,13 +60,22 @@ object WebhookEngine {
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("User-Agent", "Android-SMS-Gateway/1.0")
+                setRequestProperty("User-Agent", "Android-SMS-Gateway/${com.autonomousone.messages.BuildConfig.APP_VERSION}")
                 connectTimeout = 8_000
                 readTimeout = 8_000
                 doOutput = true
             }
 
-            conn.outputStream.use { os -> os.write(json.toString().toByteArray(Charsets.UTF_8)) }
+            val body = json.toString()
+            if (signingSecret.isNotBlank()) {
+                // HMAC-SHA256 signature over "<timestamp>.<body>" so receivers can
+                // verify authenticity and reject replayed payloads.
+                val timestamp = System.currentTimeMillis().toString()
+                conn.setRequestProperty("X-Timestamp", timestamp)
+                conn.setRequestProperty("X-Signature", hmacSha256(signingSecret, "$timestamp.$body"))
+            }
+
+            conn.outputStream.use { os -> os.write(body.toByteArray(Charsets.UTF_8)) }
             val responseCode = conn.responseCode
             Log.d(TAG, "Local webhook dispatched → $webhookUrl, HTTP $responseCode")
             conn.disconnect()
@@ -70,6 +83,13 @@ object WebhookEngine {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to dispatch local webhook to $webhookUrl", e)
         }
+    }
+
+    /** HMAC-SHA256 of [data] keyed with [secret], hex-encoded. */
+    private fun hmacSha256(secret: String, data: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(data.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -35,9 +35,19 @@ class BackendClient(private val prefs: GatewayPreferences) {
     }
 
     /** POST JSON to the backend. Returns the raw response body on success. */
-    fun post(path: String, body: JSONObject, authenticated: Boolean = true): Result<String> {
+    fun post(
+        path: String,
+        body: JSONObject,
+        authenticated: Boolean = true,
+        extraHeaders: Map<String, String> = emptyMap(),
+    ): Result<String> {
         return try {
-            val url = URL("${prefs.backendUrl}$path")
+            // Never send the bearer token (or register payloads) over plaintext HTTP.
+            val baseUrl = prefs.backendUrl
+            if (!baseUrl.startsWith("https://")) {
+                return Result.Failure("Insecure backend URL rejected — HTTPS required")
+            }
+            val url = URL("$baseUrl$path")
             val conn = url.openConnection() as HttpURLConnection
             conn.apply {
                 requestMethod = "POST"
@@ -45,6 +55,9 @@ class BackendClient(private val prefs: GatewayPreferences) {
                 setRequestProperty("User-Agent", "AndroidGateway/${BuildConfig.APP_VERSION}")
                 if (authenticated && prefs.gatewayToken.isNotBlank()) {
                     setRequestProperty("Authorization", "Bearer ${prefs.gatewayToken}")
+                }
+                extraHeaders.forEach { (name, value) ->
+                    if (value.isNotBlank()) setRequestProperty(name, value)
                 }
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS

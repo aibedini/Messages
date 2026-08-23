@@ -110,6 +110,8 @@ object NotificationHelper {
             .setStyle(NotificationCompat.BigTextStyle().bigText(sms.message))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            // Hide message body & OTP on the lock screen (public area shows app name only).
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .setContentIntent(tapPendingIntent)
             .setDefaults(NotificationCompat.DEFAULT_ALL)

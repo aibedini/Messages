@@ -36,7 +36,7 @@ class HeartbeatManager(
 
     companion object {
         private const val TAG = "HEARTBEAT_MGR"
-        private const val HEARTBEAT_INTERVAL_MS = 30_000L     // 30 seconds
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L     // 60 seconds
         private const val INITIAL_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 5 * 60_000L        // 5 minutes
     }

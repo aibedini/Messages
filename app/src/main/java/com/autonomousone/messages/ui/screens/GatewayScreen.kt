@@ -82,6 +82,7 @@ fun GatewayScreen(
     }
 
     var tempWebhook by remember(viewModel.webhookUrl) { mutableStateOf(viewModel.webhookUrl) }
+    var tempWebhookSecret by remember(viewModel.webhookSecret) { mutableStateOf(viewModel.webhookSecret) }
 
     Scaffold(
         topBar = {
@@ -122,8 +123,10 @@ fun GatewayScreen(
                     isRegistered = viewModel.isRegistered,
                     connectionState = viewModel.cloudConnectionState,
                     lastHeartbeatAt = viewModel.lastHeartbeatAt,
+                    registrationSecret = viewModel.registrationSecret,
                     onReconnect = { viewModel.reconnectNow() },
-                    onCopyGatewayId = { viewModel.copyToClipboard("Gateway ID", viewModel.gatewayId) }
+                    onCopyGatewayId = { viewModel.copyToClipboard("Gateway ID", viewModel.gatewayId) },
+                    onSaveRegistrationSecret = { viewModel.saveRegistrationSecret(it) }
                 )
             }
 
@@ -192,6 +195,34 @@ fun GatewayScreen(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Bind to all interfaces",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (viewModel.bindAllInterfaces)
+                                        "Reachable on every network interface (0.0.0.0)"
+                                    else
+                                        "LAN address only — recommended",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                            Switch(
+                                checked = viewModel.bindAllInterfaces,
+                                onCheckedChange = { viewModel.saveBindAllInterfaces(it) }
                             )
                         }
                     }
@@ -407,6 +438,25 @@ fun GatewayScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        OutlinedTextField(
+                            value = tempWebhookSecret,
+                            onValueChange = { tempWebhookSecret = it },
+                            placeholder = { Text("Signing secret (optional — enables X-Signature HMAC)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = "Payloads are signed with HMAC-SHA256 over \"timestamp.body\" — verify the X-Signature header on your server.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         Button(
                             onClick = { viewModel.saveWebhookUrl(tempWebhook) },
                             modifier = Modifier.align(Alignment.End),
@@ -415,6 +465,18 @@ fun GatewayScreen(
                             Icon(imageVector = Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Save Webhook")
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = { viewModel.saveWebhookSecret(tempWebhookSecret) },
+                            modifier = Modifier.align(Alignment.End),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Key, contentDescription = "Save Secret", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save Secret")
                         }
                     }
                 }
@@ -553,9 +615,13 @@ private fun CloudConnectionCard(
     isRegistered: Boolean,
     connectionState: com.autonomousone.messages.gateway.HeartbeatManager.ConnectionState,
     lastHeartbeatAt: Long,
+    registrationSecret: String,
     onReconnect: () -> Unit,
-    onCopyGatewayId: () -> Unit
+    onCopyGatewayId: () -> Unit,
+    onSaveRegistrationSecret: (String) -> Unit
 ) {
+    var tempRegistrationSecret by remember(registrationSecret) { mutableStateOf(registrationSecret) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -664,6 +730,37 @@ private fun CloudConnectionCard(
                         )
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = tempRegistrationSecret,
+                onValueChange = { tempRegistrationSecret = it },
+                placeholder = { Text("Registration secret (pairing code)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Sent as the X-Registration-Secret header. Set the same secret on your backend so only your device can register or re-register this gateway.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = { onSaveRegistrationSecret(tempRegistrationSecret) },
+                modifier = Modifier.align(Alignment.End),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Save Secret")
             }
         }
     }

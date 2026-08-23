@@ -57,7 +57,13 @@ class RegistrationManager(
         Log.d(TAG, "Registering with ${prefs.backendUrl}")
 
         val payload = buildRegistrationPayload()
-        val result = client.post("/api/gateways/register", payload, authenticated = false)
+        // Pairing secret (if configured) so the backend can reject unauthenticated
+        // registration attempts that would hijack or invalidate this gateway.
+        val headers = buildMap {
+            val secret = prefs.registrationSecret
+            if (secret.isNotBlank()) put("X-Registration-Secret", secret)
+        }
+        val result = client.post("/api/gateways/register", payload, authenticated = false, extraHeaders = headers)
 
         when (result) {
             is BackendClient.Result.Success -> {
@@ -91,13 +97,15 @@ class RegistrationManager(
     private fun getDeviceId(): String {
         // Use Android ID as the stable device identifier.
         // This is unique per app signing key, resetting on factory reset.
+        // Fallback: a random ID generated once and persisted in encrypted prefs
+        // (Build.SERIAL / Build.ID are deprecated or guessable).
         return try {
             android.provider.Settings.Secure.getString(
                 context.contentResolver,
                 android.provider.Settings.Secure.ANDROID_ID,
-            ) ?: Build.SERIAL.take(16)
+            )?.takeIf { it.isNotBlank() } ?: prefs.deviceFallbackId
         } catch (e: Exception) {
-            Build.ID + "_" + Build.MODEL.take(8)
+            prefs.deviceFallbackId
         }
     }
 }

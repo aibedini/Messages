@@ -136,7 +136,12 @@ class GatewayService : Service() {
             val port = prefs.port
             val apiKey = prefs.apiKey
 
-            gatewayServer = GatewayServer(this@GatewayService, port, apiKey) { logMsg ->
+            gatewayServer = GatewayServer(
+                this@GatewayService,
+                port,
+                apiKey,
+                bindAllInterfaces = prefs.bindAllInterfaces
+            ) { logMsg ->
                 _logFlow.tryEmit(logMsg)
             }
 

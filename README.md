@@ -109,6 +109,9 @@ curl -X POST http://<PHONE_IP>:8080/api/v1/mms/send \
 }
 ```
 
+> `imageUrl` accepts `https://` URLs (downloaded by the gateway, max 10 MB) or
+> `content://` URIs on the device. Plain `http://`, `file://`, and custom schemes are rejected.
+
 ---
 
 ### 3. Fetch Recent Inbox Messages
@@ -185,8 +188,21 @@ When an incoming SMS is received on the device, the app dispatches an HTTP `POST
 
 ### Setting Up Webhooks
 1. Open the app → **SMS Gateway**.
-2. Paste your endpoint URL under **Incoming SMS Webhook** (e.g. `https://sms.autonomousone.in/api/v1/webhooks/sms-received` or `https://webhook.site/xxx`).
-3. Tap **Save Webhook**.
+2. Paste your endpoint URL under **Incoming SMS Webhook** (e.g. `https://sms.autonomousone.in/api/v1/webhooks/sms-received` or `https://webhook.site/xxx`). Only `https://` URLs are accepted.
+3. *(Optional but recommended)* Enter a **signing secret** and tap **Save Secret**.
+4. Tap **Save Webhook**.
+
+### Verifying Webhook Signatures (HMAC-SHA256)
+When a signing secret is configured, every payload is signed and sent with two extra headers:
+
+```
+X-Timestamp: 1785764000000
+X-Signature: hex(hmac_sha256(secret, "<timestamp>.<raw-body>"))
+```
+
+Verify on your server by recomputing the HMAC over `"$X-Timestamp" + "." + rawBody`
+and comparing with a constant-time equality check. Reject requests older than a few
+minutes to prevent replay attacks.
 
 ---
 
@@ -206,6 +222,19 @@ cloudflared tunnel --url http://localhost:8080
 
 ### Option C: Custom Domain Proxy (`sms.autonomousone.in`)
 Connect your Android Gateway device via WebSockets or Nginx Reverse Proxy to route external traffic securely from your custom domain (`https://sms.autonomousone.in`).
+
+---
+
+## 🔒 Gateway Security Hardening (v1.2.0)
+
+- **Encrypted secrets at rest** — the local API key, cloud bearer token, webhook signing secret, and registration secret are encrypted with a hardware-backed Android Keystore key (AES-256-GCM) before being persisted. Legacy plaintext values are migrated automatically on first read.
+- **LAN-scoped binding** — by default the REST server binds only to the detected Wi-Fi/LAN IPv4 address instead of `0.0.0.0`. Toggle **Bind to all interfaces** in the Server card if you specifically need exposure on every interface. For public access always use an HTTPS tunnel (Cloudflare Tunnel / Nginx) — the API itself is plain HTTP.
+- **Brute-force protection** — 8 failed API-key attempts per IP within 10 minutes triggers a 5-minute lockout; failure records are purged periodically so the table cannot grow unbounded. The API key is generated with 128 bits of `SecureRandom` entropy.
+- **Request limits** — bodies over 1 MB are rejected with `413`, headers are capped at 100, and remote MMS image downloads are capped at 10 MB.
+- **Registration pairing secret** — set a *Registration secret* in the Cloud card; it is sent as the `X-Registration-Secret` header on `POST /api/gateways/register`. **Your backend must require and verify this header** — otherwise anyone who knows/guesses a device ID can register over it and invalidate its token.
+- **Signed webhooks** — see [Verifying Webhook Signatures](#verifying-webhook-signatures-hmac-sha256).
+- **HTTPS-only outbound** — backend URL, webhook URLs, and remote `imageUrl` values must use `https://`; plaintext targets are rejected instead of failing silently under Android's cleartext policy.
+- **Lock-screen privacy** — incoming-SMS notifications (including OTPs) use `VISIBILITY_PRIVATE`; content is hidden on the lock screen.
 
 ---
 
