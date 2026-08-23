@@ -15,6 +15,8 @@ sealed class Screen(val route: String) {
 
     object MessagingSettings : Screen("messaging_settings")
 
+    object AppearanceSettings : Screen("appearance_settings")
+
     object Conversation :
         Screen("conversation/{threadId}?phone={phone}&name={name}") {
 

@@ -31,6 +31,7 @@ import com.autonomousone.messages.onboarding.OnboardingStep
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.screens.OnboardingScreen
 import com.autonomousone.messages.ui.theme.MessagesTheme
+import com.autonomousone.messages.ui.theme.ThemeController
 import com.autonomousone.messages.utils.NotificationHelper
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         NotificationHelper.createNotificationChannel(this)
         onboardingPreferences = OnboardingPreferences(this)
+        ThemeController.init(this)
         refreshSystemState()
 
         setContent {

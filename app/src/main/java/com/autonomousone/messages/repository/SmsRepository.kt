@@ -154,6 +154,7 @@ class SmsRepository(
                 Telephony.Sms.ADDRESS,
                 Telephony.Sms.BODY,
                 Telephony.Sms.DATE,
+                Telephony.Sms.DATE_SENT,
                 Telephony.Sms.READ,
                 Telephony.Sms.TYPE,
                 Telephony.Sms.STATUS
@@ -211,6 +212,7 @@ class SmsRepository(
                 val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
                 val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
                 val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val dateSentIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE_SENT)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
                 val statusIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.STATUS)
@@ -238,7 +240,8 @@ class SmsRepository(
                             date = cursor.getLong(dateIndex),
                             unread = cursor.getInt(readIndex) == 0,
                             type = cursor.getInt(typeIndex),
-                            status = cursor.getInt(statusIndex)
+                            status = cursor.getInt(statusIndex),
+                            dateSent = cursor.getLong(dateSentIndex)
                         )
                     )
                     count++
@@ -252,6 +255,44 @@ class SmsRepository(
         }
 
         return smsList
+    }
+
+    /**
+     * Deletes SMS messages sent/received BEFORE (true) or AFTER (false) [cutoffMillis].
+     * Requires default-SMS-app status. Returns the number of deleted rows.
+     */
+    fun deleteSmsByRange(cutoffMillis: Long, before: Boolean): Int {
+        return try {
+            val selection =
+                if (before) "${Telephony.Sms.DATE} <= ?" else "${Telephony.Sms.DATE} >= ?"
+            context.contentResolver.delete(
+                Telephony.Sms.CONTENT_URI,
+                selection,
+                arrayOf(cutoffMillis.toString())
+            )
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "deleteSmsByRange failed", e)
+            -1
+        }
+    }
+
+    /**
+     * MMS counterpart of [deleteSmsByRange]. Note: Telephony.Mms.DATE is in SECONDS.
+     */
+    fun deleteMmsByRange(cutoffMillis: Long, before: Boolean): Int {
+        return try {
+            val cutoffSeconds = cutoffMillis / 1000L
+            val selection =
+                if (before) "${Telephony.Mms.DATE} <= ?" else "${Telephony.Mms.DATE} >= ?"
+            context.contentResolver.delete(
+                Uri.parse("content://mms"),
+                selection,
+                arrayOf(cutoffSeconds.toString())
+            )
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "deleteMmsByRange failed", e)
+            -1
+        }
     }
 
     /**
@@ -401,6 +442,7 @@ class SmsRepository(
                 Telephony.Sms.ADDRESS,
                 Telephony.Sms.BODY,
                 Telephony.Sms.DATE,
+                Telephony.Sms.DATE_SENT,
                 Telephony.Sms.READ,
                 Telephony.Sms.TYPE,
                 Telephony.Sms.STATUS
@@ -418,6 +460,7 @@ class SmsRepository(
                 val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
                 val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
                 val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val dateSentIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE_SENT)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
                 val statusIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.STATUS)
@@ -434,7 +477,8 @@ class SmsRepository(
                             date = cursor.getLong(dateIndex),
                             unread = cursor.getInt(readIndex) == 0,
                             type = cursor.getInt(typeIndex),
-                            status = cursor.getInt(statusIndex)
+                            status = cursor.getInt(statusIndex),
+                            dateSent = cursor.getLong(dateSentIndex)
                         )
                     )
                     if (progress != null && (smsList.size == total || smsList.size - lastEmitted >= 50)) {

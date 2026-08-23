@@ -2,47 +2,56 @@ package com.autonomousone.messages.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Light Theme Palette
-val LightBackground = Color(0xFFF7F8F5)
-val LightSurface = Color(0xFFFCFDF9)
-val LightSurfaceVariant = Color(0xFFEEF1EA)
-val LightPrimary = Color(0xFF286140)
+// ─────────────────────────────────────────────────────────────────────────────
+// Light Theme Palette — Google Messages-style blue on neutral gray.
+// Sent bubbles use primaryContainer (flat, no gradient); received bubbles
+// use surfaceVariant, exactly like the leading SMS apps.
+// ─────────────────────────────────────────────────────────────────────────────
+val LightBackground = Color(0xFFF8F9FC)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceVariant = Color(0xFFEEF1F5)
+val LightPrimary = Color(0xFF0B57D0)          // Google Blue
 val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFFD8EBDD)
-val LightOnPrimaryContainer = Color(0xFF123821)
-val LightSecondary = Color(0xFF4E6657)
+val LightPrimaryContainer = Color(0xFFC2E7FF) // outgoing bubble (flat light blue)
+val LightOnPrimaryContainer = Color(0xFF062E6F)
+val LightSecondary = Color(0xFF565E71)
 val LightOnSecondary = Color(0xFFFFFFFF)
-val LightSecondaryContainer = Color(0xFFE2EAE4)
-val LightOnSecondaryContainer = Color(0xFF263A2D)
-val LightAccent = Color(0xFF617969)
-val LightTextPrimary = Color(0xFF172019)
-val LightTextSecondary = Color(0xFF59635B)
-val LightTextTertiary = Color(0xFF7B857D)
-val LightDivider = Color(0xFFDCE2DC)
+val LightSecondaryContainer = Color(0xFFDAE2F9)
+val LightOnSecondaryContainer = Color(0xFF131B2C)
+val LightAccent = Color(0xFF715573)
+val LightTextPrimary = Color(0xFF191C20)
+val LightTextSecondary = Color(0xFF5C5F66)
+val LightTextTertiary = Color(0xFF78797E)
+val LightDivider = Color(0xFFDBDEE4)
 
-// OLED Dark Theme Palette
-val DarkBackground = Color(0xFF101411)
-val DarkSurface = Color(0xFF171C18)
-val DarkSurfaceVariant = Color(0xFF222A24)
-val DarkPrimary = Color(0xFF93D5A7)
-val DarkOnPrimary = Color(0xFF10351E)
-val DarkPrimaryContainer = Color(0xFF274C33)
-val DarkOnPrimaryContainer = Color(0xFFC3F0CE)
-val DarkSecondary = Color(0xFFAFC9B6)
-val DarkOnSecondary = Color(0xFF1C3523)
-val DarkSecondaryContainer = Color(0xFF344A3A)
-val DarkOnSecondaryContainer = Color(0xFFD1E8D6)
-val DarkAccent = Color(0xFFB1C7B7)
-val DarkTextPrimary = Color(0xFFE9EEE9)
-val DarkTextSecondary = Color(0xFFB5BEB6)
-val DarkTextTertiary = Color(0xFF89928A)
-val DarkDivider = Color(0xFF313A33)
+// ─────────────────────────────────────────────────────────────────────────────
+// OLED Dark Theme Palette — deep neutral surfaces with tonal blue accents.
+// ─────────────────────────────────────────────────────────────────────────────
+val DarkBackground = Color(0xFF0D0F12)
+val DarkSurface = Color(0xFF14171C)
+val DarkSurfaceVariant = Color(0xFF23272E)
+val DarkPrimary = Color(0xFFA8C7FA)
+val DarkOnPrimary = Color(0xFF062E6F)
+val DarkPrimaryContainer = Color(0xFF004A77)  // outgoing bubble (deep blue)
+val DarkOnPrimaryContainer = Color(0xFFC2E7FF)
+val DarkSecondary = Color(0xFFBEC6DC)
+val DarkOnSecondary = Color(0xFF283141)
+val DarkSecondaryContainer = Color(0xFF3E4759)
+val DarkOnSecondaryContainer = Color(0xFFDAE2F9)
+val DarkAccent = Color(0xFFDFBBE1)
+val DarkTextPrimary = Color(0xFFE2E2E9)
+val DarkTextSecondary = Color(0xFFC4C6D0)
+val DarkTextTertiary = Color(0xFF8E9099)
+val DarkDivider = Color(0xFF3A3D45)
 
 // Status & Indicator Colors
-val UnreadBadgeColor = Color(0xFF3C7A50)
+val UnreadBadgeColor = Color(0xFF1967D2)
 val StatusSuccess = Color(0xFF22C55E)
 val StatusWarning = Color(0xFFF59E0B)
 val StatusError = Color(0xFFEF4444)
+
+// Delivery-status tint for failed chat bubbles (readable on both palettes).
+val FailedTint = Color(0xFFFF8A80)
 
 // Glassmorphism & Overlay Tints
 val LightGlassOverlay = Color(0xCCFFFFFF)

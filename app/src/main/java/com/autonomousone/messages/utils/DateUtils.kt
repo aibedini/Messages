@@ -24,31 +24,21 @@ fun formatSmsDate(time: Long): String {
  */
 fun formatConversationDate(time: Long): String {
     if (time <= 0) return ""
-    
+
     val now = Calendar.getInstance()
     val target = Calendar.getInstance().apply { timeInMillis = time }
 
     return when {
         // Today -> Show time (e.g., "10:45 AM")
-        isSameDay(now, target) -> {
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(time))
-        }
+        isSameDay(now, target) -> formatDate(time, "h:mm a")
         // Yesterday -> "Yesterday"
-        isYesterday(now, target) -> {
-            "Yesterday"
-        }
+        isYesterday(now, target) -> "Yesterday"
         // Same week -> Day name (e.g., "Mon")
-        isSameWeek(now, target) -> {
-            SimpleDateFormat("EEE", Locale.getDefault()).format(Date(time))
-        }
+        isSameWeek(now, target) -> formatDate(time, "EEE")
         // Same year -> "MMM d" (e.g., "Oct 24")
-        now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> {
-            SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(time))
-        }
+        now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> formatDate(time, "MMM d")
         // Different year -> "MM/dd/yy"
-        else -> {
-            SimpleDateFormat("MM/dd/yy", Locale.getDefault()).format(Date(time))
-        }
+        else -> formatDate(time, "MM/dd/yy")
     }
 }
 
@@ -57,7 +47,24 @@ fun formatConversationDate(time: Long): String {
  */
 fun formatMessageTime(time: Long): String {
     if (time <= 0) return ""
-    return SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(time))
+    return formatDate(time, "h:mm a")
+}
+
+/**
+ * Full timestamp for message-detail views. Includes the day so
+ * delivered/sent times are unambiguous (e.g., "Aug 23, 10:45 AM").
+ * Honours the user's calendar system (Gregorian or Persian).
+ */
+fun formatFullTimestamp(time: Long): String {
+    if (time <= 0) return ""
+    val now = Calendar.getInstance()
+    val target = Calendar.getInstance().apply { timeInMillis = time }
+    val pattern = when {
+        isSameDay(now, target) -> "h:mm a"
+        isYesterday(now, target) -> "'Yesterday,' h:mm a"
+        else -> "MMM d, h:mm a"
+    }
+    return formatDate(time, pattern)
 }
 
 /**
@@ -72,12 +79,26 @@ fun formatDateHeader(time: Long): String {
     return when {
         isSameDay(now, target) -> "Today"
         isYesterday(now, target) -> "Yesterday"
-        now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> {
-            SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date(time))
-        }
-        else -> {
-            SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault()).format(Date(time))
-        }
+        now.get(Calendar.YEAR) == target.get(Calendar.YEAR) ->
+            formatDate(time, "EEEE, MMMM d")
+        else ->
+            formatDate(time, "EEEE, MMMM d, yyyy")
+    }
+}
+
+/**
+ * Formats [time] with [pattern], honouring the user's calendar system.
+ * Persian (Jalali) rendering uses ICU's PersianCalendar (API 24+, our minSdk is 26).
+ */
+fun formatDate(time: Long, pattern: String): String {
+    if (time <= 0) return ""
+    val locale = Locale.getDefault()
+
+    return when (CalendarBridge.current) {
+        CalendarBridge.Type.PERSIAN ->
+            PersianCalendar.format(time, pattern)
+        CalendarBridge.Type.GREGORIAN ->
+            SimpleDateFormat(pattern, locale).format(Date(time))
     }
 }
 
