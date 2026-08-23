@@ -57,6 +57,11 @@ class HeartbeatManager(
             Log.d(TAG, "Heartbeat loop started")
 
             while (isActive) {
+                if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) {
+                    _stateFlow.value = ConnectionState.IDLE
+                    Log.d(TAG, "Heartbeat stopped because gateway consent is absent or gateway is disabled")
+                    break
+                }
                 val success = sendHeartbeat()
 
                 if (success) {
@@ -82,6 +87,7 @@ class HeartbeatManager(
     }
 
     private suspend fun sendHeartbeat(): Boolean {
+        if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) return false
         if (!prefs.isRegistered || prefs.gatewayToken.isBlank()) {
             Log.w(TAG, "Not registered — attempting registration before heartbeat")
             val registered = registrationManager.ensureRegistered()

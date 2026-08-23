@@ -27,6 +27,10 @@ object WebhookEngine {
      */
     fun sendIncomingSmsWebhook(context: Context, sms: Sms) {
         val prefs = GatewayPreferences(context)
+        if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) {
+            Log.d(TAG, "Gateway consent is absent or gateway is disabled; skipping all SMS dispatch")
+            return
+        }
 
         // ── 1. Existing local webhook ──────────────────────────────────────
         val webhookUrl = prefs.webhookUrl.trim()

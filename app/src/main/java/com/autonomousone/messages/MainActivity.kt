@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.provider.Telephony
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,88 +17,135 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.navigation.AppNavigation
+import com.autonomousone.messages.onboarding.OnboardingPolicy
+import com.autonomousone.messages.onboarding.OnboardingPreferences
+import com.autonomousone.messages.onboarding.OnboardingState
+import com.autonomousone.messages.onboarding.OnboardingStep
+import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.ui.screens.OnboardingScreen
 import com.autonomousone.messages.ui.theme.MessagesTheme
 import com.autonomousone.messages.utils.NotificationHelper
 
 class MainActivity : ComponentActivity() {
-
-    // Exposed as Compose-observable state so setters in onResume recompose the UI
-    private var _hasPermission = mutableStateOf(false)
-    private var _isDefaultApp = mutableStateOf(false)
+    private val isDefaultAppState = mutableStateOf(false)
+    private val refreshState = mutableIntStateOf(0)
+    private lateinit var onboardingPreferences: OnboardingPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
         NotificationHelper.createNotificationChannel(this)
-
-        // Initial check before Compose is set up
-        _hasPermission.value = checkPermissions()
-        _isDefaultApp.value = isDefaultSmsApp()
+        onboardingPreferences = OnboardingPreferences(this)
+        refreshSystemState()
 
         setContent {
             MessagesTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    val permissionsToRequest = remember {
-                        mutableListOf(
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.RECEIVE_SMS,
-                            Manifest.permission.SEND_SMS,
-                            Manifest.permission.READ_CONTACTS
-                        ).apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                add(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }.toTypedArray()
-                    }
-
-                    // Read from the class-level mutableStateOf so onResume updates recompose
-                    val hasPermission by _hasPermission
-                    val isDefaultApp by _isDefaultApp
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    @Suppress("UNUSED_VARIABLE") val refresh by refreshState
+                    val isDefaultApp by isDefaultAppState
+                    val hasSmsPermissions = hasSmsPermissions()
+                    val hasContactsPermission = hasPermission(Manifest.permission.READ_CONTACTS)
+                    val hasNotificationsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                        hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 
                     val defaultAppLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
-                    ) {
-                        // Recheck immediately when user returns from system picker
-                        _isDefaultApp.value = isDefaultSmsApp()
-                        _hasPermission.value = checkPermissions()
-                    }
-
-                    val permissionLauncher = rememberLauncherForActivityResult(
+                    ) { refreshSystemState() }
+                    val smsPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
+                    ) { refreshSystemState() }
+                    val contactsPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
                     ) {
-                        com.autonomousone.messages.repository.ContactRepository.clearCache()
-                        _hasPermission.value = checkPermissions()
+                        ContactRepository.clearCache()
+                        refreshSystemState()
                     }
+                    val notificationsPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { refreshSystemState() }
 
-                    LaunchedEffect(Unit) {
-                        if (!hasPermission) {
-                            permissionLauncher.launch(permissionsToRequest)
-                        }
-                    }
-
-                    AppNavigation(
-                        hasPermission = hasPermission,
-                        isDefaultSmsApp = isDefaultApp,
-                        onRequestDefaultApp = {
-                            requestDefaultSmsApp(defaultAppLauncher)
-                        },
-                        onRequestPermissions = {
-                            permissionLauncher.launch(permissionsToRequest)
-                        }
+                    val step = OnboardingPolicy.resolveStep(
+                        onboardingPreferences.disclosureAccepted,
+                        isDefaultApp,
+                        hasSmsPermissions,
+                        onboardingPreferences.optionalStepCompleted,
                     )
+
+                    if (step != OnboardingStep.COMPLETE) {
+                        OnboardingScreen(
+                            state = OnboardingState(
+                                step = step,
+                                smsPermissionPermanentlyDenied = onboardingPreferences.smsPermissionRequested &&
+                                    SMS_PERMISSIONS.any { !hasPermission(it) && !ActivityCompat.shouldShowRequestPermissionRationale(this, it) },
+                                contactsPermissionPermanentlyDenied = onboardingPreferences.contactsPermissionRequested &&
+                                    !hasContactsPermission &&
+                                    !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CONTACTS),
+                                notificationsPermissionPermanentlyDenied = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    onboardingPreferences.notificationsPermissionRequested && !hasNotificationsPermission &&
+                                    !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.POST_NOTIFICATIONS),
+                            ),
+                            hasContactsPermission = hasContactsPermission,
+                            hasNotificationsPermission = hasNotificationsPermission,
+                            onAcceptDisclosure = {
+                                onboardingPreferences.disclosureAccepted = true
+                                refreshState.intValue++
+                            },
+                            onRequestDefaultRole = { requestDefaultSmsApp(defaultAppLauncher) },
+                            onRequestSmsPermissions = {
+                                if (isDefaultSmsApp()) {
+                                    onboardingPreferences.smsPermissionRequested = true
+                                    smsPermissionLauncher.launch(SMS_PERMISSIONS)
+                                }
+                            },
+                            onRequestContactsPermission = {
+                                onboardingPreferences.contactsPermissionRequested = true
+                                contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                            },
+                            onRequestNotificationsPermission = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    onboardingPreferences.notificationsPermissionRequested = true
+                                    notificationsPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onCompleteOptionalStep = {
+                                onboardingPreferences.optionalStepCompleted = true
+                                refreshState.intValue++
+                            },
+                            onOpenSettings = ::openAppSettings,
+                            onOpenPrivacyPolicy = ::openPrivacyPolicy,
+                        )
+                    } else {
+                        AppNavigation(
+                            hasPermission = hasSmsPermissions,
+                            isDefaultSmsApp = isDefaultApp,
+                            onRequestDefaultApp = { requestDefaultSmsApp(defaultAppLauncher) },
+                            onRequestPermissions = {
+                                when {
+                                    !isDefaultApp -> requestDefaultSmsApp(defaultAppLauncher)
+                                    !hasSmsPermissions -> {
+                                        onboardingPreferences.smsPermissionRequested = true
+                                        smsPermissionLauncher.launch(SMS_PERMISSIONS)
+                                    }
+                                    !hasContactsPermission -> {
+                                        onboardingPreferences.contactsPermissionRequested = true
+                                        contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                                    }
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationsPermission -> {
+                                        onboardingPreferences.notificationsPermissionRequested = true
+                                        notificationsPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -105,10 +154,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         SmsEventBus.isAppInForeground = true
-        // Update observable states — Compose will recompose automatically
-        _hasPermission.value = checkPermissions()
-        _isDefaultApp.value = isDefaultSmsApp()
-        // Signal all ViewModels to reload fresh data
+        if (::onboardingPreferences.isInitialized) refreshSystemState()
         SmsEventBus.notifyResume()
     }
 
@@ -117,46 +163,52 @@ class MainActivity : ComponentActivity() {
         SmsEventBus.isAppInForeground = false
     }
 
-    private fun checkPermissions(): Boolean {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    private fun refreshSystemState() {
+        isDefaultAppState.value = isDefaultSmsApp()
+        refreshState.intValue++
     }
 
-    private fun isDefaultSmsApp(): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // RoleManager.isRoleHeld() is the authoritative check on Android 10+
-                // Telephony.Sms.getDefaultSmsPackage() can lag after role is granted
-                val roleManager = getSystemService(RoleManager::class.java)
-                roleManager.isRoleHeld(RoleManager.ROLE_SMS)
-            } else {
-                // Pre-Q: use the traditional default SMS package check
-                Telephony.Sms.getDefaultSmsPackage(this) == packageName
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun hasPermission(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
-    private fun requestDefaultSmsApp(
-        launcher: androidx.activity.result.ActivityResultLauncher<Intent>
-    ) {
+    private fun hasSmsPermissions() = SMS_PERMISSIONS.all(::hasPermission)
+
+    private fun isDefaultSmsApp(): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_SMS)
+        } else Telephony.Sms.getDefaultSmsPackage(this) == packageName
+    } catch (_: Exception) { false }
+
+    private fun requestDefaultSmsApp(launcher: androidx.activity.result.ActivityResultLauncher<Intent>) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val roleManager = getSystemService(RoleManager::class.java)
                 if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
-                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-                    launcher.launch(intent)
+                    launcher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS))
                 }
             } else {
                 @Suppress("DEPRECATION")
-                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                launcher.launch(Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
                     putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-                }
-                launcher.launch(intent)
+                })
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (_: Exception) { openAppSettings() }
+    }
+
+    private fun openAppSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+    }
+
+    private fun openPrivacyPolicy() {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+    }
+
+    companion object {
+        private val SMS_PERMISSIONS = arrayOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.SEND_SMS,
+        )
+        private const val PRIVACY_POLICY_URL = "https://github.com/aibedini/Messages/blob/main/PRIVACY.md"
     }
 }

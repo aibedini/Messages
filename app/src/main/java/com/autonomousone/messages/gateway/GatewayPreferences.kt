@@ -22,6 +22,8 @@ class GatewayPreferences(context: Context) {
         private const val KEY_WEBHOOK_SECRET = "gateway_webhook_secret"
         private const val KEY_AUTO_START = "gateway_auto_start"
         private const val KEY_BIND_ALL = "gateway_bind_all_interfaces"
+        private const val KEY_CONSENT_VERSION = "gateway_consent_version"
+        private const val KEY_CONSENT_ACCEPTED_AT = "gateway_consent_accepted_at"
         // ── Cloud backend keys ──
         private const val KEY_BACKEND_URL = "cloud_backend_url"
         private const val KEY_GATEWAY_ID = "cloud_gateway_id"
@@ -35,6 +37,7 @@ class GatewayPreferences(context: Context) {
         private const val MAX_EVENT_IDS = 500
 
         const val DEFAULT_PORT = 8080
+        const val CURRENT_CONSENT_VERSION = 1
     }
 
     // ── LAN server ──
@@ -98,6 +101,30 @@ class GatewayPreferences(context: Context) {
     var bindAllInterfaces: Boolean
         get() = prefs.getBoolean(KEY_BIND_ALL, false)
         set(value) = prefs.edit().putBoolean(KEY_BIND_ALL, value).apply()
+
+    /** Consent is versioned so material data-use changes require a fresh opt-in. */
+    val hasGatewayConsent: Boolean
+        get() = prefs.getInt(KEY_CONSENT_VERSION, 0) >= CURRENT_CONSENT_VERSION
+
+    val gatewayConsentAcceptedAt: Long
+        get() = prefs.getLong(KEY_CONSENT_ACCEPTED_AT, 0L)
+
+    fun acceptGatewayConsent() {
+        prefs.edit()
+            .putInt(KEY_CONSENT_VERSION, CURRENT_CONSENT_VERSION)
+            .putLong(KEY_CONSENT_ACCEPTED_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun revokeGatewayConsent() {
+        prefs.edit()
+            .remove(KEY_CONSENT_VERSION)
+            .remove(KEY_CONSENT_ACCEPTED_AT)
+            .putBoolean(KEY_ENABLED, false)
+            .putBoolean(KEY_AUTO_START, false)
+            .apply()
+        clearCloudCredentials()
+    }
 
     fun generateNewApiKey(): String {
         val newKey = generateApiKey()

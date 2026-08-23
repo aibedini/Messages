@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import com.autonomousone.messages.gateway.HeartbeatManager
@@ -50,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -84,6 +86,28 @@ fun GatewayScreen(
     var tempWebhook by remember(viewModel.webhookUrl) { mutableStateOf(viewModel.webhookUrl) }
     var tempWebhookSecret by remember(viewModel.webhookSecret) { mutableStateOf(viewModel.webhookSecret) }
 
+    if (viewModel.showConsentDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissGatewayConsent,
+            title = { Text("Enable SMS Gateway?") },
+            text = {
+                Text(
+                    "When enabled, the gateway can send the sender phone number, full message text, " +
+                        "message time and device details to ${viewModel.backendUrl} and to any HTTPS webhook " +
+                        "you configure. Authenticated gateway clients can also ask this phone to send SMS, " +
+                        "which may incur carrier charges. Data is sent only while the gateway is enabled. Revoking consent " +
+                        "stops the service, registration, heartbeat and message forwarding."
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::acceptGatewayConsentAndStart) { Text("Agree and enable") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissGatewayConsent) { Text("Cancel") }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -116,6 +140,30 @@ fun GatewayScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
         ) {
             // ── 0. Cloud Connection Card (new) ─────────────────────────────────────
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Gateway privacy control", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (viewModel.hasGatewayConsent)
+                                "Consent active. SMS forwarding occurs only while Gateway is enabled."
+                            else
+                                "Gateway is off. Enabling it requires separate consent for transmitting SMS data.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (viewModel.hasGatewayConsent) {
+                            OutlinedButton(onClick = viewModel::revokeGatewayConsent) {
+                                Text("Revoke consent and stop Gateway")
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 CloudConnectionCard(
                     backendUrl = viewModel.backendUrl,

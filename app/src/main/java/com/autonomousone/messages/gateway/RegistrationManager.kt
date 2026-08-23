@@ -33,6 +33,7 @@ class RegistrationManager(
      * Returns false if it failed — the caller should retry with backoff.
      */
     suspend fun ensureRegistered(): Boolean = withContext(Dispatchers.IO) {
+        if (!prefs.hasGatewayConsent) return@withContext false
         // If we already have credentials, assume registered (heartbeat will detect stale token)
         if (prefs.isRegistered && prefs.gatewayToken.isNotBlank()) {
             return@withContext true
@@ -53,6 +54,10 @@ class RegistrationManager(
     }
 
     suspend fun register(): Boolean = withContext(Dispatchers.IO) {
+        if (!prefs.hasGatewayConsent) {
+            onLog("Cloud registration blocked: gateway consent is required")
+            return@withContext false
+        }
         onLog("☁️ Registering with cloud backend...")
         Log.d(TAG, "Registering with ${prefs.backendUrl}")
 

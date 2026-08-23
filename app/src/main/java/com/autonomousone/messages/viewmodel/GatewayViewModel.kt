@@ -43,6 +43,10 @@ class GatewayViewModel(
     // ── LAN server state (existing) ────────────────────────────────────────
     var isServerRunning by mutableStateOf(GatewayService.isServiceRunning)
         private set
+    var hasGatewayConsent by mutableStateOf(prefs.hasGatewayConsent)
+        private set
+    var showConsentDialog by mutableStateOf(false)
+        private set
     var port by mutableIntStateOf(prefs.port)
     var apiKey by mutableStateOf(prefs.apiKey)
     var webhookUrl by mutableStateOf(prefs.webhookUrl)
@@ -83,6 +87,7 @@ class GatewayViewModel(
         lastHeartbeatAt = prefs.lastHeartbeatAt
         isRegistered = prefs.isRegistered
         backendUrl = prefs.backendUrl
+        hasGatewayConsent = prefs.hasGatewayConsent
     }
 
     private fun observeLogs() {
@@ -120,6 +125,11 @@ class GatewayViewModel(
     fun toggleServer(enable: Boolean) {
         val context = getApplication<Application>()
         if (enable) {
+            if (!prefs.hasGatewayConsent) {
+                showConsentDialog = true
+                isServerRunning = false
+                return
+            }
             prefs.port = port
             prefs.apiKey = apiKey
             GatewayService.startGateway(context)
@@ -131,6 +141,10 @@ class GatewayViewModel(
     }
 
     fun reconnectNow() {
+        if (!prefs.hasGatewayConsent) {
+            showConsentDialog = true
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔄 Manual reconnect triggered...")
             cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
@@ -144,6 +158,26 @@ class GatewayViewModel(
                 cloudConnectionState = HeartbeatManager.ConnectionState.ERROR
             }
         }
+    }
+
+    fun acceptGatewayConsentAndStart() {
+        prefs.acceptGatewayConsent()
+        hasGatewayConsent = true
+        showConsentDialog = false
+        toggleServer(true)
+    }
+
+    fun dismissGatewayConsent() {
+        showConsentDialog = false
+    }
+
+    fun revokeGatewayConsent() {
+        GatewayService.stopGateway(getApplication())
+        prefs.revokeGatewayConsent()
+        hasGatewayConsent = false
+        isServerRunning = false
+        showConsentDialog = false
+        addLog("Gateway consent revoked; networking and SMS forwarding stopped")
     }
 
     fun generateNewApiKey() {

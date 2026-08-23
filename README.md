@@ -1,5 +1,7 @@
 # 📱 Messages & Android SMS/MMS Gateway
 
+[Privacy Policy](PRIVACY.md)
+
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF.svg?style=flat&logo=kotlin)](https://kotlinlang.org/)
 [![Android](https://img.shields.io/badge/Platform-Android%208.0%2B%20%28API%2026%2B%20--%2036%29-3DDC84.svg?style=flat&logo=android)](https://developer.android.com)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

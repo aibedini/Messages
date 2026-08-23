@@ -44,6 +44,7 @@ class GatewayService : Service() {
         val logFlow: SharedFlow<String> = _logFlow.asSharedFlow()
 
         fun startGateway(context: Context) {
+            if (!GatewayAccessPolicy.canStart(GatewayPreferences(context).hasGatewayConsent)) return
             val intent = Intent(context, GatewayService::class.java).apply {
                 action = ACTION_START
             }
@@ -94,6 +95,11 @@ class GatewayService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_START, null -> {
+                if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) {
+                    _logFlow.tryEmit("Gateway start blocked: privacy consent is required")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
                 startForegroundNotification()
                 startServerAsync()
             }
@@ -131,6 +137,7 @@ class GatewayService : Service() {
 
     private fun startServerAsync() {
         serviceScope.launch {
+            if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) return@launch
             if (isServiceRunning && gatewayServer?.isRunning() == true) return@launch
 
             val port = prefs.port
