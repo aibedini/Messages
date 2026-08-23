@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
@@ -36,7 +35,11 @@ import com.autonomousone.messages.utils.NotificationHelper
 
 class MainActivity : ComponentActivity() {
     private val isDefaultAppState = mutableStateOf(false)
-    private val refreshState = mutableIntStateOf(0)
+    private val hasSmsPermissionsState = mutableStateOf(false)
+    private val hasContactsPermissionState = mutableStateOf(false)
+    private val hasNotificationsPermissionState = mutableStateOf(false)
+    private val disclosureAcceptedState = mutableStateOf(false)
+    private val optionalStepCompletedState = mutableStateOf(false)
     private lateinit var onboardingPreferences: OnboardingPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,12 +52,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MessagesTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    @Suppress("UNUSED_VARIABLE") val refresh by refreshState
                     val isDefaultApp by isDefaultAppState
-                    val hasSmsPermissions = hasSmsPermissions()
-                    val hasContactsPermission = hasPermission(Manifest.permission.READ_CONTACTS)
-                    val hasNotificationsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                        hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    val hasSmsPermissions by hasSmsPermissionsState
+                    val hasContactsPermission by hasContactsPermissionState
+                    val hasNotificationsPermission by hasNotificationsPermissionState
+                    val disclosureAccepted by disclosureAcceptedState
+                    val optionalStepCompleted by optionalStepCompletedState
 
                     val defaultAppLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
@@ -73,10 +76,10 @@ class MainActivity : ComponentActivity() {
                     ) { refreshSystemState() }
 
                     val step = OnboardingPolicy.resolveStep(
-                        onboardingPreferences.disclosureAccepted,
+                        disclosureAccepted,
                         isDefaultApp,
                         hasSmsPermissions,
-                        onboardingPreferences.optionalStepCompleted,
+                        optionalStepCompleted,
                     )
 
                     if (step != OnboardingStep.COMPLETE) {
@@ -96,7 +99,7 @@ class MainActivity : ComponentActivity() {
                             hasNotificationsPermission = hasNotificationsPermission,
                             onAcceptDisclosure = {
                                 onboardingPreferences.disclosureAccepted = true
-                                refreshState.intValue++
+                                disclosureAcceptedState.value = true
                             },
                             onRequestDefaultRole = { requestDefaultSmsApp(defaultAppLauncher) },
                             onRequestSmsPermissions = {
@@ -117,7 +120,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onCompleteOptionalStep = {
                                 onboardingPreferences.optionalStepCompleted = true
-                                refreshState.intValue++
+                                optionalStepCompletedState.value = true
                             },
                             onOpenSettings = ::openAppSettings,
                             onOpenPrivacyPolicy = ::openPrivacyPolicy,
@@ -165,7 +168,14 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshSystemState() {
         isDefaultAppState.value = isDefaultSmsApp()
-        refreshState.intValue++
+        hasSmsPermissionsState.value = hasSmsPermissions()
+        hasContactsPermissionState.value = hasPermission(Manifest.permission.READ_CONTACTS)
+        hasNotificationsPermissionState.value = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        if (::onboardingPreferences.isInitialized) {
+            disclosureAcceptedState.value = onboardingPreferences.disclosureAccepted
+            optionalStepCompletedState.value = onboardingPreferences.optionalStepCompleted
+        }
     }
 
     private fun hasPermission(permission: String) =

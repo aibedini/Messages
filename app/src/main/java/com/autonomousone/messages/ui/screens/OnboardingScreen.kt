@@ -1,6 +1,8 @@
 package com.autonomousone.messages.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -26,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.autonomousone.messages.onboarding.OnboardingState
 import com.autonomousone.messages.onboarding.OnboardingStep
 
@@ -44,9 +49,11 @@ fun OnboardingScreen(
     onOpenPrivacyPolicy: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.Center,
     ) {
+        StepProgress(state.step)
+        Spacer(Modifier.height(32.dp))
         Icon(
             imageVector = when (state.step) {
                 OnboardingStep.DISCLOSURE -> Icons.Default.Security
@@ -57,7 +64,12 @@ fun OnboardingScreen(
             tint = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(16.dp))
-        Text(titleFor(state.step), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            titleFor(state.step),
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { heading() },
+        )
         Spacer(Modifier.height(12.dp))
         Text(bodyFor(state.step), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
@@ -69,13 +81,13 @@ fun OnboardingScreen(
                 Text("Read privacy policy")
             }
             Spacer(Modifier.height(8.dp))
-            Button(onClick = onAcceptDisclosure, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onAcceptDisclosure, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("I understand and continue")
             }
         }
 
         if (state.step == OnboardingStep.DEFAULT_SMS_ROLE) {
-            Button(onClick = onRequestDefaultRole, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onRequestDefaultRole, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("Set as default SMS app")
             }
         }
@@ -84,9 +96,9 @@ fun OnboardingScreen(
             if (state.smsPermissionPermanentlyDenied) {
                 Text("SMS access was permanently denied. Enable it in Android app settings to continue.", color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) { Text("Open app settings") }
+                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Open app settings") }
             } else {
-                Button(onClick = onRequestSmsPermissions, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onRequestSmsPermissions, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                     Text("Allow SMS access")
                 }
             }
@@ -107,7 +119,7 @@ fun OnboardingScreen(
                 onOpenSettings = onOpenSettings,
             )
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onCompleteOptionalStep, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onCompleteOptionalStep, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("Continue to Messages")
             }
         }
@@ -121,6 +133,33 @@ private fun DisclosureCard() {
             Text("Messages reads, receives and sends SMS only to provide its core messaging features.")
             Text("Contacts access is optional and is used only to show names for phone numbers.")
             Text("The SMS Gateway is off by default. If you enable it later, a separate consent screen explains what message data can be sent and where.")
+        }
+    }
+}
+
+@Composable
+private fun StepProgress(step: OnboardingStep) {
+    val activeIndex = when (step) {
+        OnboardingStep.DISCLOSURE -> 0
+        OnboardingStep.DEFAULT_SMS_ROLE -> 1
+        OnboardingStep.SMS_PERMISSIONS -> 2
+        OnboardingStep.OPTIONAL_PERMISSIONS, OnboardingStep.COMPLETE -> 3
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        repeat(4) { index ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (index == activeIndex) 5.dp else 3.dp)
+                    .background(
+                        color = if (index <= activeIndex) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(99.dp),
+                    )
+            )
         }
     }
 }

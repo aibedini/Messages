@@ -31,10 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,20 +54,16 @@ fun AppSearchBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .shadow(
-                elevation = if (isFocused) 6.dp else 2.dp,
-                shape = RoundedCornerShape(28.dp),
-                clip = false
-            ),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 4.dp
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = if (isFocused) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+            else MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp)
+                .height(56.dp)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -109,6 +106,7 @@ fun AppSearchBar(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .semantics { contentDescription = placeholderText }
                         .onFocusChanged { isFocused = it.isFocused }
                 )
             }

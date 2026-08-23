@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.sp
 fun MainTopBar(
     title: String = "Messages",
     onProfileClick: () -> Unit = {},
-    onSearchClick: () -> Unit = {},
+    onSearchClick: (() -> Unit)? = null,
     onMarkAllReadClick: () -> Unit = {},
     onGatewayClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -71,11 +71,13 @@ fun MainTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSearchClick) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search"
-                )
+            if (onSearchClick != null) {
+                IconButton(onClick = onSearchClick) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
+                    )
+                }
             }
 
             Box {

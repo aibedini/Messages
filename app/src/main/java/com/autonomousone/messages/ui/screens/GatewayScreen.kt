@@ -68,6 +68,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.viewmodel.GatewayViewModel
@@ -143,8 +146,12 @@ fun GatewayScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (viewModel.hasGatewayConsent)
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(22.dp),
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Gateway privacy control", fontWeight = FontWeight.Bold)
@@ -220,6 +227,10 @@ fun GatewayScreen(
                             Switch(
                                 checked = viewModel.isServerRunning,
                                 onCheckedChange = { viewModel.toggleServer(it) },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "SMS Gateway"
+                                    stateDescription = if (viewModel.isServerRunning) "Running" else "Stopped"
+                                },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = Color.White,
                                     checkedTrackColor = MaterialTheme.colorScheme.primary

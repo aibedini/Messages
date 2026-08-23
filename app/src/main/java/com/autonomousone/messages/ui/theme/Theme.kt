@@ -56,7 +56,7 @@ private val LightColorScheme = lightColorScheme(
 fun MessagesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+ (API level 31+)
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -71,6 +71,7 @@ fun MessagesTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = MessagesShapes,
         content = content
     )
 }
