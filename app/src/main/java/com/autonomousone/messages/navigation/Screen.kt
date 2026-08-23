@@ -13,6 +13,8 @@ sealed class Screen(val route: String) {
 
     object Settings : Screen("settings")
 
+    object MessagingSettings : Screen("messaging_settings")
+
     object Conversation :
         Screen("conversation/{threadId}?phone={phone}&name={name}") {
 

@@ -69,7 +69,63 @@ class MmsSender(private val context: Context) {
         }
     }
 
+    /**
+     * Send one text message to MULTIPLE recipients as a single group MMS
+     * (Google Messages-style group conversation) instead of N separate SMS.
+     *
+     * Creates a proper group thread via Telephony.Threads so the conversation
+     * shows up as one thread with every recipient attached.
+     *
+     * @return true if dispatch succeeded, false on error.
+     */
+    fun sendGroupText(recipients: List<String>, text: String): Boolean {
+        val cleaned = recipients.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (cleaned.isEmpty() || text.isBlank()) return false
+        return try {
+            val mmsId = insertTextMms(cleaned, text)
+            if (mmsId > 0L) {
+                triggerSend(mmsId)
+                Log.d(TAG, "Group MMS queued to ${cleaned.size} recipients, id=$mmsId")
+                true
+            } else {
+                Log.e(TAG, "Failed to insert group text MMS")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "sendGroupText error", e)
+            false
+        }
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /** Text-only group MMS row + one TO address per recipient + a text part. */
+    private fun insertTextMms(recipients: List<String>, text: String): Long {
+        val cr = context.contentResolver
+        // Set overload builds the GROUP thread id (same for all recipients).
+        val threadId = Telephony.Threads.getOrCreateThreadId(context, recipients.toSet())
+
+        val values = mmsBaseValues(threadId).apply {
+            // multipart.mixed = generic attachments container; correct for plain text.
+            put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.multipart.mixed")
+        }
+        val mmsUri = cr.insert(Telephony.Mms.CONTENT_URI, values) ?: return -1
+        val mmsId = ContentUris.parseId(mmsUri)
+
+        insertAddr(mmsId, "insert-address-token", ADDR_FROM)
+        recipients.forEach { insertAddr(mmsId, it, ADDR_TO) }
+
+        val partValues = ContentValues().apply {
+            put(Telephony.Mms.Part.MSG_ID, mmsId)
+            put(Telephony.Mms.Part.CONTENT_TYPE, "text/plain")
+            put(Telephony.Mms.Part.CHARSET, 106) // UTF-8
+            put(Telephony.Mms.Part.NAME, "text_0.txt")
+        }
+        val partUri = cr.insert(Uri.parse("content://mms/$mmsId/part"), partValues) ?: return -1
+        cr.openOutputStream(partUri)?.use { out -> out.write(text.toByteArray(Charsets.UTF_8)) }
+
+        return mmsId
+    }
 
     private fun insertImageMms(phone: String, imageUri: Uri): Long {
         val cr = context.contentResolver

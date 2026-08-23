@@ -1,0 +1,622 @@
+openapi: 3.0.3
+info:
+  title: Android SMS Gateway REST API
+  description: |
+    Local REST API served by the **Messages** Android app (`com.autonomousone.messages`).
+
+    The gateway runs an embedded HTTP server on the device (default port **8080**,
+    bound to the LAN IPv4 address by default). Any client on the same network —
+    another app, a backend service, a script — can send SMS/MMS or query the
+    message store through this API.
+
+    ## Authentication
+    Every request must carry the gateway API key (shown in the app's Gateway screen):
+
+    ```
+    X-API-Key: gw_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    ```
+    or equivalently:
+    ```
+    Authorization: Bearer gw_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    ```
+
+    Keys have the form `gw_` + 32 hex chars and are generated on first launch.
+
+    ## Abuse protection
+    - Per-IP brute-force lockout: after **8 consecutive failed auth attempts within
+      10 minutes**, the source IP is locked out for **5 minutes** (HTTP 429).
+    - Request bodies are capped at **1 MB** (HTTP 413 above that).
+
+    ## Conventions
+    - All request/response bodies are `application/json; charset=utf-8`.
+    - Timestamps are Unix epoch milliseconds.
+  version: 1.2.1
+  contact:
+    name: Autonomous One
+    url: https://github.com/autonomousone
+servers:
+  - url: http://{host}:{port}
+    description: Device on the local network
+    variables:
+      host:
+        default: 192.168.1.10
+        description: LAN IPv4 address of the phone (see GET /api/v1/status)
+      port:
+        default: "8080"
+        description: Configured in the app's Gateway screen
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+
+tags:
+  - name: SMS
+    description: Send and query text messages
+  - name: MMS
+    description: Send multimedia messages
+  - name: Gateway
+    description: Server health and device status
+  - name: Webhooks
+    description: Outbound notifications the gateway POSTs to your servers
+
+paths:
+  /api/v1/sms/send:
+    post:
+      tags: [SMS]
+      summary: Send an SMS text message
+      operationId: sendSms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSmsRequest'
+            examples:
+              basic:
+                summary: Simple text message
+                value:
+                  phone: "+989121234567"
+                  message: "Hello from the gateway!"
+              withSimAndSmsc:
+                summary: Per-call SIM line and SMSC override
+                value:
+                  phone: "+989121234567"
+                  message: "Sent from SIM 2 with a custom SMSC"
+                  subscription_id: 2
+                  smsc: "+9891000500"
+      responses:
+        '200':
+          description: Message handed to the SMS sender
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/mms/send:
+    post:
+      tags: [MMS]
+      summary: Send an MMS image message
+      description: |
+        Sends an image to a phone number via MMS.
+
+        `imageUrl` must be either:
+        - an **https://** URL — the image is downloaded by the device (max 10 MB)
+          and attached, or
+        - a **content://** URI already readable on the device.
+
+        Plain `http://`, `file://` and other schemes are rejected with HTTP 400.
+      operationId: sendMms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMmsRequest'
+            examples:
+              remoteImage:
+                summary: Image hosted on the internet
+                value:
+                  phone: "+989121234567"
+                  imageUrl: "https://example.com/photo.jpg"
+              deviceImage:
+                summary: Image already on the device
+                value:
+                  phone: "+989121234567"
+                  imageUrl: "content://media/external/images/media/42"
+      responses:
+        '200':
+          description: MMS dispatched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMmsResponse'
+        '400':
+          description: Missing fields, or unsupported imageUrl scheme
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFields:
+                  value:
+                    error: "phone and imageUrl required"
+                badScheme:
+                  value:
+                    error: "imageUrl must be an https:// URL or a content:// URI"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: MMS dispatch failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMmsResponse'
+              example:
+                status: "failed"
+                phone: "+989121234567"
+
+  /api/v1/sms/inbox:
+    get:
+      tags: [SMS]
+      summary: Fetch the most recent messages (max 50)
+      operationId: getSmsInbox
+      responses:
+        '200':
+          description: Latest inbox entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/sms:
+    get:
+      tags: [SMS]
+      summary: Query messages with filters and pagination
+      description: |
+        Full-featured query over the device message store.
+
+        Filter notes:
+        - `type` accepts `received` or `sent` (case-insensitive); any other value is ignored.
+        - `phone` / `from` performs a *contains* substring match on the address.
+        - `from_date` / `to_date` accept Unix epoch milliseconds **or** `yyyy-MM-dd`
+          (interpreted in device-local time).
+      operationId: querySms
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of messages to return.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of messages to skip (for paging).
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+          example: 0
+        - name: type
+          in: query
+          required: false
+          description: Direction filter.
+          schema:
+            type: string
+            enum: [received, sent]
+          example: received
+        - name: phone
+          in: query
+          required: false
+          description: Substring match on sender/receiver address.
+          schema:
+            type: string
+          example: "0912"
+        - name: from
+          in: query
+          required: false
+          description: Alias for `phone`.
+          schema:
+            type: string
+        - name: from_date
+          in: query
+          required: false
+          description: Only messages on/after this instant.
+          schema:
+            $ref: '#/components/schemas/DateParam'
+          example: "2026-08-01"
+        - name: to_date
+          in: query
+          required: false
+          description: Only messages before this instant.
+          schema:
+            $ref: '#/components/schemas/DateParam'
+          example: "1785000000000"
+      responses:
+        '200':
+          description: Filtered message list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsQueryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/status:
+    get:
+      tags: [Gateway]
+      summary: Gateway and device status
+      description: |
+        Health probe. Reports the server bind address, battery level and whether
+        the app is currently the default SMS handler (required for sending).
+      operationId: getStatus
+      security: []   # reachable like every route; key still enforced when configured
+      responses:
+        '200':
+          description: Gateway is online
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayStatus'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /webhooks/sms.received:
+    post:
+      tags: [Webhooks]
+      summary: "[Outbound] Incoming SMS notification (your server implements this)"
+      description: |
+        **Not an endpoint on the device.** This documents the HTTP `POST` the
+        gateway sends to *your* webhook URL on every incoming SMS
+        (configure URL + optional HMAC secret in the app's Gateway screen).
+
+        Requirements / behaviour:
+        - The configured URL must be **https://** (plain http is rejected by the app).
+        - Fired only while gateway consent + gateway are enabled.
+        - Fire-and-forget: 8s connect/read timeout; your status code is ignored.
+
+        Signature verification (when a secret is set):
+
+        ```
+        X-Timestamp = <unix millis as string>
+        X-Signature = hex( HMAC_SHA256(secret, "<timestamp>.<raw-body>") )
+        ```
+
+        Compare with a constant-time equality check and reject if older than a few minutes (anti-replay).
+      operationId: incomingSmsWebhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+            example:
+              event: sms_received
+              sender: "+989121234567"
+              message: "Your OTP code is 123456"
+              timestamp: 1755900000000
+              threadId: 12
+      responses:
+        '200':
+          description: Any 2xx is fine; the gateway ignores the response body.
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Gateway API key (`gw_...`) shown in the app's Gateway screen.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Same gateway API key sent as `Authorization: Bearer <key>`.
+
+  schemas:
+    SendSmsRequest:
+      type: object
+      required: [phone, message]
+      properties:
+        phone:
+          type: string
+          minLength: 1
+          description: Destination number (E.164 recommended).
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Text body to send.
+        subscription_id:
+          type: integer
+          description: |
+            Optional. SIM subscription used for **this message only**
+            (`-1` = device default). When omitted, the user's in-app
+            Messaging setting applies; when that is unset too, the system
+            default subscription sends.
+        smsc:
+          type: string
+          pattern: '^\+?[0-9]{5,20}$'
+          description: |
+            Optional. Service-center address used for **this message only**.
+            When omitted, the user's in-app SMSC setting applies; empty means
+            network default. Invalid formats are rejected with HTTP 400.
+    SendSmsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success]
+        id:
+          type: integer
+          format: int64
+          description: Platform message id returned by the SMS sender.
+        phone:
+          type: string
+        message:
+          type: string
+
+    SendMmsRequest:
+      type: object
+      required: [phone, imageUrl]
+      properties:
+        phone:
+          type: string
+          minLength: 1
+          description: Destination number.
+        imageUrl:
+          type: string
+          minLength: 1
+          description: https:// URL (downloaded, max 10 MB) or content:// URI.
+    SendMmsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+        phone:
+          type: string
+
+    DateParam:
+      oneOf:
+        - type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Calendar date (yyyy-MM-dd), device-local time.
+        - type: string
+          pattern: '^\d+$'
+          description: Unix epoch milliseconds as digits.
+        - type: integer
+          format: int64
+          description: Unix epoch milliseconds.
+
+    SmsMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Platform message id.
+        sender:
+          type: string
+          description: Address (sender for received, recipient for sent).
+        message:
+          type: string
+          description: Message body.
+        date:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds.
+        type:
+          type: string
+          enum: [received, sent]
+        threadId:
+          type: integer
+          format: int64
+          description: Conversation/thread id (present on /api/v1/sms only).
+        unread:
+          type: boolean
+          description: Read state (present on /api/v1/sms only).
+
+    SmsListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success]
+        count:
+          type: integer
+          description: Number of returned messages (max 50).
+        messages:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SmsMessage'
+
+    SmsQueryResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success]
+        count:
+          type: integer
+        limit:
+          description: Echoed limit ("all" when not provided).
+        offset:
+          type: integer
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMessage'
+
+    GatewayStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [online]
+        version:
+          type: string
+          example: "1.0"
+        ip:
+          type: string
+          description: LAN IPv4 address the server is bound to.
+        port:
+          type: integer
+        batteryLevel:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: Battery percentage (-1 when unavailable).
+        isDefaultSmsApp:
+          type: boolean
+          description: Whether this app can actually send SMS right now.
+        timestamp:
+          type: integer
+          format: int64
+
+    WebhookPayload:
+      type: object
+      properties:
+        event:
+          type: string
+          enum: [sms_received]
+        sender:
+          type: string
+          description: Originating address.
+        message:
+          type: string
+          description: Message body.
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds.
+        threadId:
+          type: integer
+          format: int64
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Missing/blank required fields
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "phone and message required"
+    Unauthorized:
+      description: Invalid or missing API key (counts toward per-IP lockout)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Unauthorized: Invalid X-API-Key"
+    PayloadTooLarge:
+      description: Request body exceeds 1 MB
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Request body too large"
+    TooManyRequests:
+      description: Source IP locked out after repeated auth failures (5 min)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Too many failed attempts, try again later"
+    InternalError:
+      description: Unexpected server-side failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"
+
+  callbacks:
+    IncomingSmsWebhook:
+      'sms.received':
+        post:
+          summary: Fired on every incoming SMS
+          description: |
+            The gateway POSTs this payload to your configured webhook URL
+            (HTTPS enforced) whenever an SMS arrives and the gateway is enabled.
+
+            When a webhook secret is configured, requests include authenticity
+            headers you should verify:
+
+            ```
+            X-Timestamp = <unix millis as string>
+            X-Signature = hex(HMAC_SHA256(secret, "<timestamp>.<raw-body>"))
+            ```
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/WebhookPayload'
+          responses:
+            '200':
+              description: Accepted (status code is ignored by the gateway)
+
+x-webhooks:
+  sms.received:
+    summary: Outgoing webhook for incoming SMS
+    description: Configure URL (+optional HMAC secret) in the app's Gateway screen.
+    payload:
+      event: sms_received
+      sender: "+989121234567"
+      message: "Your OTP code is 123456"
+      timestamp: 1755900000000
+      threadId: 12
+
+x-cloud-backend-contract:
+  description: |
+    Endpoints the APP calls on its cloud backend (relevant only if your other
+    project IS that backend). All require HTTPS; authenticated calls use
+    `Authorization: Bearer <gateway-token>` issued at registration.
+  endpoints:
+    - POST {backend}/api/gateways/register   # unauthenticated; optional X-Registration-Secret header
+      body: { deviceId, name, appVersion, androidVersion, deviceModel }
+    - POST {backend}/api/gateways/heartbeat  # Bearer auth
+      body: { appVersion, batteryLevel, networkType, timestamp }
+    - POST {backend}/api/gateways/events/sms # Bearer auth; eventId dedupes replays
+      body: { eventId (stable UUID), type: "sms.received", sender, message, timestamp }

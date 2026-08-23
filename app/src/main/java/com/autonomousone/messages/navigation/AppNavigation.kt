@@ -99,6 +99,12 @@ fun AppNavigation(
             )
         }
 
+        composable(Screen.MessagingSettings.route) {
+            com.autonomousone.messages.ui.screens.MessagingSettingsScreen(
+                navController = navController
+            )
+        }
+
         composable(
             route = Screen.Conversation.route,
             arguments = listOf(

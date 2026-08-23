@@ -66,6 +66,9 @@ class GatewayServer(
         private const val MAX_HEADERS = 100              // header count cap
         private const val MAX_IMAGE_DOWNLOAD_BYTES = 10_000_000 // 10 MB remote image cap
 
+        /** Loose SMSC validation: optional +, digits only. */
+        private val SMSC_REGEX = Regex("^\\+?[0-9]{5,20}$")
+
         fun getLocalIpAddress(): String {
             try {
                 val interfaces = NetworkInterface.getNetworkInterfaces()
@@ -222,16 +225,34 @@ class GatewayServer(
                     val phone = json.optString("phone", "").trim()
                     val message = json.optString("message", "").trim()
 
+                    // Optional per-call overrides (absent → user's Messaging prefs).
+                    val hasSubId = json.has("subscription_id")
+                    val subscriptionId = if (hasSubId) json.optInt("subscription_id", -1) else null
+                    val smsc = if (json.has("smsc")) json.optString("smsc", "").trim() else ""
+
+                    val invalidSmsc = smsc.isNotBlank() && !SMSC_REGEX.matches(smsc)
+                    val invalidSubId = hasSubId && subscriptionId != null && subscriptionId < -1
+
                     if (phone.isBlank() || message.isBlank()) {
                         sendResponse(output, 400, JSONObject().put("error", "phone and message required"))
+                    } else if (invalidSmsc) {
+                        sendResponse(output, 400, JSONObject().put(
+                            "error", "smsc must be a phone number like +989100000000"
+                        ))
+                    } else if (invalidSubId) {
+                        sendResponse(output, 400, JSONObject().put(
+                            "error", "subscription_id must be a valid subscription id (-1 = default)"
+                        ))
                     } else {
-                        val sentId = smsSender.send(phone, message)
+                        val sentId = smsSender.send(phone, message, subscriptionId, smsc)
                         onRequestLog?.invoke("📩 POST /api/v1/sms/send -> $phone")
                         sendResponse(output, 200, JSONObject().apply {
                             put("status", "success")
                             put("id", sentId)
                             put("phone", phone)
                             put("message", message)
+                            if (hasSubId) put("subscription_id", subscriptionId ?: -1)
+                            if (smsc.isNotBlank()) put("smsc", smsc)
                         })
                     }
                 }

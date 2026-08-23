@@ -273,8 +273,12 @@ fun ConversationScreen(
                 phone = recipientPhone,
                 onBackClick = { navController.popBackStack() },
                 onCallClick = {
-                    val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$recipientPhone"))
-                    context.startActivity(callIntent)
+                    // Group threads carry comma-joined recipients; dial the first only.
+                    val dialTarget = recipientPhone.split(',', ';').firstOrNull()?.trim() ?: ""
+                    if (dialTarget.isNotBlank()) {
+                        val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$dialTarget"))
+                        context.startActivity(callIntent)
+                    }
                 },
                 onVideoClick = {}
             )

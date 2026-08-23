@@ -155,7 +155,8 @@ class SmsRepository(
                 Telephony.Sms.BODY,
                 Telephony.Sms.DATE,
                 Telephony.Sms.READ,
-                Telephony.Sms.TYPE
+                Telephony.Sms.TYPE,
+                Telephony.Sms.STATUS
             )
 
             val selectionParts = mutableListOf<String>()
@@ -212,6 +213,7 @@ class SmsRepository(
                 val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+                val statusIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.STATUS)
 
                 var count = 0
                 val skipCount = offset ?: 0
@@ -235,7 +237,8 @@ class SmsRepository(
                             message = cursor.getString(bodyIndex) ?: "",
                             date = cursor.getLong(dateIndex),
                             unread = cursor.getInt(readIndex) == 0,
-                            type = cursor.getInt(typeIndex)
+                            type = cursor.getInt(typeIndex),
+                            status = cursor.getInt(statusIndex)
                         )
                     )
                     count++
@@ -399,7 +402,8 @@ class SmsRepository(
                 Telephony.Sms.BODY,
                 Telephony.Sms.DATE,
                 Telephony.Sms.READ,
-                Telephony.Sms.TYPE
+                Telephony.Sms.TYPE,
+                Telephony.Sms.STATUS
             )
 
             context.contentResolver.query(
@@ -416,6 +420,7 @@ class SmsRepository(
                 val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
                 val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
                 val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+                val statusIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.STATUS)
 
                 val total = cursor.count
                 var lastEmitted = -1
@@ -428,7 +433,8 @@ class SmsRepository(
                             message = cursor.getString(bodyIndex) ?: "",
                             date = cursor.getLong(dateIndex),
                             unread = cursor.getInt(readIndex) == 0,
-                            type = cursor.getInt(typeIndex)
+                            type = cursor.getInt(typeIndex),
+                            status = cursor.getInt(statusIndex)
                         )
                     )
                     if (progress != null && (smsList.size == total || smsList.size - lastEmitted >= 50)) {

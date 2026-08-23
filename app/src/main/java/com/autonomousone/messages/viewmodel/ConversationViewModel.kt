@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -232,13 +233,29 @@ class ConversationViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val persistedId = smsSender.send(targetPhone, trimmedMsg)
-                persistedSentIds.add(persistedId)
+                val recipients = splitRecipients(targetPhone)
+                when {
+                    // Google Messages-style group chat: ONE group MMS instead of N SMS.
+                    recipients.size > 1 &&
+                            MessagingPreferences(getApplication()).groupMessagingEnabled -> {
+                        mmsSender.sendGroupText(recipients, trimmedMsg)
+                    }
+                    // Group toggle off → classic behaviour: one SMS per recipient.
+                    recipients.size > 1 -> recipients.forEach { smsSender.send(it, trimmedMsg) }
+                    else -> {
+                        val persistedId = smsSender.send(recipients.first(), trimmedMsg)
+                        persistedSentIds.add(persistedId)
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
+
+    /** Splits "a, b; c" recipient strings coming from group selection UI. */
+    private fun splitRecipients(raw: String): List<String> =
+        raw.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
 
     fun sendImageMessage(threadId: Long, phone: String, imageUri: Uri, caption: String = "") {
         val targetPhone = if (phone.isNotBlank()) phone else currentPhone

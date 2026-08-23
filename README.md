@@ -62,6 +62,11 @@ You can view or regenerate your API Key inside the app under **3-Dots Menu → S
 
 ## 📡 REST API Reference & Usage Examples
 
+> 📚 **Full API documentation package** (for sharing with other projects): [`docs/api/`](docs/api/)
+> - [`openapi.yaml`](docs/api/openapi.yaml) — OpenAPI 3.0 spec (import into Swagger UI / Postman / Insomnia)
+> - [`index.html`](docs/api/index.html) — interactive Swagger UI docs (serve the folder, open in browser)
+> - [`scripts/test-gateway-api.ps1`](scripts/test-gateway-api.ps1) — live smoke tests for every endpoint
+
 ### 1. Send SMS Text Message
 **Endpoint**: `POST /api/v1/sms/send`
 

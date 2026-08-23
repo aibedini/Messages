@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -43,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,6 +64,7 @@ import com.autonomousone.messages.ui.components.Avatar
 import com.autonomousone.messages.ui.components.AvatarSize
 import com.autonomousone.messages.ui.components.ContactItem
 import com.autonomousone.messages.ui.components.EmptyView
+import com.autonomousone.messages.model.Contact
 import com.autonomousone.messages.viewmodel.NewConversationViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +74,8 @@ fun NewConversationScreen(
 ) {
     val viewModel: NewConversationViewModel = viewModel()
     var search by remember { mutableStateOf("") }
+    var groupMode by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Contact>() }
 
     LaunchedEffect(Unit) {
         viewModel.loadContacts()
@@ -117,6 +123,20 @@ fun NewConversationScreen(
                         )
                     }
                 },
+                actions = {
+                    // Group mode: pick several contacts, send as one conversation.
+                    IconButton(onClick = {
+                        groupMode = !groupMode
+                        if (!groupMode) selected.clear()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Group,
+                            contentDescription = if (groupMode) "Exit group mode" else "Group mode",
+                            tint = if (groupMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -133,8 +153,35 @@ fun NewConversationScreen(
             AppSearchBar(
                 query = search,
                 onQueryChange = { search = it },
-                placeholderText = "Type a name or phone number..."
+                placeholderText = if (groupMode) "Add people to group..."
+                else "Type a name or phone number..."
             )
+
+            // Selected-people chips (group mode only)
+            if (groupMode && selected.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    selected.forEach { person ->
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            onClick = { selected.removeAll { it.id == person.id && it.phone == person.phone } }
+                        ) {
+                            Text(
+                                text = "${person.name} ✕",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
 
             // Hero Card for Direct Phone Number Messaging
             AnimatedVisibility(
@@ -322,13 +369,61 @@ fun NewConversationScreen(
                         ContactItem(
                             contact = contact,
                             onClick = {
-                                navController.navigate(
-                                    Screen.Conversation.createNewRoute(
-                                        phone = contact.phone,
-                                        name = contact.name
+                                if (groupMode) {
+                                    val key = "${contact.id}_${contact.phone}"
+                                    if (selected.any { "${it.id}_${it.phone}" == key }) {
+                                        selected.removeAll { "${it.id}_${it.phone}" == key }
+                                    } else {
+                                        selected.add(contact)
+                                    }
+                                } else {
+                                    navController.navigate(
+                                        Screen.Conversation.createNewRoute(
+                                            phone = contact.phone,
+                                            name = contact.name
+                                        )
                                     )
-                                )
+                                }
                             }
+                        )
+                    }
+                }
+            }
+
+            // Start group chat bar (group mode only)
+            AnimatedVisibility(visible = groupMode && selected.size >= 2) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        val phones = selected.joinToString(",") { it.phone }
+                        val names = selected.joinToString(", ") { it.name.split(" ").first() }
+                        navController.navigate(
+                            Screen.Conversation.createNewRoute(phone = phones, name = names)
+                        )
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Start Group Chat (${selected.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }

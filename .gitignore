@@ -24,3 +24,7 @@ password.txt
 alias.txt
 app/release/
 keystore.properties
+
+# Local tooling / temp artifacts
+.codebase-memory/
+build_output.txt
