@@ -11,6 +11,7 @@ import com.autonomousone.messages.model.Contact
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.ProgressListener
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -30,18 +31,23 @@ class NewConversationViewModel(
     var loadStatus by mutableStateOf<String?>(null)
         private set
 
+    private var loadJob: Job? = null
+
     fun loadContacts() {
+        if (loadJob?.isActive == true) return
         // getContacts() queries BOTH the ContactsContract provider and the whole
         // SMS table (via SmsRepository.getConversations()). Running it on the
         // main thread blocks the UI → ANR/freeze. Run it on IO and post back to Main.
         isLoading = true
-        viewModelScope.launch(Dispatchers.IO) {
+        loadJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val progressListener = ProgressListener { p ->
-                    loadStatus = if (p.total > 0) {
-                        "Loading contacts… ${p.loaded}/${p.total}"
-                    } else {
-                        "Loading contacts…"
+                    viewModelScope.launch {
+                        loadStatus = if (p.total > 0) {
+                            "Loading contacts… ${p.loaded}/${p.total}"
+                        } else {
+                            "Loading contacts…"
+                        }
                     }
                 }
                 val freshContacts = repository.getContacts(progressListener)

@@ -36,6 +36,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -273,9 +274,13 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
+            if (viewModel.isLoading && filteredList.isNotEmpty()) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             val isInArchivedView = selectedFilter == ConversationFilter.Archived
 
-            if (viewModel.isLoading) {
+            if (viewModel.isLoading && filteredList.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

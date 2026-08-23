@@ -1,8 +1,11 @@
 package com.autonomousone.messages.repository
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.provider.ContactsContract
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.autonomousone.messages.model.Contact
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,6 +51,12 @@ class ContactRepository(
         val existing = cachedMap
         if (existing != null) return existing
 
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return emptyMap()
+
         val map = mutableMapOf<String, String>()
         try {
             val projection = arrayOf(
@@ -74,7 +83,7 @@ class ContactRepository(
         } catch (e: Exception) {
             Log.e("CONTACT_DEBUG", "Error querying contact name map", e)
         }
-        cachedMap = map
+        if (map.isNotEmpty()) cachedMap = map
         return map
     }
 
@@ -146,7 +155,7 @@ class ContactRepository(
 
         try {
             val smsRepo = SmsRepository(context)
-            val conversations = smsRepo.getConversations()
+            val conversations = smsRepo.getConversationsFast()
             var fallbackId = -100L
             for (sms in conversations) {
                 val rawSender = sms.sender.trim()

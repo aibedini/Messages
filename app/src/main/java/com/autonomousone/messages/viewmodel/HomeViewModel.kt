@@ -1,6 +1,7 @@
 package com.autonomousone.messages.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,7 +49,7 @@ class HomeViewModel(
     var loadStatus by mutableStateOf<String?>(null)
         private set
 
-    private var loadJob: Job? = null
+    private val reloadRequests = Channel<Unit>(Channel.CONFLATED)
 
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
     private val pendingDeletes = mutableMapOf<Long, Job>()
@@ -55,9 +57,9 @@ class HomeViewModel(
     init {
         repository.registerObserver(observer)
         loadArchivedIds()
-        loadSms()
         observeIncomingSms()
         observeRefreshSignal()
+        observeReloadRequests()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -70,28 +72,36 @@ class HomeViewModel(
     }
 
     fun loadSms() {
-        // Cancel any in-flight reload so a newer observer/refresh tick wins and
-        // the loading state is never left dangling.
-        loadJob?.cancel()
+        reloadRequests.trySend(Unit)
+    }
+
+    private fun observeReloadRequests() {
+        viewModelScope.launch {
+            for (ignored in reloadRequests) performLoad()
+        }
+    }
+
+    private suspend fun performLoad() {
         isLoading = true
-        loadJob = viewModelScope.launch(Dispatchers.IO) {
-            try {
+        try {
                 // Report row-by-row progress ("X of Y") so the user sees what is
                 // happening instead of an indeterminate spinner.
                 val progressListener = ProgressListener { p ->
                     val label = when (p.phase) {
+                        "threads" -> "Loading conversations"
                         "sms" -> "Reading messages"
                         "mms" -> "Reading multimedia"
                         else -> "Loading"
                     }
-                    loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
+                    viewModelScope.launch {
+                        loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
+                    }
                 }
-                val contactRepo = ContactRepository(getApplication())
-                contactRepo.getContactNameMapAsync()
-                val freshList = repository.getConversations(progressListener)
-                val archived = archiveRepository.getArchivedIds()
+                val (freshList, archived) = withContext(Dispatchers.IO) {
+                    ContactRepository(getApplication()).getContactNameMapAsync()
+                    repository.getConversationsFast(progressListener) to archiveRepository.getArchivedIds()
+                }
 
-                withContext(Dispatchers.Main) {
                     conversations.clear()
                     archivedConversations.clear()
                     archivedIds.clear()
@@ -104,16 +114,14 @@ class HomeViewModel(
                             conversations.add(sms)
                         }
                     }
-                }
+            } catch (error: Exception) {
+                    Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
             } finally {
                 // Always clear the spinner, even if a query throws, so the list
                 // never stays stuck in a loading state.
-                withContext(Dispatchers.Main) {
                     isLoading = false
                     loadStatus = null
-                }
             }
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -241,6 +249,7 @@ class HomeViewModel(
 
     override fun onCleared() {
         pendingDeletes.values.forEach { it.cancel() }
+        reloadRequests.close()
         repository.unregisterObserver(observer)
         super.onCleared()
     }

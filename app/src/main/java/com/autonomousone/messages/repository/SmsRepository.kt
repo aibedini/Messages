@@ -30,6 +30,82 @@ class SmsRepository(
     private val context: Context
 ) {
 
+    /** Fast path: one row per SMS/MMS thread instead of materializing every message. */
+    fun getConversationsFast(progress: ProgressListener? = null): List<Sms> {
+        val result = mutableListOf<Sms>()
+        try {
+            val canonicalAddresses = loadCanonicalAddresses()
+            var providerResponded = false
+            val projection = arrayOf(
+                Telephony.Threads._ID,
+                Telephony.Threads.DATE,
+                Telephony.Threads.RECIPIENT_IDS,
+                Telephony.Threads.SNIPPET,
+                Telephony.Threads.READ
+            )
+            context.contentResolver.query(
+                Telephony.Threads.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${Telephony.Threads.DATE} DESC"
+            )?.use { cursor ->
+                providerResponded = true
+                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Threads._ID)
+                val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Threads.DATE)
+                val recipientsIndex = cursor.getColumnIndexOrThrow(Telephony.Threads.RECIPIENT_IDS)
+                val snippetIndex = cursor.getColumnIndexOrThrow(Telephony.Threads.SNIPPET)
+                val readIndex = cursor.getColumnIndexOrThrow(Telephony.Threads.READ)
+                val total = cursor.count
+                var loaded = 0
+                while (cursor.moveToNext()) {
+                    loaded++
+                    val threadId = cursor.getLong(idIndex)
+                    val recipients = cursor.getString(recipientsIndex).orEmpty()
+                        .split(' ')
+                        .mapNotNull { it.toLongOrNull()?.let(canonicalAddresses::get) }
+                        .filter { it.isNotBlank() }
+                    result += Sms(
+                        id = threadId,
+                        threadId = threadId,
+                        sender = recipients.joinToString(", ").ifBlank { "Unknown" },
+                        message = cursor.getString(snippetIndex).orEmpty(),
+                        date = cursor.getLong(dateIndex),
+                        unread = cursor.getInt(readIndex) == 0,
+                        type = 1
+                    )
+                    if (loaded == total || loaded % 25 == 0) {
+                        progress?.onProgress(LoadProgress("threads", loaded, total))
+                    }
+                }
+                if (total == 0) progress?.onProgress(LoadProgress("threads", 0, 0))
+            }
+            if (!providerResponded) return getConversations(progress)
+            return result
+        } catch (error: Exception) {
+            Log.w("SMS_DEBUG", "Thread provider unavailable; using compatibility scan", error)
+            return getConversations(progress)
+        }
+    }
+
+    private fun loadCanonicalAddresses(): Map<Long, String> {
+        val result = mutableMapOf<Long, String>()
+        context.contentResolver.query(
+            Uri.parse("content://mms-sms/canonical-addresses"),
+            arrayOf("_id", "address"),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow("_id")
+            val addressIndex = cursor.getColumnIndexOrThrow("address")
+            while (cursor.moveToNext()) {
+                result[cursor.getLong(idIndex)] = cursor.getString(addressIndex).orEmpty()
+            }
+        }
+        return result
+    }
+
     fun getAllSms(): List<Sms> {
         return getSmsWithFilters()
     }
@@ -376,7 +452,7 @@ class SmsRepository(
                             message = bodyMap[row.id]
                                 ?: row.subject?.takeIf { it.isNotBlank() }
                                 ?: "[MMS]",
-                            date = row.date,
+                            date = row.date * 1_000L,
                             unread = row.read == 0,
                             type = if (row.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
                         )
