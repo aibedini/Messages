@@ -328,22 +328,30 @@ fun HomeScreen(
                             },
                             onArchive = {
                                 if (isInArchivedView) {
-                                    // Unarchive
+                                    // Unarchive (Undo → re-archive)
                                     viewModel.unarchiveConversation(sms)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
+                                        val result = snackbarHostState.showSnackbar(
                                             message = "Conversation unarchived",
+                                            actionLabel = "Undo",
                                             duration = SnackbarDuration.Short
                                         )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            viewModel.archiveConversation(sms)
+                                        }
                                     }
                                 } else {
-                                    // Archive
+                                    // Archive (Undo → unarchive)
                                     viewModel.archiveConversation(sms)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
+                                        val result = snackbarHostState.showSnackbar(
                                             message = "Conversation archived",
-                                            duration = SnackbarDuration.Short
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Long
                                         )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            viewModel.unarchiveConversation(sms)
+                                        }
                                     }
                                 }
                             },

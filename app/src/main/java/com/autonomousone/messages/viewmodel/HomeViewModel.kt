@@ -123,11 +123,15 @@ class HomeViewModel(
     }
 
     private fun replaceConversations(items: List<Sms>, archived: Set<Long>) {
+        // Threads with a pending (not-yet-committed) delete must stay hidden
+        // even across observer-triggered rebuilds.
+        val excluded = pendingDeletes.keys
         conversations.clear()
         archivedConversations.clear()
         archivedIds.clear()
         archivedIds.addAll(archived)
         items.forEach { sms ->
+            if (sms.threadId in excluded) return@forEach
             if (sms.threadId in archived) archivedConversations.add(sms)
             else conversations.add(sms)
         }
@@ -154,19 +158,17 @@ class HomeViewModel(
      * The returned job can be cancelled before the delay elapses to undo.
      */
     fun deleteConversation(sms: Sms, delayMs: Long = 4_000L) {
-        // Optimistic remove from UI
-        conversations.remove(sms)
-        archivedConversations.remove(sms)
+        // Remove EVERY matching row by threadId — data-class equals is unsafe
+        // because reloads produce fresh instances with updated fields.
+        conversations.removeAll { it.threadId == sms.threadId }
+        archivedConversations.removeAll { it.threadId == sms.threadId }
 
-        // Cancel any existing pending delete for this thread
         pendingDeletes[sms.threadId]?.cancel()
 
         val job = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
             repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
-            withContext(Dispatchers.Main) {
-                pendingDeletes.remove(sms.threadId)
-            }
+            synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
         }
         pendingDeletes[sms.threadId] = job
     }
@@ -174,14 +176,31 @@ class HomeViewModel(
     /**
      * Cancels a pending delete for [sms] and re-inserts it into the correct list
      * at its sorted position (most-recent first by date).
+     *
+     * Safe against the two historical crash paths:
+     *  - the row was re-added by an observer reload in the meantime → deduped;
+     *  - the permanent delete already committed → no ghost row, just resync.
      */
     fun undoDelete(sms: Sms) {
-        pendingDeletes[sms.threadId]?.cancel()
-        pendingDeletes.remove(sms.threadId)
+        val job = synchronized(pendingDeletes) { pendingDeletes[sms.threadId] }
+        if (job == null || !job.isActive) {
+            // Deletion already committed (or raced past the window) — resync
+            // from the provider instead of resurrecting a ghost conversation.
+            loadSms()
+            return
+        }
+        job.cancel()
+        synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
 
         val targetList = if (sms.threadId in archivedIds) archivedConversations else conversations
-        val insertIndex = targetList.indexOfFirst { it.date < sms.date }
-        if (insertIndex >= 0) targetList.add(insertIndex, sms) else targetList.add(sms)
+        insertDeduped(targetList, sms)
+    }
+
+    /** Removes any row with the same id first, then inserts date-sorted. */
+    private fun insertDeduped(target: MutableList<Sms>, sms: Sms) {
+        target.removeAll { it.id == sms.id }
+        val insertIndex = target.indexOfFirst { it.date < sms.date }
+        if (insertIndex >= 0) target.add(insertIndex, sms) else target.add(sms)
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -190,17 +209,16 @@ class HomeViewModel(
 
     /**
      * Moves [sms] from the active conversations list to the archived list.
-     * Persists the archive state to SharedPreferences.
+     * Persists the archive state to SharedPreferences. Reversible via
+     * [unarchiveConversation] (wired to the snackbar's Undo action).
      */
     fun archiveConversation(sms: Sms) {
         viewModelScope.launch(Dispatchers.IO) {
             archiveRepository.archiveThread(sms.threadId)
             withContext(Dispatchers.Main) {
                 archivedIds.add(sms.threadId)
-                conversations.remove(sms)
-                val insertIndex = archivedConversations.indexOfFirst { it.date < sms.date }
-                if (insertIndex >= 0) archivedConversations.add(insertIndex, sms)
-                else archivedConversations.add(sms)
+                conversations.removeAll { it.threadId == sms.threadId }
+                insertDeduped(archivedConversations, sms)
             }
         }
     }
@@ -213,9 +231,8 @@ class HomeViewModel(
             archiveRepository.unarchiveThread(sms.threadId)
             withContext(Dispatchers.Main) {
                 archivedIds.remove(sms.threadId)
-                archivedConversations.remove(sms)
-                val insertIndex = conversations.indexOfFirst { it.date < sms.date }
-                if (insertIndex >= 0) conversations.add(insertIndex, sms) else conversations.add(sms)
+                archivedConversations.removeAll { it.threadId == sms.threadId }
+                insertDeduped(conversations, sms)
             }
         }
     }
