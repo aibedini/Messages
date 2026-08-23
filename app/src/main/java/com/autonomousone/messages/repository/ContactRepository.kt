@@ -43,7 +43,7 @@ class ContactRepository(
         if (existing != null) return@withContext existing
 
         val map = getContactNameMap()
-        cachedMap = map
+        if (map.isNotEmpty()) cachedMap = map
         map
     }
 
@@ -94,7 +94,10 @@ class ContactRepository(
         return map[norm] ?: map[phone] ?: phone
     }
 
-    fun getContacts(progress: ProgressListener? = null): List<Contact> {
+    fun getContacts(
+        progress: ProgressListener? = null,
+        onPartial: ((List<Contact>) -> Unit)? = null
+    ): List<Contact> {
         val contacts = mutableListOf<Contact>()
         val addedNumbers = HashSet<String>()
 
@@ -144,6 +147,9 @@ class ContactRepository(
                             )
                         )
                     }
+                    if (readCount == 50 || readCount == total || readCount % 500 == 0) {
+                        onPartial?.invoke(contacts.toList())
+                    }
                 }
                 if (progress != null && total == 0) {
                     progress.onProgress(LoadProgress("contacts", 0, 0))
@@ -153,28 +159,8 @@ class ContactRepository(
             Log.e("CONTACT_DEBUG", "Error fetching ContactsContract contacts", e)
         }
 
-        try {
-            val smsRepo = SmsRepository(context)
-            val conversations = smsRepo.getConversationsFast()
-            var fallbackId = -100L
-            for (sms in conversations) {
-                val rawSender = sms.sender.trim()
-                if (rawSender.isBlank()) continue
-                val normalized = normalizePhone(rawSender)
-                if (addedNumbers.add(normalized)) {
-                    contacts.add(
-                        Contact(
-                            id = fallbackId--,
-                            name = rawSender,
-                            phone = normalized
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("CONTACT_DEBUG", "Error merging SMS senders into contacts", e)
-        }
-
-        return contacts.sortedBy { it.name.lowercase() }
+        val sorted = contacts.sortedBy { it.name.lowercase() }
+        onPartial?.invoke(sorted)
+        return sorted
     }
 }

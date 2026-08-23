@@ -31,7 +31,10 @@ class SmsRepository(
 ) {
 
     /** Fast path: one row per SMS/MMS thread instead of materializing every message. */
-    fun getConversationsFast(progress: ProgressListener? = null): List<Sms> {
+    fun getConversationsFast(
+        progress: ProgressListener? = null,
+        onPartial: ((List<Sms>) -> Unit)? = null
+    ): List<Sms> {
         val result = mutableListOf<Sms>()
         try {
             val canonicalAddresses = loadCanonicalAddresses()
@@ -65,10 +68,13 @@ class SmsRepository(
                         .split(' ')
                         .mapNotNull { it.toLongOrNull()?.let(canonicalAddresses::get) }
                         .filter { it.isNotBlank() }
+                    val sender = recipients.joinToString(", ").ifBlank {
+                        resolveSmsAddressForThread(threadId)
+                    }
                     result += Sms(
                         id = threadId,
                         threadId = threadId,
-                        sender = recipients.joinToString(", ").ifBlank { "Unknown" },
+                        sender = sender.ifBlank { "Unknown" },
                         message = cursor.getString(snippetIndex).orEmpty(),
                         date = cursor.getLong(dateIndex),
                         unread = cursor.getInt(readIndex) == 0,
@@ -76,34 +82,55 @@ class SmsRepository(
                     )
                     if (loaded == total || loaded % 25 == 0) {
                         progress?.onProgress(LoadProgress("threads", loaded, total))
+                        onPartial?.invoke(result.toList())
                     }
                 }
                 if (total == 0) progress?.onProgress(LoadProgress("threads", 0, 0))
             }
-            if (!providerResponded) return getConversations(progress)
+            if (!providerResponded) return getConversations(progress, onPartial)
             return result
         } catch (error: Exception) {
             Log.w("SMS_DEBUG", "Thread provider unavailable; using compatibility scan", error)
-            return getConversations(progress)
+            return getConversations(progress, onPartial)
         }
     }
 
     private fun loadCanonicalAddresses(): Map<Long, String> {
         val result = mutableMapOf<Long, String>()
-        context.contentResolver.query(
-            Uri.parse("content://mms-sms/canonical-addresses"),
-            arrayOf("_id", "address"),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val idIndex = cursor.getColumnIndexOrThrow("_id")
-            val addressIndex = cursor.getColumnIndexOrThrow("address")
-            while (cursor.moveToNext()) {
-                result[cursor.getLong(idIndex)] = cursor.getString(addressIndex).orEmpty()
+        try {
+            context.contentResolver.query(
+                Uri.parse("content://mms-sms/canonical-addresses"),
+                arrayOf("_id", "address"),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndexOrThrow("_id")
+                val addressIndex = cursor.getColumnIndexOrThrow("address")
+                while (cursor.moveToNext()) {
+                    result[cursor.getLong(idIndex)] = cursor.getString(addressIndex).orEmpty()
+                }
             }
+        } catch (error: Exception) {
+            Log.w("SMS_DEBUG", "Canonical addresses unavailable", error)
         }
         return result
+    }
+
+    private fun resolveSmsAddressForThread(threadId: Long): String {
+        return try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms.ADDRESS),
+                "${Telephony.Sms.THREAD_ID} = ?",
+                arrayOf(threadId.toString()),
+                "${Telephony.Sms.DATE} DESC LIMIT 1"
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+            }.orEmpty()
+        } catch (error: Exception) {
+            ""
+        }
     }
 
     fun getAllSms(): List<Sms> {
@@ -229,24 +256,24 @@ class SmsRepository(
      * Merges SMS + MMS so MMS-only threads appear and the latest message per
      * conversation (whether SMS or MMS) is shown.
      */
-    fun getConversations(progress: ProgressListener? = null): List<Sms> {
+    fun getConversations(
+        progress: ProgressListener? = null,
+        onPartial: ((List<Sms>) -> Unit)? = null
+    ): List<Sms> {
         val conversationMap = mutableMapOf<String, Sms>()
 
         try {
-            // Both queries return most-recent-first. We keep the row with the
-            // highest date per normalized phone key regardless of source.
-            val allMessages = mutableListOf<Sms>()
-            allMessages.addAll(querySms(null, null, "${Telephony.Sms.DATE} DESC", progress))
-            allMessages.addAll(queryMms(null, null, "${Telephony.Mms.DATE} DESC", progress))
-
-            for (sms in allMessages) {
+            scanSmsConversations(conversationMap, progress, onPartial)
+            for (sms in queryMms(null, null, "${Telephony.Mms.DATE} DESC", progress)) {
                 val norm = ContactRepository.normalizePhone(sms.sender)
-                val key = if (norm.isNotBlank()) norm else sms.sender
+                val key = if (sms.threadId > 0) "thread:${sms.threadId}"
+                else if (norm.isNotBlank()) "address:$norm" else "address:${sms.sender}"
                 val existing = conversationMap[key]
                 if (existing == null || sms.date > existing.date) {
                     conversationMap[key] = sms
                 }
             }
+            onPartial?.invoke(conversationMap.values.sortedByDescending { it.date })
 
             Log.d("SMS_DEBUG", "Total Conversations = ${conversationMap.size}")
 
@@ -255,6 +282,61 @@ class SmsRepository(
         }
 
         return conversationMap.values.sortedByDescending { it.date }
+    }
+
+    private fun scanSmsConversations(
+        conversationMap: MutableMap<String, Sms>,
+        progress: ProgressListener?,
+        onPartial: ((List<Sms>) -> Unit)?
+    ) {
+        val projection = arrayOf(
+            Telephony.Sms._ID,
+            Telephony.Sms.THREAD_ID,
+            Telephony.Sms.ADDRESS,
+            Telephony.Sms.BODY,
+            Telephony.Sms.DATE,
+            Telephony.Sms.READ,
+            Telephony.Sms.TYPE
+        )
+        context.contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${Telephony.Sms.DATE} DESC"
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+            val threadIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
+            val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+            val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+            val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+            val readIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
+            val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+            val total = cursor.count
+            var loaded = 0
+            while (cursor.moveToNext()) {
+                loaded++
+                val sms = Sms(
+                    id = cursor.getLong(idIndex),
+                    threadId = cursor.getLong(threadIndex),
+                    sender = cursor.getString(addressIndex) ?: "Unknown",
+                    message = cursor.getString(bodyIndex).orEmpty(),
+                    date = cursor.getLong(dateIndex),
+                    unread = cursor.getInt(readIndex) == 0,
+                    type = cursor.getInt(typeIndex)
+                )
+                val normalized = ContactRepository.normalizePhone(sms.sender)
+                val key = if (sms.threadId > 0) "thread:${sms.threadId}" else "address:$normalized"
+                if (!conversationMap.containsKey(key)) conversationMap[key] = sms
+
+                val shouldEmit = loaded == 250 || loaded == total || loaded % 20_000 == 0
+                if (shouldEmit) {
+                    progress?.onProgress(LoadProgress("sms", loaded, total))
+                    onPartial?.invoke(conversationMap.values.sortedByDescending { it.date })
+                }
+            }
+            if (total == 0) progress?.onProgress(LoadProgress("sms", 0, 0))
+        }
     }
 
     fun getMessagesByThread(threadId: Long, progress: ProgressListener? = null): List<Sms> {

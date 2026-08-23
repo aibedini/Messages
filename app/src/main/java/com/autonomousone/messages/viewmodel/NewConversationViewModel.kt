@@ -50,7 +50,12 @@ class NewConversationViewModel(
                         }
                     }
                 }
-                val freshContacts = repository.getContacts(progressListener)
+                val freshContacts = repository.getContacts(progressListener) { partial ->
+                    viewModelScope.launch {
+                        contacts.clear()
+                        contacts.addAll(partial)
+                    }
+                }
                 withContext(Dispatchers.Main) {
                     contacts.clear()
                     contacts.addAll(freshContacts)

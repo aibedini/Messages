@@ -18,6 +18,7 @@ import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,44 +85,52 @@ class HomeViewModel(
     private suspend fun performLoad() {
         isLoading = true
         try {
-                // Report row-by-row progress ("X of Y") so the user sees what is
-                // happening instead of an indeterminate spinner.
-                val progressListener = ProgressListener { p ->
-                    val label = when (p.phase) {
-                        "threads" -> "Loading conversations"
-                        "sms" -> "Reading messages"
-                        "mms" -> "Reading multimedia"
-                        else -> "Loading"
-                    }
-                    viewModelScope.launch {
-                        loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
+            val progressListener = ProgressListener { progress ->
+                val label = when (progress.phase) {
+                    "threads" -> "Loading conversations"
+                    "sms" -> "Reading messages"
+                    "mms" -> "Reading multimedia"
+                    else -> "Loading"
+                }
+                viewModelScope.launch {
+                    loadStatus = if (progress.total > 0) {
+                        "$label… ${progress.loaded}/${progress.total}"
+                    } else {
+                        "$label…"
                     }
                 }
-                val (freshList, archived) = withContext(Dispatchers.IO) {
-                    ContactRepository(getApplication()).getContactNameMapAsync()
-                    repository.getConversationsFast(progressListener) to archiveRepository.getArchivedIds()
-                }
-
-                    conversations.clear()
-                    archivedConversations.clear()
-                    archivedIds.clear()
-                    archivedIds.addAll(archived)
-
-                    freshList.forEach { sms ->
-                        if (sms.threadId in archived) {
-                            archivedConversations.add(sms)
-                        } else {
-                            conversations.add(sms)
-                        }
-                    }
-            } catch (error: Exception) {
-                    Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
-            } finally {
-                // Always clear the spinner, even if a query throws, so the list
-                // never stays stuck in a loading state.
-                    isLoading = false
-                    loadStatus = null
             }
+
+            val (freshList, archived) = withContext(Dispatchers.IO) {
+                val archived = archiveRepository.getArchivedIds()
+                val contactNames = async {
+                    ContactRepository(getApplication()).getContactNameMapAsync()
+                }
+                val freshList = repository.getConversationsFast(progressListener) { partial ->
+                    viewModelScope.launch { replaceConversations(partial, archived) }
+                }
+                contactNames.await()
+                freshList to archived
+            }
+
+            replaceConversations(freshList, archived)
+        } catch (error: Exception) {
+            Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
+        } finally {
+            isLoading = false
+            loadStatus = null
+        }
+    }
+
+    private fun replaceConversations(items: List<Sms>, archived: Set<Long>) {
+        conversations.clear()
+        archivedConversations.clear()
+        archivedIds.clear()
+        archivedIds.addAll(archived)
+        items.forEach { sms ->
+            if (sms.threadId in archived) archivedConversations.add(sms)
+            else conversations.add(sms)
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
