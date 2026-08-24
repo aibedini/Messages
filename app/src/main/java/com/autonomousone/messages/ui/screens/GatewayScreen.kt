@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -183,6 +184,54 @@ fun GatewayScreen(
                     onCopyGatewayId = { viewModel.copyToClipboard("Gateway ID", viewModel.gatewayId) },
                     onSaveRegistrationSecret = { viewModel.saveRegistrationSecret(it) }
                 )
+            }
+
+            // ── 0b. GMweb pull bridge (outbound-only, no tunnel) ──────────────
+            item {
+                var editingUrl by rememberSaveable(viewModel.gmwebUrl) {
+                    mutableStateOf(viewModel.gmwebUrl)
+                }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (viewModel.gmwebUrl.isNotBlank())
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("GMweb pull bridge", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Let a GMweb-API server hand you SMS tasks over outbound HTTPS — " +
+                                "no tunnel, no static IP, survives mobile-IP changes. " +
+                                "Paste the server's https:// URL; leave empty to disable.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedTextField(
+                            value = editingUrl,
+                            onValueChange = { editingUrl = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("GMweb base URL (https://…)") },
+                            placeholder = { Text("https://gmweb.example.com") },
+                            isError = editingUrl.isNotBlank() && !editingUrl.startsWith("https://")
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { viewModel.saveGmwebUrl(editingUrl) },
+                                enabled = editingUrl.isNotBlank() || editingUrl != viewModel.gmwebUrl
+                            ) {
+                                Text("Save")
+                            }
+                            if (viewModel.gmwebUrl.isNotBlank()) {
+                                OutlinedButton(onClick = { editingUrl = ""; viewModel.saveGmwebUrl("") }) {
+                                    Text("Disable")
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // ── 1. Server Status Card ───────────────────────────────────────

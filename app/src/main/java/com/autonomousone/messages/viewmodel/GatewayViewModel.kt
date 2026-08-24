@@ -214,6 +214,28 @@ class GatewayViewModel(
         Toast.makeText(getApplication(), "Registration secret saved", Toast.LENGTH_SHORT).show()
     }
 
+    var gmwebUrl by mutableStateOf(prefs.gmwebUrl)
+        private set
+
+    /**
+     * Saves the GMweb-API base URL for the pull bridge and restarts the poller
+     * so the change takes effect without toggling the whole gateway.
+     */
+    fun saveGmwebUrl(newUrl: String) {
+        val v = newUrl.trim().trimEnd('/')
+        try {
+            prefs.gmwebUrl = v
+            gmwebUrl = prefs.gmwebUrl
+            addLog(
+                if (gmwebUrl.isBlank()) "🔌 GMweb pull bridge disabled"
+                else "🔌 GMweb pull bridge URL saved: $gmwebUrl (takes effect on gateway start/restart)"
+            )
+            Toast.makeText(getApplication(), "GMweb URL saved", Toast.LENGTH_SHORT).show()
+        } catch (e: IllegalArgumentException) {
+            Toast.makeText(getApplication(), e.message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     fun saveBindAllInterfaces(bindAll: Boolean) {
         bindAllInterfaces = bindAll
         prefs.bindAllInterfaces = bindAll
