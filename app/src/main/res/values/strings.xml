@@ -106,6 +106,10 @@
     <string name="conv_segment_one_left">%1$d characters left</string>
     <string name="conv_segment_multi_fmt">SMS %1$d · %2$d characters left</string>
 
+    <string name="conv_loading_messages">Reading messages</string>
+    <string name="conv_loading_multimedia">Reading multimedia</string>
+    <string name="conv_loading_generic">Loading</string>
+
     <!-- SIM switcher -->
     <string name="sim_default_label">Default SIM</string>
     <string name="sim_switch">Switch SIM</string>

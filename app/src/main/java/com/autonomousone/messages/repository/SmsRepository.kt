@@ -401,7 +401,7 @@ class SmsRepository(
         return (sms + mms).sortedBy { it.date }
     }
 
-    fun getMessagesByPhone(phone: String, progress: ProgressListener? = null): List<Sms> {
+    fun getMessagesByPhone(phone: String, progress: ProgressListener? = null, threadIdHint: Long = 0L): List<Sms> {
         if (phone.isBlank()) return emptyList()
         val normalized = ContactRepository.normalizePhone(phone)
         val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
@@ -412,12 +412,14 @@ class SmsRepository(
             sortOrder = "${Telephony.Sms.DATE} ASC",
             progress = progress
         )
-        // MMS addresses live in a separate Addr table, so match on the resolved address in memory
+        // When we know the thread, filter MMS at the provider level (fast).
+        // Otherwise fall back to a full MMS scan filtered in memory — but only
+        // report MMS progress when the device actually has MMS rows.
         val mms = queryMms(
-            selection = null,
-            selectionArgs = null,
+            selection = if (threadIdHint > 0) "${Telephony.Mms.THREAD_ID} = ?" else null,
+            selectionArgs = if (threadIdHint > 0) arrayOf(threadIdHint.toString()) else null,
             sortOrder = "${Telephony.Mms.DATE} ASC",
-            progress = progress
+            progress = null // silent scan; SMS progress is what the user sees
         ).filter { mmsMsg ->
             val n = ContactRepository.normalizePhone(mmsMsg.sender)
             n.isNotBlank() && (n == normalized || n.endsWith(lastDigits) || lastDigits.endsWith(n))

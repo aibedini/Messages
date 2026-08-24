@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonomousone.messages.R
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.mms.MmsSender
@@ -67,15 +68,18 @@ class ConversationViewModel(
             isLoading = true
             try {
                 val progressListener = ProgressListener { p ->
+                    val appContext = getApplication<Application>()
                     val label = when (p.phase) {
-                        "sms" -> "Reading messages"
-                        "mms" -> "Reading multimedia"
-                        else -> "Loading"
+                        "sms" -> appContext.getString(R.string.conv_loading_messages)
+                        "mms" -> appContext.getString(R.string.conv_loading_multimedia)
+                        else -> appContext.getString(R.string.conv_loading_generic)
                     }
                     loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
                 }
                 val loadedMessages = when {
-                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone, progressListener)
+                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(
+                        currentPhone, progressListener, threadIdHint = currentThreadId
+                    )
                     threadId != 0L -> repository.getMessagesByThread(threadId, progressListener)
                     else -> emptyList()
                 }
@@ -171,7 +175,9 @@ class ConversationViewModel(
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             val freshMessages = when {
-                currentPhone.isNotBlank() -> repository.getMessagesByPhone(currentPhone)
+                currentPhone.isNotBlank() -> repository.getMessagesByPhone(
+                    currentPhone, threadIdHint = currentThreadId
+                )
                 currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
                 else -> emptyList()
             }
