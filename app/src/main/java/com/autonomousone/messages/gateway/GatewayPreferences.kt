@@ -32,6 +32,8 @@ class GatewayPreferences(context: Context) {
         private const val KEY_IS_REGISTERED = "cloud_is_registered"
         private const val KEY_DEVICE_FALLBACK_ID = "cloud_device_fallback_id"
         private const val KEY_REGISTRATION_SECRET = "cloud_registration_secret"
+        // ── GMweb pull bridge (outbound-only; no tunnel needed) ──
+        private const val KEY_GMWEB_URL = "gmweb_url"
         // ── Idempotency store ──
         private const val KEY_SENT_EVENT_IDS = "cloud_sent_event_ids"
         private const val MAX_EVENT_IDS = 500
@@ -219,6 +221,19 @@ class GatewayPreferences(context: Context) {
             .putBoolean(KEY_IS_REGISTERED, false)
             .apply()
     }
+
+    /**
+     * GMweb-API base URL for the pull bridge (e.g. https://gmweb.example.com).
+     * Outbound-only HTTPS: the phone dials the server, never the reverse, so
+     * changing mobile IPs / firewalls need no tunnel. Empty = bridge disabled.
+     */
+    var gmwebUrl: String
+        get() = prefs.getString(KEY_GMWEB_URL, "") ?: ""
+        set(value) {
+            val v = value.trim().trimEnd('/')
+            require(v.isEmpty() || v.startsWith("https://")) { "GMweb URL must use HTTPS" }
+            prefs.edit().putString(KEY_GMWEB_URL, v).apply()
+        }
 
     // ── Idempotency: track sent event IDs (insertion-ordered FIFO trim) ──
 

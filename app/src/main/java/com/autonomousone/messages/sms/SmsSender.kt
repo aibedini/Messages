@@ -13,6 +13,7 @@ import android.telephony.SmsManager
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 
 /**
@@ -68,6 +69,14 @@ class SmsSender(
             }
         }
         val sentId = persistToSent(phone, text)
+        // Tell the app (Home list) instantly: this thread now has a newer
+        // message. Works even while the chat screen is still on top.
+        SmsEventBus.emitOutgoingSent(
+            threadId = 0L, // resolved by Home via phone match
+            phone = phone,
+            message = text,
+            date = System.currentTimeMillis()
+        )
         dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = true)
         return sentId
     }
@@ -80,6 +89,12 @@ class SmsSender(
      */
     fun sendForResult(phone: String, text: String): Long? {
         val sentId = persistToSent(phone, text)
+        SmsEventBus.emitOutgoingSent(
+            threadId = 0L,
+            phone = phone,
+            message = text,
+            date = System.currentTimeMillis()
+        )
         return if (dispatch(sentId, phone, text, null, null, showToast = false)) sentId else null
     }
 

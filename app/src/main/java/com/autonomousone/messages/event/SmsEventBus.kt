@@ -31,6 +31,21 @@ object SmsEventBus {
     private val _threadReadFlow = MutableSharedFlow<ThreadRead>(extraBufferCapacity = 16)
     val threadReadFlow: SharedFlow<ThreadRead> = _threadReadFlow.asSharedFlow()
 
+    /**
+     * Outgoing-message events: fired right after a send is persisted, so the
+     * Home list moves that thread to the top with the new snippet instantly —
+     * even while the chat screen is still open (single-activity back stack).
+     */
+    data class OutgoingSent(
+        val threadId: Long,
+        val phone: String,
+        val message: String,
+        val date: Long
+    )
+
+    private val _outgoingSentFlow = MutableSharedFlow<OutgoingSent>(extraBufferCapacity = 16)
+    val outgoingSentFlow: SharedFlow<OutgoingSent> = _outgoingSentFlow.asSharedFlow()
+
     @Volatile
     var isAppInForeground: Boolean = false
 
@@ -53,5 +68,12 @@ object SmsEventBus {
         scope.launch {
             _threadReadFlow.emit(ThreadRead(threadId, phone))
         }
+    }
+
+    /** Fired by SmsSender right after an outgoing message is persisted. */
+    fun emitOutgoingSent(threadId: Long, phone: String, message: String, date: Long) {
+        _outgoingSentFlow.tryEmit(
+            OutgoingSent(threadId, phone, message, date)
+        )
     }
 }

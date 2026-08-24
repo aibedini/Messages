@@ -27,6 +27,7 @@ class GatewayService : Service() {
     private lateinit var backendClient: BackendClient
     private lateinit var registrationManager: RegistrationManager
     private lateinit var heartbeatManager: HeartbeatManager
+    private lateinit var outboxPoller: OutboxPoller
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -75,6 +76,12 @@ class GatewayService : Service() {
             prefs = prefs,
             client = backendClient,
             registrationManager = registrationManager,
+            scope = serviceScope,
+            onLog = { msg -> _logFlow.tryEmit(msg) }
+        )
+        outboxPoller = OutboxPoller(
+            context = this,
+            prefs = prefs,
             scope = serviceScope,
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
@@ -169,12 +176,19 @@ class GatewayService : Service() {
                 // HeartbeatManager will self-register on its first loop iteration
                 heartbeatManager.start()
             }
+
+            // GMweb pull bridge: outbound-only, independent of the cloud backend.
+            if (prefs.gmwebUrl.isNotBlank()) {
+                outboxPoller.start()
+                _logFlow.tryEmit("🔌 GMweb pull bridge active (${prefs.gmwebUrl})")
+            }
         }
     }
 
     private fun stopServer() {
         serviceScope.launch {
             heartbeatManager.stop()
+            if (this@GatewayService::outboxPoller.isInitialized) outboxPoller.stop()
             gatewayServer?.stop()
             gatewayServer = null
             isServiceRunning = false

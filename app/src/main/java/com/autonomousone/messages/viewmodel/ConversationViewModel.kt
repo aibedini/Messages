@@ -307,6 +307,13 @@ class ConversationViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 mmsSender.sendImage(targetPhone, imageUri)
+                // Home list: show the image thread on top instantly.
+                com.autonomousone.messages.event.SmsEventBus.emitOutgoingSent(
+                    threadId = currentThreadId,
+                    phone = targetPhone,
+                    message = if (trimmedCaption.isNotBlank()) "🖼 $trimmedCaption" else "🖼",
+                    date = now
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -111,6 +111,7 @@ class HomeViewModel(
         observeIncomingSms()
         observeRefreshSignal()
         observeThreadRead()
+        observeOutgoingSent()
         observeReloadRequests()
     }
 
@@ -548,6 +549,46 @@ class HomeViewModel(
         viewModelScope.launch {
             SmsEventBus.threadReadFlow.collect { event ->
                 markConversationReadLocally(event.threadId, event.phone)
+            }
+        }
+    }
+
+    /**
+     * Instant list update when an outgoing SMS is persisted (chat screen is
+     * still open): move that conversation to the top with the new snippet and
+     * date — no waiting for the ContentObserver debounce or a back-press.
+     */
+    private fun observeOutgoingSent() {
+        viewModelScope.launch {
+            SmsEventBus.outgoingSentFlow.collect { sent ->
+                val normSent = ContactRepository.normalizePhone(sent.phone)
+                if (normSent.isBlank()) return@collect
+
+                val idx = conversations.indexOfFirst {
+                    val n = ContactRepository.normalizePhone(it.sender)
+                    n.isNotBlank() && (n == normSent || n.endsWith(normSent.takeLast(9)) || normSent.endsWith(n.takeLast(9)))
+                }
+
+                val row = if (idx >= 0) {
+                    val existing = conversations.removeAt(idx)
+                    // Update snippet/date; keep the row's own id/threadId.
+                    existing.copy(message = sent.message, date = sent.date, type = 2, unread = false)
+                } else {
+                    // Brand-new conversation created by this send.
+                    Sms(
+                        id = sent.date,
+                        threadId = 0L,
+                        sender = sent.phone,
+                        message = sent.message,
+                        date = sent.date,
+                        unread = false,
+                        type = 2
+                    )
+                }
+
+                if (row.threadId !in archivedIds) {
+                    conversations.add(0, row)
+                }
             }
         }
     }
