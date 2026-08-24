@@ -138,10 +138,17 @@ fun ConversationScreen(
     var forwardSent by remember { mutableStateOf(false) }
 
     // ── Draft persistence ────────────────────────────────────────────────────
-    // Keep the stored draft in sync while typing (cheap JSON write, debounced
-    // by Compose's own recomposition), and clear it the moment a send happens.
+    // Saved LIVE on every keystroke (a tiny JSON write) rather than only on
+    // dispose: the activity's onResume fires BEFORE the conversation's
+    // composition is disposed, so a save-on-dispose alone would land after
+    // Home already re-read its drafts. Saving eagerly makes every later read
+    // correct regardless of ordering.
+    LaunchedEffect(draftKey, message) {
+        draftRepo.set(draftKey, message)
+    }
     DisposableEffect(draftKey) {
         onDispose {
+            // Safety net for the very last keystroke racing disposal.
             draftRepo.set(draftKey, message)
         }
     }
@@ -298,17 +305,24 @@ fun ConversationScreen(
         }
     }
     var anchoredToBottom by remember { mutableStateOf(false) }
+    // Set right after the user sends so the list ALWAYS jumps to their new
+    // message — even if they had scrolled up to re-read something.
+    var forceScrollToBottom by remember { mutableStateOf(false) }
     LaunchedEffect(chatItems.size) {
         if (chatItems.isEmpty()) return@LaunchedEffect
-        if (!anchoredToBottom) {
-            // First layout of this conversation: land on the newest message
-            // immediately (requestScrollToItem applies before the next frame —
-            // the user never sees a scroll animation from top to bottom).
-            listState.requestScrollToItem(chatItems.lastIndex)
-            anchoredToBottom = true
-        } else if (atBottom) {
-            // Follow new incoming/outgoing messages only when already at the bottom.
-            listState.requestScrollToItem(chatItems.lastIndex)
+        when {
+            !anchoredToBottom -> {
+                // First layout of this conversation: land on the newest message
+                // immediately (requestScrollToItem applies before the next frame —
+                // the user never sees a scroll animation from top to bottom).
+                listState.requestScrollToItem(chatItems.lastIndex)
+                anchoredToBottom = true
+            }
+            forceScrollToBottom || atBottom -> {
+                // Own outgoing message, or following live updates at bottom.
+                listState.requestScrollToItem(chatItems.lastIndex)
+                forceScrollToBottom = false
+            }
         }
     }
 
@@ -380,8 +394,25 @@ fun ConversationScreen(
                     )
                 }
             } else {
+                // ── Pull-to-refresh (Instagram-style): drag down at the top of
+                // the thread to silently re-check the provider for updates.
+                var isPullRefreshing by remember { mutableStateOf(false) }
+                // Stop the spinner as soon as the ViewModel finishes loading.
+                LaunchedEffect(viewModel.isLoading) {
+                    if (!viewModel.isLoading) isPullRefreshing = false
+                }
+                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                    isRefreshing = isPullRefreshing,
+                    onRefresh = {
+                        if (!isPullRefreshing) {
+                            isPullRefreshing = true
+                            viewModel.refresh()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     state = listState,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -429,6 +460,7 @@ fun ConversationScreen(
                             }
                         }
                     }
+                }
                 }
             }
 
@@ -545,17 +577,20 @@ fun ConversationScreen(
             }
 
             // ── Message Input Bar ───────────────────────────────────────────
-            // Standards-based segment counter (GSM-7 vs UCS-2): shows remaining
-            // chars for the 1st SMS, then total segments + encoding + per-part.
+            // Standards-based segment counter. UX:
+            //  1 segment  → "142 characters left"
+            //  N segments → "2/3 SMS · 24 characters left" (remaining in the
+            //               LAST part — that's the number the user actually needs).
             val segmentInfo = remember(message) {
                 com.autonomousone.messages.utils.SmsSegmentCounter.count(message)
             }
             androidx.compose.animation.AnimatedVisibility(visible = message.isNotBlank()) {
                 Text(
-                    text = if (segmentInfo.segments == 1) {
-                        "${segmentInfo.charsRemainingInLast} characters left · ${segmentInfo.encoding.name.lowercase()}"
+                    text = if (segmentInfo.segments <= 1) {
+                        "${segmentInfo.charsRemainingInLast} characters left"
                     } else {
-                        "${segmentInfo.segments} SMS · ${segmentInfo.encoding.name.lowercase()} · ${segmentInfo.charsPerSegment}/part"
+                        val remaining = segmentInfo.charsRemainingInLast.coerceAtLeast(0)
+                        "SMS ${segmentInfo.segments} · $remaining characters left"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -661,6 +696,8 @@ fun ConversationScreen(
                             attachedAudioUri = null
                             // Message is leaving as a real send — drop the draft.
                             draftRepo.set(draftKey, "")
+                            // Always land the view on our new message.
+                            forceScrollToBottom = true
 
                             if (currentImage != null) {
                                 viewModel.sendImageMessage(

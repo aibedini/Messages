@@ -432,6 +432,9 @@ fun HomeScreen(
                             isPinned = sms.threadId in viewModel.pinnedIds,
                             isArchived = isInArchivedView,
                             draftText = viewModel.drafts[draftKey].orEmpty(),
+                            // Tiny "you" under the date: this conversation's
+                            // latest message was sent by the user (type 2).
+                            showYouMarker = sms.type == 2,
                             onClick = {
                                 navController.navigate(
                                     Screen.Conversation.createRoute(sms.threadId, sms.sender)

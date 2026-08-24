@@ -76,6 +76,8 @@ fun SmsItem(
     isPinned: Boolean = false,
     /** Non-empty → show italic "Draft: …" instead of the message snippet. */
     draftText: String = "",
+    /** True when this row is the user's most recent conversation (shows a tiny "you" under the date). */
+    showYouMarker: Boolean = false,
     /** When true, the left swipe shows "Unarchive" instead of "Archive". */
     isArchived: Boolean = false,
     modifier: Modifier = Modifier
@@ -298,6 +300,17 @@ fun SmsItem(
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 }
                             )
+
+                            // Tiny "you" marker: the last message in this
+                            // conversation was sent by the user.
+                            if (showYouMarker && sms.type == 2) {
+                                Text(
+                                    text = "you",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                                )
+                            }
 
                             if (sms.unread) {
                                 Spacer(modifier = Modifier.height(6.dp))
