@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">پیام‌ها</string>
+
+    <!-- ══════════ اقدامات عمومی ══════════ -->
+    <string name="action_save">ذخیره</string>
+    <string name="action_cancel">انصراف</string>
+    <string name="action_close">بستن</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_done">انجام شد</string>
+    <string name="action_undo">بازگردانی</string>
+    <string name="action_copy">کپی</string>
+    <string name="action_manage">مدیریت</string>
+    <string name="action_schedule">زمان‌بندی</string>
+    <string name="action_forward">ارسال به دیگری</string>
+    <string name="action_restore">بازیابی</string>
+    <string name="action_unlock">بازکردن قفل</string>
+    <string name="action_unblock">رفع مسدودی</string>
+
+    <!-- ══════════ فهرست مکالمات ══════════ -->
+    <string name="home_title">پیام‌ها</string>
+    <string name="notif_channel_name">پیامک‌ها</string>
+    <string name="notif_channel_desc">اعلان‌های پیامک‌های دریافتی</string>
+    <string name="notif_mark_read">علامت‌گذاری به‌عنوان خوانده‌شده</string>
+    <string name="notif_reply">پاسخ</string>
+    <string name="notif_reply_hint">پاسخ…</string>
+    <string name="notif_copy_otp_fmt">کپی %1$s</string>
+
+    <!-- صفحه پیام‌های زمان‌بندی‌شده -->
+    <string name="sched_screen_title">پیام‌های زمان‌بندی‌شده</string>
+    <string name="sched_screen_hint">پیام‌هایی که برای ارسال در آینده صف شده‌اند — حتی بعد از ری‌استارت هم سر وقت می‌روند.</string>
+    <string name="sched_empty">پیام زمان‌بندی‌شده‌ای نیست. در هر چت دکمه ارسال را لمس طولانی کنید.</string>
+    <string name="sched_send_at_fmt">ارسال در: %1$s</string>
+    <string name="sched_status_scheduled">زمان‌بندی‌شده</string>
+    <string name="sched_status_sent">ارسال شد</string>
+    <string name="sched_status_failed">ناموفق</string>
+    <string name="sched_status_cancelled">لغو شد</string>
+
+    <!-- ساعات سکوت -->
+    <string name="quiet_hours_title">ساعات سکوت</string>
+    <string name="quiet_hours_on_fmt">اعلان‌ها از ساعت %1$d تا %2$d بی‌صدا می‌شوند</string>
+    <string name="quiet_hours_off">خاموش</string>
+    <string name="quiet_hours_start">از</string>
+    <string name="quiet_hours_end">تا</string>
+    <string name="home_search_hint">جستجو در پیام‌ها و مخاطبان…</string>
+    <string name="home_tab_all">همه پیام‌ها</string>
+    <string name="home_tab_unread">خوانده‌نشده</string>
+    <string name="home_tab_archived">بایگانی‌شده</string>
+    <string name="home_empty_title">هنوز مکالمه‌ای ندارید</string>
+    <string name="home_empty_subtitle">هنوز پیامی ندارید. برای شروع، یک گفتگوی جدید باز کنید.</string>
+    <string name="home_empty_archived_title">مکالمه بایگانی‌شده‌ای نیست</string>
+    <string name="home_empty_archived_subtitle">برای بایگانی، هر مکالمه را به راست بکشید.</string>
+    <string name="home_search_no_results">نتیجه‌ای یافت نشد</string>
+    <string name="home_search_no_results_fmt">پیامی حاوی «%1$s» پیدا نشد. جستجوی دیگری امتحان کنید.</string>
+    <string name="home_search_global_header">در متن همه پیام‌ها</string>
+    <string name="home_search_send_to">ارسال پیام به %1$s</string>
+    <string name="home_default_sms_off_title">اپ پیش‌فرض پیام نیستید</string>
+    <string name="home_default_sms_off_body">برای دریافت مطمئن پیام‌های ورودی آن را فعال کنید.</string>
+    <string name="home_default_sms_off_cta">تنظیم به عنوان پیش‌فرض</string>
+    <string name="home_syncing_fmt">همگام‌سازی پیام‌ها… %1$d / %2$d</string>
+    <string name="home_syncing_unknown">به‌روزرسانی مکالمات…</string>
+    <string name="home_snackbar_archived">مکالمه بایگانی شد</string>
+    <string name="home_snackbar_unarchived">مکالمه از بایگانی خارج شد</string>
+    <string name="home_snackbar_deleted">مکالمه حذف شد</string>
+    <string name="home_snackbar_blocked">شماره مسدود شد</string>
+    <string name="home_greeting_morning">صبح بخیر 👋</string>
+    <string name="home_greeting_afternoon">ظهر بخیر ☀️</string>
+    <string name="home_greeting_evening">عصر بخیر 🌙</string>
+    <string name="home_greeting_night">شب بخیر 🌌</string>
+    <string name="home_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>
+
+    <!-- ══════════ صفحه گفتگو ══════════ -->
+    <string name="conv_input_hint">متن پیام…</string>
+    <string name="conv_attach_camera">دوربین</string>
+    <string name="conv_attach_gallery">گالری</string>
+    <string name="conv_attach_audio">صدا</string>
+    <string name="conv_attach_location">موقعیت</string>
+    <string name="conv_share_content">اشتراک محتوا</string>
+    <string name="conv_photo_attached">تصویر پیوست شد</string>
+    <string name="conv_photo_will_be_mms">به صورت MMS ارسال می‌شود</string>
+    <string name="conv_audio_attached">فایل صوتی پیوست شد</string>
+    <string name="conv_remove_attachment">حذف پیوست</string>
+    <string name="conv_caption_hint">توضیح (اختیاری)…</string>
+    <string name="conv_fetching_location">دریافت موقعیت…</string>
+    <string name="conv_copied">کپی شد</string>
+    <string name="conv_copy_number">کپی شماره</string>
+    <string name="conv_copy_link">کپی لینک</string>
+    <string name="conv_add_to_contacts">افزودن به مخاطبان</string>
+    <string name="conv_call">تماس</string>
+    <string name="conv_send_sms_action">ارسال پیامک</string>
+    <string name="conv_menu_copy_link_or_number">کپی لینک/شماره</string>
+    <string name="conv_menu_message_details">جزئیات پیام</string>
+    <string name="conv_menu_hide_details">پنهان کردن جزئیات</string>
+    <string name="conv_clear_conversation">پاک‌سازی گفتگو</string>
+    <string name="conv_search_in_chat">جستجو در گفتگو</string>
+    <string name="conv_sent_at_fmt">ارسal شده در %1$s</string>
+    <string name="conv_delivered_at_fmt"> · تحویل در %1$s</string>
+    <string name="conv_status_not_delivered"> · تحویل نشد</string>
+    <string name="conv_status_sending"> · در حال ارسال…</string>
+    <string name="status_sending">در حال ارسال</string>
+    <string name="status_failed">ناموفق</string>
+    <string name="status_delivered">تحویل شد</string>
+    <string name="status_sent">ارسال شد</string>
+    <string name="conv_start_title">شروع گفتگو</string>
+    <string name="conv_start_subtitle">برای شروع، پیامی به %1$s بفرستید.</string>
+    <string name="conv_segment_one_left">%1$d کاراکتر باقی مانده</string>
+    <string name="conv_segment_multi_fmt">%1$d پیامک · %2$d کاراکتر باقی مانده</string>
+
+    <!-- انتخاب سیم‌کارت -->
+    <string name="sim_default_label">سیم پیش‌فرض</string>
+    <string name="sim_switch">تغییر سیم‌کارت</string>
+    <string name="sim_system_default">پیش‌فرض سیستم</string>
+    <string name="sim_slot_fmt">سیم %1$d</string>
+
+    <!-- ارسال زمان‌بندی‌شده -->
+    <string name="sched_dialog_title">ارسال در زمان مشخص</string>
+    <string name="sched_dialog_body">این پیام به‌طور خودکار در زمان انتخابی ارسال می‌شود، حتی اگر برنامه بسته باشد.</string>
+    <string name="sched_in_1_hour">یک ساعت دیگر</string>
+    <string name="sched_in_3_hours">سه ساعت دیگر</string>
+    <string name="sched_tomorrow_9am">فردا ساعت ۹</string>
+    <string name="sched_pick_date_time">انتخاب تاریخ و ساعت…</string>
+    <string name="sched_change_date_time">تغییر تاریخ و ساعت</string>
+    <string name="sched_will_send_fmt">ارسال خواهد شد: %1$s</string>
+    <string name="sched_confirm_button">زمان‌بندی</string>
+    <string name="sched_success_toast">پیام زمان‌بندی شد</string>
+
+    <!-- دیالوگ اکشن شماره تلفن -->
+    <string name="phone_action_title_fallback">شماره</string>
+
+    <!-- توضیحات دسترسی -->
+    <string name="cd_add_attachment">افزودن پیوست</string>
+    <string name="cd_send">ارسال</string>
+    <string name="cd_preview">پیش‌نمایش</string>
+    <string name="cd_attached_image">تصویر پیوست‌شده</string>
+
+    <!-- ══════════ آیتم لیست مکالمات ══════════ -->
+    <string name="list_draft_label">پیش‌نویس:</string>
+    <string name="list_pinned_cd">سنجاق‌شده</string>
+    <string name="list_pin_to_top">سنجاق کردن بالا</string>
+    <string name="list_unpin">برداشتن سنجاق</string>
+    <string name="list_block_number">مسدود کردن شماره</string>
+    <string name="list_archive">بایگانی</string>
+    <string name="list_unarchive">خروج از بایگانی</string>
+    <string name="list_release_to_archive">رها کنید تا بایگانی شود</string>
+    <string name="list_release_to_unarchive">رها کنید تا از بایگانی خارج شود</string>
+    <string name="list_archive_cd">بایگانی</string>
+    <string name="list_delete_cd">حذف</string>
+    <string name="list_you_marker">شما</string>
+
+    <!-- ══════════ تنظیمات ══════════ -->
+    <string name="settings_title">تنظیمات</string>
+    <string name="settings_section_appearance">ظاهر و پوسته</string>
+    <string name="settings_section_quick_replies">پاسخ‌های سریع</string>
+    <string name="settings_section_security">امنیت</string>
+    <string name="settings_section_data_tools">ابزارهای داده</string>
+    <string name="settings_section_app">برنامه</string>
+    <string name="settings_section_gateway">دروازه (Gateway)</string>
+    <string name="settings_section_sms">پیامک</string>
+    <string name="settings_section_messaging">پیام‌رسانی</string>
+    <string name="settings_default_sms_row">اپ پیش‌فرض پیامک</string>
+    <string name="settings_permissions_row">دسترسی‌های پیامک و مخاطبان</string>
+    <string name="settings_granted">داده شده</string>
+    <string name="settings_missing">داده نشده</string>
+    <string name="settings_not_set">تنظیم نشده</string>
+    <string name="settings_messaging_subtitle">گزارش تحویل، خط سیم‌کارت، SMSC…</string>
+    <string name="settings_appearance_subtitle">رنگ تم، حالت شب/روز، تقویم</string>
+    <string name="settings_quick_replies_subtitle">قالب‌های آماده با /میان‌بر</string>
+    <string name="settings_quick_replies_hint">در هر چت /c1 را بنویسید تا پاسخ آماده نمایش داده شود</string>
+    <string name="settings_working">در حال انجام…</string>
+    <string name="settings_version">نسخه</string>
+    <string name="settings_version_code">کد نسخه</string>
+    <string name="settings_package">بسته</string>
+
+    <!-- بخش امنیت -->
+    <string name="security_app_lock">قفل برنامه (بیومتریک)</string>
+    <string name="security_app_lock_on">هر بار ورود، اثر انگشت/چهره بخواه</string>
+    <string name="security_app_lock_unavailable">حسگر بیومتریک یا قفل صفحه تنظیم نشده است</string>
+    <string name="security_blocked_numbers">شماره‌های مسدود</string>
+    <string name="security_blocked_numbers_desc">تماس یا پیامکی از این شماره‌ها دریافت نمی‌شود</string>
+
+    <!-- ابزارهای داده -->
+    <string name="data_export_all">خروجی همه گفتگوها</string>
+    <string name="data_export_all_desc">همه مکالمات را به صورت آرشیو JSON به اشتراک بگذارید</string>
+    <string name="data_backup">تهیه نسخه پشتیبان</string>
+    <string name="data_backup_desc">ذخیره همه پیامک‌ها در فایل XML (سازگار با SMS Backup &amp; Restore)</string>
+    <string name="data_restore">بازیابی پیام‌ها</string>
+    <string name="data_restore_desc">بازگرداندن پیامک‌ها از فایل پشتیبان XML به گوشی</string>
+    <string name="data_backup_ready">آماده شد</string>
+    <string name="data_export_failed">خروجی ناموفق بود</string>
+    <string name="data_backup_ok_fmt">%1$d پیام پشتیبان گرفته شد</string>
+    <string name="data_backup_failed">پشتیبان‌گیری ناموفق بود</string>
+    <string name="data_restore_confirm_title">بازیابی پیام‌ها؟</string>
+    <string name="data_restore_confirm_body">پیام‌های موجود در فایل پشتیبان به این گوشی اضافه می‌شوند. پیام‌های فعلی حفظ می‌شوند.</string>
+    <string name="data_restore_ok_fmt">%1$d پیام بازیابی شد</string>
+    <string name="data_restore_failed">بازیابی ناموفق بود</string>
+    <string name="data_deleted_fmt">%1$d پیامک و %2$d MMS حذف شد</string>
+    <string name="data_delete_by_period">حذف پیام‌ها بر اساس بازه</string>
+    <string name="data_delete_by_period_desc">حذف گروهی قبل/بعد از یک تاریخ و ساعت مشخص</string>
+    <string name="data_delete_before_desc">پیام‌های ارسال‌شده تا لحظه انتخابی حذف می‌شوند.</string>
+    <string name="data_delete_after_desc">پیام‌های ارسال‌شده از لحظه انتخابی به بعد حذف می‌شوند.</string>
+    <string name="data_pick_date">انتخاب تاریخ</string>
+    <string name="data_before">قبل</string>
+    <string name="data_after">بعد</string>
+
+    <!-- دیالوگ شماره‌های مسدود -->
+    <string name="blocked_none_yet">هنوز شماره‌ای مسدود نشده. روی مکالمه لمس طولانی کنید و \"مسدود کردن شماره\" را انتخاب نمایید.</string>
+    <string name="blocked_title">شماره‌های مسدود</string>
+
+    <!-- صفحه قفل -->
+    <string name="lock_screen_title">قفل فعال است</string>
+    <string name="lock_screen_body">برای ادامه، هویت خود را تأیید کنید.</string>
+    <string name="lock_turn_off">غیرفعال‌سازی قفل برنامه</string>
+
+    <!-- پاسخ‌های سریع -->
+    <string name="qr_title">پاسخ‌های سریع</string>
+    <string name="qr_hint_text">در هر گفتگو میان‌بری مثل /c1 بنویسید تا پیشنهاد نمایش داده شود.</string>
+    <string name="qr_empty">هنوز پاسخ سریعی ندارید. با + یکی اضافه کنید.</string>
+    <string name="qr_new_title">پاسخ سریع جدید</string>
+    <string name="qr_edit_title">ویرایش پاسخ سریع</string>
+    <string name="qr_shortcut_label">میان‌بر (مثلاً /c1)</string>
+    <string name="qr_message_label">متن پیام</string>
+    <string name="qr_edit_cd">ویرایش</string>
+    <string name="qr_delete_cd">حذف</string>
+    <string name="qr_add_cd">افزودن پاسخ سریع</string>
+
+    <!-- ظاهر -->
+    <string name="appearance_theme_color">رنگ پوسته</string>
+    <string name="appearance_mode">حالت</string>
+    <string name="appearance_calendar">تقویم</string>
+    <string name="appearance_applies_note">بلافاصله روی گفتگوها، فهرست‌ها و جزئیات پیام اعمال می‌شود.</string>
+    <string name="appearance_mode_light">روشن</string>
+    <string name="appearance_mode_dark">تاریک</string>
+    <string name="appearance_mode_system">سیستم</string>
+    <string name="appearance_cal_gregorian">میلادی</string>
+    <string name="appearance_cal_persian">شمسی</string>
+
+    <!-- دروازه (Gateway) -->
+    <string name="gateway_enable_prompt">فعال‌سازی دروازه پیامک؟</string>
+    <string name="gateway_enable_explain">دروازه پیامک به‌طور پیش‌فرض خاموش است. با فعال‌سازی، صفحه‌ای جدا توضیح می‌دهد چه داده‌ای کجا ارسال می‌شود.</string>
+    <string name="gateway_agree_and_enable">موافقم و فعال کن</string>
+    <string name="gateway_privacy_control">کنترل حریم خصوصی دروازه</string>
+    <string name="gateway_revoke_consent">لغو اجازه و خاموش کردن دروازه</string>
+    <string name="gateway_read_privacy">مطالعه سیاست حریم خصوصی</string>
+    <string name="gateway_i_understand">متوجهم و ادامه می‌دهم</string>
+    <string name="gateway_active">دروازه فعال است</string>
+    <string name="gateway_stopped">دروازه متوقف است</string>
+    <string name="gateway_cloud_backend">دروازه ابری</string>
+
+    <!-- راه‌اندازی اولیه -->
+    <string name="onb_disclosure_title">پیام‌های شما تحت کنترل شماست</string>
+    <string name="onb_disclosure_body">این برنامه فقط برای ارائه قابلیت‌های اصلی پیام‌رسانی، پیامک‌ها را می‌خواند، دریافت و ارسال می‌کند.</string>
+    <string name="onb_review_privacy">قبل از درخواست هر مجوز توسط اندروید، نحوه استفاده از داده‌های حساس را بررسی کنید.</string>
+    <string name="onb_continue">متوجهم و ادامه می‌دهم</string>
+    <string name="onb_read_privacy_policy">مطالعه سیاست حریم خصوصی</string>
+    <string name="onb_make_default_title">این برنامه را به‌عنوان پیام‌رسان پیش‌فرض تنظیم کنید</string>
+    <string name="onb_set_as_default">تنظیم به‌عنوان پیش‌فرض</string>
+    <string name="onb_permissions_title">اعطای دسترسی‌ها</string>
+    <string name="onb_permissions_body">برای نمایش گفتگوها و ارسال/دریافت پیام، این دسترسی‌ها لازم است.</string>
+    <string name="onb_allow_core_sms">اجازه دسترسی اصلی پیامک</string>
+    <string name="onb_allow_sms">اجازه دسترسی پیامک</string>
+    <string name="onb_allow_contacts">اجازه دسترسی مخاطبان (اختیاری)</string>
+    <string name="onb_contacts_optional_note">دسترسی مخاطبان اختیاری است و فقط برای نمایش نام شماره‌ها استفاده می‌شود.</string>
+    <string name="onb_allow_notifications">اجازه اعلان‌ها (اختیاری)</string>
+    <string name="onb_finish_setup">پایان راه‌اندازی</string>
+    <string name="onb_step_ready">آماده</string>
+    <string name="onb_step_complete">راه‌اندازی کامل شد.</string>
+    <string name="onb_open_settings">بازکردن تنظیمات برنامه</string>
+    <string name="onb_sms_denied_forever">دسترسی پیامک برای همیشه رد شده. از تنظیمات اندروید فعالش کنید.</string>
+    <string name="onb_grant_permission">اعطای دسترسی</string>
+</resources>

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -43,12 +44,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.R
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.viewmodel.DataToolsViewModel
 
@@ -94,7 +97,7 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SectionCard(title = "SMS") {
+            SectionCard(title = stringResource(R.string.settings_section_sms)) {
                 StatusRow(
                     label = "Default SMS app",
                     isOk = isDefaultSmsApp,
@@ -130,7 +133,7 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard(title = "Messaging") {
+            SectionCard(title = stringResource(R.string.settings_section_messaging)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -159,7 +162,7 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard(title = "Appearance") {
+            SectionCard(title = stringResource(R.string.settings_section_appearance)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -188,7 +191,7 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard(title = "Quick replies") {
+            SectionCard(title = stringResource(R.string.settings_section_quick_replies)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -198,13 +201,43 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Message templates with /shortcuts",
+                            text = stringResource(R.string.settings_quick_replies_subtitle),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Type /c1 in any chat to send a pre-defined reply",
+                            text = stringResource(R.string.settings_quick_replies_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Scheduled messages management
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController.navigate(Screen.ScheduledMessages.route) },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.sched_screen_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.sched_screen_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -217,7 +250,7 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard(title = "Data tools") {
+            SectionCard(title = stringResource(R.string.settings_section_data_tools)) {
                 val context = LocalContext.current
                 val dataTools: DataToolsViewModel = viewModel()
                 var showDeleteDialog by remember { mutableStateOf(false) }
@@ -235,7 +268,7 @@ fun SettingsScreen(
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
                                     context.startActivity(
-                                        Intent.createChooser(share, "Export chats")
+                                        Intent.createChooser(share, context.getString(R.string.data_export_all))
                                     )
                                 } else {
                                     Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
@@ -247,13 +280,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (dataTools.busy) "Working…" else "Export all chats",
+                            text = if (dataTools.busy) stringResource(R.string.settings_working) else stringResource(R.string.data_export_all),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Share every conversation as a JSON archive",
+                            text = stringResource(R.string.data_export_all_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -274,7 +307,7 @@ fun SettingsScreen(
                     if (uri != null) dataTools.backupTo(uri) { count ->
                         Toast.makeText(
                             context,
-                            if (count != null) "Backed up $count messages" else "Backup failed",
+                            if (count != null) context.getString(R.string.data_backup_ok_fmt, count) else context.getString(R.string.data_backup_failed),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -290,13 +323,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (dataTools.busy) "Working…" else "Backup messages",
+                            text = if (dataTools.busy) stringResource(R.string.settings_working) else stringResource(R.string.data_backup),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Save every SMS as an XML backup file (works with SMS Backup & Restore)",
+                            text = stringResource(R.string.data_backup_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -328,13 +361,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Restore messages",
+                            text = stringResource(R.string.data_restore),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Import SMS back into the phone from an XML backup",
+                            text = stringResource(R.string.data_restore_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -349,8 +382,8 @@ fun SettingsScreen(
                 if (confirmRestore != null) {
                     androidx.compose.material3.AlertDialog(
                         onDismissRequest = { confirmRestore = null },
-                        title = { Text("Restore messages?") },
-                        text = { Text("Messages from the backup file will be added back to this phone. Existing messages are kept.") },
+                        title = { Text(stringResource(R.string.data_restore_confirm_title)) },
+                        text = { Text(stringResource(R.string.data_restore_confirm_body)) },
                         confirmButton = {
                             TextButton(onClick = {
                                 val uri = confirmRestore
@@ -359,15 +392,15 @@ fun SettingsScreen(
                                     dataTools.restoreFrom(uri) { count ->
                                         Toast.makeText(
                                             context,
-                                            if (count != null) "Restored $count messages" else "Restore failed",
+                                            if (count != null) context.getString(R.string.data_restore_ok_fmt, count) else context.getString(R.string.data_restore_failed),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
                                 }
-                            }) { Text("Restore") }
+                            }) { Text(stringResource(R.string.action_restore)) }
                         },
                         dismissButton = {
-                            TextButton(onClick = { confirmRestore = null }) { Text("Cancel") }
+                            TextButton(onClick = { confirmRestore = null }) { Text(stringResource(R.string.action_cancel)) }
                         }
                     )
                 }
@@ -384,13 +417,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Delete messages by period",
+                            text = stringResource(R.string.data_delete_by_period),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Bulk-delete everything before/after a date & time",
+                            text = stringResource(R.string.data_delete_by_period_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -422,7 +455,7 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard(title = "Security") {
+            SectionCard(title = stringResource(R.string.settings_section_security)) {
                 val context = LocalContext.current
                 var lockEnabled by remember {
                     mutableStateOf(com.autonomousone.messages.utils.AppLockPreferences(context).isEnabled)
@@ -437,14 +470,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "App lock (biometrics)",
+                            text = stringResource(R.string.security_app_lock),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (biometricOk) "Ask for fingerprint/face on every open"
-                            else "No biometric sensor or screen lock set up",
+                            text = if (biometricOk) stringResource(R.string.security_app_lock_on)
+                            else stringResource(R.string.security_app_lock_unavailable),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -457,6 +490,82 @@ fun SettingsScreen(
                             lockEnabled = checked
                         }
                     )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Quiet hours: silence notifications during a daily window.
+                val quietPrefs = remember {
+                    com.autonomousone.messages.utils.QuietHoursPreferences(context)
+                }
+                var quietEnabled by remember { mutableStateOf(quietPrefs.enabled) }
+                var quietStart by remember { mutableStateOf(quietPrefs.startHour) }
+                var quietEnd by remember { mutableStateOf(quietPrefs.endHour) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.quiet_hours_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (quietEnabled)
+                                stringResource(R.string.quiet_hours_on_fmt, quietStart, quietEnd)
+                            else
+                                stringResource(R.string.quiet_hours_off),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = quietEnabled,
+                        onCheckedChange = { checked ->
+                            quietPrefs.enabled = checked
+                            quietEnabled = checked
+                        }
+                    )
+                }
+                if (quietEnabled) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.quiet_hours_start),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        androidx.compose.material3.OutlinedTextField(
+                            value = quietStart.toString(),
+                            onValueChange = { v ->
+                                v.toIntOrNull()?.let {
+                                    quietStart = it
+                                    quietPrefs.startHour = it
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.width(70.dp)
+                        )
+                        Text(text = stringResource(R.string.quiet_hours_end), style = MaterialTheme.typography.bodyMedium)
+                        androidx.compose.material3.OutlinedTextField(
+                            value = quietEnd.toString(),
+                            onValueChange = { v ->
+                                v.toIntOrNull()?.let {
+                                    quietEnd = it
+                                    quietPrefs.endHour = it
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.width(70.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -479,13 +588,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Blocked numbers",
+                            text = stringResource(R.string.security_blocked_numbers),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "No calls or texts from these numbers",
+                            text = stringResource(R.string.security_blocked_numbers_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -498,11 +607,11 @@ fun SettingsScreen(
                 if (showBlocked) {
                     androidx.compose.material3.AlertDialog(
                         onDismissRequest = { showBlocked = false },
-                        title = { Text("Blocked numbers") },
+                        title = { Text(stringResource(R.string.blocked_title)) },
                         text = {
                             Column {
                                 if (blockedNumbers.isEmpty()) {
-                                    Text("No blocked numbers yet. Long-press a conversation and choose \"Block number\".")
+                                    Text(stringResource(R.string.blocked_none_yet))
                                 } else {
                                     blockedNumbers.sorted().forEach { number ->
                                         Row(
@@ -514,25 +623,25 @@ fun SettingsScreen(
                                             TextButton(onClick = {
                                                 blocklistRepo.unblock(number)
                                                 blockedNumbers = blocklistRepo.getBlocked()
-                                            }) { Text("Unblock") }
+                                            }) { Text(stringResource(R.string.action_unblock)) }
                                         }
                                     }
                                 }
                             }
                         },
                         confirmButton = {
-                            TextButton(onClick = { showBlocked = false }) { Text("Done") }
+                            TextButton(onClick = { showBlocked = false }) { Text(stringResource(R.string.action_done)) }
                         }
                     )
                 }
             }
 
-            SectionCard(title = "App") {
-                InfoRow(label = "Version", value = BuildConfig.VERSION_NAME)
+            SectionCard(title = stringResource(R.string.settings_section_app)) {
+                InfoRow(label = stringResource(R.string.settings_version), value = BuildConfig.VERSION_NAME)
                 Spacer(modifier = Modifier.height(8.dp))
-                InfoRow(label = "Version code", value = BuildConfig.VERSION_CODE.toString())
+                InfoRow(label = stringResource(R.string.settings_version_code), value = BuildConfig.VERSION_CODE.toString())
                 Spacer(modifier = Modifier.height(8.dp))
-                InfoRow(label = "Package", value = BuildConfig.APPLICATION_ID)
+                InfoRow(label = stringResource(R.string.settings_package), value = BuildConfig.APPLICATION_ID)
             }
 
             SectionCard(title = "Gateway") {
@@ -725,7 +834,7 @@ private fun DeleteByPeriodDialog(
             ) { Text("Delete", color = MaterialTheme.colorScheme.onError) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

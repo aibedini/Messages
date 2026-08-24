@@ -1,3 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Messages</string>
+
+    <!-- ══════════ Common actions ══════════ -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_done">Done</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_manage">Manage</string>
+    <string name="action_schedule">Schedule</string>
+    <string name="action_forward">Forward</string>
+    <string name="action_restore">Restore</string>
+    <string name="action_unlock">Unlock</string>
+    <string name="action_unblock">Unblock</string>
+
+    <!-- ══════════ Home / conversation list ══════════ -->
+    <string name="home_title">Messages</string>
+    <string name="notif_channel_name">SMS Messages</string>
+    <string name="notif_channel_desc">Notifications for incoming SMS messages</string>
+    <string name="notif_mark_read">Mark as read</string>
+    <string name="notif_reply">Reply</string>
+    <string name="notif_reply_hint">Reply…</string>
+    <string name="notif_copy_otp_fmt">Copy %1$s</string>
+
+    <!-- Scheduled messages screen -->
+    <string name="sched_screen_title">Scheduled messages</string>
+    <string name="sched_screen_hint">Messages queued for future delivery — they fire even after a reboot.</string>
+    <string name="sched_empty">No scheduled messages. Long-press the send button in any chat.</string>
+    <string name="sched_send_at_fmt">Send at: %1$s</string>
+    <string name="sched_status_scheduled">Scheduled</string>
+    <string name="sched_status_sent">Sent</string>
+    <string name="sched_status_failed">Failed</string>
+    <string name="sched_status_cancelled">Cancelled</string>
+
+    <!-- Quiet hours -->
+    <string name="quiet_hours_title">Quiet hours</string>
+    <string name="quiet_hours_on_fmt">Notifications silenced from %1$d to %2$d</string>
+    <string name="quiet_hours_off">Off</string>
+    <string name="quiet_hours_start">From</string>
+    <string name="quiet_hours_end">To</string>
+    <string name="home_search_hint">Search messages &amp; contacts…</string>
+    <string name="home_tab_all">All Messages</string>
+    <string name="home_tab_unread">Unread</string>
+    <string name="home_tab_archived">Archived</string>
+    <string name="home_empty_title">No Conversations</string>
+    <string name="home_empty_subtitle">You don\'t have any messages yet. Start a new conversation below.</string>
+    <string name="home_empty_archived_title">No Archived Conversations</string>
+    <string name="home_empty_archived_subtitle">Swipe right on any conversation to archive it.</string>
+    <string name="home_search_no_results">No Results Found</string>
+    <string name="home_search_no_results_fmt">No messages matching \"%1$s\" were found. Try another search.</string>
+    <string name="home_search_global_header">In all message texts</string>
+    <string name="home_search_send_to">Send message to %1$s</string>
+    <string name="home_default_sms_off_title">Default SMS is off</string>
+    <string name="home_default_sms_off_body">Turn it on for reliable incoming message updates.</string>
+    <string name="home_default_sms_off_cta">Set default</string>
+    <string name="home_syncing_fmt">Syncing messages… %1$d / %2$d</string>
+    <string name="home_syncing_unknown">Updating conversations…</string>
+    <string name="home_snackbar_archived">Conversation archived</string>
+    <string name="home_snackbar_unarchived">Conversation unarchived</string>
+    <string name="home_snackbar_deleted">Conversation deleted</string>
+    <string name="home_snackbar_blocked">Number blocked</string>
+    <string name="home_greeting_morning">Good morning 👋</string>
+    <string name="home_greeting_afternoon">Good afternoon ☀️</string>
+    <string name="home_greeting_evening">Good evening 🌙</string>
+    <string name="home_greeting_night">Hello 🌌</string>
+    <string name="home_mark_all_read">Mark all as read</string>
+
+    <!-- ══════════ Conversation screen ══════════ -->
+    <string name="conv_input_hint">SMS message…</string>
+    <string name="conv_attach_camera">Camera</string>
+    <string name="conv_attach_gallery">Gallery</string>
+    <string name="conv_attach_audio">Audio</string>
+    <string name="conv_attach_location">Location</string>
+    <string name="conv_share_content">Share Content</string>
+    <string name="conv_photo_attached">Photo attached</string>
+    <string name="conv_photo_will_be_mms">Will be sent as MMS</string>
+    <string name="conv_audio_attached">Audio file attached</string>
+    <string name="conv_remove_attachment">Remove attachment</string>
+    <string name="conv_caption_hint">Add caption (optional)…</string>
+    <string name="conv_fetching_location">Fetching location…</string>
+    <string name="conv_copied">Copied</string>
+    <string name="conv_copy_number">Copy number</string>
+    <string name="conv_copy_link">Copy link</string>
+    <string name="conv_add_to_contacts">Add to contacts</string>
+    <string name="conv_call">Call</string>
+    <string name="conv_send_sms_action">Send SMS</string>
+    <string name="conv_menu_copy_link_or_number">Copy link/number</string>
+    <string name="conv_menu_message_details">Message details</string>
+    <string name="conv_menu_hide_details">Hide details</string>
+    <string name="conv_clear_conversation">Clear conversation</string>
+    <string name="conv_search_in_chat">Search in chat</string>
+    <string name="conv_sent_at_fmt">Sent %1$s</string>
+    <string name="conv_delivered_at_fmt"> · Delivered %1$s</string>
+    <string name="conv_status_not_delivered"> · Not delivered</string>
+    <string name="conv_status_sending"> · Sending…</string>
+    <string name="status_sending">Sending</string>
+    <string name="status_failed">Failed</string>
+    <string name="status_delivered">Delivered</string>
+    <string name="status_sent">Sent</string>
+    <string name="conv_start_title">Start Conversation</string>
+    <string name="conv_start_subtitle">Send a message to %1$s to begin chatting.</string>
+    <string name="conv_segment_one_left">%1$d characters left</string>
+    <string name="conv_segment_multi_fmt">SMS %1$d · %2$d characters left</string>
+
+    <!-- SIM switcher -->
+    <string name="sim_default_label">Default SIM</string>
+    <string name="sim_switch">Switch SIM</string>
+    <string name="sim_system_default">Default (system)</string>
+    <string name="sim_slot_fmt">SIM %1$d</string>
+
+    <!-- Schedule send -->
+    <string name="sched_dialog_title">Send later</string>
+    <string name="sched_dialog_body">The message will be sent automatically at the chosen time, even if the app is closed.</string>
+    <string name="sched_in_1_hour">In 1 hour</string>
+    <string name="sched_in_3_hours">In 3 hours</string>
+    <string name="sched_tomorrow_9am">Tomorrow 9am</string>
+    <string name="sched_pick_date_time">Pick date &amp; time…</string>
+    <string name="sched_change_date_time">Change date &amp; time</string>
+    <string name="sched_will_send_fmt">Will send: %1$s</string>
+    <string name="sched_confirm_button">Schedule</string>
+    <string name="sched_success_toast">Message scheduled</string>
+
+    <!-- Phone action dialog -->
+    <string name="phone_action_title_fallback">number</string>
+
+    <!-- Attachment picker content descriptions -->
+    <string name="cd_add_attachment">Add attachment</string>
+    <string name="cd_send">Send</string>
+    <string name="cd_preview">Preview</string>
+    <string name="cd_attached_image">Attached Image</string>
+
+    <!-- ══════════ Conversation list item ══════════ -->
+    <string name="list_draft_label">Draft:</string>
+    <string name="list_pinned_cd">Pinned</string>
+    <string name="list_pin_to_top">Pin to top</string>
+    <string name="list_unpin">Unpin</string>
+    <string name="list_block_number">Block number</string>
+    <string name="list_archive">Archive</string>
+    <string name="list_unarchive">Unarchive</string>
+    <string name="list_release_to_archive">Release to Archive</string>
+    <string name="list_release_to_unarchive">Release to Unarchive</string>
+    <string name="list_archive_cd">Archive</string>
+    <string name="list_delete_cd">Delete</string>
+    <string name="list_you_marker">you</string>
+
+    <!-- ══════════ Settings ══════════ -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_quick_replies">Quick replies</string>
+    <string name="settings_section_security">Security</string>
+    <string name="settings_section_data_tools">Data tools</string>
+    <string name="settings_section_app">App</string>
+    <string name="settings_section_gateway">Gateway</string>
+    <string name="settings_section_sms">SMS</string>
+    <string name="settings_section_messaging">Messaging</string>
+    <string name="settings_default_sms_row">Default SMS app</string>
+    <string name="settings_permissions_row">SMS &amp; contacts permissions</string>
+    <string name="settings_granted">Granted</string>
+    <string name="settings_missing">Missing</string>
+    <string name="settings_not_set">Not set</string>
+    <string name="settings_messaging_subtitle">Delivery reports, SIM line, SMSC…</string>
+    <string name="settings_appearance_subtitle">Theme color, dark mode, calendar</string>
+    <string name="settings_quick_replies_subtitle">Message templates with /shortcuts</string>
+    <string name="settings_quick_replies_hint">Type /c1 in any chat to send a pre-defined reply</string>
+    <string name="settings_working">Working…</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_version_code">Version code</string>
+    <string name="settings_package">Package</string>
+
+    <!-- Security section -->
+    <string name="security_app_lock">App lock (biometrics)</string>
+    <string name="security_app_lock_on">Ask for fingerprint/face on every open</string>
+    <string name="security_app_lock_unavailable">No biometric sensor or screen lock set up</string>
+    <string name="security_blocked_numbers">Blocked numbers</string>
+    <string name="security_blocked_numbers_desc">No calls or texts from these numbers</string>
+
+    <!-- Data tools -->
+    <string name="data_export_all">Export all chats</string>
+    <string name="data_export_all_desc">Share every conversation as a JSON archive</string>
+    <string name="data_backup">Backup messages</string>
+    <string name="data_backup_desc">Save every SMS as an XML backup file (works with SMS Backup &amp; Restore)</string>
+    <string name="data_restore">Restore messages</string>
+    <string name="data_restore_desc">Import SMS back into the phone from an XML backup</string>
+    <string name="data_backup_ready">Export ready</string>
+    <string name="data_export_failed">Export failed</string>
+    <string name="data_backup_ok_fmt">Backed up %1$d messages</string>
+    <string name="data_backup_failed">Backup failed</string>
+    <string name="data_restore_confirm_title">Restore messages?</string>
+    <string name="data_restore_confirm_body">Messages from the backup file will be added back to this phone. Existing messages are kept.</string>
+    <string name="data_restore_ok_fmt">Restored %1$d messages</string>
+    <string name="data_restore_failed">Restore failed</string>
+    <string name="data_deleted_fmt">Deleted %1$d SMS, %2$d MMS</string>
+    <string name="data_delete_by_period">Delete messages by period</string>
+    <string name="data_delete_by_period_desc">Bulk-delete everything before/after a date &amp; time</string>
+    <string name="data_delete_before_desc">Deletes messages sent up to and including the chosen moment.</string>
+    <string name="data_delete_after_desc">Deletes messages sent from the chosen moment onwards.</string>
+    <string name="data_pick_date">Pick date</string>
+    <string name="data_before">Before</string>
+    <string name="data_after">After</string>
+
+    <!-- Blocked numbers dialog -->
+    <string name="blocked_none_yet">No blocked numbers yet. Long-press a conversation and choose \"Block number\".</string>
+    <string name="blocked_title">Blocked numbers</string>
+
+    <!-- App lock screen -->
+    <string name="lock_screen_title">App locked</string>
+    <string name="lock_screen_body">Confirm it\'s you to open your messages.</string>
+    <string name="lock_turn_off">Turn off app lock</string>
+
+    <!-- Quick replies -->
+    <string name="qr_title">Quick replies</string>
+    <string name="qr_hint_text">Type a shortcut in any chat (e.g. /c1) and tap the suggestion to fill the message.</string>
+    <string name="qr_empty">No quick replies yet. Tap + to add one.</string>
+    <string name="qr_new_title">New quick reply</string>
+    <string name="qr_edit_title">Edit quick reply</string>
+    <string name="qr_shortcut_label">Shortcut (e.g. /c1)</string>
+    <string name="qr_message_label">Message text</string>
+    <string name="qr_edit_cd">Edit</string>
+    <string name="qr_delete_cd">Delete</string>
+    <string name="qr_add_cd">Add quick reply</string>
+
+    <!-- Appearance -->
+    <string name="appearance_theme_color">Theme color</string>
+    <string name="appearance_mode">Mode</string>
+    <string name="appearance_calendar">Calendar</string>
+    <string name="appearance_applies_note">Applies instantly across chats, lists and message details.</string>
+    <string name="appearance_mode_light">Light</string>
+    <string name="appearance_mode_dark">Dark</string>
+    <string name="appearance_mode_system">System</string>
+    <string name="appearance_cal_gregorian">Gregorian</string>
+    <string name="appearance_cal_persian">Persian (شمسی)</string>
+
+    <!-- Gateway -->
+    <string name="gateway_enable_prompt">Enable SMS Gateway?</string>
+    <string name="gateway_enable_explain">The SMS Gateway is off by default. If you enable it later, a separate consent screen explains what message data can be sent and where.</string>
+    <string name="gateway_agree_and_enable">Agree and enable</string>
+    <string name="gateway_privacy_control">Gateway privacy control</string>
+    <string name="gateway_revoke_consent">Revoke consent and stop Gateway</string>
+    <string name="gateway_read_privacy">Read privacy policy</string>
+    <string name="gateway_i_understand">I understand and continue</string>
+    <string name="gateway_active">Gateway Active</string>
+    <string name="gateway_stopped">Gateway Stopped</string>
+    <string name="gateway_cloud_backend">Cloud Backend Gateway</string>
+
+    <!-- Onboarding -->
+    <string name="onb_disclosure_title">Your messages stay under your control</string>
+    <string name="onb_disclosure_body">Messages reads, receives and sends SMS only to provide its core messaging features.</string>
+    <string name="onb_review_privacy">Review how sensitive data is used before Android asks for any permission.</string>
+    <string name="onb_continue">I understand and continue</string>
+    <string name="onb_read_privacy_policy">Read privacy policy</string>
+    <string name="onb_make_default_title">Make Messages your SMS app</string>
+    <string name="onb_set_as_default">Set as default SMS app</string>
+    <string name="onb_permissions_title">Grant Permissions</string>
+    <string name="onb_permissions_body">These permissions are required to display conversations and send or receive messages.</string>
+    <string name="onb_allow_core_sms">Allow core SMS access</string>
+    <string name="onb_allow_sms">Allow SMS access</string>
+    <string name="onb_allow_contacts">Allow contacts (optional)</string>
+    <string name="onb_contacts_optional_note">Contacts access is optional and is used only to show names for phone numbers.</string>
+    <string name="onb_allow_notifications">Allow notifications (optional)</string>
+    <string name="onb_finish_setup">Finish setup</string>
+    <string name="onb_step_ready">Ready</string>
+    <string name="onb_step_complete">Setup is complete.</string>
+    <string name="onb_open_settings">Open app settings</string>
+    <string name="onb_sms_denied_forever">SMS access was permanently denied. Enable it in Android app settings to continue.</string>
+    <string name="onb_grant_permission">Grant permission</string>
 </resources>

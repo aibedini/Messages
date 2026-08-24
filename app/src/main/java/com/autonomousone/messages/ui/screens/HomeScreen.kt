@@ -62,8 +62,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.autonomousone.messages.R
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
@@ -73,10 +75,10 @@ import com.autonomousone.messages.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-enum class ConversationFilter(val label: String) {
-    All("All Messages"),
-    Unread("Unread"),
-    Archived("Archived")
+enum class ConversationFilter(val labelRes: Int) {
+    All(R.string.home_tab_all),
+    Unread(R.string.home_tab_unread),
+    Archived(R.string.home_tab_archived)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,14 +125,12 @@ fun HomeScreen(
     // screen saves a draft, no refresh signal needed.
     val draftMap by viewModel.drafts.collectAsState()
 
-    val greeting = remember {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        when (hour) {
-            in 4..11 -> "Good morning 👋"
-            in 12..16 -> "Good afternoon ☀️"
-            in 17..22 -> "Good evening 🌙"
-            else -> "Hello 🌌"
-        }
+    val greeting = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val greetingText = when (greeting) {
+        in 4..11 -> stringResource(R.string.home_greeting_morning)
+        in 12..16 -> stringResource(R.string.home_greeting_afternoon)
+        in 17..22 -> stringResource(R.string.home_greeting_evening)
+        else -> stringResource(R.string.home_greeting_night)
     }
 
     // The base list to filter from depends on the selected tab
@@ -176,7 +176,7 @@ fun HomeScreen(
         },
         topBar = {
             MainTopBar(
-                title = "Messages",
+                title = stringResource(R.string.app_name),
                 onProfileClick = {},
                 onSearchClick = null,
                 onMarkAllReadClick = { viewModel.markAllAsRead() },
@@ -242,7 +242,7 @@ fun HomeScreen(
 
             // Greeting sub-header
             Text(
-                text = greeting,
+                text = greetingText,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
@@ -251,7 +251,7 @@ fun HomeScreen(
             AppSearchBar(
                 query = search,
                 onQueryChange = { search = it },
-                placeholderText = "Search messages & contacts..."
+                placeholderText = stringResource(R.string.home_search_hint)
             )
 
             // Filter chips
@@ -263,16 +263,16 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ConversationFilter.values().forEach { filter ->
-                    FilterChip(
-                        selected = selectedFilter == filter,
-                        onClick = { selectedFilter = filter },
-                        label = {
-                            Text(
-                                text = filter.label,
-                                fontSize = 13.sp,
-                                fontWeight = if (selectedFilter == filter) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
+                                    FilterChip(
+                                        selected = selectedFilter == filter,
+                                        onClick = { selectedFilter = filter },
+                                        label = {
+                                            Text(
+                                                text = stringResource(filter.labelRes),
+                                                fontSize = 13.sp,
+                                                fontWeight = if (selectedFilter == filter) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
                         leadingIcon = if (filter == ConversationFilter.Archived) {
                             {
                                 Icon(
@@ -317,21 +317,21 @@ fun HomeScreen(
                 ) {
                     EmptyView(
                         title = when {
-                            search.isNotBlank() -> "No Results Found"
-                            isInArchivedView -> "No Archived Conversations"
-                            else -> "No Conversations"
+                            search.isNotBlank() -> stringResource(R.string.home_search_no_results)
+                            isInArchivedView -> stringResource(R.string.home_empty_archived_title)
+                            else -> stringResource(R.string.home_empty_title)
                         },
                         subtitle = when {
-                            search.isNotBlank() -> "No messages matching \"$search\" were found. Try another search."
-                            isInArchivedView -> "Swipe right on any conversation to archive it."
-                            else -> "You don't have any messages yet. Start a new conversation below."
+                            search.isNotBlank() -> stringResource(R.string.home_search_no_results_fmt, search)
+                            isInArchivedView -> stringResource(R.string.home_empty_archived_subtitle)
+                            else -> stringResource(R.string.home_empty_subtitle)
                         },
                         icon = when {
                             search.isNotBlank() -> Icons.Default.SearchOff
                             isInArchivedView -> Icons.Default.Archive
                             else -> Icons.Default.MarkEmailUnread
                         },
-                        buttonText = if (isInArchivedView || search.isNotBlank()) null else "Start New Chat",
+                        buttonText = if (isInArchivedView || search.isNotBlank()) null else stringResource(R.string.conv_start_title),
                         onButtonClick = if (isInArchivedView || search.isNotBlank()) null else {
                             { navController.navigate(Screen.NewConversation.route) }
                         }
@@ -375,7 +375,7 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = "Send message to $directNumber",
+                                        text = stringResource(R.string.home_search_send_to, directNumber),
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -402,7 +402,7 @@ fun HomeScreen(
                     if (viewModel.globalResults.isNotEmpty()) {
                         item(key = "global_header") {
                             Text(
-                                text = "In all message texts",
+                                text = stringResource(R.string.home_search_global_header),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -432,6 +432,12 @@ fun HomeScreen(
                     ) { sms ->
                         val draftKey = com.autonomousone.messages.repository.DraftRepository
                             .keyFor(sms.threadId, sms.sender)
+                        // Pre-resolve strings for callbacks (lambdas aren't composable).
+                        val blockedMsg = stringResource(R.string.home_snackbar_blocked)
+                        val archivedMsg = stringResource(R.string.home_snackbar_archived)
+                        val unarchivedMsg = stringResource(R.string.home_snackbar_unarchived)
+                        val deletedMsg = stringResource(R.string.home_snackbar_deleted)
+                        val undoLabel = stringResource(R.string.action_undo)
                         SmsItem(
                             sms = sms,
                             isPinned = sms.threadId in viewModel.pinnedIds,
@@ -450,7 +456,7 @@ fun HomeScreen(
                                 viewModel.blockConversation(sms)
                                 scope.launch {
                                     snackbarHostState.showSnackbar(
-                                        message = "Number blocked",
+                                        message = blockedMsg,
                                         duration = SnackbarDuration.Short
                                     )
                                 }
@@ -461,8 +467,8 @@ fun HomeScreen(
                                     viewModel.unarchiveConversation(sms)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
-                                            message = "Conversation unarchived",
-                                            actionLabel = "Undo",
+                                            message = unarchivedMsg,
+                                            actionLabel = undoLabel,
                                             duration = SnackbarDuration.Short
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
@@ -474,8 +480,8 @@ fun HomeScreen(
                                     viewModel.archiveConversation(sms)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
-                                            message = "Conversation archived",
-                                            actionLabel = "Undo",
+                                            message = archivedMsg,
+                                            actionLabel = undoLabel,
                                             duration = SnackbarDuration.Long
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
@@ -488,8 +494,8 @@ fun HomeScreen(
                                 viewModel.deleteConversation(sms)
                                 scope.launch {
                                     val result = snackbarHostState.showSnackbar(
-                                        message = "Conversation deleted",
-                                        actionLabel = "Undo",
+                                        message = deletedMsg,
+                                        actionLabel = undoLabel,
                                         duration = SnackbarDuration.Long   // ~4 s
                                     )
                                     if (result == SnackbarResult.ActionPerformed) {
@@ -551,7 +557,7 @@ private fun SyncBanner(progress: HomeViewModel.SyncProgress?, modifier: Modifier
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Syncing messages… $loaded / $total",
+                text = stringResource(R.string.home_syncing_fmt, loaded, total),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -604,9 +610,9 @@ private fun DefaultSmsAppBanner(onSetDefault: () -> Unit) {
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text("Default SMS is off", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.home_default_sms_off_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Turn it on for reliable incoming message updates.",
+                    stringResource(R.string.home_default_sms_off_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
                 )
@@ -616,7 +622,7 @@ private fun DefaultSmsAppBanner(onSetDefault: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             ) {
-                Text("Set default", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(stringResource(R.string.home_default_sms_off_cta), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
         }
     }

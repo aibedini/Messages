@@ -54,6 +54,19 @@ class SmsSender(
      *    (null/blank = fall back to the user's preference).
      */
     fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long {
+        // Respect the user's send rate limit (protects the SIM from throttling).
+        val prefs2 = prefs
+        if (prefs2.rateLimitEnabled) {
+            com.autonomousone.messages.sms.SendRateLimiter.enabled = true
+            com.autonomousone.messages.sms.SendRateLimiter.maxMessages = prefs2.rateLimitCount
+            com.autonomousone.messages.sms.SendRateLimiter.windowMillis =
+                prefs2.rateLimitWindowMin * 60_000L
+            val waitMs = com.autonomousone.messages.sms.SendRateLimiter.acquireSlot()
+            if (waitMs > 0) {
+                try { Thread.sleep(waitMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                com.autonomousone.messages.sms.SendRateLimiter.record()
+            }
+        }
         val sentId = persistToSent(phone, text)
         dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = true)
         return sentId

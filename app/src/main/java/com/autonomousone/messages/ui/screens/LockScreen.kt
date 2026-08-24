@@ -20,9 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autonomousone.messages.MainActivity
+import com.autonomousone.messages.R
 
 /**
  * Full-screen app-lock gate shown by MainActivity while the biometric lock is
@@ -54,7 +56,7 @@ fun LockScreen(
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Messages",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -67,13 +69,13 @@ fun LockScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "App locked",
+                text = stringResource(R.string.lock_screen_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Confirm it's you to open your messages.",
+                text = stringResource(R.string.lock_screen_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -84,12 +86,12 @@ fun LockScreen(
                     onFailed = {}
                 )
             }) {
-                Text("Unlock")
+                Text(stringResource(R.string.action_unlock))
             }
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = onDisableLock) {
                 Text(
-                    "Turn off app lock",
+                    stringResource(R.string.lock_turn_off),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

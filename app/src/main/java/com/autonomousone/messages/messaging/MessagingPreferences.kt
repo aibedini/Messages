@@ -20,6 +20,9 @@ class MessagingPreferences(context: Context) {
         private const val KEY_SMSC = "smsc_address"
         private const val KEY_IPHONE_REACTIONS = "show_iphone_reactions_as_emoji"
         private const val KEY_GROUP_MESSAGING = "group_messaging_enabled"
+        private const val KEY_RATE_LIMIT_ENABLED = "send_rate_limit_enabled"
+        private const val KEY_RATE_LIMIT_COUNT = "send_rate_limit_count"
+        private const val KEY_RATE_LIMIT_WINDOW_MIN = "send_rate_limit_window_min"
 
         /** Sentinel meaning "the user has not picked a SIM line yet". */
         const val SUBSCRIPTION_UNSET = -1
@@ -47,7 +50,7 @@ class MessagingPreferences(context: Context) {
         get() = prefs.getString(KEY_SMSC, "") ?: ""
         set(value) = prefs.edit().putString(KEY_SMSC, value.trim()).apply()
 
-    /** Render iPhone tapback texts ('Loved "…"') as emoji bubbles. Default: OFF. */
+    /** Render iPhone tapbacks ('Loved "…"') as emoji bubbles. Default: OFF. */
     var showIphoneReactionsAsEmoji: Boolean
         get() = prefs.getBoolean(KEY_IPHONE_REACTIONS, false)
         set(value) = prefs.edit().putBoolean(KEY_IPHONE_REACTIONS, value).apply()
@@ -56,4 +59,21 @@ class MessagingPreferences(context: Context) {
     var groupMessagingEnabled: Boolean
         get() = prefs.getBoolean(KEY_GROUP_MESSAGING, false)
         set(value) = prefs.edit().putBoolean(KEY_GROUP_MESSAGING, value).apply()
+
+    // ── Send rate limiting (protects the SIM from operator throttling) ──
+
+    /** When true, sends are paced to [rateLimitCount] per [rateLimitWindowMin] minutes. Default: OFF. */
+    var rateLimitEnabled: Boolean
+        get() = prefs.getBoolean(KEY_RATE_LIMIT_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_RATE_LIMIT_ENABLED, value).apply()
+
+    /** Max messages allowed inside the window. Default: 10. */
+    var rateLimitCount: Int
+        get() = prefs.getInt(KEY_RATE_LIMIT_COUNT, 10)
+        set(value) = prefs.edit().putInt(KEY_RATE_LIMIT_COUNT, value.coerceIn(1, 1000)).apply()
+
+    /** Window length in minutes. Default: 1 minute. */
+    var rateLimitWindowMin: Int
+        get() = prefs.getInt(KEY_RATE_LIMIT_WINDOW_MIN, 1)
+        set(value) = prefs.edit().putInt(KEY_RATE_LIMIT_WINDOW_MIN, value.coerceIn(1, 60)).apply()
 }

@@ -90,9 +90,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.autonomousone.messages.R
+import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
@@ -393,8 +396,8 @@ fun ConversationScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     EmptyView(
-                        title = "Start Conversation",
-                        subtitle = "Send a message to $title to begin chatting.",
+                        title = stringResource(R.string.conv_start_title),
+                        subtitle = stringResource(R.string.conv_start_subtitle, title),
                         buttonText = null,
                         onButtonClick = null
                     )
@@ -500,13 +503,13 @@ fun ConversationScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Photo attached",
+                                    text = stringResource(R.string.conv_photo_attached),
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 Text(
-                                    text = "Will be sent as MMS",
+                                    text = stringResource(R.string.conv_photo_will_be_mms),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                 )
@@ -514,7 +517,7 @@ fun ConversationScreen(
                             IconButton(onClick = { attachedImageUri = null }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove attachment",
+                                    contentDescription = stringResource(R.string.conv_remove_attachment),
                                     tint = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
@@ -535,13 +538,13 @@ fun ConversationScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Audio file attached",
+                                    text = stringResource(R.string.conv_audio_attached),
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 Text(
-                                    text = "Will be sent as MMS",
+                                    text = stringResource(R.string.conv_photo_will_be_mms),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                 )
@@ -549,7 +552,7 @@ fun ConversationScreen(
                             IconButton(onClick = { attachedAudioUri = null }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove attachment",
+                                    contentDescription = stringResource(R.string.conv_remove_attachment),
                                     tint = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
@@ -586,11 +589,16 @@ fun ConversationScreen(
             val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
             val activeSims = remember { simManager.getActiveSims() }
             val messagingPrefs = remember { com.autonomousone.messages.messaging.MessagingPreferences(context) }
+            val simRules = remember { com.autonomousone.messages.repository.SimRulesRepository.get(context) }
+            // Priority for the initial selection:
+            //   1. Per-contact rule (if this conversation has one)
+            //   2. Global default from Messaging settings
             var selectedSubId by remember {
                 mutableStateOf(
-                    if (messagingPrefs.sendSubscriptionId ==
-                        com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
-                    ) null else messagingPrefs.sendSubscriptionId
+                    simRules.ruleFor(if (phone.isNotBlank()) phone else "")
+                        ?: messagingPrefs.sendSubscriptionId.takeIf {
+                            it != com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
+                        }
                 )
             }
             if (activeSims.size >= 2) {
@@ -601,27 +609,28 @@ fun ConversationScreen(
                         onClick = { simMenuOpen = true },
                         label = {
                             Text(
-                                text = current?.let { "SIM ${it.slotIndex + 1}" } ?: "Default SIM",
+                                text = current?.let { stringResource(R.string.sim_slot_fmt, it.slotIndex + 1) }
+                                    ?: stringResource(R.string.sim_default_label),
                                 style = MaterialTheme.typography.labelMedium
                             )
                         },
                         trailingIcon = {
                             Icon(
                                 Icons.Default.ChevronRight,
-                                contentDescription = "Switch SIM",
+                                contentDescription = stringResource(R.string.sim_switch),
                                 modifier = Modifier.size(16.dp)
                             )
                         },
                         modifier = Modifier.padding(start = 12.dp)
                     )
                     DropdownMenu(expanded = simMenuOpen, onDismissRequest = { simMenuOpen = false }) {
-                        // "Default" = follow the system/user global preference.
                         DropdownMenuItem(
-                            text = { Text("Default (system)") },
+                            text = { Text(stringResource(R.string.sim_system_default)) },
                             onClick = {
                                 selectedSubId = null
                                 messagingPrefs.sendSubscriptionId =
                                     com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
+                                simRules.setRule(phone, null)
                                 simMenuOpen = false
                             }
                         )
@@ -635,8 +644,9 @@ fun ConversationScreen(
                                 },
                                 onClick = {
                                     selectedSubId = sim.subscriptionId
-                                    // Persist so gateway + future sends use the same line.
                                     messagingPrefs.sendSubscriptionId = sim.subscriptionId
+                                    // Pin this line to this contact as well.
+                                    simRules.setRule(phone, sim.subscriptionId)
                                     simMenuOpen = false
                                 }
                             )
@@ -656,10 +666,10 @@ fun ConversationScreen(
             androidx.compose.animation.AnimatedVisibility(visible = message.isNotBlank()) {
                 Text(
                     text = if (segmentInfo.segments <= 1) {
-                        "${segmentInfo.charsRemainingInLast} characters left"
+                        stringResource(R.string.conv_segment_one_left, segmentInfo.charsRemainingInLast)
                     } else {
                         val remaining = segmentInfo.charsRemainingInLast.coerceAtLeast(0)
-                        "SMS ${segmentInfo.segments} · $remaining characters left"
+                        stringResource(R.string.conv_segment_multi_fmt, segmentInfo.segments, remaining)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -700,9 +710,12 @@ fun ConversationScreen(
                     ) {
                         if (message.isEmpty()) {
                             Text(
-                                text = if (isFetchingLocation) "Fetching location…"
-                                else if (attachedImageUri != null || attachedAudioUri != null) "Add caption (optional)..."
-                                else "SMS message...",
+                                text = when {
+                                    isFetchingLocation -> stringResource(R.string.conv_fetching_location)
+                                    attachedImageUri != null || attachedAudioUri != null ->
+                                        stringResource(R.string.conv_caption_hint)
+                                    else -> stringResource(R.string.conv_input_hint)
+                                },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 fontSize = 16.sp
                             )
@@ -744,7 +757,7 @@ fun ConversationScreen(
                                     draftRepo.set(draftKey, "")
                                     android.widget.Toast.makeText(
                                         context,
-                                        "Message scheduled",
+                                        context.getString(R.string.sched_success_toast),
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -841,7 +854,7 @@ fun ConversationScreen(
                         .navigationBarsPadding()
                 ) {
                     Text(
-                        text = "Share Content",
+                        text = stringResource(R.string.conv_share_content),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -855,7 +868,7 @@ fun ConversationScreen(
                     ) {
                         AttachmentOptionItem(
                             icon = Icons.Default.Image,
-                            label = "Gallery",
+                            label = stringResource(R.string.conv_attach_gallery),
                             color = Color(0xFF3B82F6),
                             onClick = {
                                 showAttachmentSheet = false
@@ -866,7 +879,7 @@ fun ConversationScreen(
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.CameraAlt,
-                            label = "Camera",
+                            label = stringResource(R.string.conv_attach_camera),
                             color = Color(0xFFEC4899),
                             onClick = {
                                 showAttachmentSheet = false
@@ -875,7 +888,7 @@ fun ConversationScreen(
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.AudioFile,
-                            label = "Audio",
+                            label = stringResource(R.string.conv_attach_audio),
                             color = Color(0xFF8B5CF6),
                             onClick = {
                                 showAttachmentSheet = false
@@ -884,7 +897,7 @@ fun ConversationScreen(
                         )
                         AttachmentOptionItem(
                             icon = Icons.Default.LocationOn,
-                            label = "Location",
+                            label = stringResource(R.string.conv_attach_location),
                             color = Color(0xFF10B981),
                             onClick = {
                                 showAttachmentSheet = false
@@ -932,7 +945,7 @@ fun ConversationScreen(
                 phoneActionNumber = null
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("number", number))
-                android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, context.getString(R.string.conv_copied), android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -956,10 +969,10 @@ private fun PhoneNumberActionDialog(
         title = { Text(number) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                androidx.compose.material3.TextButton(onClick = onSendSms) { Text("Send SMS") }
-                androidx.compose.material3.TextButton(onClick = onCall) { Text("Call") }
-                androidx.compose.material3.TextButton(onClick = onAddContact) { Text("Add to contacts") }
-                androidx.compose.material3.TextButton(onClick = onCopy) { Text("Copy number") }
+                androidx.compose.material3.TextButton(onClick = onSendSms) { Text(stringResource(R.string.conv_send_sms_action)) }
+                androidx.compose.material3.TextButton(onClick = onCall) { Text(stringResource(R.string.conv_call)) }
+                androidx.compose.material3.TextButton(onClick = onAddContact) { Text(stringResource(R.string.conv_add_to_contacts)) }
+                androidx.compose.material3.TextButton(onClick = onCopy) { Text(stringResource(R.string.conv_copy_number)) }
             }
         },
         confirmButton = {
@@ -1016,17 +1029,21 @@ private fun ScheduleSendDialog(
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Send later") },
+        title = { Text(stringResource(R.string.sched_dialog_title)) },
         text = {
             Column {
                 Text(
-                    "The message will be sent automatically at the chosen time, even if the app is closed.",
+                    stringResource(R.string.sched_dialog_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("In 1 hour" to 1L, "In 3 hours" to 3L, "Tomorrow 9am" to -1L).forEach { (label, hours) ->
+                    listOf(
+                            context.getString(R.string.sched_in_1_hour) to 1L,
+                            context.getString(R.string.sched_in_3_hours) to 3L,
+                            context.getString(R.string.sched_tomorrow_9am) to -1L
+                        ).forEach { (label, hours) ->
                         androidx.compose.material3.FilterChip(
                             selected = false,
                             onClick = {
@@ -1069,11 +1086,11 @@ private fun ScheduleSendDialog(
                         cal.get(java.util.Calendar.DAY_OF_MONTH)
                     ).show()
                 }) {
-                    Text(if (pickedMillis == null) "Pick date & time…" else "Change date & time")
+                    Text(if (pickedMillis == null) context.getString(R.string.sched_pick_date_time) else context.getString(R.string.sched_change_date_time))
                 }
                 pickedMillis?.let {
                     Text(
-                        text = "Will send: " + com.autonomousone.messages.utils.formatFullTimestamp(it),
+                        text = stringResource(R.string.sched_will_send_fmt, com.autonomousone.messages.utils.formatFullTimestamp(it)),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -1084,7 +1101,7 @@ private fun ScheduleSendDialog(
             Button(
                 enabled = pickedMillis != null,
                 onClick = { pickedMillis?.let(onConfirm) }
-            ) { Text("Schedule") }
+            ) { Text(stringResource(R.string.sched_confirm_button)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

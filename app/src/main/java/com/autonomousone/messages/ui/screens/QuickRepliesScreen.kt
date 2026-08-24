@@ -37,9 +37,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.autonomousone.messages.R
 import com.autonomousone.messages.messaging.QuickReply
 import com.autonomousone.messages.messaging.QuickRepliesPreferences
 
@@ -61,7 +63,7 @@ fun QuickRepliesScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Quick replies", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.qr_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
@@ -76,7 +78,7 @@ fun QuickRepliesScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add quick reply")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.qr_add_cd))
             }
         }
     ) { padding ->
@@ -87,7 +89,7 @@ fun QuickRepliesScreen(
                 .padding(horizontal = 16.dp)
         ) {
             Text(
-                text = "Type a shortcut in any chat (e.g. /c1) and tap the suggestion to fill the message.",
+                text = stringResource(R.string.qr_hint_text),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 8.dp)
@@ -95,7 +97,7 @@ fun QuickRepliesScreen(
 
             if (items.isEmpty()) {
                 Text(
-                    text = "No quick replies yet. Tap + to add one.",
+                    text = stringResource(R.string.qr_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 24.dp)
@@ -137,7 +139,7 @@ fun QuickRepliesScreen(
                                 IconButton(onClick = { editing = reply }) {
                                     Icon(
                                         Icons.Default.Edit,
-                                        contentDescription = "Edit",
+                                        contentDescription = stringResource(R.string.qr_edit_cd),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -147,7 +149,7 @@ fun QuickRepliesScreen(
                                 }) {
                                     Icon(
                                         Icons.Default.Delete,
-                                        contentDescription = "Delete",
+                                        contentDescription = stringResource(R.string.action_delete),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -198,20 +200,20 @@ private fun AddQuickReplyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New quick reply") },
+        title = { Text(stringResource(R.string.qr_new_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = shortcut,
                     onValueChange = { shortcut = it },
-                    label = { Text("Shortcut (e.g. /c1)") },
+                    label = { Text(stringResource(R.string.qr_shortcut_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("Message text") },
+                    label = { Text(stringResource(R.string.qr_message_label)) },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -219,11 +221,11 @@ private fun AddQuickReplyDialog(
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = { onSave(QuickReply(shortcut, text)) }) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -240,20 +242,20 @@ private fun EditQuickReplyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit quick reply") },
+        title = { Text(stringResource(R.string.qr_edit_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = shortcut,
                     onValueChange = { shortcut = it },
-                    label = { Text("Shortcut (e.g. /c1)") },
+                    label = { Text(stringResource(R.string.qr_shortcut_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("Message text") },
+                    label = { Text(stringResource(R.string.qr_message_label)) },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -263,11 +265,11 @@ private fun EditQuickReplyDialog(
             TextButton(enabled = valid, onClick = {
                 onSave(original.copy(shortcut = shortcut.trim(), text = text.trim()))
             }) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

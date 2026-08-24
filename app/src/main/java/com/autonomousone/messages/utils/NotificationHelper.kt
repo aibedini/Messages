@@ -27,8 +27,8 @@ object NotificationHelper {
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val importance = NotificationManager.IMPORTANCE_HIGH
-            val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance).apply {
-                description = CHANNEL_DESC
+            val channel = NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_name), importance).apply {
+                description = context.getString(R.string.notif_channel_desc)
                 enableVibration(true)
                 setShowBadge(true)
             }
@@ -103,18 +103,22 @@ object NotificationHelper {
             displayName
         }
 
+        // Quiet hours: notification still appears but silently (no sound/vibrate).
+        val inQuietHours = QuietHoursPreferences(context).isInQuietWindow()
+        val defaults = if (inQuietHours) 0 else NotificationCompat.DEFAULT_ALL
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(titleText)
             .setContentText(sms.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(sms.message))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (inQuietHours) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             // Hide message body & OTP on the lock screen (public area shows app name only).
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .setContentIntent(tapPendingIntent)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setDefaults(defaults)
 
         // 1. Copy OTP Action (if OTP detected)
         if (otpCode != null) {

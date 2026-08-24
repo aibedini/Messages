@@ -28,6 +28,8 @@ sealed class Screen(val route: String) {
 
     object QuickReplies : Screen("quick_replies")
 
+    object ScheduledMessages : Screen("scheduled_messages")
+
     object Conversation :
         Screen("conversation/{threadId}?phone={phone}&name={name}&forward={forward}") {
 

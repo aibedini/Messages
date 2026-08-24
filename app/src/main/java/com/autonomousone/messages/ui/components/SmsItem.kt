@@ -55,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.autonomousone.messages.R
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.theme.StatusError
@@ -157,16 +159,16 @@ fun SmsItem(
                         ) {
                             Icon(
                                 imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
-                                contentDescription = if (isArchived) "Unarchive" else "Archive",
+                                contentDescription = if (isArchived) stringResource(R.string.list_unarchive) else stringResource(R.string.list_archive_cd),
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp)
                             )
                             Text(
                                 // Confirmation copy: dim while dragging, bold at release point.
                                 text = when {
-                                    isArchived -> "Release to Unarchive"
-                                    pastThreshold -> "Release to Archive"
-                                    else -> "Archive"
+                                    isArchived -> stringResource(R.string.list_release_to_unarchive)
+                                    pastThreshold -> stringResource(R.string.list_release_to_archive)
+                                    else -> stringResource(R.string.list_archive)
                                 },
                                 color = Color.White,
                                 fontWeight = if (pastThreshold || isArchived) FontWeight.Bold else FontWeight.SemiBold,
@@ -181,14 +183,14 @@ fun SmsItem(
                             modifier = Modifier.scale(iconScale)
                         ) {
                             Text(
-                                text = "Delete",
+                                text = stringResource(R.string.action_delete),
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
                             Icon(
                                 imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
+                                contentDescription = stringResource(R.string.action_delete),
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -262,7 +264,7 @@ fun SmsItem(
                                 // WhatsApp/Telegram-style draft line.
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "Draft:",
+                                        text = stringResource(R.string.list_draft_label),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.error,
@@ -338,7 +340,7 @@ fun SmsItem(
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (onPin != null) {
                             DropdownMenuItem(
-                                text = { Text(if (isPinned) "Unpin" else "Pin to top") },
+                                text = { Text(if (isPinned) stringResource(R.string.list_unpin) else stringResource(R.string.list_pin_to_top)) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = if (isPinned) Icons.Outlined.PushPin else Icons.Default.PushPin,
@@ -353,7 +355,7 @@ fun SmsItem(
                         }
                         if (!isArchived && onArchive != null) {
                             DropdownMenuItem(
-                                text = { Text("Archive") },
+                                text = { Text(stringResource(R.string.list_archive)) },
                                 leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
                                 onClick = {
                                     menuOpen = false
@@ -363,7 +365,7 @@ fun SmsItem(
                         }
                         if (onBlock != null) {
                             DropdownMenuItem(
-                                text = { Text("Block number") },
+                                text = { Text(stringResource(R.string.list_block_number)) },
                                 leadingIcon = { Icon(Icons.Outlined.Block, contentDescription = null) },
                                 onClick = {
                                     menuOpen = false
@@ -373,7 +375,7 @@ fun SmsItem(
                         }
                         if (onDelete != null) {
                             DropdownMenuItem(
-                                text = { Text("Delete", color = StatusError) },
+                                text = { Text(stringResource(R.string.action_delete), color = StatusError) },
                                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StatusError) },
                                 onClick = {
                                     menuOpen = false

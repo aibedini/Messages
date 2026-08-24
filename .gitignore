@@ -30,3 +30,4 @@ keystore.properties
 .neuromesh/
 graphify-out/
 build_output.txt
+hs_err_pid*.log

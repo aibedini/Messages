@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.autonomousone.messages.messaging.IphoneReactionParser
 import com.autonomousone.messages.messaging.MessagingPreferences
+import androidx.compose.ui.res.stringResource
+import com.autonomousone.messages.R
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.ui.theme.FailedTint
 import com.autonomousone.messages.utils.formatFullTimestamp
@@ -313,7 +315,7 @@ fun ChatBubble(
                     // Long-press action menu
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
-                            text = { Text("Copy") },
+                            text = { Text(stringResource(R.string.action_copy)) },
                             onClick = {
                                 menuOpen = false
                                 copyToClipboard("message", sms.message)
@@ -321,7 +323,7 @@ fun ChatBubble(
                         )
                         entities.firstOrNull()?.let { e ->
                             DropdownMenuItem(
-                                text = { Text(if (e.isUrl) "Copy link" else "Copy number") },
+                                text = { Text(if (e.isUrl) stringResource(R.string.conv_copy_link) else stringResource(R.string.conv_copy_number)) },
                                 onClick = {
                                     menuOpen = false
                                     copyToClipboard(if (e.isUrl) "link" else "number", e.text)
@@ -330,7 +332,7 @@ fun ChatBubble(
                         }
                         if (onForward != null) {
                             DropdownMenuItem(
-                                text = { Text("Forward") },
+                                text = { Text(stringResource(R.string.action_forward)) },
                                 onClick = {
                                     menuOpen = false
                                     onForward(sms.message)
@@ -339,7 +341,7 @@ fun ChatBubble(
                         }
                         if (!incoming) {
                             DropdownMenuItem(
-                                text = { Text(if (showDetails) "Hide details" else "Message details") },
+                                text = { Text(if (showDetails) stringResource(R.string.conv_menu_hide_details) else stringResource(R.string.conv_menu_message_details)) },
                                 onClick = {
                                     menuOpen = false
                                     showDetails = !showDetails
