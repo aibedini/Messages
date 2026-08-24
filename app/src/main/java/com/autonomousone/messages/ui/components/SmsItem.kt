@@ -39,6 +39,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +74,8 @@ fun SmsItem(
     onBlock: (() -> Unit)? = null,
     /** True when this thread is pinned (shows a filled pin badge). */
     isPinned: Boolean = false,
+    /** Non-empty → show italic "Draft: …" instead of the message snippet. */
+    draftText: String = "",
     /** When true, the left swipe shows "Unarchive" instead of "Archive". */
     isArchived: Boolean = false,
     modifier: Modifier = Modifier
@@ -242,18 +246,40 @@ fun SmsItem(
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            Text(
-                                text = sms.message,
-                                fontSize = 14.sp,
-                                fontWeight = if (sms.unread) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (sms.unread) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (draftText.isNotBlank()) {
+                                // WhatsApp/Telegram-style draft line.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Draft:",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = draftText,
+                                        fontSize = 14.sp,
+                                        fontStyle = FontStyle.Italic,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = sms.message,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (sms.unread) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (sms.unread) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(12.dp))

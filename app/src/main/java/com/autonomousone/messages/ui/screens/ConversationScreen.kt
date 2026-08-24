@@ -65,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -121,13 +122,29 @@ fun ConversationScreen(
 ) {
     val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
-    var message by remember { mutableStateOf("") }
+    val draftRepo = remember { com.autonomousone.messages.repository.DraftRepository(context) }
+    // Stable draft key: thread when known, otherwise the normalized recipient.
+    val draftKey = remember(threadId, phone) {
+        com.autonomousone.messages.repository.DraftRepository.keyFor(
+            threadId, if (phone.isNotBlank()) phone else ""
+        )
+    }
+    var message by remember { mutableStateOf(draftRepo.get(draftKey)) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var attachedAudioUri by remember { mutableStateOf<Uri?>(null) }
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var isFetchingLocation by remember { mutableStateOf(false) }
     var phoneActionNumber by remember { mutableStateOf<String?>(null) }
     var forwardSent by remember { mutableStateOf(false) }
+
+    // ── Draft persistence ────────────────────────────────────────────────────
+    // Keep the stored draft in sync while typing (cheap JSON write, debounced
+    // by Compose's own recomposition), and clear it the moment a send happens.
+    DisposableEffect(draftKey) {
+        onDispose {
+            draftRepo.set(draftKey, message)
+        }
+    }
 
     val listState = rememberLazyListState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -619,6 +636,8 @@ fun ConversationScreen(
                                         context, destination, msgToSend, triggerAt
                                     )
                                     message = ""
+                                    // Scheduled is as good as queued — no draft.
+                                    draftRepo.set(draftKey, "")
                                     android.widget.Toast.makeText(
                                         context,
                                         "Message scheduled",
@@ -640,6 +659,8 @@ fun ConversationScreen(
                             message = ""
                             attachedImageUri = null
                             attachedAudioUri = null
+                            // Message is leaving as a real send — drop the draft.
+                            draftRepo.set(draftKey, "")
 
                             if (currentImage != null) {
                                 viewModel.sendImageMessage(

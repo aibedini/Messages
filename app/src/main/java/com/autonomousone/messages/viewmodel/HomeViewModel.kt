@@ -76,6 +76,12 @@ class HomeViewModel(
     var contactNames by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
+    /** conversation key → draft text (non-empty only). Drives "Draft:" rows. */
+    var drafts by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
+    private val draftRepository = com.autonomousone.messages.repository.DraftRepository(application)
+
     /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
     var loadStatus by mutableStateOf<String?>(null)
         private set
@@ -120,6 +126,12 @@ class HomeViewModel(
         archivedIds.addAll(archiveRepository.getArchivedIds())
         pinnedIds.clear()
         pinnedIds.addAll(pinRepository.getPinnedIds())
+        refreshDrafts()
+    }
+
+    /** Reloads the draft map — called on resume so freshly-left chats show up. */
+    fun refreshDrafts() {
+        drafts = draftRepository.all()
     }
 
     fun loadSms() {
@@ -497,6 +509,9 @@ class HomeViewModel(
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
+                // Drafts may have been written by a conversation screen that
+                // just closed — always re-read them (cheap JSON parse).
+                refreshDrafts()
                 if (!hasLoadedOnce) {
                     loadSms()
                 } else if (repository.hasProviderChangedSince(newestKnownDate)) {

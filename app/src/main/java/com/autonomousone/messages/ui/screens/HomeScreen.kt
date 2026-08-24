@@ -425,10 +425,13 @@ fun HomeScreen(
                         items = filteredList,
                         key = { it.id }
                     ) { sms ->
+                        val draftKey = com.autonomousone.messages.repository.DraftRepository
+                            .keyFor(sms.threadId, sms.sender)
                         SmsItem(
                             sms = sms,
                             isPinned = sms.threadId in viewModel.pinnedIds,
                             isArchived = isInArchivedView,
+                            draftText = viewModel.drafts[draftKey].orEmpty(),
                             onClick = {
                                 navController.navigate(
                                     Screen.Conversation.createRoute(sms.threadId, sms.sender)
