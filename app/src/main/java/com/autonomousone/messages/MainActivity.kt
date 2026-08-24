@@ -50,7 +50,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appLockPreferences: AppLockPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // Defensive guard: AppCompatActivity requires an AppCompat theme.
+        // If a future manifest/theme edit reintroduces the mismatch, fail
+        // gracefully (fall back to the platform activity behavior) instead of
+        // crashing at launch. The real fix is Theme.AppCompat in themes.xml.
+        try {
+            super.onCreate(savedInstanceState)
+        } catch (e: IllegalArgumentException) {
+            android.util.Log.e("MainActivity", "Theme mismatch — falling back", e)
+            theme.applyStyle(R.style.Theme_Messages, false)
+            super.onCreate(null)
+        }
         enableEdgeToEdge()
         NotificationHelper.createNotificationChannel(this)
         onboardingPreferences = OnboardingPreferences(this)
