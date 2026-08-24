@@ -1,6 +1,7 @@
 package com.autonomousone.messages.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
@@ -32,11 +33,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -49,6 +52,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -82,6 +86,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
@@ -107,7 +112,8 @@ fun ConversationScreen(
     threadId: Long,
     phone: String,
     name: String,
-    navController: NavController
+    navController: NavController,
+    forwardText: String = ""
 ) {
     val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
@@ -116,6 +122,8 @@ fun ConversationScreen(
     var attachedAudioUri by remember { mutableStateOf<Uri?>(null) }
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var isFetchingLocation by remember { mutableStateOf(false) }
+    var phoneActionNumber by remember { mutableStateOf<String?>(null) }
+    var forwardSent by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -246,16 +254,41 @@ fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(chatItems.size) {
-        if (chatItems.isNotEmpty()) {
-            listState.animateScrollToItem(chatItems.lastIndex)
-        }
-    }
-
     val recipientPhone = remember(phone, messages.size) {
         if (phone.isNotBlank()) phone
         else if (messages.isNotEmpty()) messages.first().sender
         else ""
+    }
+
+    // ── Forwarded message: send once the recipient is known ─────────────────
+    LaunchedEffect(forwardText, recipientPhone) {
+        if (!forwardSent && forwardText.isNotBlank() && recipientPhone.isNotBlank()) {
+            forwardSent = true
+            viewModel.sendMessage(threadId, recipientPhone, forwardText)
+        }
+    }
+
+    // ── Instant bottom position: jump BEFORE paint, no visible scrolling ────
+    val atBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= info.totalItemsCount - 2
+        }
+    }
+    var anchoredToBottom by remember { mutableStateOf(false) }
+    LaunchedEffect(chatItems.size) {
+        if (chatItems.isEmpty()) return@LaunchedEffect
+        if (!anchoredToBottom) {
+            // First layout of this conversation: land on the newest message
+            // immediately (requestScrollToItem applies before the next frame —
+            // the user never sees a scroll animation from top to bottom).
+            listState.requestScrollToItem(chatItems.lastIndex)
+            anchoredToBottom = true
+        } else if (atBottom) {
+            // Follow new incoming/outgoing messages only when already at the bottom.
+            listState.requestScrollToItem(chatItems.lastIndex)
+        }
     }
 
     val title = remember(phone, name, recipientPhone) {
@@ -365,7 +398,13 @@ fun ConversationScreen(
                                 }
                             }
                             is ChatListItem.MessageItem -> {
-                                ChatBubble(sms = item.sms)
+                                ChatBubble(
+                                    sms = item.sms,
+                                    onForward = { text ->
+                                        navController.navigate(Screen.NewConversation.createForwardRoute(text))
+                                    },
+                                    onPhoneClick = { number -> phoneActionNumber = number }
+                                )
                             }
                         }
                     }
@@ -455,6 +494,30 @@ fun ConversationScreen(
                                     tint = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // ── Quick reply suggestions (WhatsApp-Business style) ────────────
+            if (message.trimStart().startsWith("/")) {
+                val quickPrefs = remember { com.autonomousone.messages.messaging.QuickRepliesPreferences(context) }
+                val quickMatches = remember(message) {
+                    quickPrefs.match(message.trim()).take(6)
+                }
+                if (quickMatches.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        quickMatches.forEach { qr ->
+                            SuggestionChip(
+                                onClick = { message = qr.text },
+                                label = { Text("${qr.shortcut}  ·  ${qr.text.take(28)}") }
+                            )
                         }
                     }
                 }
@@ -651,6 +714,72 @@ fun ConversationScreen(
             }
         }
     }
+
+    // ── Phone-number action sheet (tap a number inside a message) ───────────
+    phoneActionNumber?.let { number ->
+        PhoneNumberActionDialog(
+            number = number,
+            onDismiss = { phoneActionNumber = null },
+            onSendSms = {
+                phoneActionNumber = null
+                navController.navigate(
+                    Screen.Conversation.createNewRoute(phone = number, name = number)
+                )
+            },
+            onCall = {
+                phoneActionNumber = null
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
+                }
+            },
+            onAddContact = {
+                phoneActionNumber = null
+                runCatching {
+                    val intent = Intent(android.provider.ContactsContract.Intents.Insert.ACTION).apply {
+                        type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
+                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                    }
+                    context.startActivity(intent)
+                }
+            },
+            onCopy = {
+                phoneActionNumber = null
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("number", number))
+                android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+}
+
+/**
+ * Actions for a phone number detected inside a message body:
+ * send SMS, call, add to contacts, copy.
+ */
+@Composable
+private fun PhoneNumberActionDialog(
+    number: String,
+    onDismiss: () -> Unit,
+    onSendSms: () -> Unit,
+    onCall: () -> Unit,
+    onAddContact: () -> Unit,
+    onCopy: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(number) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                androidx.compose.material3.TextButton(onClick = onSendSms) { Text("Send SMS") }
+                androidx.compose.material3.TextButton(onClick = onCall) { Text("Call") }
+                androidx.compose.material3.TextButton(onClick = onAddContact) { Text("Add to contacts") }
+                androidx.compose.material3.TextButton(onClick = onCopy) { Text("Copy number") }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable

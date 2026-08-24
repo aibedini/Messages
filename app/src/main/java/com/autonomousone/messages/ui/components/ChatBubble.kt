@@ -1,7 +1,12 @@
 package com.autonomousone.messages.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.Telephony
+import android.util.Patterns
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -25,8 +30,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,8 +48,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -57,11 +69,47 @@ import com.autonomousone.messages.utils.formatMessageTime
 /** Status icon + accessibility label for outgoing bubbles. */
 private data class StatusVisual(val icon: ImageVector, val label: String)
 
+/** A tappable entity (link or phone number) inside a message body. */
+internal data class MessageEntity(val text: String, val start: Int, val end: Int, val isUrl: Boolean)
+
+/** Finds URLs and phone numbers with their ranges; URLs take precedence. */
+internal fun findMessageEntities(text: String): List<MessageEntity> {
+    val entities = mutableListOf<MessageEntity>()
+    val taken = mutableListOf<IntRange>()
+
+    fun overlaps(range: IntRange) = taken.any { range.start <= it.endInclusive && range.endInclusive >= it.start }
+
+    Patterns.WEB_URL.matcher(text).let { m ->
+        while (m.find()) {
+            val range = m.start() until m.end()
+            if (!overlaps(range)) {
+                entities.add(MessageEntity(m.group(), m.start(), m.end(), isUrl = true))
+                taken.add(range)
+            }
+        }
+    }
+    Patterns.PHONE.matcher(text).let { m ->
+        while (m.find()) {
+            val range = m.start() until m.end()
+            if (overlaps(range)) return@let
+            val digits = m.group().filter { it.isDigit() }
+            // Skip year-like fragments and too-short groups.
+            if (digits.length in 7..15 && !overlaps(range)) {
+                entities.add(MessageEntity(m.group(), m.start(), m.end(), isUrl = false))
+                taken.add(range)
+            }
+        }
+    }
+    return entities.sortedBy { it.start }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatBubble(
     sms: Sms,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onForward: ((String) -> Unit)? = null,
+    onPhoneClick: ((String) -> Unit)? = null
 ) {
     val incoming = sms.type == 1
 
@@ -72,8 +120,15 @@ fun ChatBubble(
         IphoneReactionParser.parse(sms.message)
     } else null
 
-    // Long-press reveals sent/delivered details (Google Messages-style info line).
+    // Long-press opens the action menu (copy / forward / link / details).
+    var menuOpen by remember(sms.id) { mutableStateOf(false) }
     var showDetails by remember(sms.id) { mutableStateOf(false) }
+
+    fun copyToClipboard(label: String, text: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, text))
+        android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+    }
 
     // Parse image tag if present [IMAGE:uri]
     val imageUriString = if (sms.message.contains("[IMAGE:")) {
@@ -85,6 +140,8 @@ fun ChatBubble(
     } else {
         sms.message
     }
+
+    val entities = remember(captionText) { findMessageEntities(captionText) }
 
     // Asymmetrical rounded corner shape with bubble tail indicator
     val bubbleShape = if (incoming) {
@@ -101,6 +158,11 @@ fun ChatBubble(
     }
     val contentColor = if (incoming) {
         MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val linkColor = if (incoming) {
+        MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onPrimaryContainer
     }
@@ -123,7 +185,7 @@ fun ChatBubble(
                         .background(bubbleColor)
                         .combinedClickable(
                             onClick = { if (!incoming) showDetails = !showDetails },
-                            onLongClick = { showDetails = !showDetails }
+                            onLongClick = { menuOpen = true }
                         )
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
@@ -159,8 +221,47 @@ fun ChatBubble(
                                 )
                             }
                         } else if (captionText.isNotBlank()) {
+                            val bodyText = remember(captionText, linkColor) {
+                                buildAnnotatedString {
+                                    var cursor = 0
+                                    entities.forEach { e ->
+                                        append(captionText.substring(cursor, e.start))
+                                        val entity = e
+                                        if (entity.isUrl) {
+                                            withLink(
+                                                LinkAnnotation.Clickable(entity.text) {
+                                                    runCatching {
+                                                        context.startActivity(
+                                                            Intent(Intent.ACTION_VIEW, Uri.parse(entity.text))
+                                                        )
+                                                    }
+                                                }
+                                            ) {
+                                                withStyle(
+                                                    SpanStyle(
+                                                        color = linkColor,
+                                                        textDecoration = TextDecoration.Underline
+                                                    )
+                                                ) { append(entity.text) }
+                                            }
+                                        } else {
+                                            withLink(
+                                                LinkAnnotation.Clickable(entity.text) {
+                                                    onPhoneClick?.invoke(entity.text)
+                                                }
+                                            ) {
+                                                withStyle(SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)) {
+                                                    append(entity.text)
+                                                }
+                                            }
+                                        }
+                                        cursor = e.end
+                                    }
+                                    append(captionText.substring(cursor))
+                                }
+                            }
                             Text(
-                                text = captionText,
+                                text = bodyText,
                                 color = contentColor,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontSize = 15.sp,
@@ -195,6 +296,44 @@ fun ChatBubble(
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
+                        }
+                    }
+
+                    // Long-press action menu
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Copy") },
+                            onClick = {
+                                menuOpen = false
+                                copyToClipboard("message", sms.message)
+                            }
+                        )
+                        entities.firstOrNull()?.let { e ->
+                            DropdownMenuItem(
+                                text = { Text(if (e.isUrl) "Copy link" else "Copy number") },
+                                onClick = {
+                                    menuOpen = false
+                                    copyToClipboard(if (e.isUrl) "link" else "number", e.text)
+                                }
+                            )
+                        }
+                        if (onForward != null) {
+                            DropdownMenuItem(
+                                text = { Text("Forward") },
+                                onClick = {
+                                    menuOpen = false
+                                    onForward(sms.message)
+                                }
+                            )
+                        }
+                        if (!incoming) {
+                            DropdownMenuItem(
+                                text = { Text(if (showDetails) "Hide details" else "Message details") },
+                                onClick = {
+                                    menuOpen = false
+                                    showDetails = !showDetails
+                                }
+                            )
                         }
                     }
                 }

@@ -77,9 +77,18 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.NewConversation.route) {
+        composable(
+            route = Screen.NewConversation.route,
+            arguments = listOf(
+                navArgument("forward") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
             NewConversationScreen(
-                navController = navController
+                navController = navController,
+                forwardText = backStackEntry.arguments?.getString("forward") ?: ""
             )
         }
 
@@ -111,6 +120,12 @@ fun AppNavigation(
             )
         }
 
+        composable(Screen.QuickReplies.route) {
+            com.autonomousone.messages.ui.screens.QuickRepliesScreen(
+                navController = navController
+            )
+        }
+
         composable(
             route = Screen.Conversation.route,
             arguments = listOf(
@@ -124,17 +139,23 @@ fun AppNavigation(
                 navArgument("name") {
                     type = NavType.StringType
                     defaultValue = ""
+                },
+                navArgument("forward") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
             val threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L
             val phone = backStackEntry.arguments?.getString("phone") ?: ""
             val name = backStackEntry.arguments?.getString("name") ?: ""
+            val forward = backStackEntry.arguments?.getString("forward") ?: ""
 
             ConversationScreen(
                 threadId = threadId,
                 phone = phone,
                 name = name,
+                forwardText = forward,
                 navController = navController
             )
         }

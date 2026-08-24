@@ -1,4 +1,4 @@
-package com.autonomousone.messages.ui.screens
+﻿package com.autonomousone.messages.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -70,7 +70,8 @@ import com.autonomousone.messages.viewmodel.NewConversationViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewConversationScreen(
-    navController: NavController
+    navController: NavController,
+    forwardText: String = ""
 ) {
     val viewModel: NewConversationViewModel = viewModel()
     var search by remember { mutableStateOf("") }
@@ -157,6 +158,33 @@ fun NewConversationScreen(
                 else "Type a name or phone number..."
             )
 
+            // Forwarding banner
+            if (forwardText.isNotBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Forward message to:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = forwardText.take(120),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
             // Selected-people chips (group mode only)
             if (groupMode && selected.isNotEmpty()) {
                 Row(
@@ -197,7 +225,8 @@ fun NewConversationScreen(
                             navController.navigate(
                                 Screen.Conversation.createNewRoute(
                                     phone = search,
-                                    name = search
+                                    name = search,
+                                    forward = forwardText
                                 )
                             )
                         },
@@ -281,14 +310,15 @@ fun NewConversationScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .width(64.dp)
-                                    .clickable {
-                                        navController.navigate(
-                                            Screen.Conversation.createNewRoute(
-                                                phone = contact.phone,
-                                                name = contact.name
-                                            )
-                                        )
-                                    }
+                                     .clickable {
+                                         navController.navigate(
+                                             Screen.Conversation.createNewRoute(
+                                                 phone = contact.phone,
+                                                 name = contact.name,
+                                                 forward = forwardText
+                                             )
+                                         )
+                                     }
                             ) {
                                 Avatar(
                                     name = contact.name,
@@ -380,7 +410,8 @@ fun NewConversationScreen(
                                     navController.navigate(
                                         Screen.Conversation.createNewRoute(
                                             phone = contact.phone,
-                                            name = contact.name
+                                            name = contact.name,
+                                            forward = forwardText
                                         )
                                     )
                                 }
@@ -402,7 +433,9 @@ fun NewConversationScreen(
                         val phones = selected.joinToString(",") { it.phone }
                         val names = selected.joinToString(", ") { it.name.split(" ").first() }
                         navController.navigate(
-                            Screen.Conversation.createNewRoute(phone = phones, name = names)
+                            Screen.Conversation.createNewRoute(
+                                phone = phones, name = names, forward = forwardText
+                            )
                         )
                     }
                 ) {

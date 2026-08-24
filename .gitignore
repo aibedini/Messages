@@ -27,4 +27,6 @@ keystore.properties
 
 # Local tooling / temp artifacts
 .codebase-memory/
+.neuromesh/
+graphify-out/
 build_output.txt

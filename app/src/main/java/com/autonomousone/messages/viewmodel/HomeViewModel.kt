@@ -52,6 +52,10 @@ class HomeViewModel(
     var syncProgress by mutableStateOf<SyncProgress?>(null)
         private set
 
+    /** Normalized-phone → contact display name, used by search. */
+    var contactNames by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
     /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
     var loadStatus by mutableStateOf<String?>(null)
         private set
@@ -125,7 +129,8 @@ class HomeViewModel(
                 val freshList = repository.getConversationsFast(progressListener) { partial ->
                     viewModelScope.launch { replaceConversations(partial, archived) }
                 }
-                contactNames.await()
+                val names = contactNames.await()
+                withContext(Dispatchers.Main) { this@HomeViewModel.contactNames = names }
                 freshList to archived
             }
 

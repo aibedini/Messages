@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,12 +24,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -123,19 +128,23 @@ fun HomeScreen(
     val filteredList by remember(search, selectedFilter, smsList, archivedList) {
         derivedStateOf {
             sourceList.filter { sms ->
-                val matchesSearch = search.isBlank() ||
-                        sms.sender.contains(search, ignoreCase = true) ||
-                        sms.message.contains(search, ignoreCase = true)
-
-                val matchesFilter = when (selectedFilter) {
+                val searchMatch = matchesSearch(sms, search, viewModel.contactNames)
+                val filterMatch = when (selectedFilter) {
                     ConversationFilter.All -> true
                     ConversationFilter.Unread -> sms.unread
-                    ConversationFilter.Archived -> true   // archiveList is already filtered
+                    ConversationFilter.Archived -> true   // archivedList is already filtered
                 }
-
-                matchesSearch && matchesFilter
+                searchMatch && filterMatch
             }
         }
+    }
+
+    // Best-practice search UX:
+    //  - number-like queries get a direct "Send to …" row (Google Messages style)
+    //  - a results counter shows how many conversations matched
+    val searchLooksLikeNumber = remember(search) {
+        val digits = search.filter { it.isDigit() }
+        search.isNotBlank() && digits.length >= 3 && digits.length >= search.length - 2
     }
 
     Scaffold(
@@ -318,6 +327,59 @@ fun HomeScreen(
                     state = listState,
                     contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)
                 ) {
+                    // Direct "send to number" shortcut while searching (Google Messages style)
+                    if (searchLooksLikeNumber) {
+                        item(key = "direct_send") {
+                            val directNumber = search.trim()
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .clickable {
+                                        navController.navigate(
+                                            Screen.Conversation.createNewRoute(
+                                                phone = directNumber,
+                                                name = directNumber
+                                            )
+                                        )
+                                    },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Send message to $directNumber",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Result counter while searching
+                    if (search.isNotBlank()) {
+                        item(key = "result_count") {
+                            Text(
+                                text = "${filteredList.size} conversation${if (filteredList.size == 1) "" else "s"} found",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
                     items(
                         items = filteredList,
                         key = { it.id }
@@ -378,6 +440,31 @@ fun HomeScreen(
             }
         }
     }
+}
+
+/**
+ * Best-practice SMS search: matches contact display name, raw sender,
+ * normalized digits (so "0912" finds "+98912…") and the message snippet.
+ */
+private fun matchesSearch(sms: com.autonomousone.messages.model.Sms, query: String, contactNames: Map<String, String>): Boolean {
+    if (query.isBlank()) return true
+    val q = query.trim()
+
+    val displayName = contactNames[com.autonomousone.messages.repository.ContactRepository.normalizePhone(sms.sender)] ?: ""
+    val nameMatch = displayName.contains(q, ignoreCase = true)
+    if (nameMatch) return true
+
+    val rawMatch = sms.sender.contains(q, ignoreCase = true) ||
+            sms.message.contains(q, ignoreCase = true)
+    if (rawMatch) return true
+
+    // Digit-normalized match: search "0912" should hit "+98 912 …"
+    val qDigits = q.filter { it.isDigit() }
+    if (qDigits.length >= 3) {
+        if (sms.sender.filter { it.isDigit() }.contains(qDigits)) return true
+        if (sms.message.take(120).filter { it.isDigit() }.contains(qDigits)) return true
+    }
+    return false
 }
 
 /**
