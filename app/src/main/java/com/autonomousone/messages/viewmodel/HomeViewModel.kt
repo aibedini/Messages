@@ -276,11 +276,15 @@ class HomeViewModel(
         archivedIds.addAll(archived)
     }
 
-    /** In-place diff-free swap that avoids clearing both lists at once. */
+    /** In-place swap made ATOMIC via a snapshot transaction: Compose sees the
+     *  before→after state once, so keyed items move smoothly instead of the
+     *  whole list flashing through clear+add in separate frames. */
     private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {
         if (target == source) return
-        target.clear()
-        target.addAll(source)
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            target.clear()
+            target.addAll(source)
+        }
     }
 
     /** Sorts pinned threads above everything else, date-desc within groups. */

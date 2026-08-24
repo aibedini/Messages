@@ -428,7 +428,8 @@ fun HomeScreen(
 
                     items(
                         items = filteredList,
-                        key = { it.id }
+                        key = { "c${it.id}" },
+                        contentType = { "conversation" }
                     ) { sms ->
                         val draftKey = com.autonomousone.messages.repository.DraftRepository
                             .keyFor(sms.threadId, sms.sender)
