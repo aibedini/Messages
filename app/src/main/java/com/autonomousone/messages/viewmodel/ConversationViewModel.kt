@@ -93,13 +93,18 @@ class ConversationViewModel(
 
             try {
                 val progressListener = ProgressListener { p ->
-                    val appContext = getApplication<Application>()
-                    val label = when (p.phase) {
-                        "sms" -> appContext.getString(R.string.conv_loading_messages)
-                        "mms" -> appContext.getString(R.string.conv_loading_multimedia)
-                        else -> appContext.getString(R.string.conv_loading_generic)
+                    // Only surface progress when the user is actually waiting
+                    // (no instant cached copy was painted). Avoids the jarring
+                    // "Reading messages…" flash on every thread open.
+                    if (loadStatus != null || isLoading) {
+                        val appContext = getApplication<Application>()
+                        val label = when (p.phase) {
+                            "sms" -> appContext.getString(R.string.conv_loading_messages)
+                            "mms" -> appContext.getString(R.string.conv_loading_multimedia)
+                            else -> appContext.getString(R.string.conv_loading_generic)
+                        }
+                        loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
                     }
-                    loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
                 }
                 val loadedMessages = when {
                     currentPhone.isNotBlank() -> repository.getMessagesByPhone(
@@ -166,7 +171,10 @@ class ConversationViewModel(
 
     private fun markReadAndNotify(threadId: Long, phone: String) {
         if (threadId != 0L || phone.isNotBlank()) {
-            ThreadMessageCache.generation++ // read state changed
+            // Read state is a UI-level overlay (Home badge); do NOT invalidate
+            // the thread cache for it — messages themselves didn't change, and
+            // invalidating here is what causes "Reading messages…" on every
+            // re-open of a conversation.
             repository.markThreadAsRead(threadId, phone)
             SmsEventBus.emitThreadRead(threadId, phone)
         }
@@ -291,7 +299,10 @@ class ConversationViewModel(
         )
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)
-        ThreadMessageCache.generation++ // our own write invalidates cached pages
+        // Our own write: append to the cached thread instead of invalidating it,
+        // so the next open paints cache instantly (incl. this message) and the
+        // background provider refresh confirms/normalizes it.
+        ThreadMessageCache.append(currentThreadId, targetPhone, optimisticSms)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {

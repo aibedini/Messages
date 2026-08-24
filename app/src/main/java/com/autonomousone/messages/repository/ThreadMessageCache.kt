@@ -45,6 +45,24 @@ object ThreadMessageCache {
     }
 
     /**
+     * Append an outgoing message to the cached thread WITHOUT bumping the
+     * generation: the cache entry stays "fresh" so the next open paints it
+     * instantly. The provider refresh on next load reconciles ids/dates.
+     */
+    fun append(threadKey: Long, phoneKey: String, sms: Sms) {
+        val key = keyFor(threadKey, phoneKey)
+        synchronized(lru) {
+            val existing = lru.get(key) ?: return
+            if (existing.messages.any { it.id == sms.id }) return
+            val updated = existing.messages + sms
+            val trimmed = if (updated.size > MAX_PER_THREAD)
+                updated.subList(updated.size - MAX_PER_THREAD, updated.size)
+            else updated
+            lru.put(key, Entry(trimmed, existing.cachedAtGeneration, System.currentTimeMillis()))
+        }
+    }
+
+    /**
      * Returns the cached thread ONLY when nothing has changed since it was
      * stored (same generation). Null → caller must do a full load.
      */
