@@ -24,6 +24,13 @@ object SmsEventBus {
     private val _refreshFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val refreshFlow: SharedFlow<Unit> = _refreshFlow.asSharedFlow()
 
+    // Thread-read events: fired when a conversation screen marks its messages
+    // read, so the Home list can drop the unread badge instantly.
+    data class ThreadRead(val threadId: Long, val phone: String)
+
+    private val _threadReadFlow = MutableSharedFlow<ThreadRead>(extraBufferCapacity = 16)
+    val threadReadFlow: SharedFlow<ThreadRead> = _threadReadFlow.asSharedFlow()
+
     @Volatile
     var isAppInForeground: Boolean = false
 
@@ -39,5 +46,12 @@ object SmsEventBus {
     /** Call from onResume so all ViewModels reload fresh data from DB */
     fun notifyResume() {
         _refreshFlow.tryEmit(Unit)
+    }
+
+    /** Fired by ConversationScreen when its thread is marked read. */
+    fun emitThreadRead(threadId: Long, phone: String) {
+        scope.launch {
+            _threadReadFlow.emit(ThreadRead(threadId, phone))
+        }
     }
 }

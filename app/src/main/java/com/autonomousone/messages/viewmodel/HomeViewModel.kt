@@ -110,6 +110,7 @@ class HomeViewModel(
         loadArchivedIds()
         observeIncomingSms()
         observeRefreshSignal()
+        observeThreadRead()
         observeReloadRequests()
     }
 
@@ -300,6 +301,22 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
     // Mark read
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Marks one conversation read in the in-memory list immediately.
+     * Called by ConversationViewModel after it persists READ=1 to the provider,
+     * so the Home list reflects the change instantly (no stale unread badge).
+     */
+    fun markConversationReadLocally(threadId: Long, phone: String) {
+        val normPhone = com.autonomousone.messages.repository.ContactRepository.normalizePhone(phone)
+        fun matches(sms: Sms): Boolean =
+            (threadId != 0L && sms.threadId == threadId) ||
+                (normPhone.isNotBlank() && ContactRepository.normalizePhone(sms.sender).let {
+                    it == normPhone || it.endsWith(normPhone) || normPhone.endsWith(it)
+                })
+        conversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
+        archivedConversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
+    }
 
     fun markAllAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -514,21 +531,23 @@ class HomeViewModel(
         }
     }
 
-    /** Reload from DB whenever MainActivity.onResume fires */
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
-                // Drafts are now a shared StateFlow — the list sees changes
-                // instantly without any refresh signal at all.
                 if (!hasLoadedOnce) {
                     loadSms()
                 } else if (repository.hasProviderChangedSince(newestKnownDate)) {
-                    // Only hit the provider when something actually changed
-                    // since our newest known conversation (e.g. a message was
-                    // sent/read while we were inside a chat). Returning from a
-                    // plain conversation view changes nothing → zero work.
                     silentRefresh()
                 }
+            }
+        }
+    }
+
+    /** Instant unread-badge drop when a chat screen marks its thread read. */
+    private fun observeThreadRead() {
+        viewModelScope.launch {
+            SmsEventBus.threadReadFlow.collect { event ->
+                markConversationReadLocally(event.threadId, event.phone)
             }
         }
     }

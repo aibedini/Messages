@@ -103,6 +103,11 @@ class ConversationViewModel(
                             SmsEventBus.activeConversationPhone = currentPhone
                         }
                     }
+                    // Push the read state into the Home list immediately via
+                    // the shared event bus (no ViewModel-to-ViewModel coupling).
+                    if (currentThreadId != 0L || currentPhone.isNotBlank()) {
+                        SmsEventBus.emitThreadRead(currentThreadId, currentPhone)
+                    }
                 }
             } finally {
                 withContext(Dispatchers.Main) {
