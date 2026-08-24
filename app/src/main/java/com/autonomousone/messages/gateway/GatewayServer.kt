@@ -628,6 +628,13 @@ class GatewayServer(
             .put("submittedOnce", rec.submittedOnce || rec.terminal)
             .put("requestedTo", rec.to)
             .put("sentTo", rec.to)
+            // GMweb-compatible verification fields so the Eve poller can parse
+            // them uniformly across both providers. Native SIM sends are
+            // confirmed by the radio, so there is no separate verification pass.
+            .put("verificationStatus", rec.verificationStatus)
+            .put("verificationAttempts", rec.verificationAttempts)
+            .put("recipientEvidence", JSONObject.NULL)
+            .put("conversationUrl", JSONObject.NULL)
             .put("sentAt", rec.sentAt.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL)
             .put("failedReason", rec.failedReason ?: JSONObject.NULL)
         sendResponse(output, 200, json)

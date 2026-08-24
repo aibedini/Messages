@@ -50,7 +50,11 @@ object EveSmsQueue {
         val createdAt: Long,
         val sentAt: Long = 0L,
         val failedReason: String? = null,
-        val submittedOnce: Boolean = false
+        val submittedOnce: Boolean = false,
+        // EVE/GMweb-compatible verification fields (panel/jobs/messaging.py parses them).
+        // submitted → confirmed on success; manual_review_required when sending failed.
+        val verificationStatus: String? = null,
+        val verificationAttempts: Int = 0
     ) {
         val terminal: Boolean get() = status == Status.SENT || status == Status.FAILED || status == Status.CANCELLED
         val successful: Boolean get() = status == Status.SENT
@@ -95,7 +99,9 @@ object EveSmsQueue {
                         createdAt = o.getLong("createdAt"),
                         sentAt = o.optLong("sentAt", 0L),
                         failedReason = o.optString("failedReason", "").ifBlank { null },
-                        submittedOnce = o.optBoolean("submittedOnce", false)
+                        submittedOnce = o.optBoolean("submittedOnce", false),
+                        verificationStatus = o.optString("verificationStatus", "").ifBlank { null },
+                        verificationAttempts = o.optInt("verificationAttempts", 0)
                     )
                 )
             }
@@ -125,6 +131,8 @@ object EveSmsQueue {
                             .put("sentAt", r.sentAt)
                             .put("failedReason", r.failedReason ?: "")
                             .put("submittedOnce", r.submittedOnce)
+                            .put("verificationStatus", r.verificationStatus ?: "")
+                            .put("verificationAttempts", r.verificationAttempts)
                     )
                 }
                 val idemObj = JSONObject()
@@ -306,9 +314,11 @@ object EveSmsQueue {
         synchronized(records) {
             val base = records[job.requestId] ?: current
             records[job.requestId] = if (ok) {
-                base.copy(status = Status.SENT, sentAt = System.currentTimeMillis())
+                base.copy(status = Status.SENT, sentAt = System.currentTimeMillis(),
+                    verificationStatus = "confirmed")
             } else {
-                base.copy(status = Status.FAILED, failedReason = "provider_error")
+                base.copy(status = Status.FAILED, failedReason = "provider_error",
+                    verificationStatus = "manual_review_required")
             }
             persistAsync()
         }

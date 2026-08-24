@@ -93,6 +93,33 @@ class EveSmsQueueTest {
     }
 
     @Test
+    fun `terminal records carry gmweb-compatible verification fields`() {
+        bootstrap()
+        val okRec = EveSmsQueue.enqueue("09120000001", "ok", "critical", null).record
+        EveSmsQueue.drainOne()
+        val sent = EveSmsQueue.status(okRec.requestId)!!
+        assertEquals("confirmed", sent.verificationStatus)
+
+        bootstrap { _, _ -> false }
+        val badRec = EveSmsQueue.enqueue("09120000002", "bad", "critical", null).record
+        EveSmsQueue.drainOne()
+        val failed = EveSmsQueue.status(badRec.requestId)!!
+        assertEquals("manual_review_required", failed.verificationStatus)
+
+        // Round-trip through persistence keeps the new fields (SharedPrefs contract).
+        val restored = EveSmsQueue.Record(
+            requestId = failed.requestId, jobId = failed.jobId, to = failed.to,
+            text = failed.text, priority = failed.priority,
+            priorityLevel = failed.priorityLevel, status = failed.status,
+            createdAt = failed.createdAt, sentAt = failed.sentAt,
+            failedReason = failed.failedReason, submittedOnce = failed.submittedOnce,
+            verificationStatus = failed.verificationStatus,
+            verificationAttempts = failed.verificationAttempts
+        )
+        assertEquals(failed.verificationStatus, restored.verificationStatus)
+    }
+
+    @Test
     fun `queued message can be cancelled and then never sends`() {
         val sent = mutableListOf<String>()
         bootstrap { _, text -> synchronized(sent) { sent.add(text) }; true }
