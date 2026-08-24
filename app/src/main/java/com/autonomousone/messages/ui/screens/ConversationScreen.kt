@@ -18,6 +18,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SuggestionChip
@@ -106,7 +110,7 @@ sealed class ChatListItem {
     data class MessageItem(val sms: Sms) : ChatListItem()
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ConversationScreen(
     threadId: Long,
@@ -524,6 +528,26 @@ fun ConversationScreen(
             }
 
             // ── Message Input Bar ───────────────────────────────────────────
+            // Standards-based segment counter (GSM-7 vs UCS-2): shows remaining
+            // chars for the 1st SMS, then total segments + encoding + per-part.
+            val segmentInfo = remember(message) {
+                com.autonomousone.messages.utils.SmsSegmentCounter.count(message)
+            }
+            androidx.compose.animation.AnimatedVisibility(visible = message.isNotBlank()) {
+                Text(
+                    text = if (segmentInfo.segments == 1) {
+                        "${segmentInfo.charsRemainingInLast} characters left · ${segmentInfo.encoding.name.lowercase()}"
+                    } else {
+                        "${segmentInfo.segments} SMS · ${segmentInfo.encoding.name.lowercase()} · ${segmentInfo.charsPerSegment}/part"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                )
+            }
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -581,6 +605,30 @@ fun ConversationScreen(
                         label = "sendScale"
                     )
 
+                    // ── Schedule send (long-press the send button) ────────────
+                    var showScheduleDialog by remember { mutableStateOf(false) }
+                    if (showScheduleDialog) {
+                        val destination = if (recipientPhone.isNotBlank()) recipientPhone else phone
+                        val msgToSend = message
+                        ScheduleSendDialog(
+                            onDismiss = { showScheduleDialog = false },
+                            onConfirm = { triggerAt ->
+                                showScheduleDialog = false
+                                if (destination.isNotBlank() && msgToSend.isNotBlank()) {
+                                    com.autonomousone.messages.sms.ScheduledSms.schedule(
+                                        context, destination, msgToSend, triggerAt
+                                    )
+                                    message = ""
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Message scheduled",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        )
+                    }
+
                     IconButton(
                         onClick = {
                             if (!canSend) return@IconButton
@@ -616,7 +664,15 @@ fun ConversationScreen(
                             }
                         },
                         enabled = canSend,
-                        modifier = Modifier.scale(sendScale)
+                        modifier = Modifier
+                            .scale(sendScale)
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = {
+                                    // Long-press send = schedule instead of send now.
+                                    if (message.isNotBlank()) showScheduleDialog = true
+                                }
+                            )
                     ) {
                         Box(
                             modifier = Modifier
@@ -717,19 +773,21 @@ fun ConversationScreen(
 
     // ── Phone-number action sheet (tap a number inside a message) ───────────
     phoneActionNumber?.let { number ->
+        // Dialer/contacts/SM-RIL need ASCII digits; Persian digits break them.
+        val asciiNumber = com.autonomousone.messages.utils.DigitNormalizer.toAsciiDigits(number)
         PhoneNumberActionDialog(
             number = number,
             onDismiss = { phoneActionNumber = null },
             onSendSms = {
                 phoneActionNumber = null
                 navController.navigate(
-                    Screen.Conversation.createNewRoute(phone = number, name = number)
+                    Screen.Conversation.createNewRoute(phone = asciiNumber, name = asciiNumber)
                 )
             },
             onCall = {
                 phoneActionNumber = null
                 runCatching {
-                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
+                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$asciiNumber")))
                 }
             },
             onAddContact = {
@@ -737,7 +795,7 @@ fun ConversationScreen(
                 runCatching {
                     val intent = Intent(android.provider.ContactsContract.Intents.Insert.ACTION).apply {
                         type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
-                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, asciiNumber)
                     }
                     context.startActivity(intent)
                 }
@@ -815,4 +873,93 @@ fun AttachmentOptionItem(
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+/**
+ * Schedule-send dialog: quick presets + a custom date/time picker.
+ * Confirms with the exact epoch-millis trigger time for [ScheduledSms].
+ */
+@Composable
+private fun ScheduleSendDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    var pickedMillis by remember { mutableStateOf<Long?>(null) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Send later") },
+        text = {
+            Column {
+                Text(
+                    "The message will be sent automatically at the chosen time, even if the app is closed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("In 1 hour" to 1L, "In 3 hours" to 3L, "Tomorrow 9am" to -1L).forEach { (label, hours) ->
+                        androidx.compose.material3.FilterChip(
+                            selected = false,
+                            onClick = {
+                                pickedMillis = when {
+                                    hours == -1L -> {
+                                        val cal = java.util.Calendar.getInstance().apply {
+                                            add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                            set(java.util.Calendar.HOUR_OF_DAY, 9)
+                                            set(java.util.Calendar.MINUTE, 0)
+                                            set(java.util.Calendar.SECOND, 0)
+                                        }
+                                        cal.timeInMillis
+                                    }
+                                    else -> System.currentTimeMillis() + hours * 3_600_000L
+                                }
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = {
+                    val cal = java.util.Calendar.getInstance()
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, y, m, d ->
+                            android.app.TimePickerDialog(
+                                context,
+                                { _, hh, mm ->
+                                    cal.set(y, m, d, hh, mm, 0)
+                                    pickedMillis = cal.timeInMillis
+                                },
+                                cal.get(java.util.Calendar.HOUR_OF_DAY),
+                                cal.get(java.util.Calendar.MINUTE),
+                                true
+                            ).show()
+                        },
+                        cal.get(java.util.Calendar.YEAR),
+                        cal.get(java.util.Calendar.MONTH),
+                        cal.get(java.util.Calendar.DAY_OF_MONTH)
+                    ).show()
+                }) {
+                    Text(if (pickedMillis == null) "Pick date & time…" else "Change date & time")
+                }
+                pickedMillis?.let {
+                    Text(
+                        text = "Will send: " + com.autonomousone.messages.utils.formatFullTimestamp(it),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = pickedMillis != null,
+                onClick = { pickedMillis?.let(onConfirm) }
+            ) { Text("Schedule") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

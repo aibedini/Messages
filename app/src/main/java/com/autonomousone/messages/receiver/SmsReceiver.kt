@@ -96,6 +96,13 @@ class SmsReceiver : BroadcastReceiver() {
                 type = 1
             )
 
+            // Blocked number: persist silently (already written above when we are
+            // the default app) but skip bus events, webhooks and notifications.
+            if (com.autonomousone.messages.repository.BlocklistRepository.isBlocked(context, sender)) {
+                Log.d("SMS_RECEIVER", "SMS from blocked sender $sender — silent handling")
+                return
+            }
+
             // Emit immediately for optimistic UI update
             SmsEventBus.emitSms(incomingSms)
 

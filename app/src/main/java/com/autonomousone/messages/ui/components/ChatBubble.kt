@@ -79,7 +79,14 @@ internal fun findMessageEntities(text: String): List<MessageEntity> {
 
     fun overlaps(range: IntRange) = taken.any { range.start <= it.endInclusive && range.endInclusive >= it.start }
 
-    Patterns.WEB_URL.matcher(text).let { m ->
+    // Persian/Arabic digits map 1:1 to ASCII (DigitNormalizer), so indexes in
+    // the mirrored string are IDENTICAL to the original text's. We run the
+    // platform detectors on the mirror so Patterns.PHONE can see ۰۹۱۲… numbers,
+    // then slice the ORIGINAL text with the same ranges (keeping Persian digits
+    // for display and dialing).
+    val asciiMirror = com.autonomousone.messages.utils.DigitNormalizer.toAsciiDigits(text)
+
+    Patterns.WEB_URL.matcher(asciiMirror).let { m ->
         while (m.find()) {
             val range = m.start() until m.end()
             if (!overlaps(range)) {
@@ -88,15 +95,19 @@ internal fun findMessageEntities(text: String): List<MessageEntity> {
             }
         }
     }
-    Patterns.PHONE.matcher(text).let { m ->
+    Patterns.PHONE.matcher(asciiMirror).let { m ->
         while (m.find()) {
-            val range = m.start() until m.end()
-            if (overlaps(range)) return@let
-            val digits = m.group().filter { it.isDigit() }
+            val candidateAscii = asciiMirror.substring(m.start(), m.end())
+            val digits = candidateAscii.filter { it.isDigit() }
             // Skip year-like fragments and too-short groups.
-            if (digits.length in 7..15 && !overlaps(range)) {
-                entities.add(MessageEntity(m.group(), m.start(), m.end(), isUrl = false))
-                taken.add(range)
+            if (digits.length in 7..15) {
+                val range = m.start() until m.end()
+                if (!overlaps(range)) {
+                    // Show/copy the number exactly as the sender wrote it.
+                    val asWritten = text.substring(range)
+                    entities.add(MessageEntity(asWritten, m.start(), m.end(), isUrl = false))
+                    taken.add(range)
+                }
             }
         }
     }

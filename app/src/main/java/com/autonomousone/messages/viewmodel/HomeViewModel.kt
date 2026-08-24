@@ -13,7 +13,9 @@ import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ArchiveRepository
+import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,8 @@ class HomeViewModel(
 
     private val repository = SmsRepository(application)
     private val archiveRepository = ArchiveRepository(application)
+    private val pinRepository = PinRepository(application)
+    private val blocklistRepository = BlocklistRepository(application)
 
     /** All conversations that are NOT archived — shown in "All" and "Unread" tabs. */
     val conversations = mutableStateListOf<Sms>()
@@ -39,6 +43,22 @@ class HomeViewModel(
 
     /** Reactive set of archived threadIds for filtering. */
     private val archivedIds = mutableStateSetOf<Long>()
+
+    /** Reactive set of pinned threadIds for sorting + UI badges. */
+    val pinnedIds = mutableStateSetOf<Long>()
+
+    /** True while a global (all-messages) search is running. */
+    var isGlobalSearchBusy by mutableStateOf(false)
+        private set
+
+    /**
+     * Global search results across every stored message body —
+     * one representative row per conversation, with match count.
+     */
+    data class GlobalHit(val sms: Sms, val matchCount: Int)
+
+    var globalResults by mutableStateOf<List<GlobalHit>>(emptyList())
+        private set
 
     private val observer = SmsContentObserver { loadSms() }
 
@@ -62,6 +82,16 @@ class HomeViewModel(
 
     private val reloadRequests = Channel<Unit>(Channel.CONFLATED)
 
+    /** True once the first full load has completed — afterwards we render cache instantly. */
+    private var hasLoadedOnce = false
+
+    /**
+     * Newest conversation date seen in the last full load. Used by the
+     * incremental sync to only fetch threads newer than this.
+     */
+    @Volatile
+    private var newestKnownDate: Long = 0L
+
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
     private val pendingDeletes = mutableMapOf<Long, Job>()
 
@@ -77,12 +107,19 @@ class HomeViewModel(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Load
+    // Load — Single Source of Truth pattern
+    //
+    // The in-memory lists ARE the UI's source of truth once loaded. A full
+    // provider scan happens only on cold start (empty lists). Everything else
+    // is either an incremental merge (observer events) or a silent atomic
+    // swap (explicit refresh) — never a visible "syncing" state again.
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun loadArchivedIds() {
         archivedIds.clear()
         archivedIds.addAll(archiveRepository.getArchivedIds())
+        pinnedIds.clear()
+        pinnedIds.addAll(pinRepository.getPinnedIds())
     }
 
     fun loadSms() {
@@ -91,20 +128,29 @@ class HomeViewModel(
 
     private fun observeReloadRequests() {
         viewModelScope.launch {
-            for (ignored in reloadRequests) performLoad()
+            for (ignored in reloadRequests) {
+                if (hasLoadedOnce) silentRefresh() else performLoad()
+            }
         }
     }
 
+    /**
+     * Cold start / permission-granted path: full provider scan with progress.
+     * Only this path may show the skeleton/spinner — and only while the lists
+     * are still empty (no cache to render yet).
+     */
     private suspend fun performLoad() {
-        // Only surface the loading UI when the load actually takes a moment;
-        // instant reloads (single new SMS) stay silent and seamless.
-        loadingShowJob?.cancel()
-        loadingShowJob = viewModelScope.launch {
-            delay(250)
-            isLoading = true
+        // Skeleton only when there is nothing to render yet (true cold start);
+        // with a warm cache the swap below is invisible.
+        if (!hasLoadedOnce) {
+            loadingShowJob?.cancel()
+            loadingShowJob = viewModelScope.launch {
+                delay(250)
+                isLoading = true
+            }
         }
         try {
-            val progressListener = ProgressListener { progress ->
+            val progressListener = if (hasLoadedOnce) null else ProgressListener { progress ->
                 val label = when (progress.phase) {
                     "threads" -> "Loading conversations"
                     "sms" -> "Syncing messages"
@@ -127,14 +173,20 @@ class HomeViewModel(
                     ContactRepository(getApplication()).getContactNameMapAsync()
                 }
                 val freshList = repository.getConversationsFast(progressListener) { partial ->
-                    viewModelScope.launch { replaceConversations(partial, archived) }
+                    // Progressive paint during cold start ONLY: build on top of
+                    // what's shown instead of clearing mid-load.
+                    if (!hasLoadedOnce) {
+                        viewModelScope.launch { replaceConversations(partial, archived, atomic = false) }
+                    }
                 }
                 val names = contactNames.await()
                 withContext(Dispatchers.Main) { this@HomeViewModel.contactNames = names }
                 freshList to archived
             }
 
-            replaceConversations(freshList, archived)
+            replaceConversations(freshList, archived, atomic = true)
+            newestKnownDate = freshList.maxOfOrNull { it.date } ?: 0L
+            hasLoadedOnce = true
         } catch (error: Exception) {
             Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
         } finally {
@@ -145,19 +197,83 @@ class HomeViewModel(
         }
     }
 
-    private fun replaceConversations(items: List<Sms>, archived: Set<Long>) {
-        // Threads with a pending (not-yet-committed) delete must stay hidden
-        // even across observer-triggered rebuilds.
+    /**
+     * Warm path: rebuild off-screen and atomically swap — the visible list is
+     * never cleared, so returning from a conversation shows zero sync UI.
+     */
+    private suspend fun silentRefresh() {
+        try {
+            val (freshList, archived) = withContext(Dispatchers.IO) {
+                val archived = archiveRepository.getArchivedIds()
+                val list = repository.getConversationsFast(null, null)
+                list to archived
+            }
+            replaceConversations(freshList, archived, atomic = true)
+            newestKnownDate = freshList.maxOfOrNull { it.date } ?: newestKnownDate
+        } catch (error: Exception) {
+            Log.e("SMS_DEBUG", "Silent refresh failed; keeping cache", error)
+        }
+    }
+
+    /**
+     * Rebuilds the visible lists from [items].
+     *
+     * @param atomic when true, new lists are built first and swapped in one
+     * go — no intermediate empty state. When false (cold-start progressive
+     * paint), the lists are replaced directly since there's nothing to protect.
+     */
+    private fun replaceConversations(items: List<Sms>, archived: Set<Long>, atomic: Boolean = true) {
         val excluded = pendingDeletes.keys
-        conversations.clear()
-        archivedConversations.clear()
-        archivedIds.clear()
-        archivedIds.addAll(archived)
+        val blocked = blocklistRepository.getBlocked()
+
+        val main = mutableListOf<Sms>()
+        val archivedOut = mutableListOf<Sms>()
         items.forEach { sms ->
             if (sms.threadId in excluded) return@forEach
-            if (sms.threadId in archived) archivedConversations.add(sms)
-            else conversations.add(sms)
+            if (isBlockedAddress(sms.sender, blocked)) return@forEach
+            if (sms.threadId in archived) archivedOut.add(sms) else main.add(sms)
         }
+        sortByPin(main, pinnedIds)
+        sortByPin(archivedOut, pinnedIds)
+
+        if (atomic) {
+            // Single recomposition: swap contents in place to keep the same
+            // SnapshotStateList instances (Compose keys stay stable).
+            applySwap(conversations, main)
+            applySwap(archivedConversations, archivedOut)
+        } else {
+            conversations.apply { clear(); addAll(main) }
+            archivedConversations.apply { clear(); addAll(archivedOut) }
+        }
+        archivedIds.clear()
+        archivedIds.addAll(archived)
+    }
+
+    /** In-place diff-free swap that avoids clearing both lists at once. */
+    private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {
+        if (target == source) return
+        target.clear()
+        target.addAll(source)
+    }
+
+    /** Sorts pinned threads above everything else, date-desc within groups. */
+    private fun sortByPin(list: MutableList<Sms>, pins: Set<Long>) {
+        list.sortWith { a, b ->
+            val pa = a.threadId in pins
+            val pb = b.threadId in pins
+            when {
+                pa != pb -> if (pa) -1 else 1
+                else -> b.date.compareTo(a.date)
+            }
+        }
+    }
+
+    /** A conversation is blocked when its normalized address matches the block list. */
+    private fun isBlockedAddress(sender: String, blocked: Set<String>): Boolean {
+        if (blocked.isEmpty()) return false
+        val norm = BlocklistRepository.normalize(sender)
+        if (norm.isBlank()) return false
+        return blocked.any { it == norm || norm.endsWith(it) || it.endsWith(norm) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -261,6 +377,87 @@ class HomeViewModel(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Pin / Unpin
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun togglePin(sms: Sms) {
+        val isPinned = sms.threadId in pinnedIds
+        if (isPinned) pinRepository.unpinThread(sms.threadId) else pinRepository.pinThread(sms.threadId)
+        if (isPinned) pinnedIds.remove(sms.threadId) else pinnedIds.add(sms.threadId)
+        sortByPin(conversations, pinnedIds)
+        sortByPin(archivedConversations, pinnedIds)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Block / Unblock
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Blocks the conversation's sender and hides it from every list immediately.
+     * The underlying messages stay in the provider — unblocking restores them.
+     */
+    fun blockConversation(sms: Sms) {
+        conversations.removeAll { it.threadId == sms.threadId }
+        archivedConversations.removeAll { it.threadId == sms.threadId }
+        viewModelScope.launch(Dispatchers.IO) {
+            blocklistRepository.block(sms.sender)
+        }
+    }
+
+    /** Removes [address] from the block list and reloads from the provider. */
+    fun unblockNumber(address: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            blocklistRepository.unblock(address)
+            loadSms()
+        }
+    }
+
+    /** All blocked numbers, for Settings → Blocked numbers. */
+    fun getBlockedNumbers(): Set<String> = blocklistRepository.getBlocked()
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Global search (all message bodies)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Searches every stored SMS body (not just conversation snippets).
+     * Emits one [GlobalHit] per conversation with a match count.
+     */
+    fun searchAllMessages(query: String) {
+        val q = query.trim()
+        if (q.length < 2) {
+            globalResults = emptyList()
+            return
+        }
+        if (isGlobalSearchBusy) return
+        isGlobalSearchBusy = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val all = repository.getSmsWithFilters(
+                    limit = null, offset = null, type = null,
+                    phone = null, fromDate = null, toDate = null
+                )
+                val blocked = blocklistRepository.getBlocked()
+                val byThread = all.filter { !isBlockedAddress(it.sender, blocked) }
+                    .groupBy { if (it.threadId != 0L) it.threadId else it.id }
+                val hits = byThread.mapNotNull { (_, messages) ->
+                    val count = messages.count { it.message.contains(q, ignoreCase = true) }
+                    if (count == 0) null else GlobalHit(messages.maxBy { it.date }, count)
+                }.sortedByDescending { it.sms.date }
+                withContext(Dispatchers.Main) { globalResults = hits }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) { globalResults = emptyList() }
+            } finally {
+                withContext(Dispatchers.Main) { isGlobalSearchBusy = false }
+            }
+        }
+    }
+
+    fun clearGlobalSearch() {
+        globalResults = emptyList()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Real-time incoming SMS
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -281,6 +478,12 @@ class HomeViewModel(
 
                 // Only add to main list if not archived
                 if (incomingSms.threadId !in archivedIds) {
+                    conversations.removeAll {
+                        val norm = ContactRepository.normalizePhone(it.sender)
+                        val normIn = ContactRepository.normalizePhone(incomingSms.sender)
+                        norm.isNotBlank() && (norm == normIn ||
+                                norm.endsWith(normIn) || normIn.endsWith(norm))
+                    }
                     conversations.add(0, incomingSms)
                 }
                 // Reconcile with the provider right away (conflated + debounced),
@@ -294,7 +497,15 @@ class HomeViewModel(
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
-                loadSms()
+                if (!hasLoadedOnce) {
+                    loadSms()
+                } else if (repository.hasProviderChangedSince(newestKnownDate)) {
+                    // Only hit the provider when something actually changed
+                    // since our newest known conversation (e.g. a message was
+                    // sent/read while we were inside a chat). Returning from a
+                    // plain conversation view changes nothing → zero work.
+                    silentRefresh()
+                }
             }
         }
     }

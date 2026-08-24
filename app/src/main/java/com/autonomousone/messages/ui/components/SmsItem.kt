@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Unarchive
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,7 +40,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,13 +59,19 @@ import com.autonomousone.messages.ui.theme.StatusError
 import com.autonomousone.messages.ui.theme.UnreadBadgeColor
 import com.autonomousone.messages.utils.formatConversationDate
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SmsItem(
     sms: Sms,
     onClick: () -> Unit,
     onArchive: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    /** Long-press → Pin / Unpin. */
+    onPin: (() -> Unit)? = null,
+    /** Long-press → Block number. */
+    onBlock: (() -> Unit)? = null,
+    /** True when this thread is pinned (shows a filled pin badge). */
+    isPinned: Boolean = false,
     /** When true, the left swipe shows "Unarchive" instead of "Archive". */
     isArchived: Boolean = false,
     modifier: Modifier = Modifier
@@ -65,6 +80,7 @@ fun SmsItem(
     val displayName = remember(sms.sender) {
         ContactRepository(context).getCachedDisplayName(sms.sender)
     }
+    var menuOpen by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -169,7 +185,12 @@ fun SmsItem(
             Surface(
                 modifier = modifier
                     .fillMaxWidth()
-                    .clickable { onClick() },
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClick = if (onPin != null || onBlock != null) {
+                            { menuOpen = true }
+                        } else null
+                    ),
                 color = if (sms.unread) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
                 } else {
@@ -198,6 +219,16 @@ fun SmsItem(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                if (isPinned) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = "Pinned",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .padding(end = 4.dp)
+                                    )
+                                }
                                 Text(
                                     text = displayName,
                                     fontWeight = if (sms.unread) FontWeight.ExtraBold else FontWeight.SemiBold,
@@ -251,6 +282,55 @@ fun SmsItem(
                                         .background(UnreadBadgeColor)
                                 )
                             }
+                        }
+                    }
+
+                    // Long-press conversation menu
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (onPin != null) {
+                            DropdownMenuItem(
+                                text = { Text(if (isPinned) "Unpin" else "Pin to top") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isPinned) Icons.Outlined.PushPin else Icons.Default.PushPin,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onPin()
+                                }
+                            )
+                        }
+                        if (!isArchived && onArchive != null) {
+                            DropdownMenuItem(
+                                text = { Text("Archive") },
+                                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onArchive()
+                                }
+                            )
+                        }
+                        if (onBlock != null) {
+                            DropdownMenuItem(
+                                text = { Text("Block number") },
+                                leadingIcon = { Icon(Icons.Outlined.Block, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onBlock()
+                                }
+                            )
+                        }
+                        if (onDelete != null) {
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = StatusError) },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StatusError) },
+                                onClick = {
+                                    menuOpen = false
+                                    onDelete()
+                                }
+                            )
                         }
                     }
 

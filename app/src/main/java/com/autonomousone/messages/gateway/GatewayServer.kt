@@ -264,9 +264,37 @@ class GatewayServer(
                     handleEveCapacity(output)
                 }
 
+                // ── Scheduled sends (for external projects) ──
+                cleanPath == "/api/v1/sms/schedule" && method == "POST" -> {
+                    handleScheduleCreate(body, output)
+                }
+                cleanPath == "/api/v1/sms/schedule" && method == "GET" -> {
+                    val entries = GatewayScheduler.list(context)
+                    val arr = org.json.JSONArray()
+                    entries.forEach { e ->
+                        arr.put(org.json.JSONObject()
+                            .put("scheduleId", e.scheduleId)
+                            .put("phone", e.phone)
+                            .put("message", e.message.take(80))
+                            .put("sendAt", e.sendAt)
+                            .put("status", e.status)
+                            .put("sentAt", if (e.sentAt > 0) e.sentAt else org.json.JSONObject.NULL))
+                    }
+                    sendResponse(output, 200, JSONObject().put("schedules", arr))
+                }
+                cleanPath.startsWith("/api/v1/sms/schedule/") -> {
+                    val scheduleId = cleanPath.removePrefix("/api/v1/sms/schedule/")
+                    when (method) {
+                        "GET" -> handleScheduleStatus(scheduleId, output)
+                        "DELETE" -> handleScheduleCancel(scheduleId, output)
+                        else -> sendResponse(output, 405, JSONObject().put("error", "method_not_allowed"))
+                    }
+                }
+
                 cleanPath == "/api/v1/sms/send" && method == "POST" -> {
                     val json = JSONObject(body)
-                    val phone = json.optString("phone", "").trim()
+                    val phone = com.autonomousone.messages.utils.DigitNormalizer
+                        .toAsciiDigits(json.optString("phone", "").trim())
                     val message = json.optString("message", "").trim()
 
                     // Optional per-call overrides (absent → user's Messaging prefs).
@@ -465,7 +493,8 @@ class GatewayServer(
             }
 
             val json = JSONObject(body)
-            val to = json.optString("to", "").trim()
+            val to = com.autonomousone.messages.utils.DigitNormalizer
+                .toAsciiDigits(json.optString("to", "").trim())
             val text = json.optString("text", "").trim()
             val priority = json.optString("priority", "").trim().lowercase()
 
@@ -502,6 +531,81 @@ class GatewayServer(
             .filter { (EveSmsQueue.PRIORITY_LEVELS[it.key] ?: 99) <= record.priorityLevel }
             .sumOf { it.value }
             .coerceAtLeast(1)
+    }
+
+    // ── Scheduled send handlers ──────────────────────────────────────────────
+
+    /**
+     * POST /api/v1/sms/schedule
+     * Body: { phone, message, sendAt?: epoch-ms, delaySeconds?, scheduleId? (client idempotency) }
+     */
+    private fun handleScheduleCreate(body: String, output: java.io.OutputStream) {
+        try {
+            val json = JSONObject(body)
+            val rawPhone = json.optString("phone", "").trim()
+            val message = json.optString("message", "")
+            val phone = com.autonomousone.messages.utils.DigitNormalizer.toAsciiDigits(rawPhone)
+
+            val sendAt = when {
+                json.has("sendAt") -> json.optLong("sendAt", 0L)
+                json.has("delaySeconds") -> System.currentTimeMillis() +
+                        json.optLong("delaySeconds", 0L) * 1000L
+                else -> 0L
+            }
+
+            when {
+                phone.filter { it.isDigit() }.length < 10 || message.isBlank() ->
+                    sendResponse(output, 400, JSONObject().put("error", "phone and message required"))
+                sendAt <= System.currentTimeMillis() - 5_000L ->
+                    sendResponse(output, 400, JSONObject().put("error", "sendAt must be in the future"))
+                else -> {
+                    val (entry, created) = GatewayScheduler.schedule(context, phone, message, sendAt)
+                    onRequestLog?.invoke("⏰ POST /api/v1/sms/schedule -> $phone @ $sendAt (${entry.status})")
+                    sendResponse(
+                        output, if (created) 202 else 200,
+                        JSONObject()
+                            .put("scheduleId", entry.scheduleId)
+                            .put("status", entry.status)
+                            .put("sendAt", entry.sendAt)
+                            .put("created", created)
+                    )
+                }
+            }
+        } catch (e: IllegalStateException) {
+            sendResponse(output, 429, JSONObject().put("error", e.message ?: "too_many_pending"))
+        } catch (e: Exception) {
+            Log.e(TAG, "schedule create failed", e)
+            sendResponse(output, 400, JSONObject().put("error", "invalid_request"))
+        }
+    }
+
+    private fun handleScheduleStatus(scheduleId: String, output: java.io.OutputStream) {
+        val e = GatewayScheduler.get(context, scheduleId)
+        if (e == null) {
+            sendResponse(output, 404, JSONObject().put("error", "not_found"))
+            return
+        }
+        sendResponse(
+            output, 200,
+            JSONObject()
+                .put("scheduleId", e.scheduleId)
+                .put("phone", e.phone)
+                .put("message", e.message.take(80))
+                .put("sendAt", e.sendAt)
+                .put("status", e.status)
+                .put("sentAt", if (e.sentAt > 0) e.sentAt else JSONObject.NULL)
+                .put("failedReason", e.failedReason ?: JSONObject.NULL)
+        )
+    }
+
+    private fun handleScheduleCancel(scheduleId: String, output: java.io.OutputStream) {
+        val ok = GatewayScheduler.cancel(context, scheduleId)
+        onRequestLog?.invoke("✖ DELETE /api/v1/sms/schedule/$scheduleId -> ${if (ok) "cancelled" else "not_cancellable"}")
+        if (ok) {
+            sendResponse(output, 200, JSONObject().put("ok", true))
+        } else {
+            sendResponse(output, 409, JSONObject().put("ok", false).put("reason", "not_cancellable_or_unknown"))
+        }
     }
 
     private fun handleEveStatus(requestId: String, output: java.io.OutputStream) {

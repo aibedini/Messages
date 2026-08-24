@@ -94,6 +94,16 @@ fun HomeScreen(
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }
 
+    // Global (all-messages) search: debounce 400 ms after typing stops.
+    LaunchedEffect(search) {
+        if (search.trim().length >= 2 && selectedFilter == ConversationFilter.All) {
+            kotlinx.coroutines.delay(400)
+            viewModel.searchAllMessages(search)
+        } else {
+            viewModel.clearGlobalSearch()
+        }
+    }
+
     val listState = rememberLazyListState()
     val isExpanded by remember {
         derivedStateOf { listState.firstVisibleItemIndex == 0 }
@@ -287,7 +297,8 @@ fun HomeScreen(
 
             val isInArchivedView = selectedFilter == ConversationFilter.Archived
 
-            if (viewModel.isLoading && filteredList.isEmpty()) {
+            // Skeleton ONLY when there is no cache to show at all (cold start).
+            if (viewModel.isLoading && smsList.isEmpty() && archivedList.isEmpty()) {
                 ConversationListSkeleton(
                     status = viewModel.loadStatus,
                     modifier = Modifier.weight(1f)
@@ -380,17 +391,58 @@ fun HomeScreen(
                         }
                     }
 
+                    // Global search results: messages deep inside conversations
+                    // that don't match by name/snippet (Google Messages-style
+                    // "search inside all messages").
+                    if (viewModel.globalResults.isNotEmpty()) {
+                        item(key = "global_header") {
+                            Text(
+                                text = "In all message texts",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(
+                            items = viewModel.globalResults,
+                            key = { "global_${it.sms.id}" }
+                        ) { hit ->
+                            SmsItem(
+                                sms = hit.sms.copy(
+                                    message = "🔎 ${hit.sms.message.take(80)}"
+                                ),
+                                onClick = {
+                                    navController.navigate(
+                                        Screen.Conversation.createRoute(hit.sms.threadId, hit.sms.sender)
+                                    )
+                                }
+                            )
+                        }
+                    }
+
                     items(
                         items = filteredList,
                         key = { it.id }
                     ) { sms ->
                         SmsItem(
                             sms = sms,
+                            isPinned = sms.threadId in viewModel.pinnedIds,
                             isArchived = isInArchivedView,
                             onClick = {
                                 navController.navigate(
                                     Screen.Conversation.createRoute(sms.threadId, sms.sender)
                                 )
+                            },
+                            onPin = { viewModel.togglePin(sms) },
+                            onBlock = {
+                                viewModel.blockConversation(sms)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "Number blocked",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
                             },
                             onArchive = {
                                 if (isInArchivedView) {

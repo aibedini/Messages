@@ -799,9 +799,47 @@ class SmsRepository(
     /**
      * Observe SMS database changes
      */
+    private var registeredObserver: ContentObserver? = null
+
+    /**
+     * Cheap change-detection: does any SMS/MMS row exist with a date newer
+     * than [newestKnownDateMillis]? One indexed single-row query instead of a
+     * full conversation scan — used to decide whether a resume needs a sync.
+     */
+    fun hasProviderChangedSince(newestKnownDateMillis: Long): Boolean {
+        if (newestKnownDateMillis <= 0L) return true
+        return try {
+            // Any SMS newer than what we know?
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID),
+                "${Telephony.Sms.DATE} > ?",
+                arrayOf(newestKnownDateMillis.toString()),
+                "LIMIT 1"
+            )?.use { if (it.moveToFirst()) return true }
+            // Any MMS newer? (MMS dates are seconds)
+            context.contentResolver.query(
+                Uri.parse("content://mms"),
+                arrayOf(Telephony.Mms._ID),
+                "${Telephony.Mms.DATE} > ?",
+                arrayOf((newestKnownDateMillis / 1000L).toString()),
+                "LIMIT 1"
+            )?.use { if (it.moveToFirst()) return true }
+            false
+        } catch (_: Exception) {
+            true // be safe: assume changed when the check itself fails
+        }
+    }
+
+    /** Nudges the ContentObserver after bulk external writes (e.g. restore). */
+    fun notifyExternalChange() {
+        registeredObserver?.dispatchChange(false, null)
+    }
+
     fun registerObserver(
         observer: ContentObserver
     ) {
+        registeredObserver = observer
         context.contentResolver.registerContentObserver(
             Telephony.Sms.CONTENT_URI,
             true,
@@ -825,6 +863,7 @@ class SmsRepository(
     fun unregisterObserver(
         observer: ContentObserver
     ) {
+        if (registeredObserver === observer) registeredObserver = null
         context.contentResolver.unregisterContentObserver(
             observer
         )

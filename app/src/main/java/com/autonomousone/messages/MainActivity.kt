@@ -9,11 +9,11 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.provider.Telephony
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -29,27 +29,40 @@ import com.autonomousone.messages.onboarding.OnboardingPreferences
 import com.autonomousone.messages.onboarding.OnboardingState
 import com.autonomousone.messages.onboarding.OnboardingStep
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.ui.screens.LockScreen
 import com.autonomousone.messages.ui.screens.OnboardingScreen
 import com.autonomousone.messages.ui.theme.MessagesTheme
 import com.autonomousone.messages.ui.theme.ThemeController
+import com.autonomousone.messages.utils.AppLockPreferences
 import com.autonomousone.messages.utils.NotificationHelper
+import com.autonomousone.messages.utils.isBiometricAvailable
+import com.autonomousone.messages.utils.showBiometricPrompt
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val isDefaultAppState = mutableStateOf(false)
     private val hasSmsPermissionsState = mutableStateOf(false)
     private val hasContactsPermissionState = mutableStateOf(false)
     private val hasNotificationsPermissionState = mutableStateOf(false)
     private val disclosureAcceptedState = mutableStateOf(false)
     private val optionalStepCompletedState = mutableStateOf(false)
+    private val isLockedState = mutableStateOf(false)
     private lateinit var onboardingPreferences: OnboardingPreferences
+    private lateinit var appLockPreferences: AppLockPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationHelper.createNotificationChannel(this)
         onboardingPreferences = OnboardingPreferences(this)
+        appLockPreferences = AppLockPreferences(this)
         ThemeController.init(this)
         refreshSystemState()
+
+        // App lock gate: lock whenever we come back from the background while
+        // enabled. Onboarding still wins (nothing to protect yet).
+        if (appLockPreferences.isEnabled && isBiometricAvailable(this)) {
+            isLockedState.value = true
+        }
 
         setContent {
             MessagesTheme {
@@ -60,6 +73,7 @@ class MainActivity : ComponentActivity() {
                     val hasNotificationsPermission by hasNotificationsPermissionState
                     val disclosureAccepted by disclosureAcceptedState
                     val optionalStepCompleted by optionalStepCompletedState
+                    val isLocked by isLockedState
 
                     val defaultAppLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
@@ -84,7 +98,15 @@ class MainActivity : ComponentActivity() {
                         optionalStepCompleted,
                     )
 
-                    if (step != OnboardingStep.COMPLETE) {
+                    if (isLocked) {
+                        LockScreen(
+                            onUnlock = { isLockedState.value = false },
+                            onDisableLock = {
+                                appLockPreferences.isEnabled = false
+                                isLockedState.value = false
+                            }
+                        )
+                    } else if (step != OnboardingStep.COMPLETE) {
                         OnboardingScreen(
                             state = OnboardingState(
                                 step = step,
@@ -163,9 +185,27 @@ class MainActivity : ComponentActivity() {
         SmsEventBus.notifyResume()
     }
 
+    private var wasPausedForLock = false
+
     override fun onPause() {
         super.onPause()
         SmsEventBus.isAppInForeground = false
+        // Remember that we left the foreground so the next onStart re-locks.
+        wasPausedForLock = true
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Re-lock on every return to the foreground while the lock is enabled
+        // (rotation recreates the activity without a prior onPause → no nag).
+        if (wasPausedForLock &&
+            ::appLockPreferences.isInitialized &&
+            appLockPreferences.isEnabled &&
+            isBiometricAvailable(this)
+        ) {
+            isLockedState.value = true
+            wasPausedForLock = false
+        }
     }
 
     private fun refreshSystemState() {
@@ -213,6 +253,15 @@ class MainActivity : ComponentActivity() {
 
     private fun openPrivacyPolicy() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+    }
+
+    /** Fires the system biometric prompt; [onUnlocked] runs on success. */
+    fun requestUnlock(onUnlocked: () -> Unit, onFailed: () -> Unit = {}) {
+        showBiometricPrompt(
+            this,
+            onSuccess = onUnlocked,
+            onError = onFailed
+        )
     }
 
     companion object {
