@@ -108,13 +108,18 @@ fun SmsItem(
     val isStartToEnd = dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
     val isEndToStart = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
 
+    // How far past the trigger threshold the drag currently is (0f..1f) —
+    // drives the "release to archive" confirmation state.
+    val progress = dismissState.progress
+    val pastThreshold = progress >= 0.85f
+
     // Background colour for each direction
     val archiveColor = MaterialTheme.colorScheme.secondary
     val deleteColor = StatusError
 
     val bgColor by animateColorAsState(
         targetValue = when {
-            isStartToEnd -> archiveColor
+            isStartToEnd -> if (pastThreshold) archiveColor else archiveColor.copy(alpha = 0.55f)
             isEndToStart -> deleteColor
             else -> Color.Transparent
         },
@@ -157,9 +162,14 @@ fun SmsItem(
                                 modifier = Modifier.size(22.dp)
                             )
                             Text(
-                                text = if (isArchived) "Unarchive" else "Archive",
+                                // Confirmation copy: dim while dragging, bold at release point.
+                                text = when {
+                                    isArchived -> "Release to Unarchive"
+                                    pastThreshold -> "Release to Archive"
+                                    else -> "Archive"
+                                },
                                 color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = if (pastThreshold || isArchived) FontWeight.Bold else FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
                         }
