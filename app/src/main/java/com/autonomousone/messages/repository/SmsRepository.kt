@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.ContactRepository
 
 /**
  * Progress emitted while a bulk SMS/MMS read is in flight.
@@ -627,8 +628,13 @@ class SmsRepository(
                 val other = mutableMapOf<Long, String>()
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(msgIdIndex)
-                    val addr = cursor.getString(addrIndex)?.trim() ?: ""
+                    var addr = cursor.getString(addrIndex)?.trim() ?: ""
                     if (addr.isBlank()) continue
+                    // Skip the placeholder token some stacks store for the FROM
+                    // address, and strip stray '+' separators that make headers
+                    // render like "+98+991+716+6…".
+                    if (addr.equals("insert-address-token", ignoreCase = true)) continue
+                    addr = ContactRepository.normalizePhone(addr)
                     when (cursor.getInt(typeIndex)) {
                         137 -> if (!from.containsKey(id)) from[id] = addr
                         151 -> if (!to.containsKey(id)) to[id] = addr

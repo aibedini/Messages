@@ -277,7 +277,11 @@ class ConversationViewModel(
         val trimmedMsg = message.trim()
         if (trimmedMsg.isBlank()) return
 
-        val targetPhone = if (phone.isNotBlank()) phone else currentPhone
+        // Strip spaces/dashes the user may have pasted ("+98 991 716 6454")
+        // so telephony always receives a clean dialable number.
+        val targetPhone = ContactRepository.normalizePhone(
+            if (phone.isNotBlank()) phone else currentPhone
+        )
         if (targetPhone.isBlank()) return
 
         currentPhone = targetPhone
@@ -332,7 +336,9 @@ class ConversationViewModel(
 
     /** Splits "a, b; c" recipient strings coming from group selection UI. */
     private fun splitRecipients(raw: String): List<String> =
-        raw.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
+        raw.split(',', ';')
+            .map { ContactRepository.normalizePhone(it.trim()) }
+            .filter { it.isNotBlank() }
 
     fun sendImageMessage(threadId: Long, phone: String, imageUri: Uri, caption: String = "") {
         val targetPhone = if (phone.isNotBlank()) phone else currentPhone
