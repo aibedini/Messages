@@ -1,24 +1,26 @@
-# Release v2.0.3 — GMweb pull bridge (no tunnel needed)
+# Release v2.0.3 — instant chat opening (stale-while-revalidate cache)
 
-## Added
+## What changed
 
-- **GMweb pull bridge**: the gateway can now work as a delivery device for a
-  [GMweb-API](https://github.com/aibedini/GMweb-API) server without any tunnel,
-  port-forward, or static IP. The phone dials OUT to the server over HTTPS and
-  long-polls `GET /gateway/pull`; each task is delivered through the existing
-  EveSmsQueue (priority, persistence, native SIM send) and the outcome is
-  reported back with `POST /gateway/ack`.
-- New "GMweb pull bridge" card in the Gateway screen: paste the server's
-  `https://` URL, Save to enable, Disable to turn off. HTTP URLs are rejected
-  so the API key never travels in plaintext.
-- `OutboxPoller`: bounded coroutine loop with 5s error backoff; long-poll hold
-  is 25s so an idle phone makes ~2 requests/minute. A lost ack never re-sends
-  locally — the server side owns retry semantics.
+Opening any conversation showed a "Reading messages…" spinner while the
+provider was queried. For fast typing/sending flows this felt sluggish.
 
-## Notes
+### The engineering fix — the same pattern Google Messages uses
 
-- The bridge is independent of the cloud backend (heartbeat/registration keep
-  working separately) and requires gateway consent + enabled gateway, like all
-  other transmission features.
+**Stale-while-revalidate (SWR) thread cache:**
+
+1. **First paint from memory** — `ThreadMessageCache` (LRU, last 24 threads,
+   up to 400 messages each) returns the thread's last-known messages in
+   ~0 ms. The chat renders instantly; no spinner.
+2. **Revalidate in background** — if anything changed since the cache was
+   written (generation counter bumped by any SMS/MMS provider change, any
+   send, or any read-state change), a fresh query runs and atomically swaps
+   in. If nothing changed (the common case), the load finishes right there.
+3. **Conservative invalidation** — generation bumps on: ContentObserver
+   events, our own sends (optimistic path), mark-as-read, restores. Stale
+   data is never shown twice.
+
+Cold start (no cache yet) still shows progress once; every subsequent open
+of that conversation is instant.
 
 **Full Changelog**: https://github.com/aibedini/Messages/compare/v2.0.2...v2.0.3

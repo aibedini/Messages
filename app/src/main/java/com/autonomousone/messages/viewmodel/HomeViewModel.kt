@@ -18,6 +18,7 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.repository.ThreadMessageCache
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -61,7 +62,10 @@ class HomeViewModel(
     var globalResults by mutableStateOf<List<GlobalHit>>(emptyList())
         private set
 
-    private val observer = SmsContentObserver { loadSms() }
+    private val observer = SmsContentObserver {
+        ThreadMessageCache.generation++ // provider changed → cached threads stale
+        loadSms()
+    }
 
     /** True while the conversation list is being refreshed (drives the loading spinner). */
     var isLoading by mutableStateOf(false)

@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.R
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
@@ -65,7 +66,31 @@ class ConversationViewModel(
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            isLoading = true
+            // ── Stale-while-revalidate: paint the cached thread INSTANTLY
+            // (Google Messages-style), then refresh from the provider.
+            val cache = ThreadMessageCache
+            val cacheKeyThread = if (threadId != 0L) threadId else 0L
+            val stale = if (cacheKeyThread != 0L || phone.isNotBlank())
+                cache.getStale(cacheKeyThread, phone.ifBlank { currentPhone }) else null
+
+            if (stale != null && stale.first.isNotEmpty()) {
+                val cachedList = stale.first.map { it.copy(unread = false) }
+                withContext(Dispatchers.Main) {
+                    messages.clear()
+                    messages.addAll(cachedList)
+                    messages.addAll(mergeOptimistic(cachedList))
+                    isLoading = false
+                    loadStatus = null
+                }
+                // Cached copy was already fresh → nothing more to do.
+                if (!stale.second) {
+                    markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
+                    return@launch
+                }
+            } else {
+                withContext(Dispatchers.Main) { isLoading = true }
+            }
+
             try {
                 val progressListener = ProgressListener { p ->
                     val appContext = getApplication<Application>()
@@ -113,6 +138,8 @@ class ConversationViewModel(
                         SmsEventBus.emitThreadRead(currentThreadId, currentPhone)
                     }
                 }
+                // Store for instant re-open.
+                ThreadMessageCache.put(targetThreadId, targetPhone, loadedMessages)
             } finally {
                 withContext(Dispatchers.Main) {
                     isLoading = false
@@ -127,6 +154,21 @@ class ConversationViewModel(
         SmsEventBus.activeConversationPhone = phone
         if (phone.isNotBlank()) {
             loadConversation(currentThreadId, phone)
+        }
+    }
+
+    /** Cache-key helpers for the stale-while-revalidate path. */
+    private fun targetOf(threadKey: Long, phone: String): Long =
+        if (threadKey != 0L) threadKey else currentThreadId
+
+    private fun phoneIfBlank(phone: String): String =
+        if (phone.isNotBlank()) phone else currentPhone
+
+    private fun markReadAndNotify(threadId: Long, phone: String) {
+        if (threadId != 0L || phone.isNotBlank()) {
+            ThreadMessageCache.generation++ // read state changed
+            repository.markThreadAsRead(threadId, phone)
+            SmsEventBus.emitThreadRead(threadId, phone)
         }
     }
 
@@ -249,6 +291,7 @@ class ConversationViewModel(
         )
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)
+        ThreadMessageCache.generation++ // our own write invalidates cached pages
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
