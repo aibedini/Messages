@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
@@ -53,6 +54,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -122,7 +125,10 @@ fun ConversationScreen(
 ) {
     val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
-    val draftRepo = remember { com.autonomousone.messages.repository.DraftRepository(context) }
+    // Process-wide reactive draft store (single-activity app: chat → home
+    // never passes through Activity.onResume, so a shared StateFlow is the
+    // only reliable way for the list to see drafts instantly).
+    val draftRepo = remember { com.autonomousone.messages.repository.DraftRepository.get(context) }
     // Stable draft key: thread when known, otherwise the normalized recipient.
     val draftKey = remember(threadId, phone) {
         com.autonomousone.messages.repository.DraftRepository.keyFor(
@@ -576,6 +582,69 @@ fun ConversationScreen(
                 }
             }
 
+            // ── SIM selector chip (only when 2+ SIMs are active) ────────────
+            val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
+            val activeSims = remember { simManager.getActiveSims() }
+            val messagingPrefs = remember { com.autonomousone.messages.messaging.MessagingPreferences(context) }
+            var selectedSubId by remember {
+                mutableStateOf(
+                    if (messagingPrefs.sendSubscriptionId ==
+                        com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
+                    ) null else messagingPrefs.sendSubscriptionId
+                )
+            }
+            if (activeSims.size >= 2) {
+                val current = activeSims.firstOrNull { it.subscriptionId == selectedSubId }
+                var simMenuOpen by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.AssistChip(
+                        onClick = { simMenuOpen = true },
+                        label = {
+                            Text(
+                                text = current?.let { "SIM ${it.slotIndex + 1}" } ?: "Default SIM",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = "Switch SIM",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                    DropdownMenu(expanded = simMenuOpen, onDismissRequest = { simMenuOpen = false }) {
+                        // "Default" = follow the system/user global preference.
+                        DropdownMenuItem(
+                            text = { Text("Default (system)") },
+                            onClick = {
+                                selectedSubId = null
+                                messagingPrefs.sendSubscriptionId =
+                                    com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
+                                simMenuOpen = false
+                            }
+                        )
+                        activeSims.forEach { sim ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "${simManager.labelFor(sim)}" +
+                                                if (sim.number.isNotBlank()) " · ${sim.number}" else ""
+                                    )
+                                },
+                                onClick = {
+                                    selectedSubId = sim.subscriptionId
+                                    // Persist so gateway + future sends use the same line.
+                                    messagingPrefs.sendSubscriptionId = sim.subscriptionId
+                                    simMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             // ── Message Input Bar ───────────────────────────────────────────
             // Standards-based segment counter. UX:
             //  1 segment  → "142 characters left"
@@ -717,7 +786,8 @@ fun ConversationScreen(
                                 viewModel.sendMessage(
                                     threadId = threadId,
                                     phone = destination,
-                                    message = msgToSend
+                                    message = msgToSend,
+                                    subscriptionOverride = selectedSubId
                                 )
                             }
                         },

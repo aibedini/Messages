@@ -1,5 +1,6 @@
 package com.autonomousone.messages.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,7 +104,12 @@ fun QuickRepliesScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(items, key = { it.shortcut }) { reply ->
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    // Tap a card to edit it (prefilled dialog).
+                                    editing = reply
+                                },
                             shape = MaterialTheme.shapes.large,
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
@@ -125,6 +132,13 @@ fun QuickRepliesScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 2
+                                    )
+                                }
+                                IconButton(onClick = { editing = reply }) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Edit",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 IconButton(onClick = {
@@ -152,6 +166,22 @@ fun QuickRepliesScreen(
                 prefs.upsert(reply)
                 items = prefs.getAll()
                 showAddDialog = false
+            }
+        )
+    }
+
+    editing?.let { original ->
+        EditQuickReplyDialog(
+            original = original,
+            onDismiss = { editing = null },
+            onSave = { updated ->
+                // Shortcut renamed → drop the old entry, then upsert.
+                if (updated.shortcut != original.shortcut) {
+                    prefs.remove(original.shortcut)
+                }
+                prefs.upsert(updated)
+                items = prefs.getAll()
+                editing = null
             }
         )
     }
@@ -189,6 +219,50 @@ private fun AddQuickReplyDialog(
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = { onSave(QuickReply(shortcut, text)) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun EditQuickReplyDialog(
+    original: QuickReply,
+    onDismiss: () -> Unit,
+    onSave: (QuickReply) -> Unit
+) {
+    var shortcut by remember { mutableStateOf(original.shortcut) }
+    var text by remember { mutableStateOf(original.text) }
+    val valid = shortcut.trim().length >= 2 && text.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit quick reply") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = shortcut,
+                    onValueChange = { shortcut = it },
+                    label = { Text("Shortcut (e.g. /c1)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Message text") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = {
+                onSave(original.copy(shortcut = shortcut.trim(), text = text.trim()))
+            }) {
                 Text("Save")
             }
         },

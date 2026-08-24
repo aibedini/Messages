@@ -18,6 +18,7 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -77,10 +78,10 @@ class HomeViewModel(
         private set
 
     /** conversation key → draft text (non-empty only). Drives "Draft:" rows. */
-    var drafts by mutableStateOf<Map<String, String>>(emptyMap())
-        private set
+    val drafts: StateFlow<Map<String, String>> =
+        com.autonomousone.messages.repository.DraftRepository.get(application).drafts
 
-    private val draftRepository = com.autonomousone.messages.repository.DraftRepository(application)
+    private val draftRepository get() = com.autonomousone.messages.repository.DraftRepository.get(getApplication())
 
     /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
     var loadStatus by mutableStateOf<String?>(null)
@@ -126,12 +127,6 @@ class HomeViewModel(
         archivedIds.addAll(archiveRepository.getArchivedIds())
         pinnedIds.clear()
         pinnedIds.addAll(pinRepository.getPinnedIds())
-        refreshDrafts()
-    }
-
-    /** Reloads the draft map — called on resume so freshly-left chats show up. */
-    fun refreshDrafts() {
-        drafts = draftRepository.all()
     }
 
     fun loadSms() {
@@ -152,8 +147,20 @@ class HomeViewModel(
      * are still empty (no cache to render yet).
      */
     private suspend fun performLoad() {
-        // Skeleton only when there is nothing to render yet (true cold start);
-        // with a warm cache the swap below is invisible.
+        val cache = com.autonomousone.messages.repository.ConversationCache.get(getApplication())
+
+        // ── Instant hydration from the persistent cache (Google Messages-style):
+        // paint the last known list immediately, no skeleton, no "syncing".
+        if (!hasLoadedOnce) {
+            val cached = withContext(Dispatchers.IO) { cache.load() }
+            if (cached.threads.isNotEmpty()) {
+                replaceConversations(cached.threads, archiveRepository.getArchivedIds(), atomic = false)
+                newestKnownDate = cached.threads.maxOfOrNull { it.date } ?: 0L
+                hasLoadedOnce = true
+            }
+        }
+
+        // Skeleton only when there is truly nothing to render (first-ever run).
         if (!hasLoadedOnce) {
             loadingShowJob?.cancel()
             loadingShowJob = viewModelScope.launch {
@@ -199,6 +206,8 @@ class HomeViewModel(
             replaceConversations(freshList, archived, atomic = true)
             newestKnownDate = freshList.maxOfOrNull { it.date } ?: 0L
             hasLoadedOnce = true
+            // Persist for the next cold start (write-behind, off the UI path).
+            withContext(Dispatchers.IO) { cache.save(freshList) }
         } catch (error: Exception) {
             Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
         } finally {
@@ -509,9 +518,8 @@ class HomeViewModel(
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
-                // Drafts may have been written by a conversation screen that
-                // just closed — always re-read them (cheap JSON parse).
-                refreshDrafts()
+                // Drafts are now a shared StateFlow — the list sees changes
+                // instantly without any refresh signal at all.
                 if (!hasLoadedOnce) {
                     loadSms()
                 } else if (repository.hasProviderChangedSince(newestKnownDate)) {

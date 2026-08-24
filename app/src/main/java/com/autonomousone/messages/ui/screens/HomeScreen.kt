@@ -50,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,10 @@ fun HomeScreen(
 
     val smsList = viewModel.conversations
     val archivedList = viewModel.archivedConversations
+
+    // Live drafts (shared StateFlow) — the list updates the moment a chat
+    // screen saves a draft, no refresh signal needed.
+    val draftMap by viewModel.drafts.collectAsState()
 
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -431,7 +436,7 @@ fun HomeScreen(
                             sms = sms,
                             isPinned = sms.threadId in viewModel.pinnedIds,
                             isArchived = isInArchivedView,
-                            draftText = viewModel.drafts[draftKey].orEmpty(),
+                            draftText = draftMap[draftKey].orEmpty(),
                             // Tiny "you" under the date: this conversation's
                             // latest message was sent by the user (type 2).
                             showYouMarker = sms.type == 2,

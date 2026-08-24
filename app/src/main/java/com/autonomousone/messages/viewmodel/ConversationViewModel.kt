@@ -205,6 +205,14 @@ class ConversationViewModel(
     }
 
     fun sendMessage(threadId: Long, phone: String, message: String) {
+        sendMessage(threadId, phone, message, subscriptionOverride = null)
+    }
+
+    /**
+     * Sends with an optional per-call SIM override (from the in-chat SIM
+     * switcher). `null` → the user's global Messaging preference applies.
+     */
+    fun sendMessage(threadId: Long, phone: String, message: String, subscriptionOverride: Int?) {
         val trimmedMsg = message.trim()
         if (trimmedMsg.isBlank()) return
 
@@ -241,9 +249,13 @@ class ConversationViewModel(
                         mmsSender.sendGroupText(recipients, trimmedMsg)
                     }
                     // Group toggle off → classic behaviour: one SMS per recipient.
-                    recipients.size > 1 -> recipients.forEach { smsSender.send(it, trimmedMsg) }
+                    recipients.size > 1 -> recipients.forEach {
+                        smsSender.send(it, trimmedMsg, subscriptionOverride, null)
+                    }
                     else -> {
-                        val persistedId = smsSender.send(recipients.first(), trimmedMsg)
+                        val persistedId = smsSender.send(
+                            recipients.first(), trimmedMsg, subscriptionOverride, null
+                        )
                         persistedSentIds.add(persistedId)
                     }
                 }
