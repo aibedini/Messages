@@ -7,6 +7,9 @@ pluginManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
+        // Central first: mirrors below are last-resort fallbacks and some
+        // (e.g. aliyun) occasionally return 5xx, which must not break CI.
+        mavenCentral()
         // Fallback for networks where dl.google.com is unavailable. Keep the
         // mirror scoped to Google's Android artifacts only.
         maven("https://maven.aliyun.com/repository/google") {
@@ -16,7 +19,6 @@ pluginManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
-        mavenCentral()
         gradlePluginPortal()
     }
 }
@@ -27,6 +29,7 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        mavenCentral()
         maven("https://maven.aliyun.com/repository/google") {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -34,7 +37,6 @@ dependencyResolutionManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
-        mavenCentral()
     }
 }
 
