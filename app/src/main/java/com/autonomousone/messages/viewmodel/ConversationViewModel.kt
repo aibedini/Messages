@@ -20,6 +20,7 @@ import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -113,7 +114,14 @@ class ConversationViewModel(
                     return@launch
                 }
             } else {
-                withContext(Dispatchers.Main) { isLoading = true }
+                // No cache: only show a spinner if the (windowed, ≤80 row) read
+                // actually takes long enough for a human to notice. Below that
+                // the screen goes straight from nothing to messages.
+                val spinnerJob = launch {
+                    delay(120)
+                    withContext(Dispatchers.Main) { isLoading = true }
+                }
+                spinnerGuard = spinnerJob
             }
 
             try {
@@ -168,6 +176,8 @@ class ConversationViewModel(
                 // Store for instant re-open.
                 ThreadMessageCache.put(targetThreadId, targetPhone, loadedMessages)
             } finally {
+                spinnerGuard?.cancel()
+                spinnerGuard = null
                 withContext(Dispatchers.Main) {
                     isLoading = false
                     loadStatus = null
@@ -175,6 +185,9 @@ class ConversationViewModel(
             }
         }
     }
+
+    /** Cancels the delayed "show spinner" job when the load beat it. */
+    private var spinnerGuard: kotlinx.coroutines.Job? = null
 
     fun setPhone(phone: String) {
         currentPhone = phone
@@ -224,6 +237,9 @@ class ConversationViewModel(
                     if (!isDuplicate) {
                         val readIncoming = incomingSms.copy(unread = false)
                         messages.add(readIncoming)
+                        // Mirror into the instant-open cache so leaving and
+                        // re-entering shows this message with no reload.
+                        ThreadMessageCache.append(currentThreadId, currentPhone, readIncoming)
                         viewModelScope.launch(Dispatchers.IO) {
                             repository.markThreadAsRead(currentThreadId, currentPhone)
                         }
@@ -245,45 +261,64 @@ class ConversationViewModel(
     }
 
     fun refresh() {
-        if (isRefreshing) return
+        // Re-entrant: a provider burst (multipart SMS, MMS parts) must never be
+        // swallowed. If a refresh is already running we mark it dirty and run
+        // exactly one more pass when it finishes — no dropped final update.
+        if (isRefreshing) {
+            refreshRequestedAgain = true
+            return
+        }
         isRefreshing = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // ── MERGE-based refresh (never replaces the visible window):
-                // 1. cheap tail query for rows newer than the newest we show;
-                // 2. fold them into the list with ThreadMerge (dedup by id /
-                //    body+time, optimistic rows collapse into confirmed ones).
-                // History already on screen NEVER disappears or changes shape,
-                // so open/close cycles stop showing a different set of messages.
-                val newestShown = messages.maxOfOrNull { it.date } ?: 0L
-
-                val tail = when {
-                    currentThreadId != 0L && pager != null ->
-                        pager!!.loadNewerSince(newestShown)
-                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(
-                        currentPhone, threadIdHint = currentThreadId
-                    )
-                    currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
-                    else -> emptyList()
-                }
-
-                if (currentThreadId != 0L || currentPhone.isNotBlank()) {
-                    repository.markThreadAsRead(currentThreadId, currentPhone)
-                }
-
-                withContext(Dispatchers.Main) {
-                    val merged = com.autonomousone.messages.repository.ThreadMerge.mergeTail(
-                        messages.toList(), tail.map { it.copy(unread = false) }
-                    )
-                    messages.clear()
-                    messages.addAll(merged)
-                    if (currentThreadId == 0L && messages.isNotEmpty()) {
-                        currentThreadId = messages.last().threadId
-                    }
-                }
+                do {
+                    refreshRequestedAgain = false
+                    refreshOnce()
+                } while (refreshRequestedAgain)
             } finally {
                 withContext(Dispatchers.Main) { isRefreshing = false }
             }
+        }
+    }
+
+    @Volatile
+    private var refreshRequestedAgain = false
+
+    /** One merge-based reconcile pass. */
+    private suspend fun refreshOnce() {
+        // ── MERGE-based refresh (never replaces the visible window):
+        // 1. cheap tail query for rows newer than the newest we show;
+        // 2. fold them into the list with ThreadMerge (dedup by id / body+time,
+        //    optimistic rows collapse into confirmed ones).
+        // History already on screen NEVER disappears or changes shape.
+        val newestShown = messages.maxOfOrNull { it.date } ?: 0L
+
+        val tail = when {
+            currentThreadId != 0L && pager != null ->
+                pager!!.loadNewerSince(newestShown)
+            currentPhone.isNotBlank() -> repository.getMessagesByPhone(
+                currentPhone, threadIdHint = currentThreadId
+            )
+            currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
+            else -> emptyList()
+        }
+
+        if (currentThreadId != 0L || currentPhone.isNotBlank()) {
+            repository.markThreadAsRead(currentThreadId, currentPhone)
+        }
+
+        withContext(Dispatchers.Main) {
+            val merged = com.autonomousone.messages.repository.ThreadMerge.mergeTail(
+                messages.toList(), tail.map { it.copy(unread = false) }
+            )
+            messages.clear()
+            messages.addAll(merged)
+            if (currentThreadId == 0L && messages.isNotEmpty()) {
+                currentThreadId = messages.last().threadId
+            }
+            // Keep the instant-open cache in step with what is on screen, so
+            // re-entering this chat paints the SAME list with zero delay.
+            ThreadMessageCache.put(currentThreadId, currentPhone, merged)
         }
     }
 

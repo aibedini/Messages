@@ -97,6 +97,10 @@ class SmsRepository(
     }
 
     private fun loadCanonicalAddresses(): Map<Long, String> {
+        // Cached process-wide: this table changes only when a NEW recipient is
+        // seen for the first time, but the query used to run on EVERY list
+        // refresh (i.e. on every incoming SMS) and dominated the refresh cost.
+        AddressCache.canonical?.let { return it }
         val result = mutableMapOf<Long, String>()
         try {
             context.contentResolver.query(
@@ -115,11 +119,16 @@ class SmsRepository(
         } catch (error: Exception) {
             Log.w("SMS_DEBUG", "Canonical addresses unavailable", error)
         }
+        AddressCache.canonical = result
         return result
     }
 
     private fun resolveSmsAddressForThread(threadId: Long): String {
-        return try {
+        // Per-thread address is stable for the life of the thread; without this
+        // cache a list refresh fired one extra query PER thread with blank
+        // recipient ids, which is what made refreshes feel like "hangs".
+        AddressCache.perThread[threadId]?.let { return it }
+        val resolved = try {
             context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 arrayOf(Telephony.Sms.ADDRESS),
@@ -132,6 +141,29 @@ class SmsRepository(
         } catch (error: Exception) {
             ""
         }
+        if (resolved.isNotBlank()) AddressCache.perThread[threadId] = resolved
+        return resolved
+    }
+
+    /**
+     * Process-wide address caches for the conversation-list fast path.
+     * Cleared by [invalidateAddressCaches] when the provider gains rows that
+     * could introduce a brand-new recipient.
+     */
+    private object AddressCache {
+        @Volatile
+        var canonical: Map<Long, String>? = null
+        val perThread = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    }
+
+    /**
+     * Drops the address caches. Call when a message from a NEW recipient may
+     * have landed (incoming SMS / first send to a number), so the next list
+     * refresh re-resolves names instead of showing "Unknown".
+     */
+    fun invalidateAddressCaches() {
+        AddressCache.canonical = null
+        AddressCache.perThread.clear()
     }
 
     fun getAllSms(): List<Sms> {

@@ -105,6 +105,9 @@ class SmsReceiver : BroadcastReceiver() {
 
             // Emit immediately for optimistic UI update
             SmsEventBus.emitSms(incomingSms)
+            // A brand-new sender must not render as "Unknown" on the next list
+            // refresh — drop the cached address maps so it re-resolves.
+            com.autonomousone.messages.repository.SmsRepository(context).invalidateAddressCaches()
 
             // Forward to Gateway Webhook if configured
             com.autonomousone.messages.gateway.WebhookEngine.sendIncomingSmsWebhook(context, incomingSms)
