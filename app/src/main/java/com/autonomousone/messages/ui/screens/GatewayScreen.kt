@@ -30,9 +30,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -143,7 +147,25 @@ fun GatewayScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
         ) {
-            // ── 0. Cloud Connection Card (new) ─────────────────────────────────────
+            // ── 0. Setup steps header (what is this page? what do I do?) ────
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("How this works", fontWeight = FontWeight.Bold)
+                        StepRow(step = 1, text = "Turn the gateway ON below (first time asks for privacy consent).")
+                        StepRow(step = 2, text = "Connect a server: GMweb bridge (easiest) or Cloud backend or LAN.")
+                        StepRow(step = 3, text = "Share the API key with that server so it can authenticate.")
+                    }
+                }
+            }
+
+            // ── 0. Privacy consent ──────────────────────────────────────────
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -155,12 +177,21 @@ fun GatewayScreen(
                     shape = RoundedCornerShape(22.dp),
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Gateway privacy control", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.PrivacyTip,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Step 1 · Privacy", fontWeight = FontWeight.Bold)
+                        }
                         Text(
                             if (viewModel.hasGatewayConsent)
-                                "Consent active. SMS forwarding occurs only while Gateway is enabled."
+                                "Consent active. SMS data only leaves the phone while the gateway is ON."
                             else
-                                "Gateway is off. Enabling it requires separate consent for transmitting SMS data.",
+                                "The gateway is off and nothing leaves your phone. Turning it on requires one-time privacy consent.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (viewModel.hasGatewayConsent) {
@@ -186,11 +217,15 @@ fun GatewayScreen(
                 )
             }
 
-            // ── 0b. GMweb pull bridge (outbound-only, no tunnel) ──────────────
+            // ── 2. GMweb pull bridge (Step 2 · recommended way to connect) ───
             item {
                 var editingUrl by rememberSaveable(viewModel.gmwebUrl) {
                     mutableStateOf(viewModel.gmwebUrl)
                 }
+                var editingKey by rememberSaveable(viewModel.apiKey) {
+                    mutableStateOf("")
+                }
+                var showKey by rememberSaveable { mutableStateOf(false) }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
@@ -201,35 +236,88 @@ fun GatewayScreen(
                     )
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("GMweb pull bridge", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.SwapVert,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Step 2 · Connect GMweb server", fontWeight = FontWeight.Bold)
+                        }
                         Text(
-                            "Let a GMweb-API server hand you SMS tasks over outbound HTTPS — " +
-                                "no tunnel, no static IP, survives mobile-IP changes. " +
-                                "Paste the server's https:// URL; leave empty to disable.",
+                            "Recommended: your phone dials OUT to the GMweb server over HTTPS — no tunnel, no static IP, survives mobile IP changes. The server queues SMS jobs; this phone pulls and sends them.",
                             style = MaterialTheme.typography.bodySmall
                         )
+
                         OutlinedTextField(
                             value = editingUrl,
                             onValueChange = { editingUrl = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("GMweb base URL (https://…)") },
+                            label = { Text("Server URL") },
                             placeholder = { Text("https://gmweb.example.com") },
-                            isError = editingUrl.isNotBlank() && !editingUrl.startsWith("https://")
+                            isError = editingUrl.isNotBlank() && !editingUrl.startsWith("https://"),
+                            supportingText = {
+                                if (editingUrl.isNotBlank() && !editingUrl.startsWith("https://"))
+                                    Text("Must start with https://")
+                            }
                         )
+
+                        // Shared secret: must MATCH the server's GMWEB_ANDROID_DEVICE_KEY.
+                        OutlinedTextField(
+                            value = if (showKey) editingKey else "",
+                            onValueChange = { editingKey = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Shared API key") },
+                            placeholder = { Text("Paste GMWEB_ANDROID_DEVICE_KEY from the server") },
+                            visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None
+                                else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showKey = !showKey }) {
+                                    Icon(
+                                        if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (showKey) "Hide" else "Show",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            supportingText = {
+                                Text(
+                                    if (editingKey.isBlank())
+                                        "Current key: ${viewModel.apiKey.take(7)}…${viewModel.apiKey.takeLast(4)} — the server must use the SAME value."
+                                    else "Saving will replace the phone's key with yours.",
+                                    fontSize = 11.sp
+                                )
+                            }
+                        )
+
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = { viewModel.saveGmwebUrl(editingUrl) },
-                                enabled = editingUrl.isNotBlank() || editingUrl != viewModel.gmwebUrl
+                                onClick = {
+                                    viewModel.saveGmwebUrl(editingUrl)
+                                    // Only replace the key when the user typed one.
+                                    if (editingKey.isNotBlank()) viewModel.updateApiKey(editingKey)
+                                    editingKey = ""
+                                },
+                                enabled = editingUrl.isNotBlank()
                             ) {
-                                Text("Save")
+                                Text(if (viewModel.gmwebUrl.isBlank()) "Connect" else "Update")
                             }
                             if (viewModel.gmwebUrl.isNotBlank()) {
                                 OutlinedButton(onClick = { editingUrl = ""; viewModel.saveGmwebUrl("") }) {
-                                    Text("Disable")
+                                    Text("Disconnect")
                                 }
                             }
                         }
+
+                        Text(
+                            "On the server (.env): GMWEB_ANDROID_DEVICE_KEY=<the same key> · Android device appears online within ~25s of saving.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
                     }
                 }
             }
@@ -871,6 +959,29 @@ private fun CloudConnectionCard(
                 Text("Save Secret")
             }
         }
+    }
+}
+
+/** Numbered step indicator row used by the "How this works" card. */
+@Composable
+private fun StepRow(step: Int, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = step.toString(),
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall)
     }
 }
 

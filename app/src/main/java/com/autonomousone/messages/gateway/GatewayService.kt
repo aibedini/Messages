@@ -41,6 +41,11 @@ class GatewayService : Service() {
         var isServiceRunning = false
             private set
 
+        /** Latest OutboxPoller state, updated while the service is alive. */
+        @Volatile
+        var bridgeStateFlow: kotlinx.coroutines.flow.StateFlow<com.autonomousone.messages.gateway.OutboxPoller.State>? = null
+            private set
+
         private val _logFlow = MutableSharedFlow<String>(extraBufferCapacity = 100)
         val logFlow: SharedFlow<String> = _logFlow.asSharedFlow()
 
@@ -85,6 +90,8 @@ class GatewayService : Service() {
             scope = serviceScope,
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
+        // Expose poller state app-wide so the Gateway screen can show it live.
+        bridgeStateFlow = outboxPoller.stateFlow
         createNotificationChannel()
     }
 

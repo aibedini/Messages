@@ -187,6 +187,23 @@ class GatewayViewModel(
         addLog("🔑 Generated new API Key (${newKey.take(7)}…${newKey.takeLast(4)})")
     }
 
+    /**
+     * Replaces the gateway API key with one supplied by the user — e.g. the
+     * GMWEB_ANDROID_DEVICE_KEY generated on the GMweb server, so both sides
+     * share the same secret without copy-pasting in both directions.
+     */
+    fun updateApiKey(newKey: String) {
+        val v = newKey.trim()
+        if (v.isBlank()) {
+            Toast.makeText(getApplication(), "API key cannot be empty", Toast.LENGTH_LONG).show()
+            return
+        }
+        prefs.apiKey = v
+        apiKey = v
+        addLog("🔑 API key set manually (${v.take(7)}…${v.takeLast(4)})")
+        Toast.makeText(getApplication(), "API key updated", Toast.LENGTH_SHORT).show()
+    }
+
     fun saveWebhookUrl(newUrl: String) {
         webhookUrl = newUrl.trim()
         prefs.webhookUrl = webhookUrl
