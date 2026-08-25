@@ -405,18 +405,11 @@ fun ConversationScreen(
             } else {
                 // ── Pull-to-refresh (Instagram-style): drag down at the top of
                 // the thread to silently re-check the provider for updates.
-                var isPullRefreshing by remember { mutableStateOf(false) }
-                // Stop the spinner as soon as the ViewModel finishes loading.
-                LaunchedEffect(viewModel.isLoading) {
-                    if (!viewModel.isLoading) isPullRefreshing = false
-                }
+                // Spinner is bound to the ViewModel's real refresh state.
                 androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-                    isRefreshing = isPullRefreshing,
+                    isRefreshing = viewModel.isRefreshing,
                     onRefresh = {
-                        if (!isPullRefreshing) {
-                            isPullRefreshing = true
-                            viewModel.refresh()
-                        }
+                        if (!viewModel.isRefreshing) viewModel.refresh()
                     },
                     modifier = Modifier.weight(1f)
                 ) {

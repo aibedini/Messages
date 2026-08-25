@@ -231,6 +231,7 @@ fun GatewayScreen(
             }
 
             // ── 2. GMweb pull bridge (Step 2 · recommended way to connect) ───
+            // (advanced cards hidden above; see showAdvancedGatewayModes)
             item {
                 var editingUrl by rememberSaveable(viewModel.gmwebUrl) {
                     mutableStateOf(viewModel.gmwebUrl)

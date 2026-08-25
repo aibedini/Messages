@@ -338,8 +338,15 @@ fun HomeScreen(
                     )
                 }
             } else {
+                // ── Pull-to-refresh on the Home list: silent provider
+                // reconcile (same path as resume), no clearing of the list.
+                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                    isRefreshing = viewModel.isRefreshing,
+                    onRefresh = { viewModel.refreshNow() },
+                    modifier = Modifier.weight(1f)
+                ) {
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     state = listState,
                     contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)
                 ) {
@@ -507,6 +514,7 @@ fun HomeScreen(
                         )
                     }
                 }
+                } // PullToRefreshBox
             }
         }
     }

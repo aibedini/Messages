@@ -56,6 +56,7 @@ class ConversationViewModel(
         repository.registerObserver(observer)
         observeIncomingSms()
         observeRefreshSignal()
+        observeOutgoingSent()
     }
 
     // ── Windowed history (paged) ─────────────────────────────────────────────
@@ -69,8 +70,15 @@ class ConversationViewModel(
             val older = p.loadOlder()
             if (older.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
-                // Preserve scroll position by inserting at the head.
-                messages.addAll(0, older.map { it.copy(unread = false) })
+                // Prepend only rows not already on screen (a refresh may have
+                // widened the window since the pager counters were set).
+                val merged = com.autonomousone.messages.repository.ThreadMerge.prependOlder(
+                    messages.toList(), older.map { it.copy(unread = false) }
+                )
+                if (merged.size > messages.size) {
+                    messages.clear()
+                    messages.addAll(merged)
+                }
             }
         }
     }
@@ -237,29 +245,76 @@ class ConversationViewModel(
     }
 
     fun refresh() {
+        if (isRefreshing) return
+        isRefreshing = true
         viewModelScope.launch(Dispatchers.IO) {
-            val freshMessages = when {
-                currentPhone.isNotBlank() -> repository.getMessagesByPhone(
-                    currentPhone, threadIdHint = currentThreadId
-                )
-                currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
-                else -> emptyList()
-            }
+            try {
+                // ── MERGE-based refresh (never replaces the visible window):
+                // 1. cheap tail query for rows newer than the newest we show;
+                // 2. fold them into the list with ThreadMerge (dedup by id /
+                //    body+time, optimistic rows collapse into confirmed ones).
+                // History already on screen NEVER disappears or changes shape,
+                // so open/close cycles stop showing a different set of messages.
+                val newestShown = messages.maxOfOrNull { it.date } ?: 0L
 
-            if (currentThreadId != 0L || currentPhone.isNotBlank()) {
-                repository.markThreadAsRead(currentThreadId, currentPhone)
-            }
-
-            val readMessages = freshMessages.map { it.copy(unread = false) }
-
-            withContext(Dispatchers.Main) {
-                messages.clear()
-                messages.addAll(readMessages)
-                // Never wipe optimistic sends that the provider hasn't confirmed yet.
-                messages.addAll(mergeOptimistic(readMessages))
-                if (currentThreadId == 0L && readMessages.isNotEmpty()) {
-                    currentThreadId = readMessages.last().threadId
+                val tail = when {
+                    currentThreadId != 0L && pager != null ->
+                        pager!!.loadNewerSince(newestShown)
+                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(
+                        currentPhone, threadIdHint = currentThreadId
+                    )
+                    currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
+                    else -> emptyList()
                 }
+
+                if (currentThreadId != 0L || currentPhone.isNotBlank()) {
+                    repository.markThreadAsRead(currentThreadId, currentPhone)
+                }
+
+                withContext(Dispatchers.Main) {
+                    val merged = com.autonomousone.messages.repository.ThreadMerge.mergeTail(
+                        messages.toList(), tail.map { it.copy(unread = false) }
+                    )
+                    messages.clear()
+                    messages.addAll(merged)
+                    if (currentThreadId == 0L && messages.isNotEmpty()) {
+                        currentThreadId = messages.last().threadId
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) { isRefreshing = false }
+            }
+        }
+    }
+
+    /** True while a pull-to-refresh / observer refresh round-trip is in flight. */
+    var isRefreshing by mutableStateOf(false)
+        private set
+
+    /**
+     * Outgoing sends fired from THIS screen while it is open are appended via
+     * sendMessage's optimistic path; this collector covers sends that were
+     * persisted elsewhere (e.g. quick-reply from a notification) so an open
+     * chat still shows them immediately.
+     */
+    private fun observeOutgoingSent() {
+        viewModelScope.launch {
+            SmsEventBus.outgoingSentFlow.collect { sent ->
+                val normSent = ContactRepository.normalizePhone(sent.phone)
+                val normCurrent = ContactRepository.normalizePhone(currentPhone)
+                if (normSent.isBlank() || normCurrent.isBlank()) return@collect
+                val matches = normSent == normCurrent ||
+                        normSent.endsWith(normCurrent.takeLast(9)) ||
+                        normCurrent.endsWith(normSent.takeLast(9))
+                if (!matches) return@collect
+                val row = Sms(
+                    id = sent.date, threadId = currentThreadId, sender = normSent,
+                    message = sent.message, date = sent.date, unread = false, type = 2
+                )
+                val duplicate = messages.any {
+                    it.message == row.message && kotlin.math.abs(it.date - row.date) < 5000L
+                }
+                if (!duplicate) messages.add(row)
             }
         }
     }
@@ -430,6 +485,10 @@ class ConversationViewModel(
     override fun onCleared() {
         repository.unregisterObserver(observer)
         SmsEventBus.activeConversationPhone = ""
+        // Leaving this chat must reconcile the Home list deterministically:
+        // chat → home never passes through Activity.onResume, so without this
+        // the list could keep a pre-chat snapshot (stale snippet/badge).
+        SmsEventBus.notifyResume()
         super.onCleared()
     }
 }

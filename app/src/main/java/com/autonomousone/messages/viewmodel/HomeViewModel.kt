@@ -139,6 +139,26 @@ class HomeViewModel(
         reloadRequests.trySend(Unit)
     }
 
+    /** True while a pull-to-refresh / resume reconcile round-trip is in flight. */
+    var isRefreshing by mutableStateOf(false)
+        private set
+
+    /**
+     * Explicit user-driven refresh (pull-to-refresh). Same silent atomic-swap
+     * path as resume — the visible list is never cleared.
+     */
+    fun refreshNow() {
+        if (isRefreshing) return
+        viewModelScope.launch {
+            isRefreshing = true
+            try {
+                if (hasLoadedOnce) silentRefresh() else performLoad()
+            } finally {
+                isRefreshing = false
+            }
+        }
+    }
+
     private fun observeReloadRequests() {
         viewModelScope.launch {
             for (ignored in reloadRequests) {

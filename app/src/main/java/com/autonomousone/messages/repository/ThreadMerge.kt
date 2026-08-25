@@ -1,0 +1,70 @@
+package com.autonomousone.messages.repository
+
+import com.autonomousone.messages.model.Sms
+
+/**
+ * Pure merge helpers for windowed thread loading.
+ *
+ * The conversation screen keeps a WINDOW of the thread (newest pages) plus a
+ * set of optimistic (not-yet-persisted) sends with synthetic ids. Provider
+ * refreshes used to replace that whole list — changing what the user saw on
+ * every open/close. These helpers make updates MERGE-BASED instead:
+ *
+ *  - [mergeTail] folds freshly-queried rows into the visible list without
+ *    ever removing history already on screen, deduping by id AND by
+ *    (body, time-proximity) so provider-confirmed copies of optimistic rows
+ *    collapse into one bubble;
+ *  - [prependOlder] extends history upward, dropping overlap;
+ *  - [tailWindow] caps the list to the newest n messages so long threads
+ *    keep a bounded footprint.
+ *
+ * All functions are pure and unit-testable without Android.
+ */
+object ThreadMerge {
+
+    /** Two rows are the "same message" when ids match, or body matches within 5 s. */
+    private fun sameMessage(a: Sms, b: Sms): Boolean =
+        a.id == b.id ||
+                (a.message == b.message && kotlin.math.abs(a.date - b.date) < 5000L)
+
+    /**
+     * Merges [fresh] (any rows newer or equal to what we show, from the
+     * provider) into [existing] and returns a date-sorted list containing
+     * everything already visible plus genuinely-new rows. Existing rows are
+     * never dropped — only enriched via confirmed replacements when they carry
+     * a real id (optimistic → persisted).
+     */
+    fun mergeTail(existing: List<Sms>, fresh: List<Sms>): List<Sms> {
+        if (fresh.isEmpty()) return existing.sortedBy { it.date }
+        val out = existing.toMutableList()
+        for (row in fresh.sortedBy { it.date }) {
+            val idx = out.indexOfFirst { sameMessage(it, row) }
+            when {
+                idx < 0 -> out.add(row)
+                // Confirmed provider copy: adopt real id/status but keep position.
+                out[idx].id != row.id -> out[idx] = out[idx].copy(
+                    id = row.id,
+                    status = if (row.status != -1) row.status else out[idx].status,
+                    dateSent = if (row.dateSent != 0L) row.dateSent else out[idx].dateSent
+                )
+            }
+        }
+        return out.sortedBy { it.date }
+    }
+
+    /**
+     * Prepends an older page to [existing], dropping any rows the user
+     * already has on screen (overlapping windows after a refresh).
+     */
+    fun prependOlder(existing: List<Sms>, olderPage: List<Sms>): List<Sms> {
+        val known = existing.toHashSet() // Sms is a data class → value equality
+        val novel = olderPage.filter { it !in known && existing.none { e -> sameMessage(e, it) } }
+        return (novel + existing).sortedBy { it.date }
+    }
+
+    /**
+     * Caps [messages] to its newest [n] entries (ascending order preserved).
+     */
+    fun tailWindow(messages: List<Sms>, n: Int): List<Sms> =
+        if (messages.size <= n) messages else messages.subList(messages.size - n, messages.size)
+}
