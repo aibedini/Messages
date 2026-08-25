@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -275,6 +276,25 @@ class GatewayViewModel(
         val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
         Toast.makeText(getApplication(), "Copied $label to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Shares the whole live-log buffer through the Android share sheet. */
+    fun shareLogs() {
+        val text = logs.joinToString("\n")
+        if (text.isBlank()) {
+            Toast.makeText(getApplication(), "No logs to share yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Messages — Gateway live logs")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        getApplication<Application>().startActivity(
+            Intent.createChooser(send, "Share gateway logs").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
     }
 
     fun clearLogs() {
