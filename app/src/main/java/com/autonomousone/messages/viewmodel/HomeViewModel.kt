@@ -543,11 +543,11 @@ class HomeViewModel(
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
-                if (!hasLoadedOnce) {
-                    loadSms()
-                } else if (repository.hasProviderChangedSince(newestKnownDate)) {
-                    silentRefresh()
-                }
+                // Always reconcile on resume: read-state/snippet changes don't
+                // create newer rows, so hasProviderChangedSince can't see them.
+                // silentRefresh is cheap (single threads-table query + atomic
+                // swap) and the UI keeps showing cached data meanwhile.
+                if (!hasLoadedOnce) loadSms() else silentRefresh()
             }
         }
     }
