@@ -138,6 +138,128 @@ class SmsRepository(
         return getSmsWithFilters()
     }
 
+    /**
+     * Raw paged SMS query used by [ThreadPager]: supports LIMIT/OFFSET so a
+     * conversation can be windowed instead of fully loaded.
+     */
+    fun querySmsRaw(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String,
+        limit: Int = Int.MAX_VALUE,
+        offset: Int = 0
+    ): List<Sms> {
+        val out = mutableListOf<Sms>()
+        try {
+            val projection = arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.THREAD_ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+                Telephony.Sms.DATE_SENT,
+                Telephony.Sms.READ,
+                Telephony.Sms.TYPE,
+                Telephony.Sms.STATUS
+            )
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI.buildUpon()
+                    .appendQueryParameter("limit", "$offset,$limit")
+                    .build(),
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    out += smsFromCursor(cursor)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "querySmsRaw failed", e)
+        }
+        return out
+    }
+
+    /** Paged MMS twin of [querySmsRaw]. */
+    fun queryMmsRaw(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String,
+        limit: Int = Int.MAX_VALUE,
+        offset: Int = 0
+    ): List<Sms> {
+        return try {
+            val projection = arrayOf(
+                Telephony.Mms._ID,
+                Telephony.Mms.THREAD_ID,
+                Telephony.Mms.DATE,
+                Telephony.Mms.MESSAGE_BOX,
+                Telephony.Mms.READ,
+                Telephony.Mms.SUBJECT
+            )
+            data class Row(val id: Long, val threadId: Long, val date: Long, val box: Int, val read: Int, val subject: String?)
+            val rows = mutableListOf<Row>()
+            context.contentResolver.query(
+                Uri.parse("content://mms").buildUpon()
+                    .appendQueryParameter("limit", "$offset,$limit")
+                    .build(),
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                val idI = cursor.getColumnIndexOrThrow(Telephony.Mms._ID)
+                val thI = cursor.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID)
+                val dtI = cursor.getColumnIndexOrThrow(Telephony.Mms.DATE)
+                val bxI = cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
+                val rdI = cursor.getColumnIndexOrThrow(Telephony.Mms.READ)
+                val sbI = cursor.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
+                while (cursor.moveToNext()) {
+                    rows += Row(
+                        cursor.getLong(idI), cursor.getLong(thI),
+                        cursor.getLong(dtI) * 1000L, cursor.getInt(bxI), cursor.getInt(rdI), cursor.getString(sbI)
+                    )
+                }
+            }
+            if (rows.isEmpty()) return emptyList()
+            val addressMap = loadMmsAddresses(rows.map { it.id })
+            val bodyMap = loadMmsBodies(rows.map { it.id })
+            rows.map { r ->
+                Sms(
+                    id = -r.id,
+                    threadId = r.threadId,
+                    sender = (addressMap[r.id] ?: "").let {
+                        if (it.isBlank() || it.equals("insert-address-token", true)) "" else it
+                    }.ifBlank { phoneFallbackForThread(r.threadId) },
+                    message = bodyMap[r.id] ?: r.subject?.takeIf { s -> s.isNotBlank() } ?: "[MMS]",
+                    date = r.date,
+                    unread = r.read == 0,
+                    type = if (r.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "queryMmsRaw failed", e)
+            emptyList()
+        }
+    }
+
+    private fun phoneFallbackForThread(threadId: Long): String =
+        resolveSmsAddressForThread(threadId).ifBlank { "Unknown" }
+
+    private fun smsFromCursor(cursor: android.database.Cursor): Sms =
+        Sms(
+            id = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms._ID)),
+            threadId = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)),
+            sender = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "Unknown",
+            message = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: "",
+            date = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)),
+            unread = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.READ)) == 0,
+            type = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)),
+            status = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.STATUS)),
+            dateSent = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE_SENT))
+        )
+
     fun getSmsWithFilters(
         limit: Int? = null,
         offset: Int? = null,

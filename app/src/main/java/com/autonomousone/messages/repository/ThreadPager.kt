@@ -1,0 +1,130 @@
+package com.autonomousone.messages.repository
+
+import android.content.ContentValues
+import android.content.Context
+import android.net.Uri
+import android.provider.Telephony
+import android.util.Log
+import com.autonomousone.messages.model.Sms
+import kotlin.math.max
+
+/**
+ * Paged loader for a single conversation thread.
+ *
+ * Instead of reading the WHOLE thread from the provider on open (which is why
+ * huge threads showed "Reading messages… N/N" spinners), we read only the most
+ * recent [PAGE] rows and page backwards as the user scrolls up — the same
+ * windowed approach Google Messages/WhatsApp use.
+ *
+ * SMS and MMS are merged per-page: we fetch the newest `limit` of each source
+ * (offset by how many already shown) and interleave by date, so the visible
+ * history stays chronologically seamless across page boundaries.
+ */
+class ThreadPager(
+    private val context: Context,
+    private val threadId: Long,
+    private val phone: String = ""
+) {
+    companion object {
+        /** Rows per page (SMS + MMS each), i.e. up to 2×PAGE items rendered. */
+        const val PAGE = 40
+    }
+
+    // How many NEWEST rows are already handed to the UI (per source).
+    private var smsConsumed = 0
+    private var mmsConsumed = 0
+
+    /** True when either source still has older rows to pull. */
+    @Volatile
+    var hasMore: Boolean = true
+        private set
+
+    /**
+     * Loads the FIRST page (newest messages). Marks nothing read; caller decides.
+     */
+    fun loadFirstPage(): List<Sms> {
+        smsConsumed = 0
+        mmsConsumed = 0
+        val page = loadPage()
+        hasMore = page.size >= (PAGE / 2) // conservative: keep paging until proven exhausted
+        return page
+    }
+
+    /**
+     * Loads the next OLDER page. Returns empty when exhausted.
+     */
+    fun loadOlder(): List<Sms> {
+        if (!hasMore) return emptyList()
+        val page = loadPage(skipSms = smsConsumed, skipMms = mmsConsumed)
+        if (page.isEmpty()) {
+            hasMore = false
+            return emptyList()
+        }
+        hasMore = page.size >= (PAGE / 2)
+        return page
+    }
+
+    /**
+     * Refreshes the TAIL (for new incoming/outgoing while chat is open).
+     * Cheap query limited to rows newer than what we already hold.
+     */
+    fun loadNewerSince(newestDate: Long): List<Sms> {
+        val repo = SmsRepository(context)
+        val sms = repo.querySmsRaw(
+            selection = "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.DATE} > ?",
+            selectionArgs = arrayOf(threadId.toString(), newestDate.toString()),
+            sortOrder = "${Telephony.Sms.DATE} ASC",
+            limit = 100
+        )
+        val mms = repo.queryMmsRaw(
+            selection = "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.DATE} > ?",
+            selectionArgs = arrayOf(threadId.toString(), (newestDate / 1000L).toString()),
+            sortOrder = "${Telephony.Mms.DATE} ASC",
+            limit = 100
+        )
+        return merge(sms, mms)
+    }
+
+    // ── internals ────────────────────────────────────────────────────────────
+
+    private fun loadPage(): List<Sms> = loadPage(0, 0)
+
+    private fun loadPage(skipSms: Int, skipMms: Int): List<Sms> {
+        val repo = SmsRepository(context)
+        val sms = repo.querySmsRaw(
+            selection = "${Telephony.Sms.THREAD_ID} = ?",
+            selectionArgs = arrayOf(threadId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} DESC",
+            limit = PAGE,
+            offset = skipSms
+        )
+        val mms = repo.queryMmsRaw(
+            selection = "${Telephony.Mms.THREAD_ID} = ?",
+            selectionArgs = arrayOf(threadId.toString()),
+            sortOrder = "${Telephony.Mms.DATE} DESC",
+            limit = PAGE,
+            offset = skipMms
+        )
+        smsConsumed += sms.size
+        mmsConsumed += mms.size
+        return merge(sms, mms).asReversed() // provider gave DESC → display ASC
+    }
+
+    /** Interleave two date-DESC lists into one date-DESC list. */
+    private fun merge(a: List<Sms>, b: List<Sms>): List<Sms> {
+        if (a.isEmpty()) return b
+        if (b.isEmpty()) return a
+        val out = ArrayList<Sms>(a.size + b.size)
+        var i = 0
+        var j = 0
+        while (i < a.size || j < b.size) {
+            val takeA = when {
+                i >= a.size -> false
+                j >= b.size -> true
+                else -> a[i].date >= b[j].date
+            }
+            if (takeA) out.add(a[i++]) else out.add(b[j++])
+        }
+        return out
+    }
+}

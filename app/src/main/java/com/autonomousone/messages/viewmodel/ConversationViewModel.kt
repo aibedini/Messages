@@ -58,6 +58,23 @@ class ConversationViewModel(
         observeRefreshSignal()
     }
 
+    // ── Windowed history (paged) ─────────────────────────────────────────────
+    // Only the newest page is read on open; scrolling up pulls older pages.
+    private var pager: com.autonomousone.messages.repository.ThreadPager? = null
+
+    fun loadOlderMessages() {
+        val p = pager ?: return
+        if (!p.hasMore) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val older = p.loadOlder()
+            if (older.isEmpty()) return@launch
+            withContext(Dispatchers.Main) {
+                // Preserve scroll position by inserting at the head.
+                messages.addAll(0, older.map { it.copy(unread = false) })
+            }
+        }
+    }
+
     fun loadConversation(threadId: Long, phone: String = "") {
         currentThreadId = threadId
         if (phone.isNotBlank()) {
@@ -92,25 +109,22 @@ class ConversationViewModel(
             }
 
             try {
-                val progressListener = ProgressListener { p ->
-                    // Only surface progress when the user is actually waiting
-                    // (no instant cached copy was painted). Avoids the jarring
-                    // "Reading messages…" flash on every thread open.
-                    if (loadStatus != null || isLoading) {
-                        val appContext = getApplication<Application>()
-                        val label = when (p.phase) {
-                            "sms" -> appContext.getString(R.string.conv_loading_messages)
-                            "mms" -> appContext.getString(R.string.conv_loading_multimedia)
-                            else -> appContext.getString(R.string.conv_loading_generic)
-                        }
-                        loadStatus = if (p.total > 0) "$label… ${p.loaded}/${p.total}" else "$label…"
-                    }
-                }
+                // Windowed loading means there is no long-running scan anymore;
+                // the pager reads ≤80 rows per page. No progress UI is needed.
                 val loadedMessages = when {
-                    currentPhone.isNotBlank() -> repository.getMessagesByPhone(
-                        currentPhone, progressListener, threadIdHint = currentThreadId
-                    )
-                    threadId != 0L -> repository.getMessagesByThread(threadId, progressListener)
+                    currentPhone.isNotBlank() || threadId != 0L -> {
+                        // Windowed load: newest page only (Google Messages-style).
+                        val p = com.autonomousone.messages.repository.ThreadPager(
+                            getApplication(),
+                            if (currentThreadId != 0L) currentThreadId else threadId,
+                            currentPhone.ifBlank { phone }
+                        )
+                        pager = p
+                        val firstPage = p.loadFirstPage()
+                        // Merge any optimistic sends already queued this session.
+                        (firstPage + mergeOptimistic(firstPage)).distinctBy { it.id }
+                            .sortedBy { it.date }
+                    }
                     else -> emptyList()
                 }
 

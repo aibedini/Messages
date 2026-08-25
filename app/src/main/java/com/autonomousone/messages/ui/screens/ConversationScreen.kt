@@ -317,6 +317,8 @@ fun ConversationScreen(
     // Set right after the user sends so the list ALWAYS jumps to their new
     // message — even if they had scrolled up to re-read something.
     var forceScrollToBottom by remember { mutableStateOf(false) }
+    // Windowed history: pull older pages when the top is reached.
+    var loadingOlder by remember { mutableStateOf(false) }
     LaunchedEffect(chatItems.size) {
         if (chatItems.isEmpty()) return@LaunchedEffect
         when {
@@ -333,6 +335,15 @@ fun ConversationScreen(
                 forceScrollToBottom = false
             }
         }
+    }
+    // Reached the top → fetch the next older page (once per arrival).
+    LaunchedEffect(listState.canScrollBackward) {
+        if (listState.canScrollBackward || loadingOlder) return@LaunchedEffect
+        if (!anchoredToBottom) return@LaunchedEffect
+        loadingOlder = true
+        viewModel.loadOlderMessages()
+        kotlinx.coroutines.delay(400) // let composition settle before re-arming
+        loadingOlder = false
     }
 
     val title = remember(phone, name, recipientPhone) {
@@ -374,19 +385,8 @@ fun ConversationScreen(
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        viewModel.loadStatus?.let { status ->
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    // Windowed load is a single small page — keep it minimal.
+                    CircularProgressIndicator()
                 }
             } else if (chatItems.isEmpty()) {
                 Box(
