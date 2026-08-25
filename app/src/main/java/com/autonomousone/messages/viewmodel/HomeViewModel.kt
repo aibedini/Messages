@@ -217,13 +217,18 @@ class HomeViewModel(
                 val contactNames = async {
                     ContactRepository(getApplication()).getContactNameMapAsync()
                 }
-                val freshList = repository.getConversationsFast(progressListener) { partial ->
+                val rawList = repository.getConversationsFast(progressListener) { partial ->
                     // Progressive paint during cold start ONLY: build on top of
                     // what's shown instead of clearing mid-load.
                     if (!hasLoadedOnce) {
                         viewModelScope.launch { replaceConversations(partial, archived, atomic = false) }
                     }
                 }
+                // Same Threads-table reconciliation as silentRefresh: a stale
+                // snippet must never survive into the first painted list.
+                val freshList = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
+                    rawList, repository.newestMessagePerThread(rawList.map { it.threadId })
+                )
                 val names = contactNames.await()
                 withContext(Dispatchers.Main) { this@HomeViewModel.contactNames = names }
                 freshList to archived
@@ -253,10 +258,23 @@ class HomeViewModel(
             val (freshList, archived) = withContext(Dispatchers.IO) {
                 val archived = archiveRepository.getArchivedIds()
                 val list = repository.getConversationsFast(null, null)
-                list to archived
+                // Reconcile each thread row against the newest message actually
+                // in the SMS table. The Threads table can lag (or never update)
+                // for rows the provider considers orphaned, which is what made
+                // the list disagree with the open conversation.
+                val reconciled = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
+                    list, repository.newestMessagePerThread(list.map { it.threadId })
+                )
+                reconciled to archived
             }
             replaceConversations(freshList, archived, atomic = true)
             newestKnownDate = freshList.maxOfOrNull { it.date } ?: newestKnownDate
+            // Keep the on-disk snapshot in step, so the next cold start does not
+            // hydrate a list that is older than what the user just saw.
+            withContext(Dispatchers.IO) {
+                com.autonomousone.messages.repository.ConversationCache
+                    .get(getApplication()).save(freshList)
+            }
         } catch (error: Exception) {
             Log.e("SMS_DEBUG", "Silent refresh failed; keeping cache", error)
         }

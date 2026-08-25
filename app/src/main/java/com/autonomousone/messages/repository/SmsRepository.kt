@@ -31,6 +31,15 @@ class SmsRepository(
     private val context: Context
 ) {
 
+    private companion object {
+        /**
+         * Rows scanned by [newestMessagePerThread]. The reconcile only needs to
+         * see recent traffic — a thread whose newest message is older than this
+         * window is not the stale-snippet case.
+         */
+        const val MAX_RECONCILE_SCAN = 600
+    }
+
     /** Fast path: one row per SMS/MMS thread instead of materializing every message. */
     fun getConversationsFast(
         progress: ProgressListener? = null,
@@ -164,6 +173,61 @@ class SmsRepository(
     fun invalidateAddressCaches() {
         AddressCache.canonical = null
         AddressCache.perThread.clear()
+    }
+
+    /**
+     * Newest SMS row per thread id, in ONE provider query.
+     *
+     * The Home list is built from `Telephony.Threads`, whose SNIPPET/DATE the
+     * platform maintains. When an outgoing row lands without a THREAD_ID (or the
+     * provider associates it late) that thread row keeps its OLD snippet and
+     * sort position, so the list disagrees with the conversation screen. This
+     * gives the list the newest message it can reconcile against.
+     *
+     * Cost: a single DATE-DESC scan taking the first row seen per thread — no
+     * per-thread query, so it stays cheap on large inboxes.
+     */
+    fun newestMessagePerThread(threadIds: List<Long>): Map<Long, Sms> {
+        if (threadIds.isEmpty()) return emptyMap()
+        val wanted = threadIds.toHashSet()
+        val newest = HashMap<Long, Sms>(threadIds.size)
+        try {
+            val projection = arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.THREAD_ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+                Telephony.Sms.DATE_SENT,
+                Telephony.Sms.READ,
+                Telephony.Sms.TYPE,
+                Telephony.Sms.STATUS
+            )
+            // Bounded window: the newest MAX_SCAN rows are more than enough to
+            // catch a thread row that lags behind its own latest message, and it
+            // keeps this off the critical path on very large inboxes.
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI.buildUpon()
+                    .appendQueryParameter("limit", "0,$MAX_RECONCILE_SCAN")
+                    .build(),
+                projection,
+                null,
+                null,
+                "${Telephony.Sms.DATE} DESC"
+            )?.use { cursor ->
+                val threadIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
+                while (cursor.moveToNext()) {
+                    val tid = cursor.getLong(threadIdx)
+                    if (tid !in wanted || newest.containsKey(tid)) continue
+                    newest[tid] = smsFromCursor(cursor)
+                    // Every wanted thread resolved → stop early.
+                    if (newest.size == wanted.size) break
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SMS_DEBUG", "newestMessagePerThread failed", e)
+        }
+        return newest
     }
 
     fun getAllSms(): List<Sms> {

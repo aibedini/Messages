@@ -256,6 +256,14 @@ class SmsSender(
                 if (prefs.deliveryReportsEnabled) {
                     put(Telephony.Sms.STATUS, Telephony.Sms.STATUS_PENDING)
                 }
+                // ── THREAD_ID is NOT optional ────────────────────────────────
+                // Without it the row is an orphan: Telephony.Threads keeps its
+                // old SNIPPET/DATE, so the Home list (built from Threads) shows
+                // a stale preview and stale sort position while the chat screen
+                // (which queries by ADDRESS) shows the new message. That is the
+                // "list and chat disagree" bug. MmsSender already did this via
+                // getOrCreateThreadId; SMS never did.
+                resolveThreadId(phone)?.let { put(Telephony.Sms.THREAD_ID, it) }
             }
             val uri = context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
             val id = uri?.lastPathSegment?.toLongOrNull() ?: now
@@ -265,6 +273,19 @@ class SmsSender(
             Log.e(TAG, "Error persisting sent SMS to DB", e)
             System.currentTimeMillis()
         }
+    }
+
+    /**
+     * Resolves (or creates) the canonical thread id for [phone] so the sent row
+     * is correctly associated and the platform updates the Threads table.
+     * Returns null when the provider refuses, in which case we insert without
+     * it rather than losing the message.
+     */
+    private fun resolveThreadId(phone: String): Long? = try {
+        Telephony.Threads.getOrCreateThreadId(context, phone)
+    } catch (e: Exception) {
+        Log.w(TAG, "getOrCreateThreadId failed for $phone", e)
+        null
     }
 
     companion object {
