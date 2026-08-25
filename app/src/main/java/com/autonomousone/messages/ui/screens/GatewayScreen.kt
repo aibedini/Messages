@@ -94,6 +94,16 @@ fun GatewayScreen(
     var tempWebhook by remember(viewModel.webhookUrl) { mutableStateOf(viewModel.webhookUrl) }
     var tempWebhookSecret by remember(viewModel.webhookSecret) { mutableStateOf(viewModel.webhookSecret) }
 
+    // ── Advanced transport modes (Cloud backend / LAN API / Webhook) ─────────
+    // GMweb pull bridge is the ONLY supported way to connect a server for now.
+    // Flip to true to re-expose: Cloud Backend Gateway card, API Key auth card,
+    // REST endpoints card and Incoming SMS Webhook card.
+    val showAdvancedGatewayModes = false
+    if (showAdvancedGatewayModes) {
+        // referenced here so the state stays wired when re-enabled
+        tempWebhook.hashCode(); tempWebhookSecret.hashCode()
+    }
+
     if (viewModel.showConsentDialog) {
         AlertDialog(
             onDismissRequest = viewModel::dismissGatewayConsent,
@@ -203,6 +213,7 @@ fun GatewayScreen(
                 }
             }
 
+            if (showAdvancedGatewayModes) {
             item {
                 CloudConnectionCard(
                     backendUrl = viewModel.backendUrl,
@@ -215,6 +226,8 @@ fun GatewayScreen(
                     onCopyGatewayId = { viewModel.copyToClipboard("Gateway ID", viewModel.gatewayId) },
                     onSaveRegistrationSecret = { viewModel.saveRegistrationSecret(it) }
                 )
+            }
+
             }
 
             // ── 2. GMweb pull bridge (Step 2 · recommended way to connect) ───
@@ -425,6 +438,7 @@ fun GatewayScreen(
                 }
             }
 
+            if (showAdvancedGatewayModes) {
             // ── 2. API Key Authentication Card ─────────────────────────────
             item {
                 Card(
@@ -499,6 +513,8 @@ fun GatewayScreen(
                         )
                     }
                 }
+            }
+
             }
 
             // ── 3. REST API Endpoints Card ─────────────────────────────────
@@ -599,6 +615,7 @@ fun GatewayScreen(
                 }
             }
 
+            if (showAdvancedGatewayModes) {
             // ── 4. Webhook Settings Card ───────────────────────────────────
             item {
                 Card(
@@ -676,6 +693,8 @@ fun GatewayScreen(
                         }
                     }
                 }
+            }
+
             }
 
             // ── 5. Live Logs Feed Card ───────────────────────────────────────
