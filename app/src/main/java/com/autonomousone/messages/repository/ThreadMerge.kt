@@ -41,12 +41,10 @@ object ThreadMerge {
             val idx = out.indexOfFirst { sameMessage(it, row) }
             when {
                 idx < 0 -> out.add(row)
-                // Confirmed provider copy: adopt real id/status but keep position.
-                out[idx].id != row.id -> out[idx] = out[idx].copy(
-                    id = row.id,
-                    status = if (row.status != -1) row.status else out[idx].status,
-                    dateSent = if (row.dateSent != 0L) row.dateSent else out[idx].dateSent
-                )
+                // Always adopt the provider copy. Status callbacks update an
+                // existing row without changing its id/date, which used to be
+                // ignored here and left the bubble permanently on PENDING.
+                else -> out[idx] = row.copy(unread = out[idx].unread)
             }
         }
         return out.sortedBy { it.date }

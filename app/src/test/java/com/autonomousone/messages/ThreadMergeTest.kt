@@ -45,6 +45,17 @@ class ThreadMergeTest {
     }
 
     @Test
+    fun `mergeTail refreshes status when provider row id and date are unchanged`() {
+        val pending = sms(9, 220, body = "hello").copy(type = 2, status = 32)
+        val delivered = pending.copy(status = 0, dateSent = 300)
+
+        val merged = ThreadMerge.mergeTail(listOf(pending), listOf(delivered))
+
+        assertEquals(0, merged.single().status)
+        assertEquals(300L, merged.single().dateSent)
+    }
+
+    @Test
     fun `prependOlder drops rows already on screen`() {
         val existing = listOf(sms(40, 400), sms(41, 410))
         val olderPage = listOf(sms(38, 380), sms(39, 390), sms(40, 400))

@@ -119,6 +119,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Explicit SmsManager SENT/DELIVERED callbacks. Manifest lifetime is
+             required so status updates survive closing the conversation/app. -->
+        <receiver
+            android:name=".sms.SmsStatusReceiver"
+            android:exported="false" />
+
         <!-- Respond-via-message service required for default SMS app -->
         <service
             android:name=".service.HeadlessSmsSendService"

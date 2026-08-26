@@ -1,6 +1,9 @@
 package com.autonomousone.messages.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.horizontalScroll
@@ -448,6 +451,14 @@ fun HomeScreen(
                         val undoLabel = stringResource(R.string.action_undo)
                         SmsItem(
                             sms = sms,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(durationMillis = 220),
+                                placementSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                ),
+                                fadeOutSpec = tween(durationMillis = 160)
+                            ),
                             isPinned = sms.threadId in viewModel.pinnedIds,
                             isArchived = isInArchivedView,
                             draftText = draftMap[draftKey].orEmpty(),

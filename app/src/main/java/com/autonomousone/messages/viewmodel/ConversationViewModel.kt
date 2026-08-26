@@ -359,6 +359,12 @@ class ConversationViewModel(
             currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
             else -> emptyList()
         }
+        val statusRows = pager?.loadSmsRowsById(
+            messages.asSequence()
+                .filter { it.type == 2 }
+                .map { it.id }
+                .toList()
+        ).orEmpty()
 
         if (currentThreadId != 0L || currentPhone.isNotBlank()) {
             repository.markThreadAsRead(currentThreadId, currentPhone)
@@ -366,7 +372,7 @@ class ConversationViewModel(
 
         withContext(Dispatchers.Main) {
             val merged = com.autonomousone.messages.repository.ThreadMerge.mergeTail(
-                messages.toList(), tail.map { it.copy(unread = false) }
+                messages.toList(), (tail + statusRows).map { it.copy(unread = false) }
             )
             messages.clear()
             messages.addAll(merged)
@@ -455,7 +461,8 @@ class ConversationViewModel(
             message = trimmedMsg,
             date = now,
             unread = false,
-            type = 2
+            type = 2,
+            status = android.provider.Telephony.Sms.STATUS_PENDING
         )
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)

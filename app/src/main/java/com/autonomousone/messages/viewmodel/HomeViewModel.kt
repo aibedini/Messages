@@ -189,16 +189,16 @@ class HomeViewModel(
             }
         }
 
-        // Skeleton only when there is truly nothing to render (first-ever run).
-        if (!hasLoadedOnce) {
-            loadingShowJob?.cancel()
-            loadingShowJob = viewModelScope.launch {
-                delay(250)
-                isLoading = true
-            }
+        // Show real sync progress even when a cached list is already visible.
+        // The delay avoids a flash for very small inboxes; cached content stays
+        // interactive underneath the compact banner.
+        loadingShowJob?.cancel()
+        loadingShowJob = viewModelScope.launch {
+            delay(250)
+            isLoading = true
         }
         try {
-            val progressListener = if (hasLoadedOnce) null else ProgressListener { progress ->
+            val progressListener = ProgressListener { progress ->
                 val label = when (progress.phase) {
                     "threads" -> "Loading conversations"
                     "sms" -> "Syncing messages"

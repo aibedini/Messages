@@ -97,6 +97,7 @@
     <string name="conv_delivered_at_fmt"> · تحویل در %1$s</string>
     <string name="conv_status_not_delivered"> · تحویل نشد</string>
     <string name="conv_status_sending"> · در حال ارسال…</string>
+    <string name="conv_syncing_older">در حال همگام‌سازی پیام‌های قدیمی…</string>
     <string name="status_sending">در حال ارسال</string>
     <string name="status_failed">ناموفق</string>
     <string name="status_delivered">تحویل شد</string>

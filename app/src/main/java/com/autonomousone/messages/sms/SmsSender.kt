@@ -1,18 +1,14 @@
 package com.autonomousone.messages.sms
 
-import android.app.Activity
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 
@@ -31,11 +27,6 @@ class SmsSender(
 ) {
 
     private val prefs by lazy { MessagingPreferences(context) }
-
-    // Process-wide status receivers, registered lazily once per instance and
-    // keyed by the persisted Sent row id carried in the broadcast extras.
-    @Volatile
-    private var receiversRegistered = false
 
     /**
      * Sends an SMS and persists it to Telephony.Sms.Sent immediately.
@@ -114,29 +105,41 @@ class SmsSender(
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
         val wantReports = prefs.deliveryReportsEnabled
 
-        ensureStatusReceivers()
-
-        var sentPi: PendingIntent? = null
-        var deliveredPi: PendingIntent? = null
-        if (wantReports) {
-            sentPi = buildStatusPendingIntent(ACTION_SMS_SENT, sentId)
-            deliveredPi = buildStatusPendingIntent(ACTION_SMS_DELIVERED, sentId)
-        }
-
         try {
             val effectiveSubId = subscriptionIdOverride ?: prefs.sendSubscriptionId
             // Split long messages into multi-part SMS if needed
             val parts = manager.divideMessage(text)
+            // A SENT callback is always required: it moves the row out of the
+            // transient PENDING state and reports modem/SIM failures. Delivery
+            // callbacks remain opt-in because carriers may charge for them.
+            val sentIntents = ArrayList<PendingIntent>(parts.size).apply {
+                repeat(parts.size) { part ->
+                    add(buildStatusPendingIntent(
+                        SmsStatusReceiver.ACTION_SMS_SENT, sentId, part, parts.size
+                    ))
+                }
+            }
+            val deliveredIntents = if (wantReports) {
+                ArrayList<PendingIntent>(parts.size).apply {
+                    repeat(parts.size) { part ->
+                        add(buildStatusPendingIntent(
+                            SmsStatusReceiver.ACTION_SMS_DELIVERED, sentId, part, parts.size
+                        ))
+                    }
+                }
+            } else null
             if (parts.size > 1) {
                 manager.sendMultipartTextMessage(
                     phone,
                     scAddress,
                     parts,
-                    sentPi?.let { ArrayList(listOf(it)) },
-                    deliveredPi?.let { ArrayList(listOf(it)) }
+                    sentIntents,
+                    deliveredIntents
                 )
             } else {
-                manager.sendTextMessage(phone, scAddress, text, sentPi, deliveredPi)
+                manager.sendTextMessage(
+                    phone, scAddress, text, sentIntents.single(), deliveredIntents?.single()
+                )
             }
 
             Log.d(
@@ -175,52 +178,24 @@ class SmsSender(
         }
     }
 
-    private fun buildStatusPendingIntent(action: String, rowId: Long): PendingIntent {
-        val intent = Intent(action)
-            .setPackage(context.packageName)
-            .putExtra(EXTRA_ROW_ID, rowId)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        return PendingIntent.getBroadcast(context, (action.hashCode() + rowId.toInt()), intent, flags)
-    }
-
-    private fun ensureStatusReceivers() {
-        if (receiversRegistered) return
-        synchronized(this) {
-            if (receiversRegistered) return
-            ContextCompat.registerReceiver(
-                context,
-                object : BroadcastReceiver() {
-                    override fun onReceive(ctx: Context, intent: Intent) {
-                        handleStatusBroadcast(intent, resultCode, delivered = false)
-                    }
-                },
-                IntentFilter(ACTION_SMS_SENT),
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-            ContextCompat.registerReceiver(
-                context,
-                object : BroadcastReceiver() {
-                    override fun onReceive(ctx: Context, intent: Intent) {
-                        handleStatusBroadcast(intent, resultCode, delivered = true)
-                    }
-                },
-                IntentFilter(ACTION_SMS_DELIVERED),
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-            receiversRegistered = true
-        }
-    }
-
-    private fun handleStatusBroadcast(intent: Intent, resultCode: Int, delivered: Boolean) {
-        val rowId = intent.getLongExtra(EXTRA_ROW_ID, -1L)
-        if (rowId <= 0L) return
-        val ok = resultCode == Activity.RESULT_OK
-        val status = when {
-            delivered -> if (ok) Telephony.Sms.STATUS_COMPLETE else Telephony.Sms.STATUS_FAILED
-            ok -> Telephony.Sms.STATUS_NONE // sent, awaiting delivery report (if any)
-            else -> Telephony.Sms.STATUS_FAILED
-        }
-        updateStatus(rowId, status)
+    private fun buildStatusPendingIntent(
+        action: String,
+        rowId: Long,
+        partIndex: Int,
+        partCount: Int
+    ): PendingIntent {
+        val intent = Intent(context, SmsStatusReceiver::class.java)
+            .setAction(action)
+            .putExtra(SmsStatusReceiver.EXTRA_ROW_ID, rowId)
+            .putExtra(SmsStatusReceiver.EXTRA_PART_INDEX, partIndex)
+            .putExtra(SmsStatusReceiver.EXTRA_PART_COUNT, partCount)
+        val requestCode = 31 * (31 * action.hashCode() + rowId.hashCode()) + partIndex
+        return PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun updateStatus(rowId: Long, status: Int) {
@@ -249,13 +224,10 @@ class SmsSender(
                 put(Telephony.Sms.ADDRESS, phone)
                 put(Telephony.Sms.BODY, text)
                 put(Telephony.Sms.DATE, now)
-                put(Telephony.Sms.DATE_SENT, now)
                 put(Telephony.Sms.READ, 1)
                 put(Telephony.Sms.SEEN, 1)
                 put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
-                if (prefs.deliveryReportsEnabled) {
-                    put(Telephony.Sms.STATUS, Telephony.Sms.STATUS_PENDING)
-                }
+                put(Telephony.Sms.STATUS, Telephony.Sms.STATUS_PENDING)
                 // ── THREAD_ID is NOT optional ────────────────────────────────
                 // Without it the row is an orphan: Telephony.Threads keeps its
                 // old SNIPPET/DATE, so the Home list (built from Threads) shows
@@ -290,8 +262,5 @@ class SmsSender(
 
     companion object {
         private const val TAG = "SMS_SENDER"
-        private const val ACTION_SMS_SENT = "com.autonomousone.messages.intent.SMS_SENT"
-        private const val ACTION_SMS_DELIVERED = "com.autonomousone.messages.intent.SMS_DELIVERED"
-        private const val EXTRA_ROW_ID = "row_id"
     }
 }

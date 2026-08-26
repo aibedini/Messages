@@ -111,6 +111,23 @@ class ThreadPager(
         return merge(sms, mms)
     }
 
+    /**
+     * Re-reads visible SMS rows by provider id. A status callback changes the
+     * row in place (its DATE is unchanged), so a strictly-newer tail query
+     * cannot observe PENDING -> SENT/DELIVERED/FAILED transitions.
+     */
+    fun loadSmsRowsById(ids: Collection<Long>): List<Sms> {
+        val unique = ids.filter { it > 0L }.distinct()
+        if (unique.isEmpty()) return emptyList()
+        val placeholders = unique.joinToString(",") { "?" }
+        return SmsRepository(context).querySmsRaw(
+            selection = "${Telephony.Sms._ID} IN ($placeholders)",
+            selectionArgs = unique.map(Long::toString).toTypedArray(),
+            sortOrder = "${Telephony.Sms.DATE} ASC",
+            limit = unique.size
+        )
+    }
+
     // ── internals ────────────────────────────────────────────────────────────
 
     private fun loadPage(): List<Sms> = loadPage(0, 0)
