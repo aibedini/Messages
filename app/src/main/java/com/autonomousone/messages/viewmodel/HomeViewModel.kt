@@ -342,7 +342,7 @@ class HomeViewModel(
         if (blocked.isEmpty()) return false
         val norm = BlocklistRepository.normalize(sender)
         if (norm.isBlank()) return false
-        return blocked.any { it == norm || norm.endsWith(it) || it.endsWith(norm) }
+        return blocked.any { ContactRepository.sameConversation(norm, it) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -355,12 +355,9 @@ class HomeViewModel(
      * so the Home list reflects the change instantly (no stale unread badge).
      */
     fun markConversationReadLocally(threadId: Long, phone: String) {
-        val normPhone = com.autonomousone.messages.repository.ContactRepository.normalizePhone(phone)
         fun matches(sms: Sms): Boolean =
             (threadId != 0L && sms.threadId == threadId) ||
-                (normPhone.isNotBlank() && ContactRepository.normalizePhone(sms.sender).let {
-                    it == normPhone || it.endsWith(normPhone) || normPhone.endsWith(it)
-                })
+                ContactRepository.sameConversation(sms.sender, phone)
         conversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
         archivedConversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
     }
@@ -549,25 +546,16 @@ class HomeViewModel(
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
-
                 // Remove from whichever list it currently appears in
                 val existingIndex = conversations.indexOfFirst {
-                    val norm = ContactRepository.normalizePhone(it.sender)
-                    norm.isNotBlank() && normalizedIncoming.isNotBlank() &&
-                            (norm == normalizedIncoming ||
-                                    norm.endsWith(normalizedIncoming) ||
-                                    normalizedIncoming.endsWith(norm))
+                    ContactRepository.sameConversation(it.sender, incomingSms.sender)
                 }
                 if (existingIndex >= 0) conversations.removeAt(existingIndex)
 
                 // Only add to main list if not archived
                 if (incomingSms.threadId !in archivedIds) {
                     conversations.removeAll {
-                        val norm = ContactRepository.normalizePhone(it.sender)
-                        val normIn = ContactRepository.normalizePhone(incomingSms.sender)
-                        norm.isNotBlank() && (norm == normIn ||
-                                norm.endsWith(normIn) || normIn.endsWith(norm))
+                        ContactRepository.sameConversation(it.sender, incomingSms.sender)
                     }
                     conversations.add(0, incomingSms)
                 }
@@ -611,8 +599,7 @@ class HomeViewModel(
                 if (normSent.isBlank()) return@collect
 
                 val idx = conversations.indexOfFirst {
-                    val n = ContactRepository.normalizePhone(it.sender)
-                    n.isNotBlank() && (n == normSent || n.endsWith(normSent.takeLast(9)) || normSent.endsWith(n.takeLast(9)))
+                    ContactRepository.sameConversation(it.sender, sent.phone)
                 }
 
                 val row = if (idx >= 0) {

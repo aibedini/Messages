@@ -28,7 +28,7 @@ class BlocklistRepository(private val context: Context) {
     fun isBlocked(address: String): Boolean {
         val norm = normalize(address)
         if (norm.isBlank()) return false
-        return getBlocked().any { it == norm || norm.endsWith(it) || it.endsWith(norm) }
+        return getBlocked().any { ContactRepository.sameConversation(norm, it) }
     }
 
     /**

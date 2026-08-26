@@ -69,13 +69,24 @@ class ConversationViewModel(
      *  old query can never overwrite the freshly opened thread's messages. */
     private var conversationLoadJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * Monotonic generation stamp for conversation switches. Every async job
+     * (initial load, older-page, refresh, spinner) captures the generation it
+     * started under and drops its result when the screen has moved on — one
+     * guard for ALL paths instead of per-job checks.
+     */
+    @Volatile
+    private var conversationGeneration = 0L
+
     fun loadOlderMessages() {
         val p = pager ?: return
         if (!p.hasMore) return
         if (olderMessagesJob?.isActive == true) return
+        val gen = conversationGeneration
         olderMessagesJob = viewModelScope.launch(Dispatchers.IO) {
             val older = p.loadOlder()
-            if (older.isEmpty()) return@launch
+            // Screen moved to another conversation while the page was loading.
+            if (gen != conversationGeneration || older.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
                 // Prepend only rows not already on screen (a refresh may have
                 // widened the window since the pager counters were set).
@@ -102,8 +113,12 @@ class ConversationViewModel(
         // A slow load of the PREVIOUS conversation must never paint over this
         // one — cancel it and stamp this run with the thread it owns.
         conversationLoadJob?.cancel()
+        olderMessagesJob?.cancel()
+        olderMessagesJob = null
+        conversationGeneration++
         val myThread = threadId
         val myPhone = currentPhone
+        val gen = conversationGeneration
 
         conversationLoadJob = viewModelScope.launch(Dispatchers.IO) {
             // ── Stale-while-revalidate: paint the cached thread INSTANTLY
@@ -116,14 +131,24 @@ class ConversationViewModel(
             if (stale != null && stale.first.isNotEmpty()) {
                 val cachedList = stale.first.map { it.copy(unread = false) }
                 withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
                     messages.clear()
                     messages.addAll(cachedList)
                     messages.addAll(mergeOptimistic(cachedList))
                     isLoading = false
                     loadStatus = null
                 }
-                // Cached copy was already fresh → nothing more to do.
+                // Cached copy was already fresh → nothing more to do. BUT the
+                // pager must still exist, or scroll-up history and tail refresh
+                // silently degrade on every cache-hit re-open.
                 if (!stale.second) {
+                    if (gen == conversationGeneration) {
+                        pager = com.autonomousone.messages.repository.ThreadPager(
+                            getApplication(),
+                            if (cacheKeyThread != 0L) cacheKeyThread else currentThreadId,
+                            phone.ifBlank { currentPhone }
+                        )
+                    }
                     markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
                     return@launch
                 }
@@ -169,15 +194,16 @@ class ConversationViewModel(
 
                 // Stale-result guard: if the user has since opened another
                 // conversation, this result is obsolete — drop it silently.
-                val stillCurrent =
-                    currentThreadId == myThread &&
-                            (myPhone.isBlank() || currentPhone == myPhone)
+                val stillCurrent = gen == conversationGeneration &&
+                        currentThreadId == myThread &&
+                        (myPhone.isBlank() || currentPhone == myPhone)
                 if (!stillCurrent) {
                     Log.d("CONV_VM", "Dropping stale load for thread=$myThread (now on $currentThreadId)")
                     return@launch
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
                     messages.clear()
                     messages.addAll(readMessages)
                     // Keep unconfirmed optimistic sends visible until the provider reports them.
@@ -190,6 +216,15 @@ class ConversationViewModel(
                             currentPhone = sampleMsg.sender
                             SmsEventBus.activeConversationPhone = currentPhone
                         }
+                        // Phone-only pager: once the real thread id is known,
+                        // rebuild the pager on it so loadNewerSince/loadOlder
+                        // query the resolved thread instead of THREAD_ID = 0.
+                        val resolvedThreadId = readMessages.last().threadId
+                        if (myThread == 0L && resolvedThreadId != 0L) {
+                            pager = com.autonomousone.messages.repository.ThreadPager(
+                                getApplication(), resolvedThreadId, currentPhone
+                            ).also { it.loadFirstPage() } // align consumed counters
+                        }
                     }
                     // Push the read state into the Home list immediately via
                     // the shared event bus (no ViewModel-to-ViewModel coupling).
@@ -200,11 +235,15 @@ class ConversationViewModel(
                 // Store for instant re-open.
                 ThreadMessageCache.put(targetThreadId, targetPhone, loadedMessages)
             } finally {
-                spinnerGuard?.cancel()
-                spinnerGuard = null
-                withContext(Dispatchers.Main) {
-                    isLoading = false
-                    loadStatus = null
+                // Generation check: a superseded load must not cancel the
+                // spinner of the NEW conversation's load (shared guard bug).
+                if (gen == conversationGeneration) {
+                    spinnerGuard?.cancel()
+                    spinnerGuard = null
+                    withContext(Dispatchers.Main) {
+                        isLoading = false
+                        loadStatus = null
+                    }
                 }
             }
         }
@@ -242,15 +281,9 @@ class ConversationViewModel(
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                val normalizedIncoming = ContactRepository.normalizePhone(incomingSms.sender)
-                val normalizedCurrent = ContactRepository.normalizePhone(currentPhone)
-
                 if (currentPhone.isBlank() && currentThreadId == 0L) return@collect
 
-                val isMatch = normalizedCurrent.isNotBlank() && normalizedIncoming.isNotBlank() &&
-                        (normalizedIncoming == normalizedCurrent ||
-                                normalizedIncoming.endsWith(normalizedCurrent) ||
-                                normalizedCurrent.endsWith(normalizedIncoming))
+                val isMatch = ContactRepository.sameConversation(incomingSms.sender, currentPhone)
 
                 if (isMatch) {
                     val isDuplicate = messages.any {
@@ -359,13 +392,8 @@ class ConversationViewModel(
     private fun observeOutgoingSent() {
         viewModelScope.launch {
             SmsEventBus.outgoingSentFlow.collect { sent ->
+                if (!ContactRepository.sameConversation(sent.phone, currentPhone)) return@collect
                 val normSent = ContactRepository.normalizePhone(sent.phone)
-                val normCurrent = ContactRepository.normalizePhone(currentPhone)
-                if (normSent.isBlank() || normCurrent.isBlank()) return@collect
-                val matches = normSent == normCurrent ||
-                        normSent.endsWith(normCurrent.takeLast(9)) ||
-                        normCurrent.endsWith(normSent.takeLast(9))
-                if (!matches) return@collect
                 val row = Sms(
                     id = sent.date, threadId = currentThreadId, sender = normSent,
                     message = sent.message, date = sent.date, unread = false, type = 2
