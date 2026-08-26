@@ -85,10 +85,11 @@
 
         <!-- Receives the library's explicit MMS_RECEIVED broadcast after the
              download completes; taskAffinity is how mmslib's BroadcastUtils
-             finds this receiver class. -->
+             finds this receiver class. The broadcast is explicit AND
+             package-scoped by the library, so no external export needed. -->
         <receiver
             android:name=".receiver.MmsReceiver"
-            android:exported="true"
+            android:exported="false"
             android:taskAffinity="com.klinker.android.messaging.MMS_RECEIVED" />
 
         <!-- Drives MMS download/send transactions over the MMS network. -->

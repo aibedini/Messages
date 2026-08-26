@@ -2,6 +2,7 @@ package com.autonomousone.messages.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,10 +65,15 @@ class ConversationViewModel(
     // Only the newest page is read on open; scrolling up pulls older pages.
     private var pager: com.autonomousone.messages.repository.ThreadPager? = null
 
+    /** Cancels the previous load when a new conversation is opened, so a slow
+     *  old query can never overwrite the freshly opened thread's messages. */
+    private var conversationLoadJob: kotlinx.coroutines.Job? = null
+
     fun loadOlderMessages() {
         val p = pager ?: return
         if (!p.hasMore) return
-        viewModelScope.launch(Dispatchers.IO) {
+        if (olderMessagesJob?.isActive == true) return
+        olderMessagesJob = viewModelScope.launch(Dispatchers.IO) {
             val older = p.loadOlder()
             if (older.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
@@ -84,6 +90,8 @@ class ConversationViewModel(
         }
     }
 
+    private var olderMessagesJob: kotlinx.coroutines.Job? = null
+
     fun loadConversation(threadId: Long, phone: String = "") {
         currentThreadId = threadId
         if (phone.isNotBlank()) {
@@ -91,7 +99,13 @@ class ConversationViewModel(
             SmsEventBus.activeConversationPhone = phone
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        // A slow load of the PREVIOUS conversation must never paint over this
+        // one — cancel it and stamp this run with the thread it owns.
+        conversationLoadJob?.cancel()
+        val myThread = threadId
+        val myPhone = currentPhone
+
+        conversationLoadJob = viewModelScope.launch(Dispatchers.IO) {
             // ── Stale-while-revalidate: paint the cached thread INSTANTLY
             // (Google Messages-style), then refresh from the provider.
             val cache = ThreadMessageCache
@@ -152,6 +166,16 @@ class ConversationViewModel(
                 }
 
                 val readMessages = loadedMessages.map { it.copy(unread = false) }
+
+                // Stale-result guard: if the user has since opened another
+                // conversation, this result is obsolete — drop it silently.
+                val stillCurrent =
+                    currentThreadId == myThread &&
+                            (myPhone.isBlank() || currentPhone == myPhone)
+                if (!stillCurrent) {
+                    Log.d("CONV_VM", "Dropping stale load for thread=$myThread (now on $currentThreadId)")
+                    return@launch
+                }
 
                 withContext(Dispatchers.Main) {
                     messages.clear()

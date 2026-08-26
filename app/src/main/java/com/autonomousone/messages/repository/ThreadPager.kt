@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.ContactRepository
 import kotlin.math.max
 
 /**
@@ -33,6 +34,31 @@ class ThreadPager(
     // How many NEWEST rows are already handed to the UI (per source).
     private var smsConsumed = 0
     private var mmsConsumed = 0
+
+    /**
+     * Phone-only route (threadId == 0): query by ADDRESS suffix instead of a
+     * bogus THREAD_ID = 0 selection, which always returned an empty page.
+     * last-7-digits matching mirrors how the rest of the app groups threads.
+     */
+    private val smsSelection: String =
+        if (threadId > 0L || phone.isBlank())
+            "${Telephony.Sms.THREAD_ID} = ?"
+        else {
+            val digits = ContactRepository.normalizePhone(phone)
+                .takeLast(if (ContactRepository.normalizePhone(phone).length >= 7) 7 else 0)
+            "(substr(${Telephony.Sms.ADDRESS}, -${digits.length}) = ? OR ${Telephony.Sms.ADDRESS} = ?)"
+        }
+
+    private val smsArgs: Array<String> =
+        when {
+            threadId > 0L -> arrayOf(threadId.toString())
+            phone.isBlank() -> arrayOf("0")
+            else -> {
+                val norm = ContactRepository.normalizePhone(phone)
+                val digits = norm.takeLast(if (norm.length >= 7) 7 else norm.length)
+                arrayOf(digits, phone)
+            }
+        }
 
     /** True when either source still has older rows to pull. */
     @Volatile
@@ -92,19 +118,22 @@ class ThreadPager(
     private fun loadPage(skipSms: Int, skipMms: Int): List<Sms> {
         val repo = SmsRepository(context)
         val sms = repo.querySmsRaw(
-            selection = "${Telephony.Sms.THREAD_ID} = ?",
-            selectionArgs = arrayOf(threadId.toString()),
+            selection = smsSelection,
+            selectionArgs = smsArgs,
             sortOrder = "${Telephony.Sms.DATE} DESC",
             limit = PAGE,
             offset = skipSms
         )
-        val mms = repo.queryMmsRaw(
+        // MMS keeps the thread-based path; phone-only threads rarely carry MMS
+        // history and the addr-table join is expensive. ponytail: acceptable
+        // ceiling — upgrade to an addr-based MMS query if a real thread needs it.
+        val mms = if (threadId > 0L) repo.queryMmsRaw(
             selection = "${Telephony.Mms.THREAD_ID} = ?",
             selectionArgs = arrayOf(threadId.toString()),
             sortOrder = "${Telephony.Mms.DATE} DESC",
             limit = PAGE,
             offset = skipMms
-        )
+        ) else emptyList()
         smsConsumed += sms.size
         mmsConsumed += mms.size
         return merge(sms, mms).asReversed() // provider gave DESC → display ASC

@@ -16,8 +16,11 @@ object SmsEventBus {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // replay=1: late collectors (e.g. ViewModel subscribing after SMS arrives) still get it
-    private val _incomingSmsFlow = MutableSharedFlow<Sms>(replay = 1, extraBufferCapacity = 64)
+    // No replay: a NEW ViewModel collector must not re-receive the LAST message
+    // (that caused a stale SMS to flash in a freshly opened conversation and an
+    // extra refresh). Liveness comes from Room/provider state, not the bus; the
+    // bus is a fire-and-forget nudge. extraBufferCapacity keeps fast bursts.
+    private val _incomingSmsFlow = MutableSharedFlow<Sms>(extraBufferCapacity = 64)
     val incomingSmsFlow: SharedFlow<Sms> = _incomingSmsFlow.asSharedFlow()
 
     // Signals ViewModels to reload from DB (fired on onResume)

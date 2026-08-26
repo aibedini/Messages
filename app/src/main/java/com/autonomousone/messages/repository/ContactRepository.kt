@@ -40,14 +40,20 @@ class ContactRepository(
         /**
          * True when [a] and [b] plausibly belong to the same conversation:
          * equal after normalization, or one is a suffix of the other (same
-         * number seen with/without country code). Pure function so JVM unit
-         * tests cover the routing decisions made from broadcast receivers.
+         * number seen with/without country code). Suffix matching requires a
+         * minimum length so short fragments ("12", "911") can never falsely
+         * join two unrelated conversations.
          */
         fun sameConversation(a: String, b: String): Boolean {
             val na = normalizePhone(a)
             val nb = normalizePhone(b)
             if (na.isBlank() || nb.isBlank()) return false
-            return na == nb || na.endsWith(nb) || nb.endsWith(na)
+            if (na == nb) return true
+            // Suffix match only when the shorter side carries real signal
+            // (≥ 7 digits ≈ subscriber number without country code).
+            val minLen = minOf(na.length, nb.length)
+            if (minLen < 7) return false
+            return na.endsWith(nb) || nb.endsWith(na)
         }
     }
 

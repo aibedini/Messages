@@ -37,12 +37,14 @@ class SmsContentObserver(
     private var pendingTrailing = false
 
     override fun onChange(selfChange: Boolean) {
-        super.onChange(selfChange)
         dispatch()
     }
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
-        super.onChange(selfChange, uri)
+        // NOTE: do NOT call super here — the base ContentObserver delegates
+        // onChange(selfChange, uri) back into onChange(selfChange), which we
+        // also override. That produced TWO dispatches per provider change
+        // (double refresh on every incoming message).
         dispatch()
     }
 

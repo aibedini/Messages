@@ -40,4 +40,17 @@ class SameConversationRoutingTest {
     fun `different numbers never match`() {
         assertFalse(same("+989121234567", "+989351112222"))
     }
+
+    @Test
+    fun `short number fragments never suffix-match`() {
+        // A short code like "12" must not claim every conversation ending in 12
+        assertFalse(same("12", "+989121234512"))
+        assertFalse(same("4321", "+989121234567"))
+    }
+
+    @Test
+    fun `full short codes can still be equal`() {
+        // Bank/OTP short codes compare by exact equality regardless of length.
+        assertTrue(same("50001", "50001"))
+    }
 }
