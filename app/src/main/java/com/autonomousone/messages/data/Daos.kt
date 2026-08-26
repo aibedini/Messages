@@ -89,6 +89,38 @@ interface ConversationDao {
     @Upsert
     suspend fun upsert(conversation: ConversationEntity)
 
+    /**
+     * Sync-engine rebuild path: overwrites every projection field INCLUDING
+     * pinned/archived (the coordinator passes the current repository state).
+     */
+    @Upsert
+    suspend fun upsertFull(conversation: ConversationEntity)
+
+    /**
+     * Partial write for repair/read-mirror paths that must NOT clobber
+     * user-owned projection state — an upsert here would reset pinned and
+     * archived to false and drop a pinned thread off the top of Home.
+     */
+    @Query(
+        """
+        UPDATE conversations SET
+            normalizedAddress = :normalizedAddress,
+            rawAddress = :rawAddress,
+            snippet = :snippet,
+            lastMessageDate = :lastMessageDate,
+            unreadCount = :unreadCount
+        WHERE threadId = :threadId
+        """
+    )
+    suspend fun upsertPreservingFlags(
+        threadId: Long,
+        normalizedAddress: String,
+        rawAddress: String,
+        snippet: String,
+        lastMessageDate: Long,
+        unreadCount: Int
+    )
+
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")
     suspend fun markRead(threadId: Long)
 

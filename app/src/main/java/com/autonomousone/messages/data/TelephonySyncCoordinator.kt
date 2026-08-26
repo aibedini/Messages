@@ -148,6 +148,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 val newest = dao.newestDateFor(source) ?: 0L
                 val fresh = readNewerThan(source, newest)
                 if (fresh.isNotEmpty()) {
+                    // STRICTLY newer than the watermark. A message persisted in
+                    // the SAME millisecond as the watermark shares its DATE:
+                    // re-upserting a KNOWN row is harmless, but ignoring it
+                    // would also drop a MISSED same-ms row (provider id the
+                    // shadow has never seen) — which is exactly what made an
+                    // app-sent message invisible on Home until restart.
                     dao.upsertAll(fresh.mapNotNull { toEntity(it, source) })
                 }
                 stateDao.upsert(state.copy(lastSyncAt = System.currentTimeMillis()))
@@ -241,6 +247,10 @@ class TelephonySyncCoordinator private constructor(context: Context) {
      * Re-reads one thread's rows from the provider and repairs its shadow copy
      * (status flips like PENDING → SENT arrive as in-place UPDATEs that no
      * date-window sync can observe). Cheap: one bounded window query.
+     *
+     * The conversation projection is updated via [ConversationDao.upsertPreservingFlags]
+     * — a full upsert here would reset pinned/archived to false and drop a
+     * pinned thread off the top of Home (reported bug).
      */
     suspend fun repairThreadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
@@ -252,7 +262,53 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         )
         if (fresh.isEmpty()) return@withContext
         db.messageDao().upsertAll(fresh.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+        rebuildConversationProjectionFor(threadId, preserveFlags = true)
     }
+
+    /**
+     * Rebuilds ONE conversation row from the messages table.
+     * `preserveFlags=true` keeps pinned/archived as-is (repair path);
+     * `preserveFlags=false` refreshes them from the repositories (rebuild).
+     */
+    private suspend fun rebuildConversationProjectionFor(
+        threadId: Long,
+        preserveFlags: Boolean
+    ) {
+        if (threadId <= 0L) return
+        val page = db.messageDao().pageForThread(threadId, limit = 1, offset = 0)
+        val newest = page.firstOrNull() ?: return
+        val unread = countUnread(threadId)
+        if (preserveFlags) {
+            db.conversationDao().upsertPreservingFlags(
+                threadId = threadId,
+                normalizedAddress = newest.normalizedAddress,
+                rawAddress = newest.rawAddress,
+                snippet = newest.body,
+                lastMessageDate = newest.date,
+                unreadCount = unread
+            )
+        } else {
+            val existing = db.conversationDao().byThread(threadId)
+            db.conversationDao().upsertFull(
+                ConversationEntity(
+                    threadId = threadId,
+                    normalizedAddress = newest.normalizedAddress,
+                    rawAddress = newest.rawAddress,
+                    snippet = newest.body,
+                    lastMessageDate = newest.date,
+                    unreadCount = unread,
+                    pinned = existing?.pinned ?: (threadId in pinRepositoryIds()),
+                    archived = existing?.archived ?: (threadId in archivedRepositoryIds())
+                )
+            )
+        }
+    }
+
+    private suspend fun pinRepositoryIds(): Set<Long> =
+        com.autonomousone.messages.repository.PinRepository(appContext).getPinnedIds()
+
+    private suspend fun archivedRepositoryIds(): Set<Long> =
+        com.autonomousone.messages.repository.ArchiveRepository(appContext).getArchivedIds()
 
     /** Rebuild every conversation row from the messages table (single query). */
     private suspend fun rebuildConversations() {
