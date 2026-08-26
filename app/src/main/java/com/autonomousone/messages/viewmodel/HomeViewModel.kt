@@ -100,6 +100,14 @@ class HomeViewModel(
     private var hasLoadedOnce = false
 
     /**
+     * Read-cutover latch: flips true the first time the shadow reports both
+     * sources backfilled. Backfill never regresses, so it never flips back;
+     * until then every refresh takes the legacy provider path.
+     */
+    @Volatile
+    private var roomReadEnabled = false
+
+    /**
      * Newest conversation date seen in the last full load. Used by the
      * incremental sync to only fetch threads newer than this.
      */
@@ -177,6 +185,28 @@ class HomeViewModel(
      */
     private suspend fun performLoad() {
         val cache = com.autonomousone.messages.repository.ConversationCache.get(getApplication())
+
+        // ── Read-cutover: once the shadow is fully backfilled, the local Room
+        // copy IS the conversation list. One cheap sync cycle (bounded window
+        // reads, not a full scan) followed by one indexed local query — this
+        // is what makes cold start paint instantly with zero provider work.
+        val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
+        if (!roomReadEnabled) {
+            roomReadEnabled = coordinator.isShadowReady()
+        }
+        if (roomReadEnabled && !hasLoadedOnce) {
+            val roomList = kotlin.runCatching {
+                coordinator.syncNow()
+                roomConversations()
+            }.getOrNull()
+            if (roomList != null) {
+                replaceConversations(roomList, archiveRepository.getArchivedIds(), atomic = false)
+                newestKnownDate = roomList.maxOfOrNull { it.date } ?: 0L
+                hasLoadedOnce = true
+                // Keep the on-disk snapshot in step for widgets/next launch.
+                withContext(Dispatchers.IO) { cache.save(roomList) }
+            }
+        }
 
         // ── Instant hydration from the persistent cache (Google Messages-style):
         // paint the last known list immediately, no skeleton, no "syncing".
@@ -258,6 +288,29 @@ class HomeViewModel(
      */
     private suspend fun silentRefresh() {
         try {
+            // ── Read-cutover (warm path): refresh the shadow, then read the
+            // list locally — no Threads-provider scan at all. Any failure here
+            // falls through to the legacy provider refresh below.
+            val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
+            if (!roomReadEnabled) {
+                roomReadEnabled = coordinator.isShadowReady()
+            }
+            if (roomReadEnabled) {
+                val roomList = kotlin.runCatching {
+                    coordinator.syncNow()
+                    roomConversations()
+                }.getOrNull()
+                if (roomList != null) {
+                    replaceConversations(roomList, archiveRepository.getArchivedIds(), atomic = true)
+                    newestKnownDate = maxOf(newestKnownDate, roomList.maxOfOrNull { it.date } ?: 0L)
+                    withContext(Dispatchers.IO) {
+                        com.autonomousone.messages.repository.ConversationCache
+                            .get(getApplication()).save(roomList)
+                    }
+                    return
+                }
+            }
+
             val (freshList, archived) = withContext(Dispatchers.IO) {
                 val archived = archiveRepository.getArchivedIds()
                 val list = repository.getConversationsFast(null, null)
@@ -282,6 +335,29 @@ class HomeViewModel(
             Log.e("SMS_DEBUG", "Silent refresh failed; keeping cache", error)
         }
     }
+
+    /**
+     * Reads the conversation list from the LOCAL Room projection (read-cutover
+     * SSOT). Row shape mirrors [SmsRepository.getConversationsFast]: one Sms
+     * per thread, `id == threadId`, snippet as message, unread from the count.
+     */
+    private suspend fun roomConversations(): List<Sms> =
+        withContext(Dispatchers.IO) {
+            com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                .conversationDao()
+                .all()
+                .map { c ->
+                    Sms(
+                        id = c.threadId,
+                        threadId = c.threadId,
+                        sender = c.rawAddress.ifBlank { c.normalizedAddress },
+                        message = c.snippet,
+                        date = c.lastMessageDate,
+                        unread = c.unreadCount > 0,
+                        type = 1
+                    )
+                }
+        }
 
     /**
      * Rebuilds the visible lists from [items].
@@ -368,6 +444,15 @@ class HomeViewModel(
     fun markAllAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.markAllAsRead()
+            // Mirror into the shadow so a Room-first Home read shows the same
+            // all-read state without waiting for the next full rebuild.
+            kotlin.runCatching {
+                val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator
+                    .get(getApplication())
+                (conversations + archivedConversations).toList().forEach { sms ->
+                    coordinator.markThreadReadInShadow(sms.threadId)
+                }
+            }
             loadSms()
         }
     }
@@ -392,6 +477,12 @@ class HomeViewModel(
         val job = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
             repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
+            // Mirror into the shadow: a Room-first Home read must not
+            // resurrect the deleted conversation from the local projection.
+            kotlin.runCatching {
+                com.autonomousone.messages.data.TelephonySyncCoordinator
+                    .get(getApplication()).deleteThreadFromShadow(sms.threadId)
+            }
             synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
         }
         pendingDeletes[sms.threadId] = job

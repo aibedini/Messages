@@ -128,6 +128,40 @@ class ConversationViewModel(
             val stale = if (cacheKeyThread != 0L || phone.isNotBlank())
                 cache.getStale(cacheKeyThread, phone.ifBlank { currentPhone }) else null
 
+            if (stale == null || stale.first.isEmpty()) {
+                // In-memory cache miss (fresh process): paint from the local
+                // Room shadow instead of showing an empty/spinner screen.
+                val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator
+                    .get(getApplication())
+                if (!roomReadEnabled) {
+                    roomReadEnabled = kotlin.runCatching { coordinator.isShadowReady() }.getOrDefault(false)
+                }
+                val key = if (cacheKeyThread != 0L) cacheKeyThread else currentThreadId
+                val normPhone = ContactRepository.normalizePhone(phone.ifBlank { currentPhone })
+                if (roomReadEnabled && (key != 0L || normPhone.isNotBlank())) {
+                    val roomRows = kotlin.runCatching {
+                        com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                            .messageDao()
+                            .let { dao ->
+                                if (key != 0L) dao.pageForThread(key, limit = 40, offset = 0)
+                                else dao.newestForAddress(normPhone, limit = 40)
+                            }
+                            .map { it.toSms() }
+                    }.getOrNull().orEmpty()
+                    if (roomRows.isNotEmpty() && gen == conversationGeneration) {
+                        withContext(Dispatchers.Main) {
+                            if (gen != conversationGeneration) return@withContext
+                            messages.clear()
+                            messages.addAll(roomRows.map { it.copy(unread = false) })
+                            messages.addAll(mergeOptimistic(messages.toList()))
+                            isLoading = false
+                            loadStatus = null
+                        }
+                        markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
+                    }
+                }
+            }
+
             if (stale != null && stale.first.isNotEmpty()) {
                 val cachedList = stale.first.map { it.copy(unread = false) }
                 withContext(Dispatchers.Main) {
@@ -252,6 +286,14 @@ class ConversationViewModel(
     /** Cancels the delayed "show spinner" job when the load beat it. */
     private var spinnerGuard: kotlinx.coroutines.Job? = null
 
+    /**
+     * Read-cutover latch (mirrors HomeViewModel): once both sources are fully
+     * backfilled, Room may serve the instant-open paint when the in-memory
+     * thread cache has no copy (fresh process).
+     */
+    @Volatile
+    private var roomReadEnabled = false
+
     fun setPhone(phone: String) {
         currentPhone = phone
         SmsEventBus.activeConversationPhone = phone
@@ -274,6 +316,14 @@ class ConversationViewModel(
             // invalidating here is what causes "Reading messages…" on every
             // re-open of a conversation.
             repository.markThreadAsRead(threadId, phone)
+            // Mirror the read state into the shadow so a Room-first read
+            // (fresh process) doesn't resurrect stale unread badges.
+            viewModelScope.launch(Dispatchers.IO) {
+                kotlin.runCatching {
+                    com.autonomousone.messages.data.TelephonySyncCoordinator
+                        .get(getApplication()).markThreadReadInShadow(threadId)
+                }
+            }
             SmsEventBus.emitThreadRead(threadId, phone)
         }
     }

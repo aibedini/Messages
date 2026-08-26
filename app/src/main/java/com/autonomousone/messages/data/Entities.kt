@@ -43,6 +43,8 @@ data class MessageEntity(
     val type: Int,
     /** Telephony.Sms.STATUS (-1/0/32/64). */
     val status: Int = -1,
+    /** Delivery timestamp (epoch ms); 0 until SENT/DELIVERED fills it. */
+    val dateSent: Long = 0,
     val read: Boolean,
     /** Sync bookkeeping. */
     val syncState: String = SYNC_STATE_SYNCED
@@ -53,6 +55,19 @@ data class MessageEntity(
         const val SYNC_STATE_SYNCED = "synced"
         const val SYNC_STATE_PENDING = "pending"
     }
+
+    /** View-model row shape used across the UI (provider-compatible fields). */
+    fun toSms() = com.autonomousone.messages.model.Sms(
+        id = providerId,
+        threadId = threadId,
+        sender = rawAddress.ifBlank { normalizedAddress },
+        message = body,
+        date = date,
+        unread = !read,
+        type = type,
+        status = status,
+        dateSent = dateSent
+    )
 }
 
 /** Per-conversation projection kept up to date by the sync engine. */
@@ -63,6 +78,8 @@ data class MessageEntity(
 data class ConversationEntity(
     @PrimaryKey val threadId: Long,
     val normalizedAddress: String,
+    /** Address exactly as the provider stored it (display + matching fallback). */
+    val rawAddress: String = "",
     /** Display snippet = newest message body. */
     val snippet: String,
     val lastMessageDate: Long,

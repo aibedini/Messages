@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [MessageEntity::class, ConversationEntity::class, SyncStateEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {

@@ -58,6 +58,24 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         requests.trySend(Unit)
     }
 
+    /**
+     * Suspends until one full sync cycle completes. Used by the read-cutover
+     * path: the UI refreshes the shadow FIRST, then reads locally from Room.
+     */
+    suspend fun syncNow() = runSyncCycle()
+
+    /**
+     * Read-cutover gate: Room may serve the UI only once BOTH sources have
+     * completed their initial backfill. Until then every read falls back to
+     * the provider path (identical to pre-cutover behavior).
+     */
+    suspend fun isShadowReady(): Boolean = withContext(Dispatchers.IO) {
+        val stateDao = db.syncStateDao()
+        listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS).all { source ->
+            stateDao.forSource(source)?.backfillComplete == true
+        }
+    }
+
     private fun ensureLoop() {
         if (!started.compareAndSet(false, true)) return
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
@@ -191,11 +209,50 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             date = sms.date,
             type = sms.type,
             status = sms.status,
+            dateSent = sms.dateSent,
             read = !sms.unread
         )
     }
 
     private fun String?.orEmptyIfNull() = this ?: ""
+
+    // ── Mirror writes: operations the APP itself performs must be applied to
+    // the shadow too, so a Room-first read never disagrees with the provider.
+
+    /** Mirrors a conversation delete into Room (messages + projection). */
+    suspend fun deleteThreadFromShadow(threadId: Long) = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext
+        db.messageDao().deleteThread(threadId)
+        db.conversationDao().delete(threadId)
+    }
+
+    /**
+     * Marks a thread read in Room. The messages table is the SSOT for unread
+     * counts; the conversations projection is updated to match so the Home
+     * badge drops even before the next rebuild pass.
+     */
+    suspend fun markThreadReadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext
+        db.messageDao().markThreadRead(threadId)
+        db.conversationDao().markRead(threadId)
+    }
+
+    /**
+     * Re-reads one thread's rows from the provider and repairs its shadow copy
+     * (status flips like PENDING → SENT arrive as in-place UPDATEs that no
+     * date-window sync can observe). Cheap: one bounded window query.
+     */
+    suspend fun repairThreadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext
+        val fresh = smsRepository.querySmsRaw(
+            selection = "${Telephony.Sms.THREAD_ID} = ?",
+            selectionArgs = arrayOf(threadId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} DESC",
+            limit = 200
+        )
+        if (fresh.isEmpty()) return@withContext
+        db.messageDao().upsertAll(fresh.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+    }
 
     /** Rebuild every conversation row from the messages table (single query). */
     private suspend fun rebuildConversations() {
@@ -210,6 +267,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 ConversationEntity(
                     threadId = m.threadId,
                     normalizedAddress = m.normalizedAddress,
+                    rawAddress = m.rawAddress,
                     snippet = m.body,
                     lastMessageDate = m.date,
                     unreadCount = unread,
@@ -229,6 +287,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             ConversationEntity(
                 threadId = threadId,
                 normalizedAddress = newest.normalizedAddress,
+                rawAddress = newest.rawAddress,
                 snippet = newest.body,
                 lastMessageDate = newest.date,
                 unreadCount = countUnread(threadId),

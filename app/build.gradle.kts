@@ -88,6 +88,12 @@ kotlin {
     }
 }
 
+// Export Room schemas to app/schemas/ so future versions can ship real
+// Migrations instead of destructive wipes (see docs/room-migration-strategy.md).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
