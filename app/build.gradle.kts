@@ -34,8 +34,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "2.1.6"
+        versionCode = 37
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -112,4 +112,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // MMS stack (Fossify fork of klinker android-smsmms): PushReceiver +
+    // TransactionService download/parse incoming MMS into Telephony.Mms.
+    implementation(libs.mmslib)
 }

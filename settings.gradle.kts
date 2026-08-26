@@ -37,6 +37,8 @@ dependencyResolutionManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
+        // org.fossify:mmslib is published through JitPack
+        maven("https://www.jitpack.io")
     }
 }
 

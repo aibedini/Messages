@@ -36,6 +36,19 @@ class ContactRepository(
             }
             return p
         }
+
+        /**
+         * True when [a] and [b] plausibly belong to the same conversation:
+         * equal after normalization, or one is a suffix of the other (same
+         * number seen with/without country code). Pure function so JVM unit
+         * tests cover the routing decisions made from broadcast receivers.
+         */
+        fun sameConversation(a: String, b: String): Boolean {
+            val na = normalizePhone(a)
+            val nb = normalizePhone(b)
+            if (na.isBlank() || nb.isBlank()) return false
+            return na == nb || na.endsWith(nb) || nb.endsWith(na)
+        }
     }
 
     suspend fun getContactNameMapAsync(): Map<String, String> = withContext(Dispatchers.IO) {

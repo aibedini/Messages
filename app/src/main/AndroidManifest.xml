@@ -69,9 +69,12 @@
             </intent-filter>
         </receiver>
 
-        <!-- WAP/MMS receiver required to be listed as default SMS app -->
+        <!-- WAP/MMS push: mmslib PushReceiver persists the notification-indication
+             and downloads the payload from the carrier MMSC, then broadcasts
+             MMS_RECEIVED to our .receiver.MmsReceiver below. Required to be
+             listed as default SMS app. -->
         <receiver
-            android:name=".receiver.MmsReceiver"
+            android:name="com.android.mms.transaction.PushReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter android:priority="999">
@@ -79,6 +82,17 @@
                 <data android:mimeType="application/vnd.wap.mms-message" />
             </intent-filter>
         </receiver>
+
+        <!-- Receives the library's explicit MMS_RECEIVED broadcast after the
+             download completes; taskAffinity is how mmslib's BroadcastUtils
+             finds this receiver class. -->
+        <receiver
+            android:name=".receiver.MmsReceiver"
+            android:exported="true"
+            android:taskAffinity="com.klinker.android.messaging.MMS_RECEIVED" />
+
+        <!-- Drives MMS download/send transactions over the MMS network. -->
+        <service android:name="com.android.mms.transaction.TransactionService" />
 
         <!-- Notification action receiver -->
         <receiver
