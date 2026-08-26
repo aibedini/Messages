@@ -34,6 +34,7 @@ import com.autonomousone.messages.ui.screens.OnboardingScreen
 import com.autonomousone.messages.ui.theme.MessagesTheme
 import com.autonomousone.messages.ui.theme.ThemeController
 import com.autonomousone.messages.utils.AppLockPreferences
+import com.autonomousone.messages.utils.IncomingShareParser
 import com.autonomousone.messages.utils.NotificationHelper
 import com.autonomousone.messages.utils.isBiometricAvailable
 import com.autonomousone.messages.utils.showBiometricPrompt
@@ -48,6 +49,15 @@ class MainActivity : AppCompatActivity() {
     private val isLockedState = mutableStateOf(false)
     private lateinit var onboardingPreferences: OnboardingPreferences
     private lateinit var appLockPreferences: AppLockPreferences
+
+    /**
+     * Pending external share/send payload, observed by the nav layer.
+     * Null once consumed. Cold start: parsed in onCreate; warm: onNewIntent.
+     */
+    private val pendingShareState = mutableStateOf<SharePayload?>(null)
+
+    /** Immutable result of parsing a share/send intent. */
+    data class SharePayload(val phone: String, val text: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Defensive guard: AppCompatActivity requires an AppCompat theme.
@@ -67,6 +77,11 @@ class MainActivity : AppCompatActivity() {
         appLockPreferences = AppLockPreferences(this)
         ThemeController.init(this)
         refreshSystemState()
+
+        // Cold-start share/send: parse the launching intent before first frame.
+        if (savedInstanceState == null) {
+            pendingShareState.value = parseShareIntent(intent)
+        }
 
         // App lock gate: lock whenever we come back from the background while
         // enabled. Onboarding still wins (nothing to protect yet).
@@ -163,6 +178,8 @@ class MainActivity : AppCompatActivity() {
                         AppNavigation(
                             hasPermission = hasSmsPermissions,
                             isDefaultSmsApp = isDefaultApp,
+                            pendingShare = pendingShareState.value,
+                            onShareConsumed = { pendingShareState.value = null },
                             onRequestDefaultApp = { requestDefaultSmsApp(defaultAppLauncher) },
                             onRequestPermissions = {
                                 when {
@@ -193,6 +210,35 @@ class MainActivity : AppCompatActivity() {
         SmsEventBus.isAppInForeground = true
         if (::onboardingPreferences.isInitialized) refreshSystemState()
         SmsEventBus.notifyResume()
+    }
+
+    /** Warm delivery: share sheet targeting the already-running activity. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingShareState.value = parseShareIntent(intent)
+    }
+
+    /**
+     * ACTION_SEND (shared text) / ACTION_SENDTO (sms: links). Returns null for
+     * anything that carries no usable payload (launcher intent, empty share).
+     */
+    private fun parseShareIntent(intent: Intent?): MainActivity.SharePayload? {
+        if (intent == null) return null
+        return when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+                if (text.isBlank()) null else SharePayload("", text)
+            }
+            Intent.ACTION_SENDTO -> {
+                val r = IncomingShareParser.fromSendTo(
+                    dataUri = intent.data?.toString(),
+                    smsBody = intent.getStringExtra("sms_body"),
+                    extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                )
+                if (r.phone.isBlank() && r.text.isBlank()) null else SharePayload(r.phone, r.text)
+            }
+            else -> null
+        }
     }
 
     private var wasPausedForLock = false

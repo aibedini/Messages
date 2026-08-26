@@ -71,10 +71,14 @@ import com.autonomousone.messages.viewmodel.NewConversationViewModel
 @Composable
 fun NewConversationScreen(
     navController: NavController,
-    forwardText: String = ""
+    forwardText: String = "",
+    /** Text received from an external share — DRAFT only, never auto-sent. */
+    draftText: String = "",
+    /** Recipient phone from an sms: link — pre-fills the search field. */
+    sharedPhone: String = ""
 ) {
     val viewModel: NewConversationViewModel = viewModel()
-    var search by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf(sharedPhone) }
     var groupMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Contact>() }
 
@@ -226,7 +230,8 @@ fun NewConversationScreen(
                                 Screen.Conversation.createNewRoute(
                                     phone = search,
                                     name = search,
-                                    forward = forwardText
+                                    forward = forwardText,
+                                    draft = draftText
                                 )
                             )
                         },
@@ -315,7 +320,8 @@ fun NewConversationScreen(
                                              Screen.Conversation.createNewRoute(
                                                  phone = contact.phone,
                                                  name = contact.name,
-                                                 forward = forwardText
+                                                 forward = forwardText,
+                                                 draft = draftText
                                              )
                                          )
                                      }
@@ -411,7 +417,8 @@ fun NewConversationScreen(
                                         Screen.Conversation.createNewRoute(
                                             phone = contact.phone,
                                             name = contact.name,
-                                            forward = forwardText
+                                            forward = forwardText,
+                                            draft = draftText
                                         )
                                     )
                                 }
@@ -434,7 +441,7 @@ fun NewConversationScreen(
                         val names = selected.joinToString(", ") { it.name.split(" ").first() }
                         navController.navigate(
                             Screen.Conversation.createNewRoute(
-                                phone = phones, name = names, forward = forwardText
+                                phone = phones, name = names, forward = forwardText, draft = draftText
                             )
                         )
                     }

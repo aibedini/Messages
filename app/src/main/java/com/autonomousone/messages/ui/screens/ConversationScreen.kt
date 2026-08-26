@@ -124,7 +124,10 @@ fun ConversationScreen(
     phone: String,
     name: String,
     navController: NavController,
-    forwardText: String = ""
+    forwardText: String = "",
+    /** External share text: pre-fills the composer as a DRAFT. The user
+     *  presses Send — nothing is auto-sent (unlike [forwardText]). */
+    draftText: String = ""
 ) {
     val context = LocalContext.current
     val viewModel: ConversationViewModel = viewModel()
@@ -145,6 +148,11 @@ fun ConversationScreen(
     var isFetchingLocation by remember { mutableStateOf(false) }
     var phoneActionNumber by remember { mutableStateOf<String?>(null) }
     var forwardSent by remember { mutableStateOf(false) }
+
+    // ── External share draft: seed the composer ONCE, never auto-send ────────
+    LaunchedEffect(draftText) {
+        if (draftText.isNotBlank() && message.isBlank()) message = draftText
+    }
 
     // ── Draft persistence ────────────────────────────────────────────────────
     // Saved LIVE on every keystroke (a tiny JSON write) rather than only on

@@ -5,11 +5,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.ui.screens.ConversationScreen
 import com.autonomousone.messages.ui.screens.HomeScreen
 import com.autonomousone.messages.ui.screens.NewConversationScreen
@@ -20,10 +22,24 @@ import com.autonomousone.messages.ui.screens.SplashScreen
 fun AppNavigation(
     hasPermission: Boolean,
     isDefaultSmsApp: Boolean,
+    pendingShare: MainActivity.SharePayload? = null,
+    onShareConsumed: () -> Unit = {},
     onRequestDefaultApp: () -> Unit,
     onRequestPermissions: () -> Unit
 ) {
     val navController = rememberNavController()
+
+    // External share/send payload: route ONCE into the new-conversation flow
+    // as a DRAFT (never auto-sent), then consume so rotation/recomposition
+    // doesn't re-trigger it.
+    pendingShare?.let { share ->
+        LaunchedEffect(share) {
+            navController.navigate(Screen.NewConversation.createDraftRoute(share.phone, share.text)) {
+                popUpTo(Screen.Home.route)
+            }
+            onShareConsumed()
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -83,12 +99,22 @@ fun AppNavigation(
                 navArgument("forward") {
                     type = NavType.StringType
                     defaultValue = ""
+                },
+                navArgument("draft") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("shared_phone") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
             NewConversationScreen(
                 navController = navController,
-                forwardText = backStackEntry.arguments?.getString("forward") ?: ""
+                forwardText = backStackEntry.arguments?.getString("forward") ?: "",
+                draftText = backStackEntry.arguments?.getString("draft") ?: "",
+                sharedPhone = backStackEntry.arguments?.getString("shared_phone") ?: ""
             )
         }
 
@@ -149,6 +175,10 @@ fun AppNavigation(
                 navArgument("forward") {
                     type = NavType.StringType
                     defaultValue = ""
+                },
+                navArgument("draft") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
@@ -156,12 +186,14 @@ fun AppNavigation(
             val phone = backStackEntry.arguments?.getString("phone") ?: ""
             val name = backStackEntry.arguments?.getString("name") ?: ""
             val forward = backStackEntry.arguments?.getString("forward") ?: ""
+            val draft = backStackEntry.arguments?.getString("draft") ?: ""
 
             ConversationScreen(
                 threadId = threadId,
                 phone = phone,
                 name = name,
                 forwardText = forward,
+                draftText = draft,
                 navController = navController
             )
         }
