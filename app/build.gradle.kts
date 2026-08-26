@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -115,4 +116,9 @@ dependencies {
     // MMS stack (Fossify fork of klinker android-smsmms): PushReceiver +
     // TransactionService download/parse incoming MMS into Telephony.Mms.
     implementation(libs.mmslib)
+    // Room: local read-SSOT for the UI (phase 2 architecture).
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.room.paging)
+    ksp(libs.androidx.room.compiler)
 }

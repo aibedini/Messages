@@ -65,6 +65,9 @@ class HomeViewModel(
     private val observer = SmsContentObserver {
         ThreadMessageCache.generation++ // provider changed → cached threads stale
         loadSms()
+        // Shadow-sync the change into Room (single writer, conflated).
+        com.autonomousone.messages.data.TelephonySyncCoordinator
+            .get(getApplication()).requestSync()
     }
 
     /** True while the conversation list is being refreshed (drives the loading spinner). */

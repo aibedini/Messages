@@ -9,6 +9,7 @@ import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.utils.NotificationHelper
 
 /**
@@ -56,6 +57,9 @@ object IncomingMessageDispatcher {
         if (!isViewingThis) {
             NotificationHelper.showSmsNotification(context, sms)
         }
+
+        // Mirror into Room via the single-writer sync coordinator.
+        TelephonySyncCoordinator.get(context).requestSync()
     }
 
     /**
