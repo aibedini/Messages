@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonomousone.messages.data.ChangeRouter
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -53,28 +54,27 @@ class HomeViewModel(
     var isGlobalSearchBusy by mutableStateOf(false)
         private set
 
-    /**
-     * Global search results across every stored message body —
-     * one representative row per conversation, with match count.
-     */
+    /** Global search results across every stored message body. */
     data class GlobalHit(val sms: Sms, val matchCount: Int)
 
     var globalResults by mutableStateOf<List<GlobalHit>>(emptyList())
         private set
 
-    private val observer = SmsContentObserver {
+    /**
+     * V2: ContentObserver callback routes through ChangeRouter for O(1)
+     * targeted mutations instead of triggering a full provider scan.
+     */
+    private val observer = SmsContentObserver { uri ->
         ThreadMessageCache.generation++ // provider changed → cached threads stale
-        loadSms()
-        // Shadow-sync the change into Room (single writer, conflated).
-        com.autonomousone.messages.data.TelephonySyncCoordinator
-            .get(getApplication()).requestSync()
+        // Route to targeted mutation or bounded reconcile — NOT full reload.
+        ChangeRouter.route(getApplication(), uri)
     }
 
-    /** True while the conversation list is being refreshed (drives the loading spinner). */
+    /** True while the conversation list is being refreshed. */
     var isLoading by mutableStateOf(false)
         private set
 
-    /** Real sync progress for the banner: "Syncing messages… 120/340". Null when idle. */
+    /** Real sync progress for the banner. */
     data class SyncProgress(val phase: String, val loaded: Int, val total: Int)
 
     var syncProgress by mutableStateOf<SyncProgress?>(null)
@@ -84,33 +84,26 @@ class HomeViewModel(
     var contactNames by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
-    /** conversation key → draft text (non-empty only). Drives "Draft:" rows. */
+    /** conversation key → draft text (non-empty only). */
     val drafts: StateFlow<Map<String, String>> =
         com.autonomousone.messages.repository.DraftRepository.get(application).drafts
 
     private val draftRepository get() = com.autonomousone.messages.repository.DraftRepository.get(getApplication())
 
-    /** Human-readable progress while loading (e.g. "Reading messages… 120/340"). Null when idle. */
+    /** Human-readable progress while loading. Null when idle. */
     var loadStatus by mutableStateOf<String?>(null)
         private set
 
     private val reloadRequests = Channel<Unit>(Channel.CONFLATED)
 
-    /** True once the first full load has completed — afterwards we render cache instantly. */
+    /** True once the first full load has completed. */
     private var hasLoadedOnce = false
 
-    /**
-     * Read-cutover latch: flips true the first time the shadow reports both
-     * sources backfilled. Backfill never regresses, so it never flips back;
-     * until then every refresh takes the legacy provider path.
-     */
+    /** Read-cutover latch. */
     @Volatile
     private var roomReadEnabled = false
 
-    /**
-     * Newest conversation date seen in the last full load. Used by the
-     * incremental sync to only fetch threads newer than this.
-     */
+    /** Newest conversation date seen in the last full load. */
     @Volatile
     private var newestKnownDate: Long = 0L
 
@@ -131,12 +124,7 @@ class HomeViewModel(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Load — Single Source of Truth pattern
-    //
-    // The in-memory lists ARE the UI's source of truth once loaded. A full
-    // provider scan happens only on cold start (empty lists). Everything else
-    // is either an incremental merge (observer events) or a silent atomic
-    // swap (explicit refresh) — never a visible "syncing" state again.
+    // Load
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun loadArchivedIds() {
@@ -154,10 +142,6 @@ class HomeViewModel(
     var isRefreshing by mutableStateOf(false)
         private set
 
-    /**
-     * Explicit user-driven refresh (pull-to-refresh). Same silent atomic-swap
-     * path as resume — the visible list is never cleared.
-     */
     fun refreshNow() {
         if (isRefreshing) return
         viewModelScope.launch {
@@ -178,18 +162,9 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Cold start / permission-granted path: full provider scan with progress.
-     * Only this path may show the skeleton/spinner — and only while the lists
-     * are still empty (no cache to render yet).
-     */
     private suspend fun performLoad() {
         val cache = com.autonomousone.messages.repository.ConversationCache.get(getApplication())
 
-        // ── Read-cutover: once the shadow is fully backfilled, the local Room
-        // copy IS the conversation list. One cheap sync cycle (bounded window
-        // reads, not a full scan) followed by one indexed local query — this
-        // is what makes cold start paint instantly with zero provider work.
         val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
         if (!roomReadEnabled) {
             roomReadEnabled = coordinator.isShadowReady()
@@ -203,13 +178,10 @@ class HomeViewModel(
                 replaceConversations(roomList, archiveRepository.getArchivedIds(), atomic = false)
                 newestKnownDate = roomList.maxOfOrNull { it.date } ?: 0L
                 hasLoadedOnce = true
-                // Keep the on-disk snapshot in step for widgets/next launch.
                 withContext(Dispatchers.IO) { cache.save(roomList) }
             }
         }
 
-        // ── Instant hydration from the persistent cache (Google Messages-style):
-        // paint the last known list immediately, no skeleton, no "syncing".
         if (!hasLoadedOnce) {
             val cached = withContext(Dispatchers.IO) { cache.load() }
             if (cached.threads.isNotEmpty()) {
@@ -219,9 +191,6 @@ class HomeViewModel(
             }
         }
 
-        // Show real sync progress even when a cached list is already visible.
-        // The delay avoids a flash for very small inboxes; cached content stays
-        // interactive underneath the compact banner.
         loadingShowJob?.cancel()
         loadingShowJob = viewModelScope.launch {
             delay(250)
@@ -251,14 +220,10 @@ class HomeViewModel(
                     ContactRepository(getApplication()).getContactNameMapAsync()
                 }
                 val rawList = repository.getConversationsFast(progressListener) { partial ->
-                    // Progressive paint during cold start ONLY: build on top of
-                    // what's shown instead of clearing mid-load.
                     if (!hasLoadedOnce) {
                         viewModelScope.launch { replaceConversations(partial, archived, atomic = false) }
                     }
                 }
-                // Same Threads-table reconciliation as silentRefresh: a stale
-                // snippet must never survive into the first painted list.
                 val freshList = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
                     rawList, repository.newestMessagePerThread(rawList.map { it.threadId })
                 )
@@ -270,7 +235,6 @@ class HomeViewModel(
             replaceConversations(freshList, archived, atomic = true)
             newestKnownDate = freshList.maxOfOrNull { it.date } ?: 0L
             hasLoadedOnce = true
-            // Persist for the next cold start (write-behind, off the UI path).
             withContext(Dispatchers.IO) { cache.save(freshList) }
         } catch (error: Exception) {
             Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
@@ -282,15 +246,8 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Warm path: rebuild off-screen and atomically swap — the visible list is
-     * never cleared, so returning from a conversation shows zero sync UI.
-     */
     private suspend fun silentRefresh() {
         try {
-            // ── Read-cutover (warm path): refresh the shadow, then read the
-            // list locally — no Threads-provider scan at all. Any failure here
-            // falls through to the legacy provider refresh below.
             val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
             if (!roomReadEnabled) {
                 roomReadEnabled = coordinator.isShadowReady()
@@ -314,10 +271,6 @@ class HomeViewModel(
             val (freshList, archived) = withContext(Dispatchers.IO) {
                 val archived = archiveRepository.getArchivedIds()
                 val list = repository.getConversationsFast(null, null)
-                // Reconcile each thread row against the newest message actually
-                // in the SMS table. The Threads table can lag (or never update)
-                // for rows the provider considers orphaned, which is what made
-                // the list disagree with the open conversation.
                 val reconciled = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
                     list, repository.newestMessagePerThread(list.map { it.threadId })
                 )
@@ -325,8 +278,6 @@ class HomeViewModel(
             }
             replaceConversations(freshList, archived, atomic = true)
             newestKnownDate = freshList.maxOfOrNull { it.date } ?: newestKnownDate
-            // Keep the on-disk snapshot in step, so the next cold start does not
-            // hydrate a list that is older than what the user just saw.
             withContext(Dispatchers.IO) {
                 com.autonomousone.messages.repository.ConversationCache
                     .get(getApplication()).save(freshList)
@@ -336,11 +287,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Reads the conversation list from the LOCAL Room projection (read-cutover
-     * SSOT). Row shape mirrors [SmsRepository.getConversationsFast]: one Sms
-     * per thread, `id == threadId`, snippet as message, unread from the count.
-     */
     private suspend fun roomConversations(): List<Sms> =
         withContext(Dispatchers.IO) {
             com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
@@ -359,13 +305,6 @@ class HomeViewModel(
                 }
         }
 
-    /**
-     * Rebuilds the visible lists from [items].
-     *
-     * @param atomic when true, new lists are built first and swapped in one
-     * go — no intermediate empty state. When false (cold-start progressive
-     * paint), the lists are replaced directly since there's nothing to protect.
-     */
     private fun replaceConversations(items: List<Sms>, archived: Set<Long>, atomic: Boolean = true) {
         val excluded = pendingDeletes.keys
         val blocked = blocklistRepository.getBlocked()
@@ -381,8 +320,6 @@ class HomeViewModel(
         sortByPin(archivedOut, pinnedIds)
 
         if (atomic) {
-            // Single recomposition: swap contents in place to keep the same
-            // SnapshotStateList instances (Compose keys stay stable).
             applySwap(conversations, main)
             applySwap(archivedConversations, archivedOut)
         } else {
@@ -393,9 +330,6 @@ class HomeViewModel(
         archivedIds.addAll(archived)
     }
 
-    /** In-place swap made ATOMIC via a snapshot transaction: Compose sees the
-     *  before→after state once, so keyed items move smoothly instead of the
-     *  whole list flashing through clear+add in separate frames. */
     private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {
         if (target == source) return
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
@@ -404,7 +338,6 @@ class HomeViewModel(
         }
     }
 
-    /** Sorts pinned threads above everything else, date-desc within groups. */
     private fun sortByPin(list: MutableList<Sms>, pins: Set<Long>) {
         list.sortWith { a, b ->
             val pa = a.threadId in pins
@@ -416,7 +349,6 @@ class HomeViewModel(
         }
     }
 
-    /** A conversation is blocked when its normalized address matches the block list. */
     private fun isBlockedAddress(sender: String, blocked: Set<String>): Boolean {
         if (blocked.isEmpty()) return false
         val norm = BlocklistRepository.normalize(sender)
@@ -428,11 +360,6 @@ class HomeViewModel(
     // Mark read
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Marks one conversation read in the in-memory list immediately.
-     * Called by ConversationViewModel after it persists READ=1 to the provider,
-     * so the Home list reflects the change instantly (no stale unread badge).
-     */
     fun markConversationReadLocally(threadId: Long, phone: String) {
         fun matches(sms: Sms): Boolean =
             (threadId != 0L && sms.threadId == threadId) ||
@@ -444,8 +371,6 @@ class HomeViewModel(
     fun markAllAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.markAllAsRead()
-            // Mirror into the shadow so a Room-first Home read shows the same
-            // all-read state without waiting for the next full rebuild.
             kotlin.runCatching {
                 val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator
                     .get(getApplication())
@@ -461,14 +386,7 @@ class HomeViewModel(
     // Delete (with undo)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Optimistically removes [sms] from the visible list immediately.
-     * Schedules a permanent ContentProvider delete after [delayMs] (default 4 s).
-     * The returned job can be cancelled before the delay elapses to undo.
-     */
     fun deleteConversation(sms: Sms, delayMs: Long = 4_000L) {
-        // Remove EVERY matching row by threadId — data-class equals is unsafe
-        // because reloads produce fresh instances with updated fields.
         conversations.removeAll { it.threadId == sms.threadId }
         archivedConversations.removeAll { it.threadId == sms.threadId }
 
@@ -477,8 +395,6 @@ class HomeViewModel(
         val job = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
             repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
-            // Mirror into the shadow: a Room-first Home read must not
-            // resurrect the deleted conversation from the local projection.
             kotlin.runCatching {
                 com.autonomousone.messages.data.TelephonySyncCoordinator
                     .get(getApplication()).deleteThreadFromShadow(sms.threadId)
@@ -488,19 +404,9 @@ class HomeViewModel(
         pendingDeletes[sms.threadId] = job
     }
 
-    /**
-     * Cancels a pending delete for [sms] and re-inserts it into the correct list
-     * at its sorted position (most-recent first by date).
-     *
-     * Safe against the two historical crash paths:
-     *  - the row was re-added by an observer reload in the meantime → deduped;
-     *  - the permanent delete already committed → no ghost row, just resync.
-     */
     fun undoDelete(sms: Sms) {
         val job = synchronized(pendingDeletes) { pendingDeletes[sms.threadId] }
         if (job == null || !job.isActive) {
-            // Deletion already committed (or raced past the window) — resync
-            // from the provider instead of resurrecting a ghost conversation.
             loadSms()
             return
         }
@@ -511,7 +417,6 @@ class HomeViewModel(
         insertDeduped(targetList, sms)
     }
 
-    /** Removes any row with the same id first, then inserts date-sorted. */
     private fun insertDeduped(target: MutableList<Sms>, sms: Sms) {
         target.removeAll { it.id == sms.id }
         val insertIndex = target.indexOfFirst { it.date < sms.date }
@@ -522,11 +427,6 @@ class HomeViewModel(
     // Archive / Unarchive
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Moves [sms] from the active conversations list to the archived list.
-     * Persists the archive state to SharedPreferences. Reversible via
-     * [unarchiveConversation] (wired to the snackbar's Undo action).
-     */
     fun archiveConversation(sms: Sms) {
         viewModelScope.launch(Dispatchers.IO) {
             archiveRepository.archiveThread(sms.threadId)
@@ -538,9 +438,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Moves [sms] from the archived list back to active conversations.
-     */
     fun unarchiveConversation(sms: Sms) {
         viewModelScope.launch(Dispatchers.IO) {
             archiveRepository.unarchiveThread(sms.threadId)
@@ -568,10 +465,6 @@ class HomeViewModel(
     // Block / Unblock
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Blocks the conversation's sender and hides it from every list immediately.
-     * The underlying messages stay in the provider — unblocking restores them.
-     */
     fun blockConversation(sms: Sms) {
         conversations.removeAll { it.threadId == sms.threadId }
         archivedConversations.removeAll { it.threadId == sms.threadId }
@@ -580,7 +473,6 @@ class HomeViewModel(
         }
     }
 
-    /** Removes [address] from the block list and reloads from the provider. */
     fun unblockNumber(address: String) {
         viewModelScope.launch(Dispatchers.IO) {
             blocklistRepository.unblock(address)
@@ -588,17 +480,12 @@ class HomeViewModel(
         }
     }
 
-    /** All blocked numbers, for Settings → Blocked numbers. */
     fun getBlockedNumbers(): Set<String> = blocklistRepository.getBlocked()
 
     // ─────────────────────────────────────────────────────────────────────────
     // Global search (all message bodies)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Searches every stored SMS body (not just conversation snippets).
-     * Emits one [GlobalHit] per conversation with a match count.
-     */
     fun searchAllMessages(query: String) {
         val q = query.trim()
         if (q.length < 2) {
@@ -637,25 +524,28 @@ class HomeViewModel(
     // Real-time incoming SMS
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * V2: The incoming SMS was already persisted to Room via mutate(Upsert)
+     * in IncomingMessageDispatcher. We just need to optimistically prepend
+     * for instant UI feedback, then let Room Flow handle the rest.
+     */
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                // Remove from whichever list it currently appears in
                 val existingIndex = conversations.indexOfFirst {
                     ContactRepository.sameConversation(it.sender, incomingSms.sender)
                 }
                 if (existingIndex >= 0) conversations.removeAt(existingIndex)
 
-                // Only add to main list if not archived
                 if (incomingSms.threadId !in archivedIds) {
                     conversations.removeAll {
                         ContactRepository.sameConversation(it.sender, incomingSms.sender)
                     }
                     conversations.add(0, incomingSms)
                 }
-                // Reconcile with the provider right away (conflated + debounced),
-                // so the freshly prepended row is confirmed/updated ASAP.
-                loadSms()
+                // V2: No more full reload here — the mutation already updated
+                // Room. Just reconcile the list from the cache/provider silently.
+                silentRefresh()
             }
         }
     }
@@ -663,16 +553,11 @@ class HomeViewModel(
     private fun observeRefreshSignal() {
         viewModelScope.launch {
             SmsEventBus.refreshFlow.collect {
-                // Always reconcile on resume: read-state/snippet changes don't
-                // create newer rows, so hasProviderChangedSince can't see them.
-                // silentRefresh is cheap (single threads-table query + atomic
-                // swap) and the UI keeps showing cached data meanwhile.
                 if (!hasLoadedOnce) loadSms() else silentRefresh()
             }
         }
     }
 
-    /** Instant unread-badge drop when a chat screen marks its thread read. */
     private fun observeThreadRead() {
         viewModelScope.launch {
             SmsEventBus.threadReadFlow.collect { event ->
@@ -681,11 +566,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Instant list update when an outgoing SMS is persisted (chat screen is
-     * still open): move that conversation to the top with the new snippet and
-     * date — no waiting for the ContentObserver debounce or a back-press.
-     */
     private fun observeOutgoingSent() {
         viewModelScope.launch {
             SmsEventBus.outgoingSentFlow.collect { sent ->
@@ -698,10 +578,8 @@ class HomeViewModel(
 
                 val row = if (idx >= 0) {
                     val existing = conversations.removeAt(idx)
-                    // Update snippet/date; keep the row's own id/threadId.
                     existing.copy(message = sent.message, date = sent.date, type = 2, unread = false)
                 } else {
-                    // Brand-new conversation created by this send.
                     Sms(
                         id = sent.date,
                         threadId = 0L,

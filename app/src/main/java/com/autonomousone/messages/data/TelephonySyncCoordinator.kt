@@ -6,27 +6,34 @@ import android.util.Log
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import androidx.room.withTransaction
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * The SINGLE writer into Room. Everything that changes message data flows
- * through one conflated queue on one dispatcher — receivers, ContentObserver,
- * resume nudges — so parallel provider scans and refresh storms are structurally
- * impossible instead of merely discouraged.
+ * The SINGLE writer into Room. Two completely separate channels:
  *
- * Sync strategy (per the phase-2 plan):
- *  - first sync is NEWEST-FIRST: the newest [FIRST_BATCH] rows per source are
- *    mirrored in one transaction so the UI can paint immediately;
- *  - history backfill continues batch-by-batch older than that;
- *  - incremental syncs only pull rows newer than the last mirrored date.
+ *  1. **Mutations** (exact, never conflated): every insert, delete, status
+ *     change, and read-mark reaches Room exactly once. This is the realtime
+ *     fast path — O(1) per message.
  *
- * Deletion/read-state reconciliation against the provider happens in
- * [reconcileConversation]; full-device deletes are out of scope for this phase.
+ *  2. **Reconcile requests** (CONFLATED): N queued nudges collapse into
+ *     exactly ONE bounded repair pass. Used for startup, crash recovery,
+ *     and fallback when the observer cannot provide a specific URI/id.
+ *
+ * Hot path for an incoming SMS:
+ *   Provider INSERT → providerId=348201, threadId=552
+ *   → mutate(Upsert("sms", sms))
+ *   → Room transaction { UPSERT message + UPDATE conversation }
+ *   → Room Flow → UI
+ *
+ * No full scan. No rebuildConversations(). No countUnread(10K rows).
  */
 class TelephonySyncCoordinator private constructor(context: Context) {
 
@@ -34,13 +41,19 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     private val smsRepository = SmsRepository(appContext)
     private val db get() = MessagesDatabase.get(appContext)
 
-    /** Conflated: N queued nudges collapse into exactly ONE pending sync. */
-    private val requests = Channel<Unit>(Channel.CONFLATED)
+    // ── Dual channels ──────────────────────────────────────────────────────
+
+    /** Exact mutations: sequential processing, never drops events. */
+    private val mutations = Channel<MessageMutation>(capacity = 64)
+
+    /** Reconcile requests: CONFLATED — N nudges collapse into 1. */
+    private val reconciles = Channel<ReconcileRequest>(Channel.CONFLATED)
+
     private val started = AtomicBoolean(false)
 
     companion object {
-        const val FIRST_BATCH = 100
-        const val BACKFILL_BATCH = 200
+        const val FIRST_BATCH = 500
+        const val BACKFILL_BATCH = 500
         const val TAG = "SYNC_COORD"
 
         @Volatile
@@ -52,67 +65,153 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             }
     }
 
-    /** Fire-and-forget nudge; safe to call from any thread/receiver. */
-    fun requestSync() {
+    // ── Public API ─────────────────────────────────────────────────────────
+
+    /** Queue an exact mutation (insert/update/delete/status). O(1). */
+    fun mutate(mutation: MessageMutation) {
         ensureLoop()
-        requests.trySend(Unit)
+        mutations.trySend(mutation)
     }
 
-    /**
-     * Suspends until one full sync cycle completes. Used by the read-cutover
-     * path: the UI refreshes the shadow FIRST, then reads locally from Room.
-     */
-    suspend fun syncNow() = runSyncCycle()
+    /** Queue a bounded reconcile (conflated). */
+    fun reconcile(request: ReconcileRequest = ReconcileRequest.FullSync) {
+        ensureLoop()
+        reconciles.trySend(request)
+    }
+
+    /** Backward compat during migration. */
+    fun requestSync() = reconcile(ReconcileRequest.FullSync)
+
+    /** Suspends until one full sync cycle completes. */
+    suspend fun syncNow() = applyReconcile(ReconcileRequest.FullSync)
 
     /**
      * Read-cutover gate: Room may serve the UI only once BOTH sources have
-     * completed their initial backfill. Until then every read falls back to
-     * the provider path (identical to pre-cutover behavior).
+     * completed their initial window. Until then every read falls back to
+     * the provider path.
      */
     suspend fun isShadowReady(): Boolean = withContext(Dispatchers.IO) {
         val stateDao = db.syncStateDao()
         listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS).all { source ->
-            stateDao.forSource(source)?.backfillComplete == true
+            stateDao.forSource(source)?.initialWindowReady == true
         }
     }
 
+    // ── Loop ───────────────────────────────────────────────────────────────
+
     private fun ensureLoop() {
         if (!started.compareAndSet(false, true)) return
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-            // Conflated channel: N queued nudges collapse into ONE pending value.
-            for (ignored in requests) {
+        CoroutineScope(Dispatchers.IO).launch {
+            // Exact mutations: sequential, never conflated.
+            launch {
+                for (mutation in mutations) {
+                    try {
+                        applyMutation(mutation)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "mutation failed: $mutation", e)
+                    }
+                }
+            }
+            // Reconcile requests: conflated, only the latest matters.
+            for (request in reconciles) {
                 try {
-                    runSyncCycle()
+                    applyReconcile(request)
                 } catch (e: Exception) {
-                    Log.e(TAG, "sync cycle failed", e)
+                    Log.e(TAG, "reconcile failed", e)
                 }
             }
         }
     }
 
-    /** One full pass: both sources, newest-first, then conversation rebuild. */
-    suspend fun runSyncCycle() = withContext(Dispatchers.IO) {
-        coroutineScope {
-            launch { syncSource(MessageEntity.SOURCE_SMS, ::readSmsNewestFirst) }
-            launch { syncSource(MessageEntity.SOURCE_MMS, ::readMmsNewestFirst) }
+    // ── Exact mutation fast path ───────────────────────────────────────────
+
+    private suspend fun applyMutation(m: MessageMutation) = withContext(Dispatchers.IO) {
+        when (m) {
+            is MessageMutation.Upsert -> {
+                val entity = toEntity(m.message, m.source) ?: return@withContext
+                val database = db
+                val dao = database.messageDao()
+                val convDao = database.conversationDao()
+
+                // Single Room transaction: message + conversation, atomically.
+                database.withTransaction {
+                    // Find old version for unread delta calculation.
+                    val old = dao.findByKey(m.source, entity.providerId)
+                    val oldRead = old?.read ?: true
+
+                    // Upsert the message.
+                    dao.upsertAll(listOf(entity))
+
+                    // Calculate unread delta.
+                    val unreadDelta = when {
+                        entity.read -> 0       // read message, no delta
+                        old == null -> 1       // new unread message: +1
+                        oldRead -> 1           // was read, now unread: +1
+                        else -> 0              // was unread, still unread: no change
+                    }
+
+                    // Upsert conversation projection (preserve pinned/archived).
+                    val existing = convDao.byThread(entity.threadId)
+                    convDao.upsertPreservingFlags(
+                        threadId = entity.threadId,
+                        normalizedAddress = entity.normalizedAddress,
+                        rawAddress = entity.rawAddress,
+                        snippet = entity.body,
+                        lastMessageDate = maxOf(entity.date, existing?.lastMessageDate ?: 0L),
+                        unreadCount = (existing?.unreadCount ?: 0) + unreadDelta
+                    )
+                }
+            }
+
+            is MessageMutation.Delete -> {
+                val dao = db.messageDao()
+                val threadId = m.threadId ?: dao.findByKey(m.source, m.providerId)?.threadId
+                dao.deleteBySourceAndId(m.source, m.providerId)
+                if (threadId != null && threadId > 0L) {
+                    rebuildConversationProjection(threadId, preserveFlags = true)
+                }
+            }
+
+            is MessageMutation.RefreshStatus -> {
+                val fresh = readExactMessage(m.source, m.providerId)
+                if (fresh != null) {
+                    val entity = toEntity(fresh, m.source)
+                    if (entity != null) {
+                        db.messageDao().upsertAll(listOf(entity))
+                        // Status changes don't affect conversation projection.
+                    }
+                }
+            }
+
+            is MessageMutation.MarkThreadRead -> {
+                db.messageDao().markThreadRead(m.threadId)
+                db.conversationDao().markRead(m.threadId)
+            }
+
+            is MessageMutation.DeleteThread -> {
+                db.messageDao().deleteThread(m.threadId)
+                db.conversationDao().delete(m.threadId)
+            }
         }
-        rebuildConversations()
     }
 
-    /**
-     * Upsert ONE freshly observed message straight into Room (receiver path).
-     * Cheap: single-row transaction, no provider scan.
-     */
-    suspend fun upsertSingle(sms: Sms, source: String = MessageEntity.SOURCE_SMS) =
-        withContext(Dispatchers.IO) {
-            val entity = toEntity(sms, source) ?: return@withContext
-            coroutineScope {
-                launch { db.messageDao().upsertAll(listOf(entity)) }
-            }
-            rebuildConversationFor(entity.threadId)
-        }
+    // ── Reconcile path (repair/recovery) ───────────────────────────────────
 
-    // ── internals ────────────────────────────────────────────────────────────
+    private suspend fun applyReconcile(request: ReconcileRequest) = withContext(Dispatchers.IO) {
+        when (request) {
+            is ReconcileRequest.ForThread -> {
+                repairThreadInShadow(request.threadId)
+            }
+            is ReconcileRequest.FullSync -> {
+                coroutineScope {
+                    launch { syncSource(MessageEntity.SOURCE_SMS, ::readSmsNewestFirst) }
+                    launch { syncSource(MessageEntity.SOURCE_MMS, ::readMmsNewestFirst) }
+                }
+            }
+        }
+    }
+
+    // ── Provider sync (reconcile path only) ────────────────────────────────
 
     private suspend fun syncSource(
         source: String,
@@ -124,77 +223,109 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
         when {
             // First contact: mirror the newest FIRST_BATCH in one shot.
-            state == null || !state.backfillComplete -> {
+            state == null || !state.initialWindowReady -> {
                 val batch = reader(FIRST_BATCH, 0)
                 if (batch.isNotEmpty()) {
                     dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
-                    // Continue backfill immediately if this batch filled up.
-                    if (batch.size >= FIRST_BATCH) {
-                        backfillOlder(source, reader)
-                        return
-                    }
                 }
                 stateDao.upsert(
                     SyncStateEntity(
                         source = source,
-                        newestSyncedDate = dao.newestDateFor(source) ?: System.currentTimeMillis(),
-                        backfillComplete = true,
-                        lastSyncAt = System.currentTimeMillis()
+                        newestDate = dao.newestDateFor(source) ?: System.currentTimeMillis(),
+                        initialWindowReady = true,
+                        lastReconcileAt = System.currentTimeMillis()
                     )
                 )
+                // Background backfill: batch-by-batch, yielding between batches.
+                backfillOlderIncremental(source, reader)
             }
             // Steady state: only rows newer than what we already hold.
             else -> {
                 val newest = dao.newestDateFor(source) ?: 0L
                 val fresh = readNewerThan(source, newest)
                 if (fresh.isNotEmpty()) {
-                    // STRICTLY newer than the watermark. A message persisted in
-                    // the SAME millisecond as the watermark shares its DATE:
-                    // re-upserting a KNOWN row is harmless, but ignoring it
-                    // would also drop a MISSED same-ms row (provider id the
-                    // shadow has never seen) — which is exactly what made an
-                    // app-sent message invisible on Home until restart.
                     dao.upsertAll(fresh.mapNotNull { toEntity(it, source) })
                 }
-                stateDao.upsert(state.copy(lastSyncAt = System.currentTimeMillis()))
+                stateDao.upsert(
+                    state.copy(
+                        lastReconcileAt = System.currentTimeMillis()
+                    )
+                )
             }
         }
     }
 
-    /** Older-than-window history, batch-by-batch until a short page returns. */
-    private suspend fun backfillOlder(
+    /** Incremental backfill: processes BATCH_SIZE messages, yields, repeats. */
+    private suspend fun backfillOlderIncremental(
         source: String,
         reader: suspend (limit: Int, offset: Int) -> List<Sms>
     ) {
         val dao = db.messageDao()
-        var offset = 0
+        val stateDao = db.syncStateDao()
+        val state = stateDao.forSource(source) ?: return
+        if (state.historyBackfillComplete) return
+
+        var offset = BACKFILL_BATCH // skip the initial window we already have
+
         while (true) {
             val batch = reader(BACKFILL_BATCH, offset)
             if (batch.isEmpty()) break
+
             dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
             offset += batch.size
+
+            // Update oldest watermark.
+            val oldest = batch.minByOrNull { it.date }
+            stateDao.upsert(
+                state.copy(
+                    oldestDate = oldest?.date ?: state.oldestDate,
+                    oldestId = oldest?.id ?: state.oldestId,
+                    lastReconcileAt = System.currentTimeMillis()
+                )
+            )
+
             if (batch.size < BACKFILL_BATCH) break
+
+            // Yield: let other coroutines run, prevent blocking the dispatcher.
+            yield()
         }
-        val stateDao = db.syncStateDao()
-        val state = stateDao.forSource(source)
+
         stateDao.upsert(
-            SyncStateEntity(
-                source = source,
-                newestSyncedDate = dao.newestDateFor(source) ?: 0L,
-                backfillComplete = true,
-                lastSyncAt = System.currentTimeMillis()
+            state.copy(
+                historyBackfillComplete = true,
+                lastReconcileAt = System.currentTimeMillis()
             )
         )
-        if (state == null || !state.backfillComplete) {
-            Log.d(TAG, "backfill complete for $source at offset=$offset")
-        }
+        Log.d(TAG, "backfill complete for $source at offset=$offset")
     }
 
     /**
-     * Incremental read. ponytail ceiling: reads a bounded recent window from
-     * the provider and filters by date in memory — the Telephony provider has
-     * no reliable "date > ?" index on all OEM builds. Window keeps it cheap.
+     * Read exactly ONE message from the provider by its native ID.
+     * O(1) — no scan, no offset, no window.
      */
+    private suspend fun readExactMessage(source: String, providerId: Long): Sms? =
+        withContext(Dispatchers.IO) {
+            when (source) {
+                MessageEntity.SOURCE_SMS -> {
+                    smsRepository.querySmsRaw(
+                        selection = "${Telephony.Sms._ID} = ?",
+                        selectionArgs = arrayOf(providerId.toString()),
+                        sortOrder = "${Telephony.Sms.DATE} DESC",
+                        limit = 1
+                    ).firstOrNull()
+                }
+                MessageEntity.SOURCE_MMS -> {
+                    smsRepository.queryMmsRaw(
+                        selection = "${Telephony.Mms._ID} = ?",
+                        selectionArgs = arrayOf(providerId.toString()),
+                        sortOrder = "${Telephony.Mms.DATE} DESC",
+                        limit = 1
+                    ).firstOrNull()
+                }
+                else -> null
+            }
+        }
+
     private suspend fun readNewerThan(source: String, newestMs: Long): List<Sms> =
         if (source == MessageEntity.SOURCE_SMS) {
             smsRepository.getSmsWithFilters(fromDate = newestMs, limit = 500)
@@ -222,21 +353,16 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
     private fun String?.orEmptyIfNull() = this ?: ""
 
-    // ── Mirror writes: operations the APP itself performs must be applied to
-    // the shadow too, so a Room-first read never disagrees with the provider.
+    // ── Mirror writes (app-initiated mutations) ────────────────────────────
 
-    /** Mirrors a conversation delete into Room (messages + projection). */
+    /** Mirrors a conversation delete into Room. */
     suspend fun deleteThreadFromShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
         db.messageDao().deleteThread(threadId)
         db.conversationDao().delete(threadId)
     }
 
-    /**
-     * Marks a thread read in Room. The messages table is the SSOT for unread
-     * counts; the conversations projection is updated to match so the Home
-     * badge drops even before the next rebuild pass.
-     */
+    /** Marks a thread read in Room. */
     suspend fun markThreadReadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
         db.messageDao().markThreadRead(threadId)
@@ -244,13 +370,8 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     }
 
     /**
-     * Re-reads one thread's rows from the provider and repairs its shadow copy
-     * (status flips like PENDING → SENT arrive as in-place UPDATEs that no
-     * date-window sync can observe). Cheap: one bounded window query.
-     *
-     * The conversation projection is updated via [ConversationDao.upsertPreservingFlags]
-     * — a full upsert here would reset pinned/archived to false and drop a
-     * pinned thread off the top of Home (reported bug).
+     * Re-reads one thread's rows from the provider and repairs its shadow copy.
+     * Cheap: one bounded window query.
      */
     suspend fun repairThreadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
@@ -262,45 +383,79 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         )
         if (fresh.isEmpty()) return@withContext
         db.messageDao().upsertAll(fresh.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
-        rebuildConversationProjectionFor(threadId, preserveFlags = true)
+        rebuildConversationProjection(threadId, preserveFlags = true)
     }
+
+    // ── Conversation projection ────────────────────────────────────────────
 
     /**
      * Rebuilds ONE conversation row from the messages table.
-     * `preserveFlags=true` keeps pinned/archived as-is (repair path);
-     * `preserveFlags=false` refreshes them from the repositories (rebuild).
+     * Uses SQL COUNT for unread — O(unread_count) instead of O(total_messages).
+     * Message + Conversation update in a single Room transaction.
      */
-    private suspend fun rebuildConversationProjectionFor(
-        threadId: Long,
-        preserveFlags: Boolean
-    ) {
+    private suspend fun rebuildConversationProjection(threadId: Long, preserveFlags: Boolean) {
         if (threadId <= 0L) return
-        val page = db.messageDao().pageForThread(threadId, limit = 1, offset = 0)
-        val newest = page.firstOrNull() ?: return
-        val unread = countUnread(threadId)
-        if (preserveFlags) {
-            db.conversationDao().upsertPreservingFlags(
-                threadId = threadId,
-                normalizedAddress = newest.normalizedAddress,
-                rawAddress = newest.rawAddress,
-                snippet = newest.body,
-                lastMessageDate = newest.date,
-                unreadCount = unread
-            )
-        } else {
-            val existing = db.conversationDao().byThread(threadId)
-            db.conversationDao().upsertFull(
-                ConversationEntity(
+        val database = db
+        val dao = database.messageDao()
+        val convDao = database.conversationDao()
+
+        database.withTransaction {
+            val newest = dao.pageForThread(threadId, limit = 1, offset = 0).firstOrNull()
+                ?: return@withTransaction
+            val unread = dao.countUnread(threadId)
+
+            if (preserveFlags) {
+                convDao.upsertPreservingFlags(
                     threadId = threadId,
                     normalizedAddress = newest.normalizedAddress,
                     rawAddress = newest.rawAddress,
                     snippet = newest.body,
                     lastMessageDate = newest.date,
-                    unreadCount = unread,
-                    pinned = existing?.pinned ?: (threadId in pinRepositoryIds()),
-                    archived = existing?.archived ?: (threadId in archivedRepositoryIds())
+                    unreadCount = unread
                 )
-            )
+            } else {
+                val existing = convDao.byThread(threadId)
+                convDao.upsertFull(
+                    ConversationEntity(
+                        threadId = threadId,
+                        normalizedAddress = newest.normalizedAddress,
+                        rawAddress = newest.rawAddress,
+                        snippet = newest.body,
+                        lastMessageDate = newest.date,
+                        unreadCount = unread,
+                        pinned = existing?.pinned ?: (threadId in pinRepositoryIds()),
+                        archived = existing?.archived ?: (threadId in archivedRepositoryIds())
+                    )
+                )
+            }
+        }
+    }
+
+    /** Full rebuild: startup or repair only. Never on the realtime path. */
+    suspend fun fullRebuildConversations() = withContext(Dispatchers.IO) {
+        val database = db
+        val newestByThread = database.messageDao().newestPerThread()
+        val archivedIds = com.autonomousone.messages.repository.ArchiveRepository(appContext)
+            .getArchivedIds()
+        val pinnedIds = com.autonomousone.messages.repository.PinRepository(appContext)
+            .getPinnedIds()
+
+        database.withTransaction {
+            for (m in newestByThread) {
+                val unread = database.messageDao().countUnread(m.threadId)
+                database.conversationDao().upsert(
+                    ConversationEntity(
+                        threadId = m.threadId,
+                        normalizedAddress = m.normalizedAddress,
+                        rawAddress = m.rawAddress,
+                        snippet = m.body,
+                        lastMessageDate = m.date,
+                        unreadCount = unread,
+                        pinned = m.threadId in pinnedIds,
+                        archived = m.threadId in archivedIds
+                    )
+                )
+            }
         }
     }
 
@@ -310,57 +465,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     private suspend fun archivedRepositoryIds(): Set<Long> =
         com.autonomousone.messages.repository.ArchiveRepository(appContext).getArchivedIds()
 
-    /** Rebuild every conversation row from the messages table (single query). */
-    private suspend fun rebuildConversations() {
-        val newestByThread = db.messageDao().newestPerThread()
-        val archivedIds = com.autonomousone.messages.repository.ArchiveRepository(appContext)
-            .getArchivedIds()
-        val pinnedIds = com.autonomousone.messages.repository.PinRepository(appContext)
-            .getPinnedIds()
-        for (m in newestByThread) {
-            val unread = countUnread(m.threadId)
-            db.conversationDao().upsert(
-                ConversationEntity(
-                    threadId = m.threadId,
-                    normalizedAddress = m.normalizedAddress,
-                    rawAddress = m.rawAddress,
-                    snippet = m.body,
-                    lastMessageDate = m.date,
-                    unreadCount = unread,
-                    pinned = m.threadId in pinnedIds,
-                    archived = m.threadId in archivedIds
-                )
-            )
-        }
-    }
-
-    /** Rebuild just one conversation after a single-message upsert. */
-    private suspend fun rebuildConversationFor(threadId: Long) {
-        if (threadId <= 0L) return
-        val page = db.messageDao().pageForThread(threadId, limit = 1, offset = 0)
-        val newest = page.firstOrNull() ?: return
-        db.conversationDao().upsert(
-            ConversationEntity(
-                threadId = threadId,
-                normalizedAddress = newest.normalizedAddress,
-                rawAddress = newest.rawAddress,
-                snippet = newest.body,
-                lastMessageDate = newest.date,
-                unreadCount = countUnread(threadId),
-                pinned = db.conversationDao().byThread(threadId)?.pinned ?: false,
-                archived = db.conversationDao().byThread(threadId)?.archived ?: false
-            )
-        )
-    }
-
-    private suspend fun countUnread(threadId: Long): Int {
-        // ponytail: O(n) scan per touched thread during rebuilds; acceptable at
-        // current scale, upgrade to a COUNT query + partial index if needed.
-        val rows = db.messageDao().pageForThread(threadId, limit = 10_000, offset = 0)
-        return rows.count { !it.read && it.type == 1 }
-    }
-
-    // ── provider readers (newest-first windows over the paged repo API) ──────
+    // ── Provider readers ───────────────────────────────────────────────────
 
     private suspend fun readSmsNewestFirst(limit: Int, offset: Int): List<Sms> =
         smsRepository.querySmsRaw(null, null, "${Telephony.Sms.DATE} DESC", limit, offset)

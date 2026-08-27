@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import com.autonomousone.messages.data.MessageEntity
+import com.autonomousone.messages.data.MessageMutation
+import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
 
 /**
@@ -16,6 +19,9 @@ import com.autonomousone.messages.event.SmsEventBus
  * so SENT/DELIVERED results still arrive after the screen or app process that
  * initiated the send has gone away. Multipart results are aggregated before a
  * message leaves PENDING or becomes DELIVERED.
+ *
+ * V2: Uses mutate(RefreshStatus) for O(1) targeted status update instead of
+ * notifyResume() which triggered a full provider scan.
  */
 class SmsStatusReceiver : BroadcastReceiver() {
 
@@ -52,6 +58,15 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
+
+        // V2: Targeted status mutation — only refresh this specific message.
+        // No full provider scan, no conversation rebuild.
+        TelephonySyncCoordinator.get(context).mutate(
+            MessageMutation.RefreshStatus(
+                source = MessageEntity.SOURCE_SMS,
+                providerId = rowId
+            )
+        )
     }
 
     private fun updateProvider(context: Context, rowId: Long, status: Int, delivered: Boolean) {
@@ -66,7 +81,6 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 "${Telephony.Sms._ID} = ?",
                 arrayOf(rowId.toString())
             )
-            SmsEventBus.notifyResume()
             Log.d(TAG, "SMS callback persisted: id=$rowId status=$status")
         } catch (error: Exception) {
             Log.w(TAG, "Unable to persist SMS callback for id=$rowId", error)

@@ -72,6 +72,36 @@ interface MessageDao {
 
     @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
     suspend fun markThreadRead(threadId: Long)
+
+    // ── NEW: SQL COUNT for unread (replaces O(n) in-memory scan) ──────────
+
+    /** O(unread_count) via partial index, not O(total_messages_in_thread). */
+    @Query(
+        """
+        SELECT COUNT(*) FROM messages
+        WHERE threadId = :threadId AND read = 0 AND type = 1
+        """
+    )
+    suspend fun countUnread(threadId: Long): Int
+
+    /** Find a message by composite key (source, providerId) for delta calculation. */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE source = :source AND providerId = :providerId
+        LIMIT 1
+        """
+    )
+    suspend fun findByKey(source: String, providerId: Long): MessageEntity?
+
+    /** Delete a single message by composite key. */
+    @Query(
+        """
+        DELETE FROM messages
+        WHERE source = :source AND providerId = :providerId
+        """
+    )
+    suspend fun deleteBySourceAndId(source: String, providerId: Long)
 }
 
 @Dao

@@ -88,13 +88,35 @@ data class ConversationEntity(
     val archived: Boolean = false
 )
 
-/** One row per synced source+window so incremental syncs know where they are. */
+/**
+ * One row per synced source+window so incremental syncs know where they are.
+ *
+ * Dual watermarks:
+ *  - newestDate/newestId: incoming direction (new messages from above)
+ *  - oldestDate/oldestId: backfill direction (history from below)
+ *
+ * These two watermarks move independently and must not interfere.
+ */
 @Entity(tableName = "sync_state")
 data class SyncStateEntity(
     @PrimaryKey val source: String, // "sms" | "mms"
+
+    // ── Newest watermark (incoming direction) ──
     /** Newest provider date (ms) already mirrored. */
-    val newestSyncedDate: Long,
-    /** True once the initial backfill for this source completed. */
-    val backfillComplete: Boolean = false,
-    val lastSyncAt: Long = 0L
+    val newestDate: Long,
+    val newestId: Long = 0L,
+
+    // ── Oldest watermark (backfill direction) ──
+    val oldestDate: Long = Long.MAX_VALUE,
+    val oldestId: Long = Long.MAX_VALUE,
+
+    // ── State flags ──
+    /** True once the initial window (first 200-500 messages) is loaded. */
+    val initialWindowReady: Boolean = false,
+    /** True once the full history backfill completed. */
+    val historyBackfillComplete: Boolean = false,
+
+    // ── Repair bookkeeping ──
+    val lastReconcileAt: Long = 0L,
+    val schemaVersion: Int = 1
 )

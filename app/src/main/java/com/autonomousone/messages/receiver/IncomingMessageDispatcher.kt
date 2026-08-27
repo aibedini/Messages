@@ -3,13 +3,15 @@ package com.autonomousone.messages.receiver
 import android.content.Context
 import android.provider.Telephony
 import android.util.Log
+import com.autonomousone.messages.data.MessageMutation
+import com.autonomousone.messages.data.MessageEntity
+import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.gateway.WebhookEngine
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
-import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.utils.NotificationHelper
 
 /**
@@ -19,6 +21,11 @@ import com.autonomousone.messages.utils.NotificationHelper
  * calling [dispatch] with the persisted row's real id + threadId, so the UI,
  * webhooks and notifications all react to PROVIDER state — not to optimistic
  * local state (single source of truth).
+ *
+ * Hot path (O(1)):
+ *   Provider INSERT → providerId + threadId
+ *   → mutate(Upsert) → Room transaction { message + conversation }
+ *   → Room Flow → UI
  *
  * Runs on a caller-supplied background context; does network/DB work freely.
  */
@@ -31,8 +38,13 @@ object IncomingMessageDispatcher {
      *            row that was just written or read back.
      */
     fun dispatch(context: Context, sms: Sms) {
-        // Blocked sender: row stays persisted, but no bus event, no webhook,
-        // no notification (silent handling).
+        // Always mirror into Room first (blocking is a notification policy,
+        // not a sync policy — the row stays persisted either way).
+        TelephonySyncCoordinator.get(context).mutate(
+            MessageMutation.Upsert(source = MessageEntity.SOURCE_SMS, message = sms)
+        )
+
+        // Blocked sender: no bus event, no webhook, no notification (silent).
         if (BlocklistRepository.isBlocked(context, sms.sender)) {
             Log.d(TAG, "Message from blocked sender ${sms.sender} — silent handling")
             return
@@ -57,9 +69,6 @@ object IncomingMessageDispatcher {
         if (!isViewingThis) {
             NotificationHelper.showSmsNotification(context, sms)
         }
-
-        // Mirror into Room via the single-writer sync coordinator.
-        TelephonySyncCoordinator.get(context).requestSync()
     }
 
     /**

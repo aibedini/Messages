@@ -1,25 +1,23 @@
 package com.autonomousone.messages.repository
 
-import android.content.ContentValues
 import android.content.Context
-import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
-import kotlin.math.max
 
 /**
  * Paged loader for a single conversation thread.
  *
- * Instead of reading the WHOLE thread from the provider on open (which is why
- * huge threads showed "Reading messages… N/N" spinners), we read only the most
- * recent [PAGE] rows and page backwards as the user scrolls up — the same
- * windowed approach Google Messages/WhatsApp use.
+ * V2: Keyset (cursor) pagination instead of OFFSET.
+ *
+ * Instead of "skip the first N rows" (O(N) on every page), we remember the
+ * last seen (date, id) and query WHERE date < :lastDate. This is O(1)
+ * regardless of how deep the user has scrolled — even at offset 250,000.
  *
  * SMS and MMS are merged per-page: we fetch the newest `limit` of each source
- * (offset by how many already shown) and interleave by date, so the visible
- * history stays chronologically seamless across page boundaries.
+ * and interleave by date, so the visible history stays chronologically
+ * seamless across page boundaries.
  */
 class ThreadPager(
     private val context: Context,
@@ -27,18 +25,22 @@ class ThreadPager(
     private val phone: String = ""
 ) {
     companion object {
-        /** Rows per page (SMS + MMS each), i.e. up to 2×PAGE items rendered. */
+        /** Rows per page. */
         const val PAGE = 40
     }
 
-    // How many NEWEST rows are already handed to the UI (per source).
-    private var smsConsumed = 0
-    private var mmsConsumed = 0
+    // Keyset cursor: last seen (date, id) from the previous page.
+    private var lastDate: Long = Long.MAX_VALUE
+    private var lastId: Long = Long.MAX_VALUE
+
+    /** True when either source still has older rows to pull. */
+    @Volatile
+    var hasMore: Boolean = true
+        private set
 
     /**
      * Phone-only route (threadId == 0): query by ADDRESS suffix instead of a
      * bogus THREAD_ID = 0 selection, which always returned an empty page.
-     * last-7-digits matching mirrors how the rest of the app groups threads.
      */
     private val smsSelection: String =
         if (threadId > 0L || phone.isBlank())
@@ -60,28 +62,23 @@ class ThreadPager(
             }
         }
 
-    /** True when either source still has older rows to pull. */
-    @Volatile
-    var hasMore: Boolean = true
-        private set
-
     /**
-     * Loads the FIRST page (newest messages). Marks nothing read; caller decides.
+     * Loads the FIRST page (newest messages). Resets the cursor.
      */
     fun loadFirstPage(): List<Sms> {
-        smsConsumed = 0
-        mmsConsumed = 0
+        lastDate = Long.MAX_VALUE
+        lastId = Long.MAX_VALUE
         val page = loadPage()
-        hasMore = page.size >= (PAGE / 2) // conservative: keep paging until proven exhausted
+        hasMore = page.size >= (PAGE / 2)
         return page
     }
 
     /**
-     * Loads the next OLDER page. Returns empty when exhausted.
+     * Loads the next OLDER page using keyset pagination. Returns empty when exhausted.
      */
     fun loadOlder(): List<Sms> {
         if (!hasMore) return emptyList()
-        val page = loadPage(skipSms = smsConsumed, skipMms = mmsConsumed)
+        val page = loadPage()
         if (page.isEmpty()) {
             hasMore = false
             return emptyList()
@@ -128,31 +125,68 @@ class ThreadPager(
         )
     }
 
-    // ── internals ────────────────────────────────────────────────────────────
+    // ── internals ──────────────────────────────────────────────────────────
 
-    private fun loadPage(): List<Sms> = loadPage(0, 0)
-
-    private fun loadPage(skipSms: Int, skipMms: Int): List<Sms> {
+    private fun loadPage(): List<Sms> {
         val repo = SmsRepository(context)
+
+        // Keyset pagination for SMS: WHERE (thread) AND (date < cursor OR (date = cursor AND id < cursor))
+        val keysetSelection = if (lastDate < Long.MAX_VALUE) {
+            "(${Telephony.Sms.THREAD_ID} = ?) AND (" +
+                "${Telephony.Sms.DATE} < ? OR " +
+                "(${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} < ?))"
+        } else {
+            "${Telephony.Sms.THREAD_ID} = ?"
+        }
+
+        val keysetArgs = if (lastDate < Long.MAX_VALUE) {
+            arrayOf(threadId.toString(), lastDate.toString(), lastDate.toString(), lastId.toString())
+        } else {
+            arrayOf(threadId.toString())
+        }
+
         val sms = repo.querySmsRaw(
-            selection = smsSelection,
-            selectionArgs = smsArgs,
-            sortOrder = "${Telephony.Sms.DATE} DESC",
-            limit = PAGE,
-            offset = skipSms
+            selection = keysetSelection,
+            selectionArgs = keysetArgs,
+            sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
+            limit = PAGE
         )
-        // MMS keeps the thread-based path; phone-only threads rarely carry MMS
-        // history and the addr-table join is expensive. ponytail: acceptable
-        // ceiling — upgrade to an addr-based MMS query if a real thread needs it.
-        val mms = if (threadId > 0L) repo.queryMmsRaw(
-            selection = "${Telephony.Mms.THREAD_ID} = ?",
-            selectionArgs = arrayOf(threadId.toString()),
-            sortOrder = "${Telephony.Mms.DATE} DESC",
-            limit = PAGE,
-            offset = skipMms
-        ) else emptyList()
-        smsConsumed += sms.size
-        mmsConsumed += mms.size
+
+        // Keyset pagination for MMS (thread-based only).
+        val mms = if (threadId > 0L) {
+            val mmsKeysetSelection = if (lastDate < Long.MAX_VALUE) {
+                "(${Telephony.Mms.THREAD_ID} = ?) AND (" +
+                    "${Telephony.Mms.DATE} < ? OR " +
+                    "(${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} < ?))"
+            } else {
+                "${Telephony.Mms.THREAD_ID} = ?"
+            }
+
+            val mmsKeysetArgs = if (lastDate < Long.MAX_VALUE) {
+                val lastDateSeconds = lastDate / 1000L
+                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), lastId.toString())
+            } else {
+                arrayOf(threadId.toString())
+            }
+
+            repo.queryMmsRaw(
+                selection = mmsKeysetSelection,
+                selectionArgs = mmsKeysetArgs,
+                sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
+                limit = PAGE
+            )
+        } else emptyList()
+
+        // Update cursor to the oldest row we've seen.
+        val allRows = sms + mms
+        if (allRows.isNotEmpty()) {
+            val oldest = allRows.minByOrNull { it.date }
+            if (oldest != null) {
+                lastDate = oldest.date
+                lastId = oldest.id
+            }
+        }
+
         return merge(sms, mms).asReversed() // provider gave DESC → display ASC
     }
 

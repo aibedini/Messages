@@ -8,14 +8,15 @@ import android.os.Looper
 /**
  * Observes changes to the SMS/MMS ContentProvider.
  *
+ * V2: Passes the URI through to the callback so ChangeRouter can extract
+ * the row ID for targeted O(1) mutations when available.
+ *
  * LEADING-EDGE dispatch: the FIRST change fires immediately (millisecond-live
  * UI), and any further changes inside [COALESCE_MS] are collapsed into a single
- * trailing call. The old implementation was trailing-only with a fixed 300 ms
- * postDelayed, which added 300 ms of dead time to EVERY message — the app felt
- * laggy even though the data was already in the provider.
+ * trailing call.
  */
 class SmsContentObserver(
-    private val onSmsChanged: () -> Unit
+    private val onChange: (uri: Uri?) -> Unit
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
 
     companion object {
@@ -27,7 +28,7 @@ class SmsContentObserver(
     private val trailingRunnable = Runnable {
         pendingTrailing = false
         lastFiredAt = System.currentTimeMillis()
-        onSmsChanged()
+        onChange(null)  // null = unknown change type → reconcile
     }
 
     @Volatile
@@ -37,25 +38,24 @@ class SmsContentObserver(
     private var pendingTrailing = false
 
     override fun onChange(selfChange: Boolean) {
-        dispatch()
+        dispatch(null)
     }
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         // NOTE: do NOT call super here — the base ContentObserver delegates
         // onChange(selfChange, uri) back into onChange(selfChange), which we
-        // also override. That produced TWO dispatches per provider change
-        // (double refresh on every incoming message).
-        dispatch()
+        // also override. That produced TWO dispatches per provider change.
+        dispatch(uri)
     }
 
-    private fun dispatch() {
+    private fun dispatch(uri: Uri?) {
         val now = System.currentTimeMillis()
         if (now - lastFiredAt >= COALESCE_MS) {
             // Leading edge: no waiting at all.
             lastFiredAt = now
             handler.removeCallbacks(trailingRunnable)
             pendingTrailing = false
-            onSmsChanged()
+            onChange(uri)
             return
         }
         // Inside the coalesce window: schedule exactly ONE trailing call so a

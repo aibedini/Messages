@@ -50,7 +50,10 @@ class ConversationViewModel(
     // Optimistic sent rows not yet confirmed in the provider DB (kept visible on refresh).
     private val optimisticMessages = mutableListOf<Sms>()
 
-    private val observer = SmsContentObserver {
+    private val observer = SmsContentObserver { _uri ->
+        // Conversation screen uses merge-based refresh (targeted tail query),
+        // not full reload. The URI is not needed here because the pager's
+        // loadNewerSince() already does a bounded query.
         refresh()
     }
 
