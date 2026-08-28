@@ -38,8 +38,9 @@ dependencyResolutionManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
-        // org.fossify:mmslib is published through JitPack
-        maven("https://www.jitpack.io")
+        // org.fossify:mmslib used to come from here; it is now vendored in
+        // app/libs/mmslib-1.0.0.aar because JitPack outages were failing CI
+        // resolution. Nothing else in the build depends on JitPack.
     }
 }
 

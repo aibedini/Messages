@@ -35,8 +35,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 47
-        versionName = "2.6.5"
+        versionCode = 48
+        versionName = "2.6.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -121,7 +121,14 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     // MMS stack (Fossify fork of klinker android-smsmms): PushReceiver +
     // TransactionService download/parse incoming MMS into Telephony.Mms.
-    implementation(libs.mmslib)
+    // VENDORED: JitPack (its only remote publication) has repeated outages
+    // that fail CI resolution, so the .aar is committed under app/libs.
+    // The three runtime deps below are exactly what the published POM
+    // (org.fossify:mmslib:1.0.0) declared — file deps carry no metadata.
+    implementation(files("libs/mmslib-1.0.0.aar"))
+    implementation(libs.klinker.logger)
+    implementation(libs.okhttp.legacy)
+    implementation(libs.okhttp.urlconnection)
     // Room: local read-SSOT for the UI (phase 2 architecture).
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
