@@ -108,6 +108,14 @@ class HomeViewModel(
     @Volatile
     private var roomReadEnabled = false
 
+    /**
+     * Set once Room cannot be opened (e.g. a failed migration). The read-model
+     * is a SHADOW — the Telephony provider remains the source of truth — so a
+     * broken shadow must downgrade to the provider path, never kill the app.
+     */
+    @Volatile
+    private var roomUnavailable = false
+
     /** Newest conversation date seen in the last full load. */
     @Volatile
     private var newestKnownDate: Long = 0L
@@ -172,8 +180,8 @@ class HomeViewModel(
         val cache = com.autonomousone.messages.repository.ConversationCache.get(getApplication())
 
         val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
-        if (!roomReadEnabled) {
-            roomReadEnabled = coordinator.isShadowReady()
+        if (!roomReadEnabled && !roomUnavailable) {
+            roomReadEnabled = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
         }
         if (roomReadEnabled && !hasLoadedOnce) {
             val roomList = kotlin.runCatching {
@@ -255,8 +263,8 @@ class HomeViewModel(
     private suspend fun silentRefresh() {
         try {
             val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
-            if (!roomReadEnabled) {
-                roomReadEnabled = coordinator.isShadowReady()
+            if (!roomReadEnabled && !roomUnavailable) {
+                roomReadEnabled = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
             }
             if (roomReadEnabled) {
                 val roomList = kotlin.runCatching {
@@ -570,36 +578,44 @@ class HomeViewModel(
      * driven by Room INVALIDATION: an exact mutation commits → Flow re-emits →
      * Home repaints — no provider scan anywhere on the realtime path.
      *
-     * Pre-cutover (first launch while the shadow syncs) the collector simply
-     * skips emissions; performLoad/silentRefresh keep serving the provider.
+     * Fail-safe: if the shadow DB can't be opened (bad migration, corruption),
+     * we log, disable the cutover and fall back to the provider path. The app
+     * must keep working — the shadow is not the source of truth.
      */
     private fun observeRoomConversations() {
         viewModelScope.launch {
-            val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
-            db.conversationDao()
-                .observeAll()
-                .collect { rows ->
-                    if (!roomReadEnabled) return@collect
-                    val converted = rows.map { c ->
-                        Sms(
-                            id = c.threadId,
-                            threadId = c.threadId,
-                            sender = c.rawAddress.ifBlank { c.normalizedAddress },
-                            message = c.snippet,
-                            date = c.lastMessageDate,
-                            unread = c.unreadCount > 0,
-                            type = 1
-                        )
+            try {
+                val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                db.conversationDao()
+                    .observeAll()
+                    .collect { rows ->
+                        if (!roomReadEnabled) return@collect
+                        val converted = rows.map { c ->
+                            Sms(
+                                id = c.threadId,
+                                threadId = c.threadId,
+                                sender = c.rawAddress.ifBlank { c.normalizedAddress },
+                                message = c.snippet,
+                                date = c.lastMessageDate,
+                                unread = c.unreadCount > 0,
+                                type = 1
+                            )
+                        }
+                        withContext(Dispatchers.Main) {
+                            if (!roomReadEnabled) return@withContext
+                            replaceConversations(
+                                converted,
+                                archiveRepository.getArchivedIds(),
+                                atomic = true
+                            )
+                        }
                     }
-                    withContext(Dispatchers.Main) {
-                        if (!roomReadEnabled) return@withContext
-                        replaceConversations(
-                            converted,
-                            archiveRepository.getArchivedIds(),
-                            atomic = true
-                        )
-                    }
-                }
+            } catch (e: Exception) {
+                Log.e("HOME_DB", "Room startup failed — falling back to provider path", e)
+                roomReadEnabled = false
+                roomUnavailable = true
+                loadSms()
+            }
         }
     }
 

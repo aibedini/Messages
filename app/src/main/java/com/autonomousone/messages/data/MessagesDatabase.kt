@@ -45,62 +45,43 @@ abstract class MessagesDatabase : RoomDatabase() {
         private var instance: MessagesDatabase? = null
 
         /**
-         * Migration v2 → v3:
-         *  1. Partial index for unread count: O(unread) instead of O(total)
-         *  2. Keyset pagination index for deep conversation scroll
-         *  3. Dual watermarks in sync_state
+         * v4 `sync_state` table — EXACT text from 4.json (Room validates
+         * createSql verbatim). `sync_state` is sync bookkeeping only (no
+         * business data), so the safe repair for any pre-v4 shape is to drop
+         * and recreate it; the coordinator then simply re-runs its initial sync.
          */
-        val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                // 1. Partial index for unread count — makes COUNT(*)
-                //    WHERE threadId = ? AND read = 0 AND type = 1
-                //    O(unread_count) instead of O(total_messages_in_thread).
-                db.execSQL("""
-                    CREATE INDEX IF NOT EXISTS idx_messages_thread_unread
-                    ON messages(threadId)
-                    WHERE read = 0 AND type = 1
-                """)
-
-                // 2. Keyset pagination index — makes
-                //    WHERE threadId = ? AND date < ? ORDER BY date DESC
-                //    O(page_size) regardless of scroll depth.
-                db.execSQL("""
-                    CREATE INDEX IF NOT EXISTS idx_messages_thread_date_id
-                    ON messages(threadId, date DESC, providerId DESC)
-                """)
-
-                // 3. Expand sync_state with dual watermarks.
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN newestId INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN oldestDate INTEGER NOT NULL DEFAULT 9223372036854775807")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN oldestId INTEGER NOT NULL DEFAULT 9223372036854775807")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN initialWindowReady INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN historyBackfillComplete INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN lastReconcileAt INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE sync_state ADD COLUMN schemaVersion INTEGER NOT NULL DEFAULT 1")
-            }
-        }
+        private val SYNC_STATE_V4_SQL =
+            "CREATE TABLE IF NOT EXISTS `sync_state` (`source` TEXT NOT NULL, `newestDate` INTEGER NOT NULL, `newestId` INTEGER NOT NULL, `oldestDate` INTEGER NOT NULL, `oldestId` INTEGER NOT NULL, `initialWindowReady` INTEGER NOT NULL, `historyBackfillComplete` INTEGER NOT NULL, `lastReconcileAt` INTEGER NOT NULL, `schemaVersion` INTEGER NOT NULL, PRIMARY KEY(`source`))"
 
         /**
-         * Exact SQL for v3 → v4, kept in lockstep with
+         * Statements that take a v2 OR v3 database to the exact v4 schema, kept
+         * in lockstep with
          * `app/schemas/com.autonomousone.messages.data.MessagesDatabase/4.json`
-         * (asserted by MigrationV3V4SqlTest). Executing these statements makes
-         * an upgraded database byte-for-byte equal to a fresh v4 install:
-         *  - Room-MANAGED indexes (the old hand-rolled PARTIAL index was
-         *    silently missing on fresh installs — fresh vs upgrade now converge);
-         *  - the FTS4 virtual table + Room's content-sync triggers.
+         * (asserted by MigrationToV4SqlTest).
+         *
+         * A single list is correct for BOTH source versions because the only
+         * v2→v3 delta was `sync_state` (wrongly ALTERed in the shipped 2→3
+         * migration — `newestSyncedDate` was never renamed to `newestDate`),
+         * plus two hand-rolled indexes that v4 no longer declares. Rebuilding
+         * sync_state + dropping/creating indexes + creating FTS is idempotent
+         * for every possible starting shape.
          */
-        internal val MIGRATION_3_4_SQL: List<String> = listOf(
-            // 1a. Drop the non-managed indexes.
+        internal val UPGRADE_TO_V4_SQL: List<String> = listOf(
+            // 1. Rebuild sync_state: v2 used newestSyncedDate/backfillComplete/
+            //    lastSyncAt; the shipped 2→3 only ADDed columns, so an upgraded
+            //    DB is missing `newestDate` and Room validation crashes.
+            "DROP TABLE IF EXISTS `sync_state`",
+            SYNC_STATE_V4_SQL,
+            // 2. Drop the non-managed indexes (hand-rolled in 2→3; not declared).
             "DROP INDEX IF EXISTS `idx_messages_thread_unread`",
             "DROP INDEX IF EXISTS `idx_messages_thread_date_id`",
-            // 1b. Room-managed index for O(unread) COUNT.
+            // 3. Room-managed index for O(unread) COUNT.
             "CREATE INDEX IF NOT EXISTS `index_messages_threadId_read_type` ON `messages` (`threadId`, `read`, `type`)",
-            // 1c. Heal the Room-declared indexes (defensive; no-ops on DBs that already have them).
+            // 4. Heal the Room-declared indexes (no-ops on DBs that already have them).
             "CREATE INDEX IF NOT EXISTS `index_messages_threadId_date_providerId` ON `messages` (`threadId`, `date`, `providerId`)",
             "CREATE INDEX IF NOT EXISTS `index_messages_normalizedAddress_date` ON `messages` (`normalizedAddress`, `date`)",
             "CREATE INDEX IF NOT EXISTS `index_messages_date` ON `messages` (`date`)",
-            // 2. FTS4 virtual table + content-sync triggers — EXACT text from
-            //    the generated 4.json (Room validates trigger SQL verbatim).
+            // 5. FTS4 virtual table + content-sync triggers — EXACT text from 4.json.
             "CREATE VIRTUAL TABLE IF NOT EXISTS `messages_fts` USING FTS4(`body` TEXT NOT NULL, content=`messages`)",
             "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_UPDATE BEFORE UPDATE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
             "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_DELETE BEFORE DELETE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
@@ -109,11 +90,22 @@ abstract class MessagesDatabase : RoomDatabase() {
         )
 
         /**
-         * Migration v3 → v4.
+         * Direct v2 → v4. Old users never touch the broken historical 2→3 path.
+         */
+        val MIGRATION_2_4 = object : Migration(2, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V4_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
+        /**
+         * v3 → v4. Also repairs DBs that already went through the broken 2→3
+         * (missing `newestDate`, leftover legacy columns) by rebuilding
+         * sync_state — bookkeeping only, re-synced by the coordinator.
          */
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                MIGRATION_3_4_SQL.forEach { db.execSQL(it) }
+                UPGRADE_TO_V4_SQL.forEach { db.execSQL(it) }
             }
         }
 
@@ -124,8 +116,9 @@ abstract class MessagesDatabase : RoomDatabase() {
                     MessagesDatabase::class.java,
                     "messages.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
-                    // Destructive fallback ONLY for pre-release installs.
+                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4)
+                    // Destructive fallback ONLY when a migration path is missing
+                    // (never for a migration that runs but yields a bad schema).
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { instance = it }
