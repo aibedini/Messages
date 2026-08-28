@@ -8,6 +8,7 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -43,8 +44,16 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
     // ── Dual channels ──────────────────────────────────────────────────────
 
-    /** Exact mutations: sequential processing, never drops events. */
-    private val mutations = Channel<MessageMutation>(capacity = 64)
+    /**
+     * Exact mutations: sequential processing, NEVER drops events.
+     *
+     * A bounded channel + trySend could silently drop an event under a burst
+     * (e.g. 100 SMS arriving in one second) — the row would then stay stale in
+     * the shadow until the next reconcile. UNLIMITED trades bounded memory for
+     * exactly-once delivery; each item is a small immutable value and the
+     * consumer drains continuously, so the queue stays near-empty.
+     */
+    private val mutations = Channel<MessageMutation>(capacity = Channel.UNLIMITED)
 
     /** Reconcile requests: CONFLATED — N nudges collapse into 1. */
     private val reconciles = Channel<ReconcileRequest>(Channel.CONFLATED)
@@ -142,15 +151,16 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                     // Upsert the message.
                     dao.upsertAll(listOf(entity))
 
-                    // Calculate unread delta.
-                    val unreadDelta = when {
-                        entity.read -> 0       // read message, no delta
-                        old == null -> 1       // new unread message: +1
-                        oldRead -> 1           // was read, now unread: +1
-                        else -> 0              // was unread, still unread: no change
-                    }
+                    // Calculate unread delta — O(1), never recounts the thread.
+                    val unreadDelta = UnreadDelta.compute(
+                        oldExists = old != null,
+                        oldRead = oldRead,
+                        newRead = entity.read
+                    )
 
                     // Upsert conversation projection (preserve pinned/archived).
+                    // upsertPreservingFlags is a TRUE upsert: a brand-new thread
+                    // is INSERTED here — Home must not depend on a later rebuild.
                     val existing = convDao.byThread(entity.threadId)
                     convDao.upsertPreservingFlags(
                         threadId = entity.threadId,
@@ -203,10 +213,15 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 repairThreadInShadow(request.threadId)
             }
             is ReconcileRequest.FullSync -> {
-                coroutineScope {
-                    launch { syncSource(MessageEntity.SOURCE_SMS, ::readSmsNewestFirst) }
-                    launch { syncSource(MessageEntity.SOURCE_MMS, ::readMmsNewestFirst) }
+                val initialWindowCompleted = coroutineScope {
+                    val smsReady = async { syncSource(MessageEntity.SOURCE_SMS, ::readSmsNewestFirst) }
+                    val mmsReady = async { syncSource(MessageEntity.SOURCE_MMS, ::readMmsNewestFirst) }
+                    smsReady.await() || mmsReady.await()
                 }
+                // On the very first sync the conversation projection table is
+                // empty — no mutation events exist yet to insert rows. Build it
+                // once here (startup/repair only, never on the realtime path).
+                if (initialWindowCompleted) fullRebuildConversations()
             }
         }
     }
@@ -216,12 +231,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     private suspend fun syncSource(
         source: String,
         reader: suspend (limit: Int, offset: Int) -> List<Sms>
-    ) {
+    ): Boolean {
         val dao = db.messageDao()
         val stateDao = db.syncStateDao()
         val state = stateDao.forSource(source)
 
-        when {
+        return when {
             // First contact: mirror the newest FIRST_BATCH in one shot.
             state == null || !state.initialWindowReady -> {
                 val batch = reader(FIRST_BATCH, 0)
@@ -238,6 +253,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 )
                 // Background backfill: batch-by-batch, yielding between batches.
                 backfillOlderIncremental(source, reader)
+                true // initial window just completed → projection table needs a first build
             }
             // Steady state: only rows newer than what we already hold.
             else -> {
@@ -251,6 +267,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         lastReconcileAt = System.currentTimeMillis()
                     )
                 )
+                false
             }
         }
     }
@@ -401,7 +418,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
         database.withTransaction {
             val newest = dao.pageForThread(threadId, limit = 1, offset = 0).firstOrNull()
-                ?: return@withTransaction
+            if (newest == null) {
+                // Last message in the thread was deleted → the conversation must
+                // disappear from Home, not keep a stale snippet/date forever.
+                convDao.delete(threadId)
+                return@withTransaction
+            }
             val unread = dao.countUnread(threadId)
 
             if (preserveFlags) {

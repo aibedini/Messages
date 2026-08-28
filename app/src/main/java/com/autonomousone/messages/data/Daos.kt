@@ -127,19 +127,28 @@ interface ConversationDao {
     suspend fun upsertFull(conversation: ConversationEntity)
 
     /**
-     * Partial write for repair/read-mirror paths that must NOT clobber
-     * user-owned projection state — an upsert here would reset pinned and
-     * archived to false and drop a pinned thread off the top of Home.
+     * The single write path for a conversation projection touched by an exact
+     * mutation. TRUE upsert:
+     *   - INSERT when the thread is brand-new (a first message just landed and
+     *     Home has never seen this conversation — the realtime path must not
+     *     depend on a later full rebuild to make it visible);
+     *   - UPDATE on conflict — and critically ONLY the projected fields, so
+     *     user-owned `pinned` / `archived` flags are never clobbered.
      */
     @Query(
         """
-        UPDATE conversations SET
-            normalizedAddress = :normalizedAddress,
-            rawAddress = :rawAddress,
-            snippet = :snippet,
-            lastMessageDate = :lastMessageDate,
-            unreadCount = :unreadCount
-        WHERE threadId = :threadId
+        INSERT INTO conversations (
+            threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount
+        )
+        VALUES (
+            :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount
+        )
+        ON CONFLICT(threadId) DO UPDATE SET
+            normalizedAddress = excluded.normalizedAddress,
+            rawAddress = excluded.rawAddress,
+            snippet = excluded.snippet,
+            lastMessageDate = excluded.lastMessageDate,
+            unreadCount = excluded.unreadCount
         """
     )
     suspend fun upsertPreservingFlags(
@@ -172,4 +181,36 @@ interface SyncStateDao {
 
     @Upsert
     suspend fun upsert(state: SyncStateEntity)
+}
+
+/** Per-thread aggregate over the full-text index. */
+data class ThreadHit(
+    val threadId: Long,
+    val matchCount: Int,
+    val latestDate: Long
+)
+
+@Dao
+interface MessageFtsDao {
+
+    /**
+     * Thread-level hits for a MATCH query, newest conversation first.
+     * Runs entirely inside the FTS index + a rowid join — no full table scan.
+     */
+    @Query(
+        """
+        SELECT m.threadId AS threadId, COUNT(*) AS matchCount, MAX(m.date) AS latestDate
+        FROM messages_fts
+        JOIN messages m ON m.rowid = messages_fts.docid
+        WHERE messages_fts MATCH :query
+        GROUP BY m.threadId
+        ORDER BY latestDate DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun threadHits(query: String, limit: Int): List<ThreadHit>
+
+    /** Total matching messages (for "N results" labeling). */
+    @Query("SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH :query")
+    suspend fun countMatches(query: String): Int
 }

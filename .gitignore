@@ -28,6 +28,7 @@ keystore.properties
 # Local tooling / temp artifacts
 .codebase-memory/
 .neuromesh/
+.freebuff/
 graphify-out/
 build_output.txt
 hs_err_pid*.log

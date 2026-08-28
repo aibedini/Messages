@@ -59,4 +59,13 @@ class MessageEntityTest {
         assertEquals(0, sent.status)
         assertEquals(5_000L, sent.dateSent)
     }
+
+    @Test
+    fun `toSms negates MMS ids to keep UI identity distinct from SMS`() {
+        val mms = entity().copy(source = MessageEntity.SOURCE_MMS).toSms()
+
+        // Provider reader convention: SMS positive, MMS negative. A 42 in each
+        // table must render as two different UI ids.
+        assertEquals(-42L, mms.id)
+    }
 }

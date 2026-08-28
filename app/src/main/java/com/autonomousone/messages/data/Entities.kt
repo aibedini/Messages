@@ -23,7 +23,13 @@ import androidx.room.PrimaryKey
         // Per-contact lookups (phone-only route before a thread is resolved).
         Index("normalizedAddress", "date"),
         // Fast dedupe during incremental syncs.
-        Index("date")
+        Index("date"),
+        // O(unread_count) SQL COUNT for thread unread badges — declared here so
+        // FRESH installs (Room-managed) and UPGRADES (MIGRATION_3_4) converge
+        // to exactly the same schema. The old hand-rolled PARTIAL index
+        // (idx_messages_thread_unread) could not be declared in Room and was
+        // silently missing on fresh installs.
+        Index(value = ["threadId", "read", "type"])
     ]
 )
 data class MessageEntity(
@@ -56,9 +62,17 @@ data class MessageEntity(
         const val SYNC_STATE_PENDING = "pending"
     }
 
-    /** View-model row shape used across the UI (provider-compatible fields). */
+    /**
+     * View-model row shape used across the UI (provider-compatible fields).
+     *
+     * UI identity mirrors the provider reader convention (SmsRepository):
+     * SMS ids are positive, MMS ids are NEGATED. `id > 0` == SMS, `id < 0` ==
+     * MMS — so `distinctBy { it.id }` and Compose keys can never collide when
+     * the provider's `_id` sequences overlap (SMS id 52 and MMS id 52 would
+     * both map to 52 otherwise).
+     */
     fun toSms() = com.autonomousone.messages.model.Sms(
-        id = providerId,
+        id = if (source == SOURCE_MMS) -providerId else providerId,
         threadId = threadId,
         sender = rawAddress.ifBlank { normalizedAddress },
         message = body,

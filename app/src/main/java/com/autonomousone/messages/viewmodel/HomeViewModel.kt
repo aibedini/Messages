@@ -33,6 +33,11 @@ class HomeViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
+    /** Cap on search result threads — bounded output for 360K-scale data. */
+    private companion object {
+        const val SEARCH_RESULT_LIMIT = 100
+    }
+
     private val repository = SmsRepository(application)
     private val archiveRepository = ArchiveRepository(application)
     private val pinRepository = PinRepository(application)
@@ -117,6 +122,7 @@ class HomeViewModel(
         repository.registerObserver(observer)
         loadArchivedIds()
         observeIncomingSms()
+        observeRoomConversations()
         observeRefreshSignal()
         observeThreadRead()
         observeOutgoingSent()
@@ -496,18 +502,25 @@ class HomeViewModel(
         isGlobalSearchBusy = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val all = repository.getSmsWithFilters(
-                    limit = null, offset = null, type = null,
-                    phone = null, fromDate = null, toDate = null
-                )
+                // V2.6: Room FTS4 instead of loading every SMS row into memory.
+                // For 360K messages the old path was O(total) per keystroke.
+                val match = com.autonomousone.messages.data.FtsQuery.build(q)
+                if (match.isEmpty()) {
+                    withContext(Dispatchers.Main) { globalResults = emptyList() }
+                    return@launch
+                }
+                val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                val hits = db.messageFtsDao().threadHits(match, limit = SEARCH_RESULT_LIMIT)
                 val blocked = blocklistRepository.getBlocked()
-                val byThread = all.filter { !isBlockedAddress(it.sender, blocked) }
-                    .groupBy { if (it.threadId != 0L) it.threadId else it.id }
-                val hits = byThread.mapNotNull { (_, messages) ->
-                    val count = messages.count { it.message.contains(q, ignoreCase = true) }
-                    if (count == 0) null else GlobalHit(messages.maxBy { it.date }, count)
-                }.sortedByDescending { it.sms.date }
-                withContext(Dispatchers.Main) { globalResults = hits }
+                val results = hits.mapNotNull { hit ->
+                    val newest = db.messageDao()
+                        .pageForThread(hit.threadId, limit = 1, offset = 0)
+                        .firstOrNull() ?: return@mapNotNull null
+                    val sms = newest.toSms()
+                    if (isBlockedAddress(sms.sender, blocked)) null
+                    else GlobalHit(sms, hit.matchCount)
+                }
+                withContext(Dispatchers.Main) { globalResults = results }
             } catch (_: Exception) {
                 withContext(Dispatchers.Main) { globalResults = emptyList() }
             } finally {
@@ -528,6 +541,11 @@ class HomeViewModel(
      * V2: The incoming SMS was already persisted to Room via mutate(Upsert)
      * in IncomingMessageDispatcher. We just need to optimistically prepend
      * for instant UI feedback, then let Room Flow handle the rest.
+     *
+     * V2.6: NO silentRefresh() here anymore — the exact mutation commits to
+     * Room, invalidation fires the conversation Flow (observeRoomConversations)
+     * and Home repaints the authoritative row. A provider scan on every
+     * incoming SMS would make the O(1) mutation pointless.
      */
     private fun observeIncomingSms() {
         viewModelScope.launch {
@@ -543,10 +561,45 @@ class HomeViewModel(
                     }
                     conversations.add(0, incomingSms)
                 }
-                // V2: No more full reload here — the mutation already updated
-                // Room. Just reconcile the list from the cache/provider silently.
-                silentRefresh()
             }
+        }
+    }
+
+    /**
+     * Room Flow → Home list. Once the read-cutover gate is open the list is
+     * driven by Room INVALIDATION: an exact mutation commits → Flow re-emits →
+     * Home repaints — no provider scan anywhere on the realtime path.
+     *
+     * Pre-cutover (first launch while the shadow syncs) the collector simply
+     * skips emissions; performLoad/silentRefresh keep serving the provider.
+     */
+    private fun observeRoomConversations() {
+        viewModelScope.launch {
+            val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+            db.conversationDao()
+                .observeAll()
+                .collect { rows ->
+                    if (!roomReadEnabled) return@collect
+                    val converted = rows.map { c ->
+                        Sms(
+                            id = c.threadId,
+                            threadId = c.threadId,
+                            sender = c.rawAddress.ifBlank { c.normalizedAddress },
+                            message = c.snippet,
+                            date = c.lastMessageDate,
+                            unread = c.unreadCount > 0,
+                            type = 1
+                        )
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (!roomReadEnabled) return@withContext
+                        replaceConversations(
+                            converted,
+                            archiveRepository.getArchivedIds(),
+                            atomic = true
+                        )
+                    }
+                }
         }
     }
 
