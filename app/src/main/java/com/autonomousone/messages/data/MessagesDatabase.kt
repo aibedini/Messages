@@ -44,44 +44,104 @@ abstract class MessagesDatabase : RoomDatabase() {
         @Volatile
         private var instance: MessagesDatabase? = null
 
-        /**
-         * v4 `sync_state` table — EXACT text from 4.json (Room validates
-         * createSql verbatim). `sync_state` is sync bookkeeping only (no
-         * business data), so the safe repair for any pre-v4 shape is to drop
-         * and recreate it; the coordinator then simply re-runs its initial sync.
-         */
-        private val SYNC_STATE_V4_SQL =
+        /** Column set of the v4 `sync_state` table (identity of 4.json). */
+        internal val V4_SYNC_COLUMNS: Set<String> = setOf(
+            "source", "newestDate", "newestId", "oldestDate", "oldestId",
+            "initialWindowReady", "historyBackfillComplete", "lastReconcileAt", "schemaVersion"
+        )
+
+        /** v4 `sync_state` create — EXACT text from 4.json (Room validates verbatim). */
+        private const val SYNC_STATE_V4_CREATE =
             "CREATE TABLE IF NOT EXISTS `sync_state` (`source` TEXT NOT NULL, `newestDate` INTEGER NOT NULL, `newestId` INTEGER NOT NULL, `oldestDate` INTEGER NOT NULL, `oldestId` INTEGER NOT NULL, `initialWindowReady` INTEGER NOT NULL, `historyBackfillComplete` INTEGER NOT NULL, `lastReconcileAt` INTEGER NOT NULL, `schemaVersion` INTEGER NOT NULL, PRIMARY KEY(`source`))"
 
+        /** SQLite INTEGER ceiling — sentinel for "oldest watermark untouched". */
+        private const val LONG_MAX = "9223372036854775807"
+
         /**
-         * Statements that take a v2 OR v3 database to the exact v4 schema, kept
-         * in lockstep with
-         * `app/schemas/com.autonomousone.messages.data.MessagesDatabase/4.json`
-         * (asserted by MigrationToV4SqlTest).
+         * Data-preserving rebuild of `sync_state` for the shapes observed in
+         * the wild, decided from the table's ACTUAL columns (PRAGMA table_info):
          *
-         * A single list is correct for BOTH source versions because the only
-         * v2→v3 delta was `sync_state` (wrongly ALTERed in the shipped 2→3
-         * migration — `newestSyncedDate` was never renamed to `newestDate`),
-         * plus two hand-rolled indexes that v4 no longer declares. Rebuilding
-         * sync_state + dropping/creating indexes + creating FTS is idempotent
+         *  - missing table           → plain v4 create.
+         *  - exact v4 shape (fresh   → NOTHING. The watermarks are the entire
+         *    v3 installs or a DB      point of the table; dropping them made
+         *    already repaired by a    every upgrade a 360K-message full rescan.
+         *    previous migration)
+         *  - legacy `newestSyncedDate` (v2, incl. DBs the broken shipped 2→3
+         *    only ALTER-added columns onto) → copy into the new shape:
+         *      newestDate        ← newestSyncedDate (or the ALTER-added newestDate)
+         *      initialWindowReady← 1 (a legacy row means the old sync ran)
+         *      history flags     ← backfillComplete (oldest window fully covered)
+         *      lastReconcileAt   ← lastSyncAt
+         *    Then swap via DROP + RENAME — standard Room table-rebuild.
+         *  - any other unknown shape → last-resort drop+create (coordinator
+         *    re-syncs exactly like the old behavior).
+         */
+        internal fun syncStateRebuildSql(existingColumns: Set<String>): List<String> {
+            if (existingColumns.isEmpty()) return listOf(SYNC_STATE_V4_CREATE)
+            if (existingColumns.containsAll(V4_SYNC_COLUMNS) &&
+                !existingColumns.contains("newestSyncedDate")
+            ) {
+                return emptyList() // already exactly v4 — preserve everything
+            }
+            if (!existingColumns.contains("newestSyncedDate")) {
+                return listOf("DROP TABLE IF EXISTS `sync_state`", SYNC_STATE_V4_CREATE)
+            }
+            val has = { col: String -> existingColumns.contains(col) }
+            val newestExpr = if (has("newestDate"))
+                "CASE WHEN `newestSyncedDate` > 0 THEN `newestSyncedDate` ELSE IFNULL(`newestDate`, 0) END"
+            else "IFNULL(`newestSyncedDate`, 0)"
+            val newestIdExpr = if (has("newestId")) "IFNULL(`newestId`, 0)" else "0"
+            val backfillExpr = if (has("backfillComplete")) "IFNULL(`backfillComplete`, 0)" else "0"
+            // When the legacy backfill finished, the whole history is already
+            // mirrored: oldest watermark at 0 so no backfill ever re-runs.
+            val oldestDateExpr = if (has("oldestDate"))
+                "CASE WHEN IFNULL(`oldestDate`, 0) > 0 THEN `oldestDate` WHEN IFNULL(`backfillComplete`, 0) = 1 THEN 0 ELSE $LONG_MAX END"
+            else "CASE WHEN $backfillExpr = 1 THEN 0 ELSE $LONG_MAX END"
+            val oldestIdExpr = if (has("oldestId"))
+                "CASE WHEN IFNULL(`oldestDate`, 0) > 0 THEN IFNULL(`oldestId`, 0) WHEN IFNULL(`backfillComplete`, 0) = 1 THEN 0 ELSE $LONG_MAX END"
+            else "CASE WHEN $backfillExpr = 1 THEN 0 ELSE $LONG_MAX END"
+            val reconcileExpr = when {
+                has("lastReconcileAt") -> "IFNULL(`lastReconcileAt`, 0)"
+                has("lastSyncAt") -> "IFNULL(`lastSyncAt`, 0)"
+                else -> "0"
+            }
+            return listOf(
+                "CREATE TABLE `sync_state_v4_new` (`source` TEXT NOT NULL, `newestDate` INTEGER NOT NULL, `newestId` INTEGER NOT NULL, `oldestDate` INTEGER NOT NULL, `oldestId` INTEGER NOT NULL, `initialWindowReady` INTEGER NOT NULL, `historyBackfillComplete` INTEGER NOT NULL, `lastReconcileAt` INTEGER NOT NULL, `schemaVersion` INTEGER NOT NULL, PRIMARY KEY(`source`))",
+                "INSERT INTO `sync_state_v4_new` (`source`, `newestDate`, `newestId`, `oldestDate`, `oldestId`, `initialWindowReady`, `historyBackfillComplete`, `lastReconcileAt`, `schemaVersion`) SELECT `source`, $newestExpr, $newestIdExpr, $oldestDateExpr, $oldestIdExpr, 1, $backfillExpr, $reconcileExpr, 1 FROM `sync_state`",
+                "DROP TABLE `sync_state`",
+                "ALTER TABLE `sync_state_v4_new` RENAME TO `sync_state`"
+            )
+        }
+
+        /** Reads the live column set and applies [syncStateRebuildSql]. */
+        internal fun migrateSyncStateDataPreserving(db: SupportSQLiteDatabase) {
+            val columns = db.query("PRAGMA table_info(`sync_state`)").use { c ->
+                val nameIdx = c.getColumnIndexOrThrow("name")
+                buildSet { while (c.moveToNext()) add(c.getString(nameIdx)) }
+            }
+            syncStateRebuildSql(columns).forEach { db.execSQL(it) }
+        }
+
+        /**
+         * Statements that take a v2 OR v3 database to the exact v4 schema
+         * EXCEPT `sync_state`, which is migrated separately by
+         * [migrateSyncStateDataPreserving] so watermarks survive upgrades.
+         * Kept in lockstep with
+         * `app/schemas/com.autonomousone.messages.data.MessagesDatabase/4.json`
+         * (asserted by MigrationToV4SqlTest). All statements are idempotent
          * for every possible starting shape.
          */
         internal val UPGRADE_TO_V4_SQL: List<String> = listOf(
-            // 1. Rebuild sync_state: v2 used newestSyncedDate/backfillComplete/
-            //    lastSyncAt; the shipped 2→3 only ADDed columns, so an upgraded
-            //    DB is missing `newestDate` and Room validation crashes.
-            "DROP TABLE IF EXISTS `sync_state`",
-            SYNC_STATE_V4_SQL,
-            // 2. Drop the non-managed indexes (hand-rolled in 2→3; not declared).
+            // 1. Drop the non-managed indexes (hand-rolled in 2→3; not declared).
             "DROP INDEX IF EXISTS `idx_messages_thread_unread`",
             "DROP INDEX IF EXISTS `idx_messages_thread_date_id`",
-            // 3. Room-managed index for O(unread) COUNT.
+            // 2. Room-managed index for O(unread) COUNT.
             "CREATE INDEX IF NOT EXISTS `index_messages_threadId_read_type` ON `messages` (`threadId`, `read`, `type`)",
-            // 4. Heal the Room-declared indexes (no-ops on DBs that already have them).
+            // 3. Heal the Room-declared indexes (no-ops on DBs that already have them).
             "CREATE INDEX IF NOT EXISTS `index_messages_threadId_date_providerId` ON `messages` (`threadId`, `date`, `providerId`)",
             "CREATE INDEX IF NOT EXISTS `index_messages_normalizedAddress_date` ON `messages` (`normalizedAddress`, `date`)",
             "CREATE INDEX IF NOT EXISTS `index_messages_date` ON `messages` (`date`)",
-            // 5. FTS4 virtual table + content-sync triggers — EXACT text from 4.json.
+            // 4. FTS4 virtual table + content-sync triggers — EXACT text from 4.json.
             "CREATE VIRTUAL TABLE IF NOT EXISTS `messages_fts` USING FTS4(`body` TEXT NOT NULL, content=`messages`)",
             "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_UPDATE BEFORE UPDATE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
             "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_DELETE BEFORE DELETE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
@@ -91,20 +151,24 @@ abstract class MessagesDatabase : RoomDatabase() {
 
         /**
          * Direct v2 → v4. Old users never touch the broken historical 2→3 path.
+         * sync_state is COPIED (watermarks preserved), never dropped.
          */
         val MIGRATION_2_4 = object : Migration(2, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                migrateSyncStateDataPreserving(db)
                 UPGRADE_TO_V4_SQL.forEach { db.execSQL(it) }
             }
         }
 
         /**
-         * v3 → v4. Also repairs DBs that already went through the broken 2→3
-         * (missing `newestDate`, leftover legacy columns) by rebuilding
-         * sync_state — bookkeeping only, re-synced by the coordinator.
+         * v3 → v4. Fresh v3 DBs already have the exact v4 sync_state — they
+         * keep every watermark (no rescan after app update). DBs that went
+         * through the broken shipped 2→3 carry legacy columns and are rebuilt
+         * with a data-preserving copy.
          */
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                migrateSyncStateDataPreserving(db)
                 UPGRADE_TO_V4_SQL.forEach { db.execSQL(it) }
             }
         }

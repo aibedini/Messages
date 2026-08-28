@@ -358,18 +358,31 @@ fun GatewayScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                val gwState = viewModel.gatewayState
                                 Box(
                                     modifier = Modifier
                                         .size(14.dp)
                                         .clip(CircleShape)
                                         .background(
-                                            if (viewModel.isServerRunning) Color(0xFF10B981)
-                                            else Color(0xFFEF4444)
+                                            when (gwState) {
+                                                com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> Color(0xFF10B981)
+                                                com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTING,
+                                                com.autonomousone.messages.gateway.ConnectionSupervisor.State.RECONNECTING,
+                                                com.autonomousone.messages.gateway.ConnectionSupervisor.State.WAITING_FOR_NETWORK -> Color(0xFFF59E0B)
+                                                else -> Color(0xFFEF4444)
+                                            }
                                         )
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = if (viewModel.isServerRunning) "Gateway Active" else "Gateway Stopped",
+                                    text = when (gwState) {
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> "Gateway Active"
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.WAITING_FOR_NETWORK -> "Waiting for network…"
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTING -> "Starting gateway…"
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.RECONNECTING -> "Reconnecting…"
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.ERROR -> "Gateway error — retrying"
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.DISABLED -> "Gateway Stopped"
+                                    },
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -377,7 +390,11 @@ fun GatewayScreen(
                             }
 
                             Switch(
-                                checked = viewModel.isServerRunning,
+                                // Bound to the USER's intent, not runtime truth:
+                                // an offline gateway must still show "on" while
+                                // waiting for network (otherwise the switch
+                                // fights the user during a WiFi blip).
+                                checked = viewModel.gatewayDesired || viewModel.isServerRunning,
                                 onCheckedChange = { viewModel.toggleServer(it) },
                                 modifier = Modifier.semantics {
                                     contentDescription = "SMS Gateway"

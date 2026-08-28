@@ -29,9 +29,12 @@ class ThreadPager(
         const val PAGE = 40
     }
 
-    // Keyset cursor: last seen (date, id) from the previous page.
-    private var lastDate: Long = Long.MAX_VALUE
-    private var lastId: Long = Long.MAX_VALUE
+    // Keyset cursors: PER-SOURCE last seen (date, id). One shared cursor for
+    // the merged SMS+MMS crawl skipped rows (see loadPage).
+    private var lastSmsDate: Long = Long.MAX_VALUE
+    private var lastSmsId: Long = Long.MAX_VALUE
+    private var lastMmsDate: Long = Long.MAX_VALUE
+    private var lastMmsId: Long = Long.MAX_VALUE
 
     /** True when either source still has older rows to pull. */
     @Volatile
@@ -66,8 +69,10 @@ class ThreadPager(
      * Loads the FIRST page (newest messages). Resets the cursor.
      */
     fun loadFirstPage(): List<Sms> {
-        lastDate = Long.MAX_VALUE
-        lastId = Long.MAX_VALUE
+        lastSmsDate = Long.MAX_VALUE
+        lastSmsId = Long.MAX_VALUE
+        lastMmsDate = Long.MAX_VALUE
+        lastMmsId = Long.MAX_VALUE
         val page = loadPage()
         hasMore = page.size >= (PAGE / 2)
         return page
@@ -130,19 +135,25 @@ class ThreadPager(
     private fun loadPage(): List<Sms> {
         val repo = SmsRepository(context)
 
-        // Keyset pagination for SMS: WHERE (thread) AND (date < cursor OR (date = cursor AND id < cursor))
-        val keysetSelection = if (lastDate < Long.MAX_VALUE) {
-            "(${Telephony.Sms.THREAD_ID} = ?) AND (" +
+        // Keyset pagination for SMS. Uses the CLASS-level smsSelection/smsArgs:
+        // loadPage used to hardcode "THREAD_ID = ?" with a possibly-0 threadId
+        // (the phone-only route) — every page then returned empty and the
+        // shared lastDate/lastId cursor of a mixed SMS/MMS crawl skipped rows
+        // whenever one source's oldest row was newer than the other's.
+        // Per-source cursors fix the skip; the address selection fixes the
+        // phone route.
+        val keysetSelection = if (lastSmsDate < Long.MAX_VALUE) {
+            "($smsSelection) AND (" +
                 "${Telephony.Sms.DATE} < ? OR " +
                 "(${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} < ?))"
         } else {
-            "${Telephony.Sms.THREAD_ID} = ?"
+            smsSelection
         }
 
-        val keysetArgs = if (lastDate < Long.MAX_VALUE) {
-            arrayOf(threadId.toString(), lastDate.toString(), lastDate.toString(), lastId.toString())
+        val keysetArgs = if (lastSmsDate < Long.MAX_VALUE) {
+            smsArgs + arrayOf(lastSmsDate.toString(), lastSmsDate.toString(), lastSmsId.toString())
         } else {
-            arrayOf(threadId.toString())
+            smsArgs
         }
 
         val sms = repo.querySmsRaw(
@@ -154,7 +165,7 @@ class ThreadPager(
 
         // Keyset pagination for MMS (thread-based only).
         val mms = if (threadId > 0L) {
-            val mmsKeysetSelection = if (lastDate < Long.MAX_VALUE) {
+            val mmsKeysetSelection = if (lastMmsDate < Long.MAX_VALUE) {
                 "(${Telephony.Mms.THREAD_ID} = ?) AND (" +
                     "${Telephony.Mms.DATE} < ? OR " +
                     "(${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} < ?))"
@@ -162,9 +173,9 @@ class ThreadPager(
                 "${Telephony.Mms.THREAD_ID} = ?"
             }
 
-            val mmsKeysetArgs = if (lastDate < Long.MAX_VALUE) {
-                val lastDateSeconds = lastDate / 1000L
-                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), lastId.toString())
+            val mmsKeysetArgs = if (lastMmsDate < Long.MAX_VALUE) {
+                val lastDateSeconds = lastMmsDate / 1000L
+                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), lastMmsId.toString())
             } else {
                 arrayOf(threadId.toString())
             }
@@ -177,15 +188,12 @@ class ThreadPager(
             )
         } else emptyList()
 
-        // Update cursor to the oldest row we've seen.
-        val allRows = sms + mms
-        if (allRows.isNotEmpty()) {
-            val oldest = allRows.minByOrNull { it.date }
-            if (oldest != null) {
-                lastDate = oldest.date
-                lastId = oldest.id
-            }
-        }
+        // Advance EACH source's cursor to the oldest row IT returned. A shared
+        // cursor let the source with the newer tail drag the other one back:
+        // SMS rows between the merged-oldest and the SMS-oldest were skipped
+        // forever (and MMS negative ids poisoned the SMS _ID < ? predicate).
+        sms.lastOrNull()?.let { lastSmsDate = it.date; lastSmsId = it.id }
+        mms.lastOrNull()?.let { lastMmsDate = it.date; lastMmsId = kotlin.math.abs(it.id) }
 
         return merge(sms, mms).asReversed() // provider gave DESC → display ASC
     }

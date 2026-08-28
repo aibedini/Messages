@@ -14,18 +14,17 @@ object UnreadDelta {
      * @param oldRead   the row's previous `read` value (meaningless when !oldExists)
      * @param newRead   the row's new `read` value
      *
-     * Rules:
-     *  - a READ message never increments (reading a message in the shadow must
-     *    not re-inflate the badge);
-     *  - a brand-new UNREAD message adds 1;
-     *  - an existing message that flips read → unread (provider corrected a
-     *    read flag) adds 1;
-     *  - anything else (already unread, or read → read) adds 0.
+     * Rules (signed delta — the badge must come DOWN when a message is read):
+     *  - unchanged read flag (both read, or both unread): 0 — a re-upsert of a
+     *    live message (status callback, provider touch) never moves the badge;
+     *  - brand-new UNREAD message: +1;
+     *  - flip unread → read (user opened the thread, provider marked read): -1;
+     *  - flip read → unread (provider corrected a read flag): +1.
      */
     fun compute(oldExists: Boolean, oldRead: Boolean, newRead: Boolean): Int = when {
-        newRead -> 0
-        !oldExists -> 1
-        oldRead -> 1
-        else -> 0
+        !oldExists -> if (newRead) 0 else 1   // brand-new: unread +1, read 0
+        oldRead == newRead -> 0               // flag unchanged: badge flat
+        newRead -> -1                         // flip unread → read
+        else -> 1                             // flip read → unread
     }
 }

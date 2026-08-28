@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
@@ -116,6 +117,18 @@
                 <action android:name="com.autonomousone.messages.ACTION_MARK_READ" />
                 <action android:name="com.autonomousone.messages.ACTION_REPLY" />
                 <action android:name="com.autonomousone.messages.ACTION_COPY_OTP" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Gateway reboot recovery: replays ACTION_START when the user left
+             the gateway enabled before the reboot (gatewayDesiredEnabled). -->
+        <receiver
+            android:name=".receiver.BootGatewayReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

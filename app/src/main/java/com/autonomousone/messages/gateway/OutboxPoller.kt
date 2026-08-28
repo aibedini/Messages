@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -35,6 +36,7 @@ class OutboxPoller(
     private val prefs: GatewayPreferences,
     private val scope: CoroutineScope,
     private val onLog: (String) -> Unit = {},
+    private val networkMonitor: NetworkMonitor = NetworkMonitor.get(context),
 ) {
     companion object {
         private const val TAG = "OUTBOX_POLLER"
@@ -62,6 +64,18 @@ class OutboxPoller(
                 if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) {
                     _stateFlow.value = State.IDLE
                     break
+                }
+                // Network gate: while there is no validated route, hang up
+                // ZERO HTTP requests (each would burn a 40 s long-poll timeout
+                // against a dead radio). Wake the instant the network returns —
+                // event-driven via the callback flow, not a poll timer.
+                if (!networkMonitor.isOnline()) {
+                    _stateFlow.value = State.IDLE
+                    onLog("📴 Outbox poller paused: waiting for network")
+                    networkMonitor.onlineFlow().first { online -> online }
+                    if (!isActive) break
+                    _stateFlow.value = State.POLLING
+                    onLog("🌐 Network back — resuming outbox poll immediately")
                 }
                 try {
                     cycle()

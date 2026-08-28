@@ -53,8 +53,12 @@ object ChangeRouter {
 
         val id = extractRowIdFromPath(uri.path)
         if (id != null && id > 0L) {
+            // The authority identifies the TABLE (content://mms/… vs
+            // content://sms/…). Matching on the path substring misroutes
+            // sms-thread URIs (content://sms/thread/…) and any OEM
+            // "mms-sms"-prefixed SMS URIs into the MMS reader.
             val source = when {
-                uri.path?.contains("mms") == true -> MessageEntity.SOURCE_MMS
+                uri.authority?.startsWith("mms") == true -> MessageEntity.SOURCE_MMS
                 else -> MessageEntity.SOURCE_SMS
             }
             // Targeted mutation: read the exact row off the main thread.

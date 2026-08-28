@@ -41,7 +41,9 @@ class MmsReceiver : MmsReceivedReceiver() {
                 return
             }
             Log.d(TAG, "MMS received id=${sms.id} threadId=${sms.threadId} from ${sms.sender}")
-            IncomingMessageDispatcher.dispatch(context, sms)
+            IncomingMessageDispatcher.dispatch(
+                context, sms, source = com.autonomousone.messages.data.MessageEntity.SOURCE_MMS
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error processing incoming MMS", e)
         }

@@ -8,9 +8,7 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
@@ -60,6 +58,9 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
     private val started = AtomicBoolean(false)
 
+    /** Long-running work scope (mutations, reconcile, detached backfill). */
+    private val syncScope = CoroutineScope(Dispatchers.IO)
+
     companion object {
         const val FIRST_BATCH = 500
         const val BACKFILL_BATCH = 500
@@ -88,6 +89,10 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         reconciles.trySend(request)
     }
 
+    /** Start the shadow-sync loop without forcing a full reconcile.
+     *  Called by ConnectionSupervisor once the gateway is online. */
+    fun ensureLoopRunning() = ensureLoop()
+
     /** Backward compat during migration. */
     fun requestSync() = reconcile(ReconcileRequest.FullSync)
 
@@ -110,7 +115,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
     private fun ensureLoop() {
         if (!started.compareAndSet(false, true)) return
-        CoroutineScope(Dispatchers.IO).launch {
+        syncScope.launch {
             // Exact mutations: sequential, never conflated.
             launch {
                 for (mutation in mutations) {
@@ -213,107 +218,161 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 repairThreadInShadow(request.threadId)
             }
             is ReconcileRequest.FullSync -> {
-                val initialWindowCompleted = coroutineScope {
-                    val smsReady = async { syncSource(MessageEntity.SOURCE_SMS, ::readSmsNewestFirst) }
-                    val mmsReady = async { syncSource(MessageEntity.SOURCE_MMS, ::readMmsNewestFirst) }
-                    smsReady.await() || mmsReady.await()
+                val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
+                val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
+                // ── Cutover ordering (fixes "list showed, then went empty") ──
+                // syncSource deliberately leaves initialWindowReady FALSE when
+                // the window just landed. The flag may only flip AFTER the
+                // conversations projection has been rebuilt from the mirrored
+                // messages — isShadowReady() gates Room reads, so the UI can
+                // never observe "ready" against an empty/missing projection.
+                // If the process dies in between, the next reconcile redoes
+                // the (idempotent) window + rebuild before marking again.
+                if (sms.projectionStale || mms.projectionStale) {
+                    fullRebuildConversations()
                 }
-                // On the very first sync the conversation projection table is
-                // empty — no mutation events exist yet to insert rows. Build it
-                // once here (startup/repair only, never on the realtime path).
-                if (initialWindowCompleted) fullRebuildConversations()
+                val now = System.currentTimeMillis()
+                val stateDao = db.syncStateDao()
+                if (sms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_SMS, now)
+                if (mms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_MMS, now)
+                // History backfill must NEVER block the caller (that was the
+                // startup hang: 360K rows awaited inside the first syncNow).
+                // It runs detached, in keyset hops, and its durable cursor
+                // resumes it after a kill automatically on the next reconcile.
+                scheduleBackfill(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
+                scheduleBackfill(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
             }
         }
     }
+
+    /** One in-flight backfill per source; guarded by the DURABLE flag, not memory. */
+    private val backfillInFlight = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
+
+    private fun scheduleBackfill(
+        source: String,
+        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
+    ) {
+        val guard = backfillInFlight.getOrPut(source) { AtomicBoolean(false) }
+        if (!guard.compareAndSet(false, true)) return
+        syncScope.launch {
+            try {
+                val didWork = backfillOlderKeyset(source, reader)
+                if (didWork) fullRebuildConversations()
+            } catch (e: Exception) {
+                Log.e(TAG, "backfill failed for $source", e)
+            } finally {
+                guard.set(false)
+            }
+        }
+    }
+
+    /** What a per-source sync pass achieved this reconcile. */
+    private data class SourceSyncResult(
+        /** The initial window landed THIS pass → caller must rebuild the
+         *  projection and only then flip initialWindowReady. */
+        val initialWindowLanded: Boolean,
+        /** Rows changed → the conversation projection needs a rebuild. */
+        val projectionStale: Boolean
+    )
 
     // ── Provider sync (reconcile path only) ────────────────────────────────
 
     private suspend fun syncSource(
         source: String,
-        reader: suspend (limit: Int, offset: Int) -> List<Sms>
-    ): Boolean {
+        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
+    ): SourceSyncResult {
         val dao = db.messageDao()
         val stateDao = db.syncStateDao()
         val state = stateDao.forSource(source)
+            ?: SyncStateEntity(source = source, newestDate = 0L).also { stateDao.upsert(it) }
 
-        return when {
-            // First contact: mirror the newest FIRST_BATCH in one shot.
-            state == null || !state.initialWindowReady -> {
-                val batch = reader(FIRST_BATCH, 0)
-                if (batch.isNotEmpty()) {
-                    dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
-                }
-                stateDao.upsert(
-                    SyncStateEntity(
-                        source = source,
-                        newestDate = dao.newestDateFor(source) ?: System.currentTimeMillis(),
-                        initialWindowReady = true,
-                        lastReconcileAt = System.currentTimeMillis()
-                    )
-                )
-                // Background backfill: batch-by-batch, yielding between batches.
-                backfillOlderIncremental(source, reader)
-                true // initial window just completed → projection table needs a first build
+        return if (!state.initialWindowReady) {
+            // First contact: mirror the newest FIRST_BATCH via keyset from the
+            // sentinel (everything is older than MAX_VALUE), persist the
+            // watermarks, then continue the history backfill durably.
+            val batch = reader(Long.MAX_VALUE, Long.MAX_VALUE, FIRST_BATCH)
+            dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
+            val now = System.currentTimeMillis()
+            if (batch.isNotEmpty()) {
+                val newest = batch.maxByOrNull { it.date }!!
+                stateDao.advanceNewest(source, newest.date, providerId(newest), now)
+                val oldest = batch.minByOrNull { it.date }!!
+                stateDao.advanceOldest(source, oldest.date, providerId(oldest), now)
             }
-            // Steady state: only rows newer than what we already hold.
-            else -> {
-                val newest = dao.newestDateFor(source) ?: 0L
-                val fresh = readNewerThan(source, newest)
-                if (fresh.isNotEmpty()) {
-                    dao.upsertAll(fresh.mapNotNull { toEntity(it, source) })
-                }
-                stateDao.upsert(
-                    state.copy(
-                        lastReconcileAt = System.currentTimeMillis()
-                    )
-                )
-                false
+            // Do NOT mark initialWindowReady here — the caller flips it only
+            // after fullRebuildConversations() has populated the projection.
+            // No inline backfill either: scheduleBackfill (caller) runs the
+            // durable keyset crawl detached — the initial window alone is
+            // enough for the first paint, and awaiting the full history here
+            // was the original startup hang.
+            SourceSyncResult(initialWindowLanded = true, projectionStale = true)
+        } else {
+            // Steady state: only rows newer than the persisted watermark, and
+            // resume an interrupted history backfill if one is still pending.
+            val fresh = readNewerThan(source, state.newestDate, state.newestId)
+            if (fresh.isNotEmpty()) {
+                dao.upsertAll(fresh.mapNotNull { toEntity(it, source) })
+                val newest = fresh.maxByOrNull { it.date }!!
+                stateDao.advanceNewest(source, newest.date, providerId(newest), System.currentTimeMillis())
+            } else {
+                stateDao.touchReconcile(source, System.currentTimeMillis())
             }
+            // An interrupted crawl resumes via the caller's scheduleBackfill
+            // (detached, durable cursor) — never inline here.
+            SourceSyncResult(
+                initialWindowLanded = false,
+                projectionStale = fresh.isNotEmpty()
+            )
         }
     }
 
-    /** Incremental backfill: processes BATCH_SIZE messages, yields, repeats. */
-    private suspend fun backfillOlderIncremental(
+    /**
+     * Keyset (watermark) backfill — NO OFFSET.
+     *
+     * Each batch reads `WHERE (date,id) < watermark ORDER BY date DESC LIMIT n`
+     * and persists the new watermark BEFORE yielding. A process kill resumes
+     * exactly from the last durable cursor (next app start sees
+     * historyBackfillComplete=false in steady state and calls us again) —
+     * no restart from zero, no row skipped, none duplicated, immune to
+     * provider inserts shifting window boundaries (the offset bug).
+     *
+     * Watermark updates are targeted UPDATEs: never a full-entity copy of a
+     * `state` read before the loop — that stomped every cursor advanced
+     * during the run.
+     *
+     * Returns true if any older rows were mirrored (projection needs rebuild).
+     */
+    private suspend fun backfillOlderKeyset(
         source: String,
-        reader: suspend (limit: Int, offset: Int) -> List<Sms>
-    ) {
+        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
+    ): Boolean {
         val dao = db.messageDao()
         val stateDao = db.syncStateDao()
-        val state = stateDao.forSource(source) ?: return
-        if (state.historyBackfillComplete) return
+        var cursor = stateDao.forSource(source) ?: return false
+        if (cursor.historyBackfillComplete) return false
 
-        var offset = BACKFILL_BATCH // skip the initial window we already have
-
+        var insertedAny = false
         while (true) {
-            val batch = reader(BACKFILL_BATCH, offset)
+            val batch = reader(cursor.oldestDate, cursor.oldestId, BACKFILL_BATCH)
             if (batch.isEmpty()) break
 
             dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
-            offset += batch.size
+            insertedAny = true
 
-            // Update oldest watermark.
-            val oldest = batch.minByOrNull { it.date }
-            stateDao.upsert(
-                state.copy(
-                    oldestDate = oldest?.date ?: state.oldestDate,
-                    oldestId = oldest?.id ?: state.oldestId,
-                    lastReconcileAt = System.currentTimeMillis()
-                )
-            )
+            val oldest = batch.minByOrNull { it.date }!!
+            stateDao.advanceOldest(source, oldest.date, providerId(oldest), System.currentTimeMillis())
 
             if (batch.size < BACKFILL_BATCH) break
 
-            // Yield: let other coroutines run, prevent blocking the dispatcher.
+            // Yield: let other coroutines run; re-read the DURABLE cursor
+            // (not a stale copy) before the next hop.
+            cursor = stateDao.forSource(source) ?: return insertedAny
             yield()
         }
 
-        stateDao.upsert(
-            state.copy(
-                historyBackfillComplete = true,
-                lastReconcileAt = System.currentTimeMillis()
-            )
-        )
-        Log.d(TAG, "backfill complete for $source at offset=$offset")
+        stateDao.markHistoryComplete(source, System.currentTimeMillis())
+        Log.d(TAG, "backfill complete for $source (keyset watermark cursor)")
+        return insertedAny
     }
 
     /**
@@ -343,19 +402,39 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             }
         }
 
-    private suspend fun readNewerThan(source: String, newestMs: Long): List<Sms> =
+    /**
+     * Rows strictly newer than the (date,id) watermark — keyset, so a message
+     * inserted with the same timestamp as the watermark is still picked up.
+     */
+    private suspend fun readNewerThan(source: String, newestMs: Long, newestId: Long): List<Sms> =
         if (source == MessageEntity.SOURCE_SMS) {
-            smsRepository.getSmsWithFilters(fromDate = newestMs, limit = 500)
+            smsRepository.querySmsRaw(
+                selection = "(${Telephony.Sms.DATE} > ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} > ?)",
+                selectionArgs = arrayOf(newestMs.toString(), newestMs.toString(), newestId.toString()),
+                sortOrder = "${Telephony.Sms.DATE} ASC",
+                limit = 500
+            )
         } else {
-            smsRepository.queryMmsRaw(null, null, "${Telephony.Mms.DATE} DESC", 500)
-                .filter { it.date > newestMs }
+            // Mms.DATE is SECONDS; our watermarks are millis (toEntity
+            // multiplies by 1000 — MMS dates are whole seconds so division
+            // here is exact).
+            smsRepository.queryMmsRaw(
+                selection = "(${Telephony.Mms.DATE} > ?) OR (${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} > ?)",
+                selectionArgs = arrayOf(
+                    (newestMs / 1000L).toString(),
+                    (newestMs / 1000L).toString(),
+                    newestId.toString()
+                ),
+                sortOrder = "${Telephony.Mms.DATE} ASC",
+                limit = 500
+            )
         }
 
     private fun toEntity(sms: Sms, source: String): MessageEntity? {
         val rawAddress = sms.sender.takeIf { it.isNotBlank() } ?: return null
         return MessageEntity(
             source = source,
-            providerId = kotlin.math.abs(sms.id),
+            providerId = providerId(sms),
             threadId = sms.threadId,
             normalizedAddress = ContactRepository.normalizePhone(rawAddress),
             rawAddress = rawAddress,
@@ -369,6 +448,14 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     }
 
     private fun String?.orEmptyIfNull() = this ?: ""
+
+    /**
+     * Native provider row id. SmsRepository encodes MMS rows with a NEGATIVE
+     * `id` (id = -_id) to keep the UI's mixed list unambiguous — the
+     * watermark and the Room `providerId` must use the same abs() mapping
+     * toEntity writes, or the keyset predicates compare different id spaces.
+     */
+    private fun providerId(sms: Sms): Long = kotlin.math.abs(sms.id)
 
     // ── Mirror writes (app-initiated mutations) ────────────────────────────
 
@@ -487,11 +574,30 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     private suspend fun archivedRepositoryIds(): Set<Long> =
         com.autonomousone.messages.repository.ArchiveRepository(appContext).getArchivedIds()
 
-    // ── Provider readers ───────────────────────────────────────────────────
+    // ── Provider readers (keyset) ──────────────────────────────────────────
+    //
+    // `beforeDate/beforeId` is the durable (date,id) watermark: strictly
+    // OLDER rows, newest-first. A sentinel (MAX,MAX) reads from the top.
+    // No OFFSET anywhere — a kill resumes from the persisted cursor.
 
-    private suspend fun readSmsNewestFirst(limit: Int, offset: Int): List<Sms> =
-        smsRepository.querySmsRaw(null, null, "${Telephony.Sms.DATE} DESC", limit, offset)
+    private suspend fun readSmsKeyset(beforeDate: Long, beforeId: Long, limit: Int): List<Sms> =
+        smsRepository.querySmsRaw(
+            selection = "(${Telephony.Sms.DATE} < ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} < ?)",
+            selectionArgs = arrayOf(beforeDate.toString(), beforeDate.toString(), beforeId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
+            limit = limit
+        )
 
-    private suspend fun readMmsNewestFirst(limit: Int, offset: Int): List<Sms> =
-        smsRepository.queryMmsRaw(null, null, "${Telephony.Mms.DATE} DESC", limit, offset)
+    private suspend fun readMmsKeyset(beforeDate: Long, beforeId: Long, limit: Int): List<Sms> =
+        smsRepository.queryMmsRaw(
+            selection = "(${Telephony.Mms.DATE} < ?) OR (${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} < ?)",
+            // Mms.DATE is SECONDS; watermark millis division is exact.
+            selectionArgs = arrayOf(
+                (beforeDate / 1000L).toString(),
+                (beforeDate / 1000L).toString(),
+                beforeId.toString()
+            ),
+            sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
+            limit = limit
+        )
 }

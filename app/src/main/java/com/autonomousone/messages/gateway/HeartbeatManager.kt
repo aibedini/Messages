@@ -9,12 +9,14 @@ import android.util.Log
 import com.autonomousone.messages.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /**
@@ -49,6 +51,20 @@ class HeartbeatManager(
     private var heartbeatJob: Job? = null
     private var backoffMs = INITIAL_BACKOFF_MS
 
+    /** Woken by retryNow() to cut short a pending backoff sleep. */
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * Cancel any in-progress backoff and tick NOW — called by
+     * ConnectionSupervisor the moment the network is validated online again.
+     * Without this a 5-second WiFi re-association still waited out the
+     * exponential ladder (up to 5 minutes) before the next heartbeat attempt.
+     */
+    fun retryNow() {
+        backoffMs = INITIAL_BACKOFF_MS
+        wake.trySend(Unit)
+    }
+
     fun start() {
         if (heartbeatJob?.isActive == true) return
 
@@ -67,11 +83,15 @@ class HeartbeatManager(
                 if (success) {
                     backoffMs = INITIAL_BACKOFF_MS   // Reset backoff on success
                     _stateFlow.value = ConnectionState.CONNECTED
-                    delay(HEARTBEAT_INTERVAL_MS)
+                    // Interruptible: retryNow() must even shorten the normal
+                    // 60 s interval after a manual reconnect press.
+                    withTimeoutOrNull(HEARTBEAT_INTERVAL_MS) { wake.receive() }
                 } else {
                     _stateFlow.value = ConnectionState.DISCONNECTED
                     Log.d(TAG, "Heartbeat failed, retrying in ${backoffMs}ms")
-                    delay(backoffMs)
+                    // The backoff sleep is cancellable by retryNow(): when the
+                    // supervisor reports the network valid again, tick NOW.
+                    withTimeoutOrNull(backoffMs) { wake.receive() }
                     // Exponential backoff: double each failure, cap at MAX_BACKOFF_MS
                     backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
                 }

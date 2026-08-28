@@ -36,12 +36,19 @@ object IncomingMessageDispatcher {
     /**
      * @param sms the persisted message: id/threadId MUST come from the provider
      *            row that was just written or read back.
+     * @param source which provider table the row lives in. MMS rows persisted
+     *               as SOURCE_SMS poison the shadow (wrong keyset space, wrong
+     *               dedupe id) — each receiver states its own source.
      */
-    fun dispatch(context: Context, sms: Sms) {
+    fun dispatch(
+        context: Context,
+        sms: Sms,
+        source: String = MessageEntity.SOURCE_SMS
+    ) {
         // Always mirror into Room first (blocking is a notification policy,
         // not a sync policy — the row stays persisted either way).
         TelephonySyncCoordinator.get(context).mutate(
-            MessageMutation.Upsert(source = MessageEntity.SOURCE_SMS, message = sms)
+            MessageMutation.Upsert(source = source, message = sms)
         )
 
         // Blocked sender: no bus event, no webhook, no notification (silent).

@@ -17,17 +17,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 class GatewayService : Service() {
 
-    private var gatewayServer: GatewayServer? = null
     private lateinit var prefs: GatewayPreferences
     private lateinit var backendClient: BackendClient
     private lateinit var registrationManager: RegistrationManager
     private lateinit var heartbeatManager: HeartbeatManager
     private lateinit var outboxPoller: OutboxPoller
+    private lateinit var networkMonitor: NetworkMonitor
+    private lateinit var supervisor: ConnectionSupervisor
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -36,14 +38,34 @@ class GatewayService : Service() {
 
         const val ACTION_START = "com.autonomousone.messages.ACTION_START_GATEWAY"
         const val ACTION_STOP = "com.autonomousone.messages.ACTION_STOP_GATEWAY"
+        /** Manual "Reconnect now" from the UI: cancel backoff, retry immediately. */
+        const val ACTION_RETRY_NOW = "com.autonomousone.messages.ACTION_RETRY_GATEWAY"
 
+        /**
+         * Runtime truth, DERIVED by ConnectionSupervisor — no longer a flag
+         * components poke on their way out. Consumers (GatewayViewModel,
+         * screens) read this instead of a hand-set boolean.
+         */
+        val isServiceRunning: Boolean
+            get() = supervisorState.let {
+                it == ConnectionSupervisor.State.CONNECTED ||
+                it == ConnectionSupervisor.State.CONNECTING ||
+                it == ConnectionSupervisor.State.RECONNECTING
+            }
+
+        /** Supervisor state, live once the service exists. */
         @Volatile
-        var isServiceRunning = false
+        var supervisorStateFlow: StateFlow<ConnectionSupervisor.State>? = null
+            private set
+
+        /** Latest supervisor state (safe default before the service starts). */
+        @Volatile
+        var supervisorState: ConnectionSupervisor.State = ConnectionSupervisor.State.DISABLED
             private set
 
         /** Latest OutboxPoller state, updated while the service is alive. */
         @Volatile
-        var bridgeStateFlow: kotlinx.coroutines.flow.StateFlow<com.autonomousone.messages.gateway.OutboxPoller.State>? = null
+        var bridgeStateFlow: StateFlow<OutboxPoller.State>? = null
             private set
 
         private val _logFlow = MutableSharedFlow<String>(extraBufferCapacity = 100)
@@ -67,6 +89,17 @@ class GatewayService : Service() {
             }
             context.startService(intent)
         }
+
+        fun retryNow(context: Context) {
+            val intent = Intent(context, GatewayService::class.java).apply {
+                action = ACTION_RETRY_NOW
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
     }
 
     override fun onCreate() {
@@ -88,25 +121,61 @@ class GatewayService : Service() {
             context = this,
             prefs = prefs,
             scope = serviceScope,
-            onLog = { msg -> _logFlow.tryEmit(msg) }
+            onLog = { msg -> _logFlow.tryEmit(msg) },
+            networkMonitor = NetworkMonitor.get(this)
         )
         // Expose poller state app-wide so the Gateway screen can show it live.
         bridgeStateFlow = outboxPoller.stateFlow
+
+        networkMonitor = NetworkMonitor.get(this)
+        supervisor = ConnectionSupervisor.get(
+            context = this,
+            prefs = prefs,
+            networkMonitor = networkMonitor,
+            scope = serviceScope,
+            newServer = {
+                GatewayServer(
+                    this,
+                    prefs.port,
+                    prefs.apiKey,
+                    bindAllInterfaces = prefs.bindAllInterfaces
+                ) { logMsg -> _logFlow.tryEmit(logMsg) }
+            },
+            components = ConnectionSupervisor.ManagedComponents(
+                startHeartbeat = { heartbeatManager.start() },
+                stopHeartbeat = { heartbeatManager.stop() },
+                retryHeartbeat = { heartbeatManager.retryNow() },
+                startPoller = { outboxPoller.start() },
+                stopPoller = { outboxPoller.stop() },
+                startSync = {
+                    com.autonomousone.messages.data.TelephonySyncCoordinator
+                        .get(this).ensureLoopRunning()
+                }
+            ),
+            onLog = { msg -> _logFlow.tryEmit(msg) }
+        )
+        supervisorStateFlow = supervisor.stateFlow
+        serviceScope.launch {
+            supervisor.stateFlow.collect { state ->
+                supervisorState = state
+                updateNotification(state)
+            }
+        }
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                stopServer()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
+                supervisor.stop() // flips desired OFF persistently
+                shutdownComponents()
+                stopForegroundLike()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_RETRY_NOW -> {
+                startForegroundNotification()
+                supervisor.retryNow()
             }
             ACTION_START, null -> {
                 if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) {
@@ -115,18 +184,37 @@ class GatewayService : Service() {
                     return START_NOT_STICKY
                 }
                 startForegroundNotification()
-                startServerAsync()
+                // Non-blocking: the supervisor loop binds the server, starts
+                // heartbeat/poller/sync and self-heals from here on. A null
+                // intent (START_STICKY revival after process death) lands
+                // here too — desiredEnabled replays from prefs automatically.
+                supervisor.start()
             }
         }
         return START_STICKY
     }
 
+    private fun stopForegroundLike() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+    }
+
+    /** Full teardown of the supervisor + its components (ACTION_STOP, onDestroy). */
+    private fun shutdownComponents() {
+        supervisor.shutdown()
+        supervisorStateFlow = null
+        bridgeStateFlow = null
+    }
+
     private fun startForegroundNotification() {
         val port = prefs.port
-        val ip = GatewayServer.getLocalIpAddress()
         val notification = buildNotification(
             "SMS Gateway Active",
-            "LAN: http://$ip:$port \u2022 Cloud: ${prefs.backendUrl}"
+            "LAN: http://${GatewayServer.getLocalIpAddress()}:$port • Cloud: ${prefs.backendUrl}"
         )
 
         try {
@@ -149,63 +237,35 @@ class GatewayService : Service() {
         }
     }
 
-    private fun startServerAsync() {
-        serviceScope.launch {
-            if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) return@launch
-            if (isServiceRunning && gatewayServer?.isRunning() == true) return@launch
-
-            val port = prefs.port
-            val apiKey = prefs.apiKey
-
-            gatewayServer = GatewayServer(
-                this@GatewayService,
-                port,
-                apiKey,
-                bindAllInterfaces = prefs.bindAllInterfaces
-            ) { logMsg ->
-                _logFlow.tryEmit(logMsg)
-            }
-
-            gatewayServer?.start()
-            isServiceRunning = true
-            prefs.isEnabled = true
-
-            val ip = GatewayServer.getLocalIpAddress()
-            _logFlow.tryEmit("🚀 Gateway Service running at http://$ip:$port")
-
-            // Start cloud backend registration + heartbeat
-            val registered = registrationManager.ensureRegistered()
-            if (registered) {
-                heartbeatManager.start()
-                _logFlow.tryEmit("☁️ Cloud backend connected (${prefs.backendUrl})")
-            } else {
-                _logFlow.tryEmit("⚠️ Cloud registration failed — will retry automatically")
-                // HeartbeatManager will self-register on its first loop iteration
-                heartbeatManager.start()
-            }
-
-            // GMweb pull bridge: outbound-only, independent of the cloud backend.
-            if (prefs.gmwebUrl.isNotBlank()) {
-                outboxPoller.start()
-                _logFlow.tryEmit("🔌 GMweb pull bridge active (${prefs.gmwebUrl})")
-            }
+    /** Notification text mirrors the supervisor state — the user sees
+     *  "waiting for network", not a silent dead gateway. */
+    private fun updateNotification(state: ConnectionSupervisor.State) {
+        val mgr = getSystemService(NotificationManager::class.java) ?: return
+        val port = prefs.port
+        val (title, text) = when (state) {
+            ConnectionSupervisor.State.DISABLED ->
+                "SMS Gateway" to "Gateway is stopped"
+            ConnectionSupervisor.State.WAITING_FOR_NETWORK ->
+                "SMS Gateway" to "📴 Waiting for a network connection…"
+            ConnectionSupervisor.State.CONNECTING ->
+                "SMS Gateway" to "Starting gateway…"
+            ConnectionSupervisor.State.CONNECTED ->
+                "SMS Gateway Active" to "LAN: http://${GatewayServer.getLocalIpAddress()}:$port • Cloud: ${prefs.backendUrl}"
+            ConnectionSupervisor.State.RECONNECTING ->
+                "SMS Gateway" to "🔁 Reconnecting…"
+            ConnectionSupervisor.State.ERROR ->
+                "SMS Gateway" to "⚠️ Retrying — check the gateway screen for details"
         }
-    }
-
-    private fun stopServer() {
-        serviceScope.launch {
-            heartbeatManager.stop()
-            if (this@GatewayService::outboxPoller.isInitialized) outboxPoller.stop()
-            gatewayServer?.stop()
-            gatewayServer = null
-            isServiceRunning = false
-            prefs.isEnabled = false
-            _logFlow.tryEmit("🛑 Gateway Service stopped")
+        try {
+            mgr.notify(NOTIFICATION_ID, buildNotification(title, text))
+        } catch (_: Exception) {
+            // Notification may have been cancelled with the service — ignore.
         }
     }
 
     override fun onDestroy() {
-        stopServer()
+        supervisor.stop()
+        shutdownComponents()
         super.onDestroy()
     }
 

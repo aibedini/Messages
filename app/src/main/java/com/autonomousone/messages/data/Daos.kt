@@ -181,6 +181,37 @@ interface SyncStateDao {
 
     @Upsert
     suspend fun upsert(state: SyncStateEntity)
+
+    // ── Targeted watermark updates ─────────────────────────────────────────
+    // NEVER read-modify-write the whole entity inside the backfill loop: a
+    // stale copy written back at the end stomps every cursor advanced during
+    // the run (the v2.6.2 bug). Each update touches exactly one field group.
+
+    @Query(
+        "UPDATE sync_state SET newestDate = :date, newestId = :id, " +
+            "lastReconcileAt = :now WHERE source = :source " +
+            "AND (newestDate < :date OR (newestDate = :date AND newestId < :id))"
+    )
+    suspend fun advanceNewest(source: String, date: Long, id: Long, now: Long)
+
+    @Query(
+        "UPDATE sync_state SET oldestDate = :date, oldestId = :id, " +
+            "lastReconcileAt = :now WHERE source = :source " +
+            "AND (oldestDate > :date OR (oldestDate = :date AND oldestId > :id))"
+    )
+    suspend fun advanceOldest(source: String, date: Long, id: Long, now: Long)
+
+    /** Set ONLY after the conversations projection has been rebuilt. */
+    @Query("UPDATE sync_state SET initialWindowReady = 1, lastReconcileAt = :now WHERE source = :source")
+    suspend fun markInitialWindowReady(source: String, now: Long)
+
+    @Query(
+        "UPDATE sync_state SET historyBackfillComplete = 1, lastReconcileAt = :now WHERE source = :source"
+    )
+    suspend fun markHistoryComplete(source: String, now: Long)
+
+    @Query("UPDATE sync_state SET lastReconcileAt = :now WHERE source = :source")
+    suspend fun touchReconcile(source: String, now: Long)
 }
 
 /** Per-thread aggregate over the full-text index. */

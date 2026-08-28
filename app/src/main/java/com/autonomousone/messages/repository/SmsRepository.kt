@@ -527,7 +527,12 @@ class SmsRepository(
 
         try {
             scanSmsConversations(conversationMap, progress, onPartial)
-            for (sms in queryMms(null, null, "${Telephony.Mms.DATE} DESC", progress)) {
+            // Bounded MMS merge: only the NEWEST rows matter for a conversation
+            // list (one snippet per thread), and this fallback runs when the
+            // Threads provider is dead — an unbounded queryMms here used to
+            // full-scan every MMS row plus addr/part joins per Home refresh.
+            // The primary path is the Room shadow (isShadowReady) anyway.
+            for (sms in queryMmsRaw(null, null, "${Telephony.Mms.DATE} DESC", limit = 500)) {
                 val norm = ContactRepository.normalizePhone(sms.sender)
                 val key = if (sms.threadId > 0) "thread:${sms.threadId}"
                 else if (norm.isNotBlank()) "address:$norm" else "address:${sms.sender}"
@@ -610,7 +615,7 @@ class SmsRepository(
             sortOrder = "${Telephony.Sms.DATE} ASC",
             progress = progress
         )
-        // Merge MMS rows belonging to the same thread
+        // Merge MMS rows belonging to the same thread (provider-filtered).
         val mms = queryMms(
             selection = "${Telephony.Mms.THREAD_ID} = ?",
             selectionArgs = arrayOf(threadId.toString()),
@@ -631,17 +636,19 @@ class SmsRepository(
             sortOrder = "${Telephony.Sms.DATE} ASC",
             progress = progress
         )
-        // When we know the thread, filter MMS at the provider level (fast).
-        // Otherwise fall back to a full MMS scan filtered in memory — but only
-        // report MMS progress when the device actually has MMS rows.
-        val mms = queryMms(
-            selection = if (threadIdHint > 0) "${Telephony.Mms.THREAD_ID} = ?" else null,
-            selectionArgs = if (threadIdHint > 0) arrayOf(threadIdHint.toString()) else null,
-            sortOrder = "${Telephony.Mms.DATE} ASC",
-            progress = null // silent scan; SMS progress is what the user sees
+        // MMS for this contact, filtered AT THE PROVIDER: resolve the thread
+        // ids from the SMS rows we just read (same conversation), then query
+        // Mms by THREAD_ID IN (…). The old fallback scanned EVERY Mms row and
+        // filtered in memory — the unbounded MMS scan this path must avoid.
+        val mmsThreadIds = (sms.map { it.threadId } + if (threadIdHint > 0) listOf(threadIdHint) else emptyList())
+            .filter { it > 0L }.distinct()
+        val mms = if (mmsThreadIds.isEmpty()) emptyList() else queryMmsRaw(
+            selection = "${Telephony.Mms.THREAD_ID} IN (${mmsThreadIds.joinToString(",") { "?" }})",
+            selectionArgs = mmsThreadIds.map(Long::toString).toTypedArray(),
+            sortOrder = "${Telephony.Mms.DATE} ASC"
         ).filter { mmsMsg ->
             val n = ContactRepository.normalizePhone(mmsMsg.sender)
-            n.isNotBlank() && (n == normalized || n.endsWith(lastDigits) || lastDigits.endsWith(n))
+            n.isBlank() || n == normalized || n.endsWith(lastDigits) || lastDigits.endsWith(n)
         }
         return (sms + mms).sortedBy { it.date }
     }

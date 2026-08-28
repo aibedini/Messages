@@ -21,6 +21,15 @@ class GatewayPreferences(context: Context) {
         private const val KEY_WEBHOOK_URL = "gateway_webhook_url"
         private const val KEY_WEBHOOK_SECRET = "gateway_webhook_secret"
         private const val KEY_AUTO_START = "gateway_auto_start"
+    /**
+     * The USER's intent that the gateway run — persisted, survives reboot,
+     * and NEVER touched by runtime teardown (network loss, stopServer,
+     * service death). `KEY_ENABLED` below is the runtime mirror derived by
+     * ConnectionSupervisor; components gate transmission on it, but only the
+     * supervisor writes it. This split is what makes recovery possible:
+     * after a crash/reboot the service reads desired=true and rebuilds.
+     */
+    private const val KEY_DESIRED_ENABLED = "gateway_desired_enabled"
         private const val KEY_BIND_ALL = "gateway_bind_all_interfaces"
         private const val KEY_CONSENT_VERSION = "gateway_consent_version"
         private const val KEY_CONSENT_ACCEPTED_AT = "gateway_consent_accepted_at"
@@ -44,9 +53,20 @@ class GatewayPreferences(context: Context) {
 
     // ── LAN server ──
 
+    /**
+     * RUNTIME state — true while the gateway components are actually up.
+     * Derived by ConnectionSupervisor; nothing else writes it. Transmission
+     * gates (HeartbeatManager, OutboxPoller) check this so a supervisor-
+     * stopped gateway stops sending even if the service still lives.
+     */
     var isEnabled: Boolean
         get() = prefs.getBoolean(KEY_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+
+    /** USER intent — see KEY_DESIRED_ENABLED. start()/stop() flip this. */
+    var gatewayDesiredEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DESIRED_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DESIRED_ENABLED, value).apply()
 
     var port: Int
         get() = prefs.getInt(KEY_PORT, DEFAULT_PORT)
@@ -123,6 +143,7 @@ class GatewayPreferences(context: Context) {
             .remove(KEY_CONSENT_VERSION)
             .remove(KEY_CONSENT_ACCEPTED_AT)
             .putBoolean(KEY_ENABLED, false)
+            .putBoolean(KEY_DESIRED_ENABLED, false)
             .putBoolean(KEY_AUTO_START, false)
             .apply()
         clearCloudCredentials()

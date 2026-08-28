@@ -15,14 +15,17 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.gateway.BackendClient
+import com.autonomousone.messages.gateway.ConnectionSupervisor
 import com.autonomousone.messages.gateway.GatewayPreferences
 import com.autonomousone.messages.gateway.GatewayServer
 import com.autonomousone.messages.gateway.GatewayService
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.RegistrationManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,6 +46,12 @@ class GatewayViewModel(
 
     // ── LAN server state (existing) ────────────────────────────────────────
     var isServerRunning by mutableStateOf(GatewayService.isServiceRunning)
+        private set
+    /** Live supervisor state for the UI chips/banner (derived, not a flag). */
+    var gatewayState by mutableStateOf(GatewayService.supervisorState)
+        private set
+    /** The user's intent — drives the switch while runtime state recovers. */
+    var gatewayDesired by mutableStateOf(prefs.gatewayDesiredEnabled)
         private set
     var hasGatewayConsent by mutableStateOf(prefs.hasGatewayConsent)
         private set
@@ -78,7 +87,21 @@ class GatewayViewModel(
     init {
         observeLogs()
         observeHeartbeatState()
+        observeSupervisorState()
         refreshStatus()
+    }
+
+    /** Poll the live supervisor state (the service may start/stop while this
+     *  screen is open; the singleton swaps underneath us). Cheap: 1 s tick. */
+    private fun observeSupervisorState() {
+        viewModelScope.launch {
+            while (isActive) {
+                gatewayState = GatewayService.supervisorState
+                isServerRunning = GatewayService.isServiceRunning
+                gatewayDesired = prefs.gatewayDesiredEnabled
+                delay(1_000)
+            }
+        }
     }
 
     fun refreshStatus() {
@@ -137,7 +160,7 @@ class GatewayViewModel(
         } else {
             GatewayService.stopGateway(context)
         }
-        isServerRunning = enable
+        gatewayDesired = enable // optimistic switch state; service reconciles truth
         refreshStatus()
     }
 
@@ -149,6 +172,10 @@ class GatewayViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔄 Manual reconnect triggered...")
             cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
+            // Supervisor first: cancels heartbeat backoff, rebinds a stale LAN
+            // server, wakes the poller — the full self-heal path. The manual
+            // registration below is a fast-path for the cloud chip only.
+            GatewayService.retryNow(getApplication())
             val success = registrationManager.register()
             if (success) {
                 refreshStatus()
@@ -177,6 +204,7 @@ class GatewayViewModel(
         prefs.revokeGatewayConsent()
         hasGatewayConsent = false
         isServerRunning = false
+        gatewayDesired = false
         showConsentDialog = false
         addLog("Gateway consent revoked; networking and SMS forwarding stopped")
     }
