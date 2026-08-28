@@ -29,6 +29,15 @@ class ConversationViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
+    companion object {
+        /**
+         * Rows painted from the Room shadow on instant-open. Room is a single
+         * merged table (no per-source quota), so 20 ≈ the union of the
+         * provider pager's INITIAL_PER_SOURCE windows.
+         */
+        private const val ROOM_WINDOW = 20
+    }
+
     private val repository = SmsRepository(application)
     private val smsSender = SmsSender(application)
     private val mmsSender = MmsSender(application)
@@ -116,6 +125,9 @@ class ConversationViewModel(
             }
         }
 
+    /** Whether an upward scroll-up could still yield older rows. */
+    fun hasMoreOlder(): Boolean = pager?.hasMore == true
+
     fun loadOlderMessages() {
         val p = pager ?: return
         if (!p.hasMore) return
@@ -181,10 +193,15 @@ class ConversationViewModel(
                         com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
                             .messageDao()
                             .let { dao ->
-                                if (key != 0L) dao.pageForThread(key, limit = 40, offset = 0)
-                                else dao.newestForAddress(normPhone, limit = 40)
+                                if (key != 0L) dao.pageForThread(key, limit = ROOM_WINDOW, offset = 0)
+                                else dao.newestForAddress(normPhone, limit = ROOM_WINDOW)
                             }
                             .map { it.toSms() }
+                            // DAO rows come back date-DESC (newest first); the
+                            // UI is ALWAYS oldest→newest. Without this the
+                            // bottom anchor lands on the OLDEST row of the
+                            // window and the user must scroll by hand.
+                            .sortedBy { it.date }
                     }.getOrNull().orEmpty()
                     if (roomRows.isNotEmpty() && gen == conversationGeneration) {
                         withContext(Dispatchers.Main) {
@@ -225,9 +242,9 @@ class ConversationViewModel(
                     return@launch
                 }
             } else {
-                // No cache: only show a spinner if the (windowed, ≤80 row) read
-                // actually takes long enough for a human to notice. Below that
-                // the screen goes straight from nothing to messages.
+                // No cache: only show a spinner if the (windowed, ≤2×12 row)
+                // read actually takes long enough for a human to notice.
+                // Below that the screen goes straight from nothing to messages.
                 val spinnerJob = launch {
                     delay(120)
                     withContext(Dispatchers.Main) { isLoading = true }
@@ -237,7 +254,8 @@ class ConversationViewModel(
 
             try {
                 // Windowed loading means there is no long-running scan anymore;
-                // the pager reads ≤80 rows per page. No progress UI is needed.
+                // the pager reads ≤24 rows on open (older pages are user-
+                // initiated). No progress UI is needed.
                 val loadedMessages = when {
                     currentPhone.isNotBlank() || threadId != 0L -> {
                         // Windowed load: newest page only (Google Messages-style).

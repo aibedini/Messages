@@ -25,8 +25,18 @@ class ThreadPager(
     private val phone: String = ""
 ) {
     companion object {
-        /** Rows per page. */
-        const val PAGE = 40
+        /**
+         * Rows fetched PER SOURCE on the very first page (the one that gates
+         * the paint on open). SMS and MMS are queried independently, so the
+         * worst-case read for opening a conversation is 2 × INITIAL_PER_SOURCE
+         * rows — not 80. A ten-year-old thread must cost the same to open as
+         * a two-message one; anything deeper than this window is nobody's
+         * business until the user scrolls up.
+         */
+        const val INITIAL_PER_SOURCE = 12
+
+        /** Rows per source on every OLDER page (user-initiated scroll-up). */
+        const val OLDER_PAGE = 40
     }
 
     // Keyset cursors: PER-SOURCE last seen (date, id). One shared cursor for
@@ -40,6 +50,12 @@ class ThreadPager(
     @Volatile
     var hasMore: Boolean = true
         private set
+
+    // Exhaustion is decided PER SOURCE: a 24-row merged page proves nothing if
+    // SMS filled its quota while MMS returned 2 rows. These track whether the
+    // last crawl left each source's quota unspent.
+    private var smsExhausted = false
+    private var mmsExhausted = false
 
     /**
      * Phone-only route (threadId == 0): query by ADDRESS suffix instead of a
@@ -67,14 +83,18 @@ class ThreadPager(
 
     /**
      * Loads the FIRST page (newest messages). Resets the cursor.
+     * Small window: this read is on the critical path of opening a
+     * conversation, so it pulls INITIAL_PER_SOURCE from each source.
      */
     fun loadFirstPage(): List<Sms> {
         lastSmsDate = Long.MAX_VALUE
         lastSmsId = Long.MAX_VALUE
         lastMmsDate = Long.MAX_VALUE
         lastMmsId = Long.MAX_VALUE
-        val page = loadPage()
-        hasMore = page.size >= (PAGE / 2)
+        smsExhausted = false
+        mmsExhausted = false
+        val page = loadPage(INITIAL_PER_SOURCE)
+        hasMore = !(smsExhausted && (mmsExhausted || threadId <= 0L))
         return page
     }
 
@@ -83,12 +103,12 @@ class ThreadPager(
      */
     fun loadOlder(): List<Sms> {
         if (!hasMore) return emptyList()
-        val page = loadPage()
+        val page = loadPage(OLDER_PAGE)
         if (page.isEmpty()) {
             hasMore = false
             return emptyList()
         }
-        hasMore = page.size >= (PAGE / 2)
+        hasMore = !(smsExhausted && (mmsExhausted || threadId <= 0L))
         return page
     }
 
@@ -132,7 +152,7 @@ class ThreadPager(
 
     // ── internals ──────────────────────────────────────────────────────────
 
-    private fun loadPage(): List<Sms> {
+    private fun loadPage(limit: Int): List<Sms> {
         val repo = SmsRepository(context)
 
         // Keyset pagination for SMS. Uses the CLASS-level smsSelection/smsArgs:
@@ -160,8 +180,9 @@ class ThreadPager(
             selection = keysetSelection,
             selectionArgs = keysetArgs,
             sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
-            limit = PAGE
+            limit = limit
         )
+        smsExhausted = sms.size < limit
 
         // Keyset pagination for MMS (thread-based only).
         val mms = if (threadId > 0L) {
@@ -184,9 +205,10 @@ class ThreadPager(
                 selection = mmsKeysetSelection,
                 selectionArgs = mmsKeysetArgs,
                 sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
-                limit = PAGE
+                limit = limit
             )
         } else emptyList()
+        if (threadId > 0L) mmsExhausted = mms.size < limit
 
         // Advance EACH source's cursor to the oldest row IT returned. A shared
         // cursor let the source with the newer tail drag the other one back:

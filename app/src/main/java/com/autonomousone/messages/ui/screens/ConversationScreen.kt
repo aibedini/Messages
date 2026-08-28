@@ -78,6 +78,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -334,13 +336,25 @@ fun ConversationScreen(
             lastVisible >= info.totalItemsCount - 2
         }
     }
-    var anchoredToBottom by remember { mutableStateOf(false) }
+    // One bottom-anchor per OPENED conversation: remembering it by
+    // (threadId, phone) means a second chat opened in the same composition
+    // gets a fresh anchor instead of inheriting the previous thread's
+    // "already anchored" state — which used to leave it stuck un-scrolled.
+    var anchoredToBottom by remember(threadId, phone) { mutableStateOf(false) }
     // Set right after the user sends so the list ALWAYS jumps to their new
     // message — even if they had scrolled up to re-read something.
-    var forceScrollToBottom by remember { mutableStateOf(false) }
+    var forceScrollToBottom by remember(threadId, phone) { mutableStateOf(false) }
     // Windowed history: pull older pages when the top is reached.
     var loadingOlder by remember { mutableStateOf(false) }
-    LaunchedEffect(chatItems.size) {
+
+    // Identity of the newest row. The provider refresh can REPLACE the Room
+    // window with an exactly-equal-sized list; keying the anchor on size alone
+    // then never re-fires and the user sits on the oldest row of the window.
+    // "id:date" of the tail guarantees the jump-to-newest happens once per
+    // open — and never yanks the user back down after they scrolled up.
+    val newestMessageKey = messages.lastOrNull()?.let { "${it.id}:${it.date}" }
+
+    LaunchedEffect(threadId, phone, chatItems.size, newestMessageKey) {
         if (chatItems.isEmpty()) return@LaunchedEffect
         when {
             !anchoredToBottom -> {
@@ -357,14 +371,32 @@ fun ConversationScreen(
             }
         }
     }
-    // Reached the top → fetch the next older page (once per arrival).
-    LaunchedEffect(listState.canScrollBackward) {
-        if (listState.canScrollBackward || loadingOlder) return@LaunchedEffect
-        if (!anchoredToBottom) return@LaunchedEffect
-        loadingOlder = true
-        viewModel.loadOlderMessages()
-        kotlinx.coroutines.delay(400) // let composition settle before re-arming
+    // Older pages load ONLY after a REAL user upward scroll reaches the top.
+    // canScrollBackward lies for small windows: a freshly opened 12-message
+    // chat is not scrollable-back at startup, which looked exactly like
+    // "top reached" and fetched history nobody asked for. Here the DRAG
+    // itself is the precondition: firstVisibleItemIndex must decrease while a
+    // scroll is in progress and arrive at index 0. Initial render ≠ request.
+    LaunchedEffect(threadId, phone) {
         loadingOlder = false
+        var prevIndex = -1
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.isScrollInProgress
+        }
+            .distinctUntilChanged()
+            .collect { (index, scrolling) ->
+                val movedUpWhileDragging = scrolling && prevIndex >= 0 && index < prevIndex
+                prevIndex = index
+                if (
+                    movedUpWhileDragging && index == 0 &&
+                    !loadingOlder && anchoredToBottom && viewModel.hasMoreOlder()
+                ) {
+                    loadingOlder = true
+                    viewModel.loadOlderMessages()
+                    kotlinx.coroutines.delay(400) // let composition settle before re-arming
+                    loadingOlder = false
+                }
+            }
     }
 
     val title = remember(phone, name, recipientPhone) {
