@@ -47,6 +47,7 @@ fun MainTopBar(
     onMarkAllReadClick: () -> Unit = {},
     onGatewayClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    titleBadge: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -68,6 +69,10 @@ fun MainTopBar(
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
+                if (titleBadge != null) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    titleBadge()
+                }
             }
         },
         actions = {

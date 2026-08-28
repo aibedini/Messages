@@ -115,7 +115,7 @@ class SmsSender(
             val sentIntents = ArrayList<PendingIntent>(parts.size).apply {
                 repeat(parts.size) { part ->
                     add(buildStatusPendingIntent(
-                        SmsStatusReceiver.ACTION_SMS_SENT, sentId, part, parts.size
+                        SmsStatusReceiver.ACTION_SMS_SENT, sentId, part, parts.size, effectiveSubId
                     ))
                 }
             }
@@ -123,7 +123,7 @@ class SmsSender(
                 ArrayList<PendingIntent>(parts.size).apply {
                     repeat(parts.size) { part ->
                         add(buildStatusPendingIntent(
-                            SmsStatusReceiver.ACTION_SMS_DELIVERED, sentId, part, parts.size
+                            SmsStatusReceiver.ACTION_SMS_DELIVERED, sentId, part, parts.size, effectiveSubId
                         ))
                     }
                 }
@@ -182,13 +182,17 @@ class SmsSender(
         action: String,
         rowId: Long,
         partIndex: Int,
-        partCount: Int
+        partCount: Int,
+        subscriptionId: Int? = null
     ): PendingIntent {
         val intent = Intent(context, SmsStatusReceiver::class.java)
             .setAction(action)
             .putExtra(SmsStatusReceiver.EXTRA_ROW_ID, rowId)
             .putExtra(SmsStatusReceiver.EXTRA_PART_INDEX, partIndex)
             .putExtra(SmsStatusReceiver.EXTRA_PART_COUNT, partCount)
+            // Which SIM actually carried this part — feeds the per-SIM send
+            // ledger (null = platform default; recorded as -1/unknown).
+            .putExtra(SmsStatusReceiver.EXTRA_SUBSCRIPTION_ID, subscriptionId ?: -1)
         val requestCode = 31 * (31 * action.hashCode() + rowId.hashCode()) + partIndex
         return PendingIntent.getBroadcast(
             context,

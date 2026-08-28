@@ -39,7 +39,17 @@ class ConversationViewModel(
         private set
 
     var loadStatus by mutableStateOf<String?>(null)
+
+    /**
+     * Last swallowed background failure, surfaced once as a dismissible
+     * snackbar by ConversationScreen. Non-null only after crashGuard fires —
+     * the screen stays usable (cached rows remain painted) either way.
+     */
+    var errorMessage by mutableStateOf<String?>(null)
         private set
+
+    /** Called by the screen after the snackbar for [errorMessage] is shown. */
+    fun consumeError() { errorMessage = null }
 
     private var currentThreadId = 0L
     private var currentPhone = ""
@@ -81,12 +91,37 @@ class ConversationViewModel(
     @Volatile
     private var conversationGeneration = 0L
 
+    /**
+     * Conversation-screen boundary for every background job. A failing
+     * provider/Room/Pager query must degrade to an error state on screen —
+     * it must NEVER become an uncaught coroutine exception that kills the
+     * whole process (the silent "app just closes" report). Cancellation is
+     * a normal lifecycle event and rethrows.
+     */
+    private fun crashGuard(context: String): kotlinx.coroutines.CoroutineExceptionHandler =
+        kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(
+                "CONV_VM",
+                "Conversation job failed ($context) threadId=$currentThreadId " +
+                    "phone=${if (currentPhone.isNotBlank()) "set" else "none"} " +
+                    "msgCount=${messages.size}",
+                e
+            )
+            viewModelScope.launch(Dispatchers.Main) {
+                isLoading = false
+                loadStatus = null
+                errorMessage = getApplication<Application>()
+                    .getString(R.string.conv_load_failed)
+            }
+        }
+
     fun loadOlderMessages() {
         val p = pager ?: return
         if (!p.hasMore) return
         if (olderMessagesJob?.isActive == true) return
         val gen = conversationGeneration
-        olderMessagesJob = viewModelScope.launch(Dispatchers.IO) {
+        olderMessagesJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadOlder")) {
             val older = p.loadOlder()
             // Screen moved to another conversation while the page was loading.
             if (gen != conversationGeneration || older.isEmpty()) return@launch
@@ -123,7 +158,7 @@ class ConversationViewModel(
         val myPhone = currentPhone
         val gen = conversationGeneration
 
-        conversationLoadJob = viewModelScope.launch(Dispatchers.IO) {
+        conversationLoadJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadConversation")) {
             // ── Stale-while-revalidate: paint the cached thread INSTANTLY
             // (Google Messages-style), then refresh from the provider.
             val cache = ThreadMessageCache
@@ -379,7 +414,7 @@ class ConversationViewModel(
             return
         }
         isRefreshing = true
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashGuard("refresh")) {
             try {
                 do {
                     refreshRequestedAgain = false

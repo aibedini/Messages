@@ -60,6 +60,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -281,6 +283,17 @@ fun ConversationScreen(
         }
     }
 
+    // Background jobs that crash-guarded into an error state surface it once
+    // as a snackbar instead of killing the process; rows already on screen
+    // stay painted either way.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel.errorMessage) {
+        viewModel.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeError()
+        }
+    }
+
     val messages = viewModel.messages
 
     val chatItems by remember {
@@ -363,6 +376,7 @@ fun ConversationScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ConversationTopBar(
                 title = title,

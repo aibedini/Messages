@@ -28,9 +28,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         ConversationEntity::class,
         SyncStateEntity::class,
-        MessageFts::class
+        MessageFts::class,
+        SendSegmentEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -39,6 +40,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun messageFtsDao(): MessageFtsDao
+    abstract fun sendSegmentDao(): SendSegmentDao
 
     companion object {
         @Volatile
@@ -173,6 +175,21 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5: outgoing-send segment ledger (additive only). Text must
+         * match the KSP-generated 5.json exactly (Room validates verbatim).
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `send_segments` (`rowId` INTEGER NOT NULL, `partIndex` INTEGER NOT NULL, `partCount` INTEGER NOT NULL, `sentAt` INTEGER NOT NULL, `subscriptionId` INTEGER NOT NULL, `success` INTEGER NOT NULL, PRIMARY KEY(`rowId`, `partIndex`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_send_segments_sentAt` ON `send_segments` (`sentAt`)"
+                )
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -180,7 +197,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                     MessagesDatabase::class.java,
                     "messages.db"
                 )
-                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5)
                     // Destructive fallback ONLY when a migration path is missing
                     // (never for a migration that runs but yields a bad schema).
                     .fallbackToDestructiveMigration(dropAllTables = true)

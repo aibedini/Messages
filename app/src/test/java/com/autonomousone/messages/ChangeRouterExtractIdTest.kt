@@ -40,4 +40,12 @@ class ChangeRouterExtractIdTest {
         assertNull(ChangeRouter.extractRowIdFromPath(null))
         assertNull(ChangeRouter.extractRowIdFromPath(""))
     }
+
+    @Test
+    fun `thread URIs are NOT row ids`() {
+        // content://sms/thread/123 → reading 123 as _ID would upsert a
+        // random unrelated message; the router must fall through instead.
+        assertNull(ChangeRouter.extractRowIdFromPath("//sms/thread/123"))
+        assertNull(ChangeRouter.extractRowIdFromPath("//sms/thread"))
+    }
 }

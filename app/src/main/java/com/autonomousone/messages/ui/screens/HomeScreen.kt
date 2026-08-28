@@ -128,14 +128,6 @@ fun HomeScreen(
     // screen saves a draft, no refresh signal needed.
     val draftMap by viewModel.drafts.collectAsState()
 
-    val greeting = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val greetingText = when (greeting) {
-        in 4..11 -> stringResource(R.string.home_greeting_morning)
-        in 12..16 -> stringResource(R.string.home_greeting_afternoon)
-        in 17..22 -> stringResource(R.string.home_greeting_evening)
-        else -> stringResource(R.string.home_greeting_night)
-    }
-
     // The base list to filter from depends on the selected tab
     val sourceList by remember(selectedFilter) {
         derivedStateOf {
@@ -180,6 +172,12 @@ fun HomeScreen(
         topBar = {
             MainTopBar(
                 title = stringResource(R.string.app_name),
+                titleBadge = {
+                    // Real per-SEGMENT today counter (3-part send = 3), fed by
+                    // the send_segments ledger via Room Flow — bumps live on
+                    // each RESULT_OK callback without a Home reload.
+                    SentTodayChip(viewModel.sentSegmentsToday)
+                },
                 onProfileClick = {},
                 onSearchClick = null,
                 onMarkAllReadClick = { viewModel.markAllAsRead() },
@@ -242,14 +240,6 @@ fun HomeScreen(
             ) {
                 DefaultSmsAppBanner(onSetDefault = onRequestDefaultApp)
             }
-
-            // Greeting sub-header
-            Text(
-                text = greetingText,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-            )
 
             AppSearchBar(
                 query = search,
@@ -557,9 +547,30 @@ private fun matchesSearch(sms: com.autonomousone.messages.model.Sms, query: Stri
 }
 
 /**
- * Determinate sync indicator: "Syncing messages… 120/340" with a real
- * progress bar. Falls back to an indeterminate bar when totals are unknown.
+ * Compact pill next to the "Messages" title: confirmed sent SMS SEGMENTS
+ * today (ledger rows with success=1). Fades to a quiet style at zero so it
+ * doesn't shout an empty stat; grows to "1.2k" form never needed — a phone
+ * rarely sends four-digit segments in a day, plain count is honest.
  */
+@Composable
+private fun SentTodayChip(count: Int) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = if (count > 0) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            text = stringResource(R.string.home_sent_today_chip, count),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (count > 0) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (count > 0) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
+    }
+}
+
 @Composable
 private fun SyncBanner(progress: HomeViewModel.SyncProgress?, modifier: Modifier = Modifier) {
     Column(modifier = modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {

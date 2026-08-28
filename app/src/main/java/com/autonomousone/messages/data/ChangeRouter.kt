@@ -46,8 +46,17 @@ object ChangeRouter {
         val coordinator = TelephonySyncCoordinator.get(context)
 
         if (uri == null) {
-            // Unknown change type → bounded reconcile.
-            coordinator.reconcile(ReconcileRequest.FullSync)
+            // Unknown change type. A bulk mark-read on an OPEN conversation
+            // lands here (the provider gives no id) — downgrading it to a
+            // FullSync made simply READING messages trigger a dual-source
+            // window crawl racing the backfill. If our own write registry
+            // says why, reconcile exactly that thread instead.
+            val markRead = LocalProviderWrites.claimRecentMarkRead()
+            if (markRead != null) {
+                coordinator.reconcile(ReconcileRequest.ForThread(markRead.threadId))
+            } else {
+                coordinator.reconcile(ReconcileRequest.FullSync)
+            }
             return
         }
 
@@ -88,8 +97,14 @@ object ChangeRouter {
                 }
             }
         } else {
-            // URI without extractable ID → bounded reconcile.
-            coordinator.reconcile(ReconcileRequest.FullSync)
+            // URI without extractable ID → same logic as the null case:
+            // our own mark-read must not escalate into a full reconcile.
+            val markRead = LocalProviderWrites.claimRecentMarkRead()
+            if (markRead != null) {
+                coordinator.reconcile(ReconcileRequest.ForThread(markRead.threadId))
+            } else {
+                coordinator.reconcile(ReconcileRequest.FullSync)
+            }
         }
     }
 
@@ -97,9 +112,12 @@ object ChangeRouter {
      * Try to extract a numeric row ID from a content URI path.
      * content://sms/12345 → path "//sms/12345" → 12345
      * content://sms → path "//sms" → null
+     * content://sms/thread/123 → null — 123 is a THREAD id, not a row id;
+     * reading it as _ID=123 would upsert a random unrelated message.
      */
     internal fun extractRowIdFromPath(path: String?): Long? {
         if (path.isNullOrBlank()) return null
+        if (path.contains("/thread/") || path.endsWith("/thread")) return null
         val lastSegment = path.substringAfterLast('/')
         if (lastSegment.isBlank() || !lastSegment.all { it.isDigit() }) return null
         return lastSegment.toLongOrNull()

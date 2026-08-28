@@ -8,6 +8,7 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -218,6 +219,11 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 repairThreadInShadow(request.threadId)
             }
             is ReconcileRequest.FullSync -> {
+                // Ledger hygiene piggybacks the periodic full sync (it runs
+                // on app start + pulls, never mid-conversation): the send
+                // stats only power a "today" chip, so a 90-day horizon is
+                // generous while keeping the table bounded.
+                db.sendSegmentDao().pruneBefore(System.currentTimeMillis() - 90L * 24 * 3600 * 1000)
                 val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
                 val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
                 // ── Cutover ordering (fixes "list showed, then went empty") ──
@@ -237,10 +243,11 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 if (mms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_MMS, now)
                 // History backfill must NEVER block the caller (that was the
                 // startup hang: 360K rows awaited inside the first syncNow).
-                // It runs detached, in keyset hops, and its durable cursor
-                // resumes it after a kill automatically on the next reconcile.
-                scheduleBackfill(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
-                scheduleBackfill(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
+                // ONE detached job crawls SMS then MMS and rebuilds the
+                // projection a single time at the end — two concurrent
+                // crawlers each calling fullRebuildConversations() doubled
+                // provider load and made Home flicker through the crawl.
+                scheduleBackfill()
             }
         }
     }
@@ -248,21 +255,60 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     /** One in-flight backfill per source; guarded by the DURABLE flag, not memory. */
     private val backfillInFlight = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
 
-    private fun scheduleBackfill(
-        source: String,
-        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
-    ) {
-        val guard = backfillInFlight.getOrPut(source) { AtomicBoolean(false) }
-        if (!guard.compareAndSet(false, true)) return
-        syncScope.launch {
-            try {
-                val didWork = backfillOlderKeyset(source, reader)
-                if (didWork) fullRebuildConversations()
-            } catch (e: Exception) {
-                Log.e(TAG, "backfill failed for $source", e)
-            } finally {
-                guard.set(false)
+    /**
+     * The crawl runs on its own single thread at MIN_PRIORITY. Caveat,
+     * stated honestly: nested `withContext(Dispatchers.IO)` inside the
+     * provider readers still hop to the IO pool, so this lane mainly
+     * enforces ONE crawl at a time and keeps the between-batch bookkeeping
+     * (cursor reads, state writes, yield pacing) off the threads the UI
+     * shares. The big win over the old code is the single-threaded crawl +
+     * single rebuild; the priority bit is best-effort.
+     */
+    private val backfillDispatcher by lazy {
+        val factory = java.util.concurrent.ThreadFactory { r ->
+            Thread(r, "sms-backfill").apply { priority = Thread.MIN_PRIORITY }
+        }
+        val executor = java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+            java.util.concurrent.LinkedBlockingQueue(), factory
+        )
+        executor.asCoroutineDispatcher()
+    }
+
+    /**
+     * Single detached crawl for BOTH sources, one projection rebuild at the
+     * end. Durable per-source keyset cursors mean a kill resumes exactly
+     * where each crawl stopped; the per-source AtomicBoolean keeps two
+     * reconciles from launching overlapping crawls.
+     */
+    private fun scheduleBackfill() {
+        syncScope.launch(backfillDispatcher) {
+            val smsGuard = backfillInFlight.getOrPut(MessageEntity.SOURCE_SMS) { AtomicBoolean(false) }
+            val mmsGuard = backfillInFlight.getOrPut(MessageEntity.SOURCE_MMS) { AtomicBoolean(false) }
+            var didWork = false
+            if (smsGuard.compareAndSet(false, true)) {
+                try {
+                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_SMS, ::readSmsKeyset) || didWork
+                } catch (e: Exception) {
+                    Log.e(TAG, "backfill failed for SMS", e)
+                } finally {
+                    smsGuard.set(false)
+                }
             }
+            if (mmsGuard.compareAndSet(false, true)) {
+                try {
+                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_MMS, ::readMmsKeyset) || didWork
+                } catch (e: Exception) {
+                    Log.e(TAG, "backfill failed for MMS", e)
+                } finally {
+                    mmsGuard.set(false)
+                }
+            }
+            // ONE rebuild for the whole crawl — previously SMS and MMS each
+            // rebuilt the full projection back to back: doubled writes,
+            // double Home churn mid-sync. (fullRebuildConversations hops to
+            // IO internally; we are already a single sequential crawl.)
+            if (didWork) fullRebuildConversations()
         }
     }
 

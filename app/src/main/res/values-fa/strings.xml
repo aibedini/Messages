@@ -63,10 +63,7 @@
     <string name="home_snackbar_unarchived">مکالمه از بایگانی خارج شد</string>
     <string name="home_snackbar_deleted">مکالمه حذف شد</string>
     <string name="home_snackbar_blocked">شماره مسدود شد</string>
-    <string name="home_greeting_morning">صبح بخیر 👋</string>
-    <string name="home_greeting_afternoon">ظهر بخیر ☀️</string>
-    <string name="home_greeting_evening">عصر بخیر 🌙</string>
-    <string name="home_greeting_night">شب بخیر 🌌</string>
+    <string name="home_sent_today_chip">%1$d پیامک امروز</string>
     <string name="home_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>
 
     <!-- ══════════ صفحه گفتگو ══════════ -->
@@ -98,6 +95,7 @@
     <string name="conv_status_not_delivered"> · تحویل نشد</string>
     <string name="conv_status_sending"> · در حال ارسال…</string>
     <string name="conv_syncing_older">در حال همگام‌سازی پیام‌های قدیمی…</string>
+    <string name="conv_load_failed">بارگذاری بخشی از پیام‌ها ممکن نشد. با باز کردن دوباره گفتگو تازه می‌شوند.</string>
     <string name="status_sending">در حال ارسال</string>
     <string name="status_failed">ناموفق</string>
     <string name="status_delivered">تحویل شد</string>

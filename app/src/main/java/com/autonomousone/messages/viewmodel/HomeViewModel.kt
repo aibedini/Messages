@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.data.ChangeRouter
+import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -26,8 +27,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class HomeViewModel(
     application: Application
@@ -63,6 +66,15 @@ class HomeViewModel(
     data class GlobalHit(val sms: Sms, val matchCount: Int)
 
     var globalResults by mutableStateOf<List<GlobalHit>>(emptyList())
+        private set
+
+    /**
+     * Confirmed outgoing SMS SEGMENTS sent since local midnight — the Home
+     * top-bar chip. Counts ledger rows (a 3-part send = 3), written only on
+     * per-part RESULT_OK callbacks, so it matches what the carrier bills.
+     * Live via Room Flow; the window is rebuilt at midnight.
+     */
+    var sentSegmentsToday by mutableStateOf(0)
         private set
 
     /**
@@ -135,6 +147,35 @@ class HomeViewModel(
         observeThreadRead()
         observeOutgoingSent()
         observeReloadRequests()
+        observeSentSegmentsToday()
+    }
+
+    /**
+     * Room-backed today-segment count. withTimeoutOrNull reopens the window
+     * at the next local midnight instead of pinning yesterday's number.
+     */
+    private fun observeSentSegmentsToday() {
+        viewModelScope.launch {
+            while (isActive) {
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val dayStart = cal.timeInMillis
+                val dayEnd = dayStart + 24L * 60 * 60 * 1000
+                val awakeMs = (dayEnd - System.currentTimeMillis()).coerceAtLeast(60_000L)
+                val dao = MessagesDatabase.get(getApplication()).sendSegmentDao()
+                withTimeoutOrNull(awakeMs) {
+                    dao.observeSuccessSince(dayStart, dayEnd).collect { count ->
+                        sentSegmentsToday = count
+                    }
+                }
+                // Midnight reached (or provider missed the tail): loop reruns
+                // with a fresh [todayStart, tomorrowStart) window.
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

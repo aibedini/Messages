@@ -6,6 +6,7 @@ import android.database.ContentObserver
 import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
+import com.autonomousone.messages.data.LocalProviderWrites
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
 
@@ -931,20 +932,30 @@ class SmsRepository(
         return result
     }
 
+    /**
+     * One bulk mark-read per OPEN, never two provider passes.
+     *
+     * A thread-scoped UPDATE already covers every unread row of the
+     * conversation; the old code then ALSO ran an address LIKE '%digits%'
+     * sweep for the same read flag — doubling provider writes, firing the
+     * ContentObserver burst twice, and (on big threads) LIKE-scanning the
+     * whole SMS table by phone. Address is only a fallback when the thread
+     * id is unknown (threadId == 0).
+     */
     fun markThreadAsRead(threadId: Long, phone: String = "") {
         try {
             val values = ContentValues().apply {
                 put(Telephony.Sms.READ, 1)
             }
             if (threadId > 0) {
+                LocalProviderWrites.noteMarkRead(threadId)
                 context.contentResolver.update(
                     Telephony.Sms.CONTENT_URI,
                     values,
                     "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
                     arrayOf(threadId.toString())
                 )
-            }
-            if (phone.isNotBlank()) {
+            } else if (phone.isNotBlank()) {
                 val normalized = ContactRepository.normalizePhone(phone)
                 val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
                 context.contentResolver.update(
