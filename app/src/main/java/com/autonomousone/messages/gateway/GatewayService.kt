@@ -90,6 +90,19 @@ class GatewayService : Service() {
             context.startService(intent)
         }
 
+        /**
+         * Transport-agnostic self-heal: demand an immediate reconcile +
+         * heartbeat retry. Touches no cloud-only registration — a pure
+         * android-pull (GMweb) gateway heals through exactly the same door
+         * as a cloud one. If the reconcile loop died with a stale service,
+         * retryNow()'s idempotent ensureLoop() revives it; if the service
+         * itself is gone, the ACTION_RETRY_NOW start path rebuilds and
+         * retries from onCreate/onStartCommand.
+         */
+        fun reconnectNow(context: Context) {
+            ConnectionSupervisor.peek()?.retryNow() ?: retryNow(context)
+        }
+
         fun retryNow(context: Context) {
             val intent = Intent(context, GatewayService::class.java).apply {
                 action = ACTION_RETRY_NOW

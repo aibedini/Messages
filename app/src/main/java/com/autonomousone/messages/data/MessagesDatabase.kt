@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageFts::class,
         SendSegmentEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -190,6 +190,34 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6: the conversation projection learns the newest message's
+         * TYPE so Home renders "You:" without probing messages (additive
+         * only). Backfill runs in the same transaction; rows whose thread
+         * has no messages keep the incoming default.
+         *
+         * Kept as bare SQL so the JVM test (MigrationToV6SqlTest) can pin
+         * every statement against the generated 6.json — same pattern as
+         * UPGRADE_TO_V4_SQL.
+         */
+        internal val UPGRADE_TO_V6_SQL: List<String> = listOf(
+            "ALTER TABLE `conversations` ADD COLUMN `lastMessageType` INTEGER NOT NULL DEFAULT 1",
+            "UPDATE conversations SET lastMessageType = (" +
+                "SELECT type FROM messages " +
+                "WHERE messages.threadId = conversations.threadId " +
+                "ORDER BY date DESC, source DESC, providerId DESC " +
+                "LIMIT 1" +
+                ") WHERE EXISTS (" +
+                "SELECT 1 FROM messages WHERE messages.threadId = conversations.threadId" +
+                ")"
+        )
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V6_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -197,7 +225,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                     MessagesDatabase::class.java,
                     "messages.db"
                 )
-                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     // Destructive fallback ONLY when a migration path is missing
                     // (never for a migration that runs but yields a bad schema).
                     .fallbackToDestructiveMigration(dropAllTables = true)

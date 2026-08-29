@@ -98,6 +98,9 @@ data class ConversationEntity(
     val snippet: String,
     val lastMessageDate: Long,
     val unreadCount: Int,
+    /** Type of the newest message (1 incoming, 2 outgoing…) so Home can
+     *  render the "You:" marker without an O(N) probe. v6. */
+    val lastMessageType: Int = 1,
     val pinned: Boolean = false,
     val archived: Boolean = false
 )

@@ -95,6 +95,9 @@
     <string name="conv_status_not_delivered"> · Not delivered</string>
     <string name="conv_status_sending"> · Sending…</string>
     <string name="conv_syncing_older">Syncing older messages…</string>
+    <string name="conv_syncing_newer">Syncing newer messages…</string>
+    <string name="conv_go_to_first_message">Go to first message</string>
+    <string name="jump_to_latest">Jump to latest</string>
     <string name="conv_load_failed">Couldn\'t load some messages. They\'ll refresh when you reopen this chat.</string>
     <string name="status_sending">Sending</string>
     <string name="status_failed">Failed</string>

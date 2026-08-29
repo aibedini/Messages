@@ -23,7 +23,7 @@ import com.autonomousone.messages.model.Sms
 object ThreadMerge {
 
     /** Two rows are the "same message" when ids match, or body matches within 5 s. */
-    private fun sameMessage(a: Sms, b: Sms): Boolean =
+    internal fun sameMessage(a: Sms, b: Sms): Boolean =
         a.id == b.id ||
                 (a.message == b.message && kotlin.math.abs(a.date - b.date) < 5000L)
 
@@ -59,6 +59,30 @@ object ThreadMerge {
         val novel = olderPage.filter { it !in known && existing.none { e -> sameMessage(e, it) } }
         return (novel + existing).sortedBy { it.date }
     }
+
+    /**
+     * Appends a NEWER page (from the forward crawl after "Go to first
+     * message") to [current], replacing any row already on screen with the
+     * fresher copy and keeping the canonical oldest→newest order. Symmetric
+     * counterpart of [prependOlder].
+     */
+    fun appendNewer(current: List<Sms>, newer: List<Sms>): List<Sms> {
+        if (newer.isEmpty()) return current
+        val out = current.toMutableList()
+        for (candidate in newer) {
+            val idx = out.indexOfFirst { sameMessage(it, candidate) }
+            if (idx >= 0) out[idx] = candidate else out.add(candidate)
+        }
+        return out.sortedWith(canonicalChronological)
+    }
+
+    /**
+     * The ONE chronological order every window mutation must end in:
+     * date, then the absolute provider id (MMS model ids are negative;
+     * abs() keeps SMS and MMS comparable on a shared axis).
+     */
+    val canonicalChronological: Comparator<Sms> =
+        compareBy<Sms> { it.date }.thenBy { kotlin.math.abs(it.id) }
 
     /**
      * Caps [messages] to its newest [n] entries (ascending order preserved).

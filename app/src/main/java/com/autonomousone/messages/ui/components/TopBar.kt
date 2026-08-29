@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.res.stringResource
+import com.autonomousone.messages.R
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -137,6 +139,9 @@ fun ConversationTopBar(
     onCallClick: () -> Unit = {},
     onVideoClick: () -> Unit = {},
     onSearchClick: () -> Unit = {},
+    /** "Go to first message" — jumps the window to the true start of the
+     *  thread via a direct keyset query (v2.6.7, never a full scan). */
+    onGoToFirstMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -212,6 +217,13 @@ fun ConversationTopBar(
                         onClick = {
                             showMenu = false
                             onSearchClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.conv_go_to_first_message)) },
+                        onClick = {
+                            showMenu = false
+                            onGoToFirstMessage()
                         }
                     )
                     DropdownMenuItem(

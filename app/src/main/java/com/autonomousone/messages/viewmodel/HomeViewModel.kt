@@ -355,7 +355,9 @@ class HomeViewModel(
                         message = c.snippet,
                         date = c.lastMessageDate,
                         unread = c.unreadCount > 0,
-                        type = 1
+                        // v2.6.7 "You" fix: the projection carries the newest
+                        // message's type — no O(N) probe back into messages.
+                        type = c.lastMessageType
                     )
                 }
         }
@@ -639,7 +641,7 @@ class HomeViewModel(
                                 message = c.snippet,
                                 date = c.lastMessageDate,
                                 unread = c.unreadCount > 0,
-                                type = 1
+                                type = c.lastMessageType
                             )
                         }
                         withContext(Dispatchers.Main) {

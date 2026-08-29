@@ -174,7 +174,8 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         rawAddress = entity.rawAddress,
                         snippet = entity.body,
                         lastMessageDate = maxOf(entity.date, existing?.lastMessageDate ?: 0L),
-                        unreadCount = (existing?.unreadCount ?: 0) + unreadDelta
+                        unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
+                        lastMessageType = entity.type
                     )
                 }
             }
@@ -566,7 +567,8 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                     rawAddress = newest.rawAddress,
                     snippet = newest.body,
                     lastMessageDate = newest.date,
-                    unreadCount = unread
+                    unreadCount = unread,
+                    lastMessageType = newest.type
                 )
             } else {
                 val existing = convDao.byThread(threadId)
@@ -578,6 +580,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         snippet = newest.body,
                         lastMessageDate = newest.date,
                         unreadCount = unread,
+                        lastMessageType = newest.type,
                         pinned = existing?.pinned ?: (threadId in pinRepositoryIds()),
                         archived = existing?.archived ?: (threadId in archivedRepositoryIds())
                     )
@@ -606,6 +609,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         snippet = m.body,
                         lastMessageDate = m.date,
                         unreadCount = unread,
+                        lastMessageType = m.type,
                         pinned = m.threadId in pinnedIds,
                         archived = m.threadId in archivedIds
                     )

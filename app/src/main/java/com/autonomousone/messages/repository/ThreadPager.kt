@@ -2,71 +2,124 @@ package com.autonomousone.messages.repository
 
 import android.content.Context
 import android.provider.Telephony
-import android.util.Log
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.ContactRepository
+import kotlin.math.abs
+
+/**
+ * Reads one provider table for the pager. Production talks to the Telephony
+ * provider; unit tests substitute an in-memory fake so keyset semantics can
+ * be verified without an Android ContentResolver (PART AZ).
+ */
+internal interface ThreadMessageSource {
+    fun querySms(selection: String, selectionArgs: Array<String>, sortOrder: String, limit: Int): List<Sms>
+    fun queryMms(selection: String, selectionArgs: Array<String>, sortOrder: String, limit: Int): List<Sms>
+}
+
+/** Real source: SmsRepository's raw bounded queries. */
+internal class ProviderThreadMessageSource(context: Context) : ThreadMessageSource {
+    private val repo = SmsRepository(context)
+
+    override fun querySms(selection: String, selectionArgs: Array<String>, sortOrder: String, limit: Int) =
+        repo.querySmsRaw(selection, selectionArgs, sortOrder, limit)
+
+    override fun queryMms(selection: String, selectionArgs: Array<String>, sortOrder: String, limit: Int) =
+        repo.queryMmsRaw(selection, selectionArgs, sortOrder, limit)
+}
 
 /**
  * Paged loader for a single conversation thread.
  *
- * V2: Keyset (cursor) pagination instead of OFFSET.
+ * V3: BIDIRECTIONAL keyset pagination.
  *
- * Instead of "skip the first N rows" (O(N) on every page), we remember the
- * last seen (date, id) and query WHERE date < :lastDate. This is O(1)
- * regardless of how deep the user has scrolled — even at offset 250,000.
+ * The window can be anchored at either boundary and crawl toward the other:
  *
- * SMS and MMS are merged per-page: we fetch the newest `limit` of each source
- * and interleave by date, so the visible history stays chronologically
- * seamless across page boundaries.
+ *   loadLatest()  → newest page, then loadOlder() crawls back in time
+ *   loadOldest()  → true first messages (provider ASC, never Room — the
+ *                   shadow may still be backfilling), then loadNewer()
+ *                   crawls forward
+ *
+ * Every keyset step is O(page size) — "skip the first N rows" (OFFSET) is
+ * never used, so a ten-year-old thread costs the same to open, to jump
+ * inside, and to walk as a two-message one.
+ *
+ * Canonical invariant: every public method RETURNS oldest→newest (ASC). The
+ * ViewModel and UI never see a DESC list; descending order exists only
+ * inside a provider query and is flipped before returning.
+ *
+ * SMS and MMS keep INDEPENDENT cursors and exhaustion flags: one merged
+ * cursor let the source with the newer tail skip the other's rows forever.
  */
-class ThreadPager(
-    private val context: Context,
-    private val threadId: Long,
+class ThreadPager private constructor(
+    private val source: ThreadMessageSource,
+    val threadId: Long,
     private val phone: String = ""
 ) {
+    constructor(context: Context, threadId: Long, phone: String = "") :
+        this(ProviderThreadMessageSource(context), threadId, phone)
+
     companion object {
         /**
-         * Rows fetched PER SOURCE on the very first page (the one that gates
-         * the paint on open). SMS and MMS are queried independently, so the
-         * worst-case read for opening a conversation is 2 × INITIAL_PER_SOURCE
-         * rows — not 80. A ten-year-old thread must cost the same to open as
-         * a two-message one; anything deeper than this window is nobody's
-         * business until the user scrolls up.
+         * Unit-test seam (PART AZ): drive the pager from an in-memory fake
+         * source. PRIVATE primary constructor + this factory keeps exactly
+         * ONE public constructor candidate — `getApplication()` at real call
+         * sites resolves generically without overload ambiguity.
+         */
+        internal fun forTesting(source: ThreadMessageSource, threadId: Long, phone: String = "") =
+            ThreadPager(source, threadId, phone)
+
+        /**
+         * Rows fetched PER SOURCE on a boundary page (the one that gates the
+         * paint on open, and the Go-to-first-message page). SMS and MMS are
+         * queried independently, so the worst-case read is 2 × 12 rows.
          */
         const val INITIAL_PER_SOURCE = 12
 
-        /** Rows per source on every OLDER page (user-initiated scroll-up). */
-        const val OLDER_PAGE = 40
+        /** Rows per source on every interior page (user-initiated scroll). */
+        const val PAGE_PER_SOURCE = 40
+
+        /** Old name kept for callers/tests written against v2.6.5. */
+        const val OLDER_PAGE = PAGE_PER_SOURCE
     }
 
-    // Keyset cursors: PER-SOURCE last seen (date, id). One shared cursor for
-    // the merged SMS+MMS crawl skipped rows (see loadPage).
-    private var lastSmsDate: Long = Long.MAX_VALUE
-    private var lastSmsId: Long = Long.MAX_VALUE
-    private var lastMmsDate: Long = Long.MAX_VALUE
-    private var lastMmsId: Long = Long.MAX_VALUE
+    // ── Older-direction cursors (keyset: date DESC, _id DESC) ─────────────
+    private var olderSmsDate = Long.MAX_VALUE
+    private var olderSmsId = Long.MAX_VALUE
+    private var olderMmsDate = Long.MAX_VALUE
+    private var olderMmsId = Long.MAX_VALUE
+    private var olderSmsExhausted = false
+    private var olderMmsExhausted = false
 
-    /** True when either source still has older rows to pull. */
+    // ── Newer-direction cursors (keyset: date ASC, _id ASC) ───────────────
+    private var newerSmsDate = Long.MIN_VALUE
+    private var newerSmsId = Long.MIN_VALUE
+    private var newerMmsDate = Long.MIN_VALUE
+    private var newerMmsId = Long.MIN_VALUE
+    private var newerSmsExhausted = false
+    private var newerMmsExhausted = false
+
+    /** True when the older direction still has rows to pull. */
     @Volatile
-    var hasMore: Boolean = true
+    var hasOlder: Boolean = true
         private set
 
-    // Exhaustion is decided PER SOURCE: a 24-row merged page proves nothing if
-    // SMS filled its quota while MMS returned 2 rows. These track whether the
-    // last crawl left each source's quota unspent.
-    private var smsExhausted = false
-    private var mmsExhausted = false
+    /** True when the newer direction still has rows (only after loadOldest). */
+    @Volatile
+    var hasNewer: Boolean = false
+        private set
 
-    /**
-     * Phone-only route (threadId == 0): query by ADDRESS suffix instead of a
-     * bogus THREAD_ID = 0 selection, which always returned an empty page.
-     */
+    /** Compatibility alias used by existing call sites of v2.6.5. */
+    val hasMore: Boolean get() = hasOlder
+
+    // ── Phone-only selection (threadId == 0) ──────────────────────────────
+    // Query by ADDRESS suffix instead of a bogus THREAD_ID = 0 selection,
+    // which always returned an empty page.
     private val smsSelection: String =
         if (threadId > 0L || phone.isBlank())
             "${Telephony.Sms.THREAD_ID} = ?"
         else {
-            val digits = ContactRepository.normalizePhone(phone)
-                .takeLast(if (ContactRepository.normalizePhone(phone).length >= 7) 7 else 0)
+            val norm = ContactRepository.normalizePhone(phone)
+            val digits = norm.takeLast(if (norm.length >= 7) 7 else norm.length)
             "(substr(${Telephony.Sms.ADDRESS}, -${digits.length}) = ? OR ${Telephony.Sms.ADDRESS} = ?)"
         }
 
@@ -81,56 +134,112 @@ class ThreadPager(
             }
         }
 
+    // ── Public boundary + crawl API (all @Synchronized; all return ASC) ───
+
     /**
-     * Loads the FIRST page (newest messages). Resets the cursor.
-     * Small window: this read is on the critical path of opening a
-     * conversation, so it pulls INITIAL_PER_SOURCE from each source.
+     * Newest window: `ORDER BY date DESC LIMIT 12` per source, flipped to
+     * ASC. Resets the older crawl and clears the newer direction — a fresh
+     * open is always a fresh LATEST window.
      */
-    fun loadFirstPage(): List<Sms> {
-        lastSmsDate = Long.MAX_VALUE
-        lastSmsId = Long.MAX_VALUE
-        lastMmsDate = Long.MAX_VALUE
-        lastMmsId = Long.MAX_VALUE
-        smsExhausted = false
-        mmsExhausted = false
-        val page = loadPage(INITIAL_PER_SOURCE)
-        hasMore = !(smsExhausted && (mmsExhausted || threadId <= 0L))
+    @Synchronized
+    fun loadLatest(): List<Sms> {
+        resetOlderCursor()
+        hasNewer = false
+        val page = loadOlderPage(INITIAL_PER_SOURCE)
+        hasOlder = !(olderSmsExhausted && (olderMmsExhausted || threadId <= 0L))
+        return page
+    }
+
+    /** Next OLDER page from the current keyset position. ASC output. */
+    @Synchronized
+    fun loadOlder(): List<Sms> {
+        if (!hasOlder) return emptyList()
+        val page = loadOlderPage(PAGE_PER_SOURCE)
+        if (page.isEmpty()) {
+            hasOlder = false
+            return emptyList()
+        }
+        hasOlder = !(olderSmsExhausted && (olderMmsExhausted || threadId <= 0L))
         return page
     }
 
     /**
-     * Loads the next OLDER page using keyset pagination. Returns empty when exhausted.
+     * The TRUE first messages: provider `ORDER BY date ASC LIMIT 12` per
+     * source. Room is deliberately NOT consulted — the shadow may still be
+     * backfilling, and "Go to first message" must be correct even at
+     * Historical backfill 184,500 / 360,000. ASC output; arms the newer
+     * direction for loadNewer().
      */
-    fun loadOlder(): List<Sms> {
-        if (!hasMore) return emptyList()
-        val page = loadPage(OLDER_PAGE)
+    @Synchronized
+    fun loadOldest(): List<Sms> {
+        resetNewerCursor()
+        hasOlder = false
+
+        val sms = source.querySms(
+            selection = smsSelection,
+            selectionArgs = smsArgs,
+            sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
+            limit = INITIAL_PER_SOURCE
+        )
+        newerSmsExhausted = sms.size < INITIAL_PER_SOURCE
+
+        // MMS without a real thread id: same rule as the older direction.
+        val mms = if (threadId > 0L) {
+            source.queryMms(
+                selection = "${Telephony.Mms.THREAD_ID} = ?",
+                selectionArgs = arrayOf(threadId.toString()),
+                sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
+                limit = INITIAL_PER_SOURCE
+            )
+        } else emptyList()
+        if (threadId > 0L) newerMmsExhausted = mms.size < INITIAL_PER_SOURCE
+
+        // Newer cursors land on the NEWEST row of this oldest page (last in
+        // each ASC list). MMS rows carry a negative model id (provider id
+        // negated by the cursor mapper) — abs() restores the real _id. MMS
+        // DATE is modelled in ms by queryMmsRaw, so cursors stay in ms.
+        sms.lastOrNull()?.let { newerSmsDate = it.date; newerSmsId = it.id }
+        mms.lastOrNull()?.let { newerMmsDate = it.date; newerMmsId = abs(it.id) }
+
+        hasNewer = !(newerSmsExhausted && (newerMmsExhausted || threadId <= 0L))
+        return mergeAscending(sms, mms)
+    }
+
+    /** Next NEWER page (only meaningful after loadOldest). ASC output. */
+    @Synchronized
+    fun loadNewer(): List<Sms> {
+        if (!hasNewer) return emptyList()
+        val page = loadNewerPage(PAGE_PER_SOURCE)
         if (page.isEmpty()) {
-            hasMore = false
+            hasNewer = false
             return emptyList()
         }
-        hasMore = !(smsExhausted && (mmsExhausted || threadId <= 0L))
+        hasNewer = !(newerSmsExhausted && (newerMmsExhausted || threadId <= 0L))
         return page
     }
 
     /**
      * Refreshes the TAIL (for new incoming/outgoing while chat is open).
-     * Cheap query limited to rows newer than what we already hold.
+     * Cheap bounded query for rows strictly newer than what we already hold.
+     * ASC output. Does not touch the crawl cursors.
      */
+    @Synchronized
     fun loadNewerSince(newestDate: Long): List<Sms> {
-        val repo = SmsRepository(context)
-        val sms = repo.querySmsRaw(
-            selection = "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.DATE} > ?",
-            selectionArgs = arrayOf(threadId.toString(), newestDate.toString()),
-            sortOrder = "${Telephony.Sms.DATE} ASC",
+        val sms = source.querySms(
+            selection = "($smsSelection) AND ${Telephony.Sms.DATE} > ?",
+            selectionArgs = smsArgs + newestDate.toString(),
+            sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
             limit = 100
         )
-        val mms = repo.queryMmsRaw(
-            selection = "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.DATE} > ?",
-            selectionArgs = arrayOf(threadId.toString(), (newestDate / 1000L).toString()),
-            sortOrder = "${Telephony.Mms.DATE} ASC",
-            limit = 100
-        )
-        return merge(sms, mms)
+        val mms = if (threadId > 0L) {
+            source.queryMms(
+                selection = "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.DATE} > ?",
+                selectionArgs = arrayOf(threadId.toString(), (newestDate / 1000L).toString()),
+                sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
+                limit = 100
+            )
+        } else emptyList()
+        return mergeAscending(sms, mms)
     }
 
     /**
@@ -142,7 +251,7 @@ class ThreadPager(
         val unique = ids.filter { it > 0L }.distinct()
         if (unique.isEmpty()) return emptyList()
         val placeholders = unique.joinToString(",") { "?" }
-        return SmsRepository(context).querySmsRaw(
+        return source.querySms(
             selection = "${Telephony.Sms._ID} IN ($placeholders)",
             selectionArgs = unique.map(Long::toString).toTypedArray(),
             sortOrder = "${Telephony.Sms.DATE} ASC",
@@ -150,78 +259,128 @@ class ThreadPager(
         )
     }
 
+    @Deprecated("Use loadLatest()", ReplaceWith("loadLatest()"))
+    fun loadFirstPage(): List<Sms> = loadLatest()
+
     // ── internals ──────────────────────────────────────────────────────────
 
-    private fun loadPage(limit: Int): List<Sms> {
-        val repo = SmsRepository(context)
+    private fun resetOlderCursor() {
+        olderSmsDate = Long.MAX_VALUE; olderSmsId = Long.MAX_VALUE
+        olderMmsDate = Long.MAX_VALUE; olderMmsId = Long.MAX_VALUE
+        olderSmsExhausted = false; olderMmsExhausted = false
+    }
 
-        // Keyset pagination for SMS. Uses the CLASS-level smsSelection/smsArgs:
-        // loadPage used to hardcode "THREAD_ID = ?" with a possibly-0 threadId
-        // (the phone-only route) — every page then returned empty and the
-        // shared lastDate/lastId cursor of a mixed SMS/MMS crawl skipped rows
-        // whenever one source's oldest row was newer than the other's.
-        // Per-source cursors fix the skip; the address selection fixes the
-        // phone route.
-        val keysetSelection = if (lastSmsDate < Long.MAX_VALUE) {
+    private fun resetNewerCursor() {
+        newerSmsDate = Long.MIN_VALUE; newerSmsId = Long.MIN_VALUE
+        newerMmsDate = Long.MIN_VALUE; newerMmsId = Long.MIN_VALUE
+        newerSmsExhausted = false; newerMmsExhausted = false
+    }
+
+    /** One OLDER keyset step. Provider answers DESC; we return ASC. */
+    private fun loadOlderPage(limit: Int): List<Sms> {
+        val keysetSelection = if (olderSmsDate < Long.MAX_VALUE) {
             "($smsSelection) AND (" +
                 "${Telephony.Sms.DATE} < ? OR " +
                 "(${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} < ?))"
         } else {
             smsSelection
         }
-
-        val keysetArgs = if (lastSmsDate < Long.MAX_VALUE) {
-            smsArgs + arrayOf(lastSmsDate.toString(), lastSmsDate.toString(), lastSmsId.toString())
+        val keysetArgs = if (olderSmsDate < Long.MAX_VALUE) {
+            smsArgs + arrayOf(olderSmsDate.toString(), olderSmsDate.toString(), olderSmsId.toString())
         } else {
             smsArgs
         }
-
-        val sms = repo.querySmsRaw(
+        val sms = source.querySms(
             selection = keysetSelection,
             selectionArgs = keysetArgs,
             sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
             limit = limit
         )
-        smsExhausted = sms.size < limit
+        olderSmsExhausted = sms.size < limit
 
-        // Keyset pagination for MMS (thread-based only).
         val mms = if (threadId > 0L) {
-            val mmsKeysetSelection = if (lastMmsDate < Long.MAX_VALUE) {
+            val mmsKeysetSelection = if (olderMmsDate < Long.MAX_VALUE) {
                 "(${Telephony.Mms.THREAD_ID} = ?) AND (" +
                     "${Telephony.Mms.DATE} < ? OR " +
                     "(${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} < ?))"
             } else {
                 "${Telephony.Mms.THREAD_ID} = ?"
             }
-
-            val mmsKeysetArgs = if (lastMmsDate < Long.MAX_VALUE) {
-                val lastDateSeconds = lastMmsDate / 1000L
-                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), lastMmsId.toString())
+            val mmsKeysetArgs = if (olderMmsDate < Long.MAX_VALUE) {
+                val lastDateSeconds = olderMmsDate / 1000L
+                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), olderMmsId.toString())
             } else {
                 arrayOf(threadId.toString())
             }
-
-            repo.queryMmsRaw(
+            source.queryMms(
                 selection = mmsKeysetSelection,
                 selectionArgs = mmsKeysetArgs,
                 sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
                 limit = limit
             )
         } else emptyList()
-        if (threadId > 0L) mmsExhausted = mms.size < limit
+        if (threadId > 0L) olderMmsExhausted = mms.size < limit
 
-        // Advance EACH source's cursor to the oldest row IT returned. A shared
-        // cursor let the source with the newer tail drag the other one back:
-        // SMS rows between the merged-oldest and the SMS-oldest were skipped
-        // forever (and MMS negative ids poisoned the SMS _ID < ? predicate).
-        sms.lastOrNull()?.let { lastSmsDate = it.date; lastSmsId = it.id }
-        mms.lastOrNull()?.let { lastMmsDate = it.date; lastMmsId = kotlin.math.abs(it.id) }
+        // Advance EACH source's cursor to the oldest row IT returned.
+        sms.lastOrNull()?.let { olderSmsDate = it.date; olderSmsId = it.id }
+        mms.lastOrNull()?.let { olderMmsDate = it.date; olderMmsId = abs(it.id) }
 
-        return merge(sms, mms).asReversed() // provider gave DESC → display ASC
+        return mergeDescending(sms, mms).asReversed() // provider DESC → canonical ASC
+    }
+
+    /** One NEWER keyset step. Provider answers ASC; we return ASC. */
+    private fun loadNewerPage(limit: Int): List<Sms> {
+        val keysetSelection = if (newerSmsDate > Long.MIN_VALUE) {
+            "($smsSelection) AND (" +
+                "${Telephony.Sms.DATE} > ? OR " +
+                "(${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} > ?))"
+        } else {
+            smsSelection
+        }
+        val keysetArgs = if (newerSmsDate > Long.MIN_VALUE) {
+            smsArgs + arrayOf(newerSmsDate.toString(), newerSmsDate.toString(), newerSmsId.toString())
+        } else {
+            smsArgs
+        }
+        val sms = source.querySms(
+            selection = keysetSelection,
+            selectionArgs = keysetArgs,
+            sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
+            limit = limit
+        )
+        newerSmsExhausted = sms.size < limit
+
+        val mms = if (threadId > 0L) {
+            val mmsKeysetSelection = if (newerMmsDate > Long.MIN_VALUE) {
+                "(${Telephony.Mms.THREAD_ID} = ?) AND (" +
+                    "${Telephony.Mms.DATE} > ? OR " +
+                    "(${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} > ?))"
+            } else {
+                "${Telephony.Mms.THREAD_ID} = ?"
+            }
+            val mmsKeysetArgs = if (newerMmsDate > Long.MIN_VALUE) {
+                val lastDateSeconds = newerMmsDate / 1000L
+                arrayOf(threadId.toString(), lastDateSeconds.toString(), lastDateSeconds.toString(), newerMmsId.toString())
+            } else {
+                arrayOf(threadId.toString())
+            }
+            source.queryMms(
+                selection = mmsKeysetSelection,
+                selectionArgs = mmsKeysetArgs,
+                sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
+                limit = limit
+            )
+        } else emptyList()
+        if (threadId > 0L) newerMmsExhausted = mms.size < limit
+
+        sms.lastOrNull()?.let { newerSmsDate = it.date; newerSmsId = it.id }
+        mms.lastOrNull()?.let { newerMmsDate = it.date; newerMmsId = abs(it.id) }
+
+        return mergeAscending(sms, mms)
     }
 
     /** Interleave two date-DESC lists into one date-DESC list. */
-    private fun merge(a: List<Sms>, b: List<Sms>): List<Sms> {
+    private fun mergeDescending(a: List<Sms>, b: List<Sms>): List<Sms> {
         if (a.isEmpty()) return b
         if (b.isEmpty()) return a
         val out = ArrayList<Sms>(a.size + b.size)
@@ -232,6 +391,24 @@ class ThreadPager(
                 i >= a.size -> false
                 j >= b.size -> true
                 else -> a[i].date >= b[j].date
+            }
+            if (takeA) out.add(a[i++]) else out.add(b[j++])
+        }
+        return out
+    }
+
+    /** Interleave two date-ASC lists into one date-ASC list. */
+    private fun mergeAscending(a: List<Sms>, b: List<Sms>): List<Sms> {
+        if (a.isEmpty()) return b
+        if (b.isEmpty()) return a
+        val out = ArrayList<Sms>(a.size + b.size)
+        var i = 0
+        var j = 0
+        while (i < a.size || j < b.size) {
+            val takeA = when {
+                i >= a.size -> false
+                j >= b.size -> true
+                else -> a[i].date <= b[j].date
             }
             if (takeA) out.add(a[i++]) else out.add(b[j++])
         }

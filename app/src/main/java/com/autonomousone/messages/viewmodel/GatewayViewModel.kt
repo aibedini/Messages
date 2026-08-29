@@ -164,6 +164,13 @@ class GatewayViewModel(
         refreshStatus()
     }
 
+    /**
+     * Transport-agnostic manual reconnect (v2.6.7 goal #10): the supervisor
+     * wake-up heals EVERY mode — GMweb pull bridge, LAN server, cloud.
+     * The cloud register() call below is a fast-path only for phones that
+     * actually use a cloud backend (registered or one configured); a pure
+     * android-pull gateway must never see a "Reconnect failed" from it.
+     */
     fun reconnectNow() {
         if (!prefs.hasGatewayConsent) {
             showConsentDialog = true
@@ -171,19 +178,20 @@ class GatewayViewModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔄 Manual reconnect triggered...")
-            cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
-            // Supervisor first: cancels heartbeat backoff, rebinds a stale LAN
-            // server, wakes the poller — the full self-heal path. The manual
-            // registration below is a fast-path for the cloud chip only.
-            GatewayService.retryNow(getApplication())
-            val success = registrationManager.register()
-            if (success) {
-                refreshStatus()
-                addLog("✅ Reconnected to cloud backend")
-                cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTED
+            GatewayService.reconnectNow(getApplication())
+            if (prefs.backendUrl.isNotBlank()) {
+                cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
+                val success = registrationManager.register()
+                if (success) {
+                    refreshStatus()
+                    addLog("✅ Reconnected to cloud backend")
+                    cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTED
+                } else {
+                    addLog("❌ Cloud re-register failed — check network and backend URL")
+                    cloudConnectionState = HeartbeatManager.ConnectionState.ERROR
+                }
             } else {
-                addLog("❌ Reconnect failed — check network and backend URL")
-                cloudConnectionState = HeartbeatManager.ConnectionState.ERROR
+                addLog("✅ Reconnect requested — supervisor reconciling")
             }
         }
     }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.R
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.repository.ThreadMessageCache
+import com.autonomousone.messages.repository.ThreadMerge
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
@@ -19,11 +21,34 @@ import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.repository.ThreadPager
 import com.autonomousone.messages.sms.SmsSender
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Which boundary of the thread the visible window is anchored to. */
+enum class ConversationWindowMode {
+    /** Normal open: newest page, crawl older by scrolling up. */
+    LATEST,
+
+    /** "Go to first message": oldest page, crawl newer by scrolling down. */
+    OLDEST
+}
+
+/**
+ * One-shot scroll intents the ViewModel emits after a window REPLACE
+ * (jump-to-latest / jump-to-oldest). The screen consumes them; ordinary
+ * pagination NEVER emits one — in reverse layout the newest window is
+ * index 0 and needs no scroll at all.
+ */
+sealed interface ConversationScrollCommand {
+    data class Latest(val messageId: Long?) : ConversationScrollCommand
+    data class Oldest(val messageId: Long?) : ConversationScrollCommand
+}
 
 class ConversationViewModel(
     application: Application
@@ -48,6 +73,51 @@ class ConversationViewModel(
         private set
 
     var loadStatus by mutableStateOf<String?>(null)
+
+    /**
+     * Which end of the thread the visible window is anchored to. Opens in
+     * LATEST; "Go to first message" flips to OLDEST until the user jumps back.
+     */
+    var windowMode by mutableStateOf(ConversationWindowMode.LATEST)
+        private set
+
+    var isLoadingOlder by mutableStateOf(false)
+        private set
+
+    var isLoadingNewer by mutableStateOf(false)
+        private set
+
+    /** A boundary jump (latest/oldest window replace) is in flight. */
+    var isJumpingToBoundary by mutableStateOf(false)
+        private set
+
+    /**
+     * Incoming messages that arrived while the user was reading OLDEST history.
+     * They must NOT be dropped into a historical window (the gap would be
+     * years wide) — we count them and the Jump-to-latest badge renders it.
+     */
+    var pendingNewMessagesCount by mutableIntStateOf(0)
+        private set
+
+    /**
+     * True while the user is parked at the newest message (reverse-layout
+     * index 0). Drives auto-follow for incoming messages and outgoing sends:
+     * scrolling away disarms it, scrolling back re-arms it. The Screen owns
+     * the truth (it is the only one who sees geometry) via setUserAtLatest.
+     */
+    var userAtLatest = true
+        private set
+
+    fun setUserAtLatest(atLatest: Boolean) {
+        if (userAtLatest == atLatest) return
+        userAtLatest = atLatest
+        if (atLatest && windowMode == ConversationWindowMode.LATEST) {
+            pendingNewMessagesCount = 0
+        }
+    }
+
+    private val _scrollCommands = MutableSharedFlow<ConversationScrollCommand>(extraBufferCapacity = 1)
+    val scrollCommands = _scrollCommands.asSharedFlow()
 
     /**
      * Last swallowed background failure, surfaced once as a dismissible
@@ -83,9 +153,13 @@ class ConversationViewModel(
         observeOutgoingSent()
     }
 
-    // ── Windowed history (paged) ─────────────────────────────────────────────
-    // Only the newest page is read on open; scrolling up pulls older pages.
-    private var pager: com.autonomousone.messages.repository.ThreadPager? = null
+    // ── Bidirectional windowed history (paged) ───────────────────────────────
+    // Only a small page is read on open; scrolling toward either boundary pulls
+    // the next keyset page. Never the whole thread.
+    private var pager: ThreadPager? = null
+
+    /** The ONE canonical order every window mutation ends in (Q). */
+    private val chronologicalOrder = ThreadMerge.canonicalChronological
 
     /** Cancels the previous load when a new conversation is opened, so a slow
      *  old query can never overwrite the freshly opened thread's messages. */
@@ -125,33 +199,192 @@ class ConversationViewModel(
             }
         }
 
-    /** Whether an upward scroll-up could still yield older rows. */
-    fun hasMoreOlder(): Boolean = pager?.hasMore == true
+    /** Whether a scroll toward the OLD end could still yield rows. */
+    fun hasMoreOlder(): Boolean = pager?.hasOlder == true
+
+    /** Whether a scroll toward the NEW end could still yield rows (OLDEST mode). */
+    fun hasMoreNewer(): Boolean = pager?.hasNewer == true
 
     fun loadOlderMessages() {
         val p = pager ?: return
-        if (!p.hasMore) return
+        if (!p.hasOlder) return
         if (olderMessagesJob?.isActive == true) return
         val gen = conversationGeneration
+        isLoadingOlder = true
         olderMessagesJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadOlder")) {
-            val older = p.loadOlder()
-            // Screen moved to another conversation while the page was loading.
-            if (gen != conversationGeneration || older.isEmpty()) return@launch
-            withContext(Dispatchers.Main) {
-                // Prepend only rows not already on screen (a refresh may have
-                // widened the window since the pager counters were set).
-                val merged = com.autonomousone.messages.repository.ThreadMerge.prependOlder(
-                    messages.toList(), older.map { it.copy(unread = false) }
-                )
-                if (merged.size > messages.size) {
-                    messages.clear()
-                    messages.addAll(merged)
+            try {
+                val older = p.loadOlder()
+                // Screen moved to another conversation while the page was loading.
+                if (gen != conversationGeneration || older.isEmpty()) return@launch
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    // Prepend only rows not already on screen (a refresh may have
+                    // widened the window since the pager counters were set).
+                    val merged = ThreadMerge.prependOlder(
+                        messages.toList(), older.map { it.copy(unread = false) }
+                    )
+                    if (merged.size > messages.size) {
+                        messages.clear()
+                        messages.addAll(merged)
+                    }
                 }
+            } finally {
+                withContext(Dispatchers.Main) { isLoadingOlder = false }
             }
         }
     }
 
     private var olderMessagesJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Forward crawl while the window is anchored to the OLDEST boundary:
+     * the next keyset page of NEWER rows merges into the canonical ASC list.
+     * The reverse-layout mapper renders newest data first, so these rows
+     * appear toward the visual bottom (index-0 side) — where the user is
+     * scrolling when they hit the newer boundary.
+     */
+    fun loadNewerMessages() {
+        val p = pager ?: return
+        if (!p.hasNewer) return
+        if (newerMessagesJob?.isActive == true) return
+        val gen = conversationGeneration
+        isLoadingNewer = true
+        newerMessagesJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadNewer")) {
+            try {
+                val newer = p.loadNewer()
+                if (gen != conversationGeneration || newer.isEmpty()) return@launch
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    val merged = ThreadMerge.appendNewer(
+                        messages.toList(), newer.map { it.copy(unread = false) }
+                    )
+                    if (merged.size > messages.size) {
+                        messages.clear()
+                        messages.addAll(merged)
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) { isLoadingNewer = false }
+            }
+        }
+    }
+
+    private var newerMessagesJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Floating "Jump to latest". In LATEST mode the newest window is already
+     * loaded and the UI just scrolls to index 0 — this method is for OLDEST
+     * mode, where it must NOT animate through hundreds of pages: it builds a
+     * fresh pager, queries the latest window directly (O(page size)), and
+     * REPLACES the historical window.
+     */
+    fun jumpToLatest() {
+        if (windowMode == ConversationWindowMode.LATEST) {
+            pendingNewMessagesCount = 0
+            viewModelScope.launch(Dispatchers.Main) {
+                _scrollCommands.tryEmit(
+                    ConversationScrollCommand.Latest(messages.lastOrNull()?.id)
+                )
+            }
+            return
+        }
+        val thread = currentThreadId
+        val phone = currentPhone
+        if (thread == 0L && phone.isBlank()) return
+
+        olderMessagesJob?.cancel()
+        newerMessagesJob?.cancel()
+        val gen = conversationGeneration
+
+        viewModelScope.launch(Dispatchers.IO + crashGuard("jumpToLatest")) {
+            withContext(Dispatchers.Main) { isJumpingToBoundary = true }
+            try {
+                val p = ThreadPager(getApplication(), thread, phone)
+                val latest = p.loadLatest()
+                    .map { it.copy(unread = false) }
+                    .distinctBy { it.id }
+                    .sortedWith(chronologicalOrder)
+
+                if (gen != conversationGeneration) return@launch
+
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    pager = p
+                    windowMode = ConversationWindowMode.LATEST
+                    pendingNewMessagesCount = 0
+
+                    messages.clear()
+                    messages.addAll(latest)
+                    // Optimistic sends from this session survive the jump too.
+                    messages.addAll(mergeOptimistic(latest))
+
+                    _scrollCommands.tryEmit(
+                        ConversationScrollCommand.Latest(latest.lastOrNull()?.id)
+                    )
+                }
+                // Latest window only — this IS the instant-open cache.
+                ThreadMessageCache.put(thread, phone, latest)
+            } finally {
+                withContext(Dispatchers.Main) { isJumpingToBoundary = false }
+            }
+        }
+    }
+
+    /**
+     * Three-dot "Go to first message": the TRUE first message comes from the
+     * TELEPHONY provider (a historical backfill into Room may be incomplete,
+     * so Room is never trusted for the oldest boundary). One bounded
+     * ASC-order page — no full scan, no OFFSET, no backfill await.
+     */
+    fun jumpToOldest() {
+        val thread = currentThreadId
+        val phone = currentPhone
+        if (thread == 0L && phone.isBlank()) return
+        if (isJumpingToBoundary) return
+
+        olderMessagesJob?.cancel()
+        newerMessagesJob?.cancel()
+        val gen = conversationGeneration
+
+        viewModelScope.launch(Dispatchers.IO + crashGuard("jumpToOldest")) {
+            withContext(Dispatchers.Main) { isJumpingToBoundary = true }
+            try {
+                val p = ThreadPager(getApplication(), thread, phone)
+                val oldest = p.loadOldest()
+                    .map { it.copy(unread = false) }
+                    .distinctBy { it.id }
+                    .sortedWith(chronologicalOrder)
+
+                if (gen != conversationGeneration) return@launch
+
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    pager = p
+                    windowMode = ConversationWindowMode.OLDEST
+
+                    messages.clear()
+                    messages.addAll(oldest)
+
+                    _scrollCommands.tryEmit(
+                        ConversationScrollCommand.Oldest(oldest.firstOrNull()?.id)
+                    )
+                }
+                // INTENTIONALLY not ThreadMessageCache.put(): that cache is
+                // for the LATEST window only. Caching an oldest page here
+                // would reopen this thread in 2017 tomorrow.
+            } finally {
+                withContext(Dispatchers.Main) { isJumpingToBoundary = false }
+            }
+        }
+    }
+
+    /**
+     * Shared tail for window REPLACEs: every place that rebuilds `messages`
+     * from a page list ends through canonical order (Q) — never raw provider
+     * order, never insertion order.
+     */
+    private fun canonicalize(vararg lists: List<Sms>): List<Sms> =
+        (lists.asList().flatten()).distinctBy { it.id }.sortedWith(chronologicalOrder)
 
     fun loadConversation(threadId: Long, phone: String = "") {
         currentThreadId = threadId
@@ -164,7 +397,13 @@ class ConversationViewModel(
         // one — cancel it and stamp this run with the thread it owns.
         conversationLoadJob?.cancel()
         olderMessagesJob?.cancel()
+        newerMessagesJob?.cancel()
         olderMessagesJob = null
+        newerMessagesJob = null
+        // Every OPEN is deterministic: the conversation starts at the LATEST
+        // boundary regardless of where a previous visit ended.
+        windowMode = ConversationWindowMode.LATEST
+        pendingNewMessagesCount = 0
         conversationGeneration++
         val myThread = threadId
         val myPhone = currentPhone
@@ -193,7 +432,7 @@ class ConversationViewModel(
                         com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
                             .messageDao()
                             .let { dao ->
-                                if (key != 0L) dao.pageForThread(key, limit = ROOM_WINDOW, offset = 0)
+                                if (key != 0L) dao.newestWindowForThread(key, limit = ROOM_WINDOW)
                                 else dao.newestForAddress(normPhone, limit = ROOM_WINDOW)
                             }
                             .map { it.toSms() }
@@ -201,7 +440,7 @@ class ConversationViewModel(
                             // UI is ALWAYS oldest→newest. Without this the
                             // bottom anchor lands on the OLDEST row of the
                             // window and the user must scroll by hand.
-                            .sortedBy { it.date }
+                            .sortedWith(chronologicalOrder)
                     }.getOrNull().orEmpty()
                     if (roomRows.isNotEmpty() && gen == conversationGeneration) {
                         withContext(Dispatchers.Main) {
@@ -218,7 +457,9 @@ class ConversationViewModel(
             }
 
             if (stale != null && stale.first.isNotEmpty()) {
-                val cachedList = stale.first.map { it.copy(unread = false) }
+                // R: the cache may predate this release and hold unsorted
+                // rows — canonicalize before painting, never trust insertion.
+                val cachedList = canonicalize(stale.first.map { it.copy(unread = false) })
                 withContext(Dispatchers.Main) {
                     if (gen != conversationGeneration) return@withContext
                     messages.clear()
@@ -259,16 +500,15 @@ class ConversationViewModel(
                 val loadedMessages = when {
                     currentPhone.isNotBlank() || threadId != 0L -> {
                         // Windowed load: newest page only (Google Messages-style).
-                        val p = com.autonomousone.messages.repository.ThreadPager(
+                        val p = ThreadPager(
                             getApplication(),
                             if (currentThreadId != 0L) currentThreadId else threadId,
                             currentPhone.ifBlank { phone }
                         )
                         pager = p
-                        val firstPage = p.loadFirstPage()
+                        val firstPage = p.loadLatest()
                         // Merge any optimistic sends already queued this session.
-                        (firstPage + mergeOptimistic(firstPage)).distinctBy { it.id }
-                            .sortedBy { it.date }
+                        canonicalize(firstPage, mergeOptimistic(firstPage))
                     }
                     else -> emptyList()
                 }
@@ -307,13 +547,13 @@ class ConversationViewModel(
                             SmsEventBus.activeConversationPhone = currentPhone
                         }
                         // Phone-only pager: once the real thread id is known,
-                        // rebuild the pager on it so loadNewerSince/loadOlder
-                        // query the resolved thread instead of THREAD_ID = 0.
+                        // rebuild the pager on it so loadNewerSince/loadOlder/
+                        // loadNewer query the resolved thread, not THREAD_ID = 0.
                         val resolvedThreadId = readMessages.last().threadId
                         if (myThread == 0L && resolvedThreadId != 0L) {
-                            pager = com.autonomousone.messages.repository.ThreadPager(
+                            pager = ThreadPager(
                                 getApplication(), resolvedThreadId, currentPhone
-                            ).also { it.loadFirstPage() } // align consumed counters
+                            ).also { it.loadLatest() } // align consumed cursors
                         }
                     }
                     // Push the read state into the Home list immediately via
@@ -392,6 +632,19 @@ class ConversationViewModel(
                 val isMatch = ContactRepository.sameConversation(incomingSms.sender, currentPhone)
 
                 if (isMatch) {
+                    // AW: while reading OLD history an incoming 2026 message
+                    // must NOT be dropped into a 2017 window — that would
+                    // create a fake-contiguous list with years-wide gaps.
+                    // Count it for the Jump-to-latest badge instead; the
+                    // latest cache still learns about it for the next open.
+                    if (windowMode == ConversationWindowMode.OLDEST) {
+                        pendingNewMessagesCount++
+                        ThreadMessageCache.append(currentThreadId, currentPhone, incomingSms.copy(unread = false))
+                        viewModelScope.launch(Dispatchers.IO) {
+                            repository.markThreadAsRead(currentThreadId, currentPhone)
+                        }
+                        return@collect
+                    }
                     val isDuplicate = messages.any {
                         it.id == incomingSms.id ||
                                 (it.message == incomingSms.message &&
@@ -403,6 +656,18 @@ class ConversationViewModel(
                         // Mirror into the instant-open cache so leaving and
                         // re-entering shows this message with no reload.
                         ThreadMessageCache.append(currentThreadId, currentPhone, readIncoming)
+                        // Auto-follow ONLY while the user is actually pinned
+                        // to the newest edge; reading history must never be
+                        // yanked away — the FAB badge counts instead.
+                        if (userAtLatest) {
+                            viewModelScope.launch(Dispatchers.Main) {
+                                _scrollCommands.tryEmit(
+                                    ConversationScrollCommand.Latest(readIncoming.id)
+                                )
+                            }
+                        } else {
+                            pendingNewMessagesCount++
+                        }
                         viewModelScope.launch(Dispatchers.IO) {
                             repository.markThreadAsRead(currentThreadId, currentPhone)
                         }
@@ -477,7 +742,7 @@ class ConversationViewModel(
         }
 
         withContext(Dispatchers.Main) {
-            val merged = com.autonomousone.messages.repository.ThreadMerge.mergeTail(
+            val merged = ThreadMerge.mergeTail(
                 messages.toList(), (tail + statusRows).map { it.copy(unread = false) }
             )
             messages.clear()
@@ -485,9 +750,13 @@ class ConversationViewModel(
             if (currentThreadId == 0L && messages.isNotEmpty()) {
                 currentThreadId = messages.last().threadId
             }
-            // Keep the instant-open cache in step with what is on screen, so
-            // re-entering this chat paints the SAME list with zero delay.
-            ThreadMessageCache.put(currentThreadId, currentPhone, merged)
+            // Keep the instant-open cache in step with what is on screen —
+            // but ONLY in LATEST mode. The cache exists so the next open
+            // paints the newest window; storing an OLDEST-boundary history
+            // window here would reopen this chat years in the past.
+            if (windowMode == ConversationWindowMode.LATEST) {
+                ThreadMessageCache.put(currentThreadId, currentPhone, merged)
+            }
         }
     }
 

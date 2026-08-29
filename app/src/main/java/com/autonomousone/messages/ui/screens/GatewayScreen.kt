@@ -453,6 +453,56 @@ fun GatewayScreen(
                                 onCheckedChange = { viewModel.saveBindAllInterfaces(it) }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // ── Auto Reconnect (v2.6.7 goal #8): visible in the
+                        // MAIN card, not hidden in Advanced. The supervisor
+                        // watches validated-network flaps, resets the retry
+                        // ladder on recovery, and wakes the heartbeat + poller
+                        // in every transport (GMweb pull, LAN, cloud).
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = null,
+                                tint = if (viewModel.isServerRunning)
+                                    Color(0xFF10B981)
+                                else MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Auto Reconnect",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    if (viewModel.isServerRunning)
+                                        "On — retries immediately when the network returns"
+                                    else
+                                        "Ready — starts with the gateway and self-heals while it is on",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.reconnectNow() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reconnect now")
+                        }
                     }
                 }
             }

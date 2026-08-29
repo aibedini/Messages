@@ -95,6 +95,9 @@
     <string name="conv_status_not_delivered"> · تحویل نشد</string>
     <string name="conv_status_sending"> · در حال ارسال…</string>
     <string name="conv_syncing_older">در حال همگام‌سازی پیام‌های قدیمی…</string>
+    <string name="conv_syncing_newer">در حال همگام‌سازی پیام‌های جدیدتر…</string>
+    <string name="conv_go_to_first_message">رفتن به اولین پیام</string>
+    <string name="jump_to_latest">پرش به آخرین پیام</string>
     <string name="conv_load_failed">بارگذاری بخشی از پیام‌ها ممکن نشد. با باز کردن دوباره گفتگو تازه می‌شوند.</string>
     <string name="status_sending">در حال ارسال</string>
     <string name="status_failed">ناموفق</string>

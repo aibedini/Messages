@@ -153,7 +153,14 @@ class ConnectionSupervisor private constructor(
         backoffMs = 5_000L
         lastError = null
         onLog("🌐 Network available — retrying gateway connections now")
-        components.startHeartbeat() // HeartbeatManager.retryNow(): cancel backoff, tick immediately
+        // Revive the reconcile loop if it died (service freshly rebuilt by
+        // onStartCommand without ACTION_START, or a cancelled job).
+        // ensureLoop() is idempotent.
+        ensureLoop()
+        // HeartbeatManager.retryNow() resets the ladder AND wakes the
+        // pending backoff sleep; start() alone no-ops while the job is
+        // alive, which silently kept the old backoff in force.
+        components.retryHeartbeat()
         reconcileNow()
     }
 

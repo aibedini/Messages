@@ -14,6 +14,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -22,6 +24,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,12 +49,15 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -106,7 +112,12 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
+import com.autonomousone.messages.ui.conversation.ChatListItem
+import com.autonomousone.messages.ui.conversation.buildReverseChatItems
+import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.utils.formatDateHeader
+import com.autonomousone.messages.viewmodel.ConversationScrollCommand
+import com.autonomousone.messages.viewmodel.ConversationWindowMode
 import com.autonomousone.messages.viewmodel.ConversationViewModel
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -116,10 +127,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-sealed class ChatListItem {
-    data class DateSeparator(val dateText: String) : ChatListItem()
-    data class MessageItem(val sms: Sms) : ChatListItem()
-}
+// ChatListItem + buildReverseChatItems now live in
+// com.autonomousone.messages.ui.conversation.ConversationListMapper —
+// single owner for the reverse-layout data order (v2.6.7 PART C).
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -298,20 +308,11 @@ fun ConversationScreen(
 
     val messages = viewModel.messages
 
+    // v2.6.7: the LazyColumn renders reverseLayout, so the DATA order is
+    // newest→oldest and the mapper owns the date-separator placement.
+    // Canonical ViewModel order (oldest→newest) never changes.
     val chatItems by remember {
-        derivedStateOf {
-            val items = mutableListOf<ChatListItem>()
-            var lastDateHeader = ""
-            messages.forEach { sms ->
-                val header = formatDateHeader(sms.date)
-                if (header != lastDateHeader && header.isNotBlank()) {
-                    items.add(ChatListItem.DateSeparator(header))
-                    lastDateHeader = header
-                }
-                items.add(ChatListItem.MessageItem(sms))
-            }
-            items
-        }
+        derivedStateOf { buildReverseChatItems(messages) }
     }
 
     val recipientPhone = remember(phone, messages.size) {
@@ -328,73 +329,107 @@ fun ConversationScreen(
         }
     }
 
-    // ── Instant bottom position: jump BEFORE paint, no visible scrolling ────
-    val atBottom by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= info.totalItemsCount - 2
-        }
+    // ── v2.6.7 reverseLayout: opening IS being at the newest message ────────
+    // Data order is newest→oldest (buildReverseChatItems) and the LazyColumn
+    // renders reverseLayout, so list index 0 (the newest message) paints at
+    // the visual bottom on FIRST layout. No requestScrollToItem(lastIndex),
+    // no anchor flag, no size/newestKey side-effect timing.
+    //
+    // "at latest" now means firstVisibleItemIndex == 0 (was lastIndex before
+    // the flip). Scrolling toward OLDER history INCREASES the index.
+    val atLatest by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 }
     }
-    // One bottom-anchor per OPENED conversation: remembering it by
-    // (threadId, phone) means a second chat opened in the same composition
-    // gets a fresh anchor instead of inheriting the previous thread's
-    // "already anchored" state — which used to leave it stuck un-scrolled.
-    var anchoredToBottom by remember(threadId, phone) { mutableStateOf(false) }
-    // Set right after the user sends so the list ALWAYS jumps to their new
-    // message — even if they had scrolled up to re-read something.
-    var forceScrollToBottom by remember(threadId, phone) { mutableStateOf(false) }
-    // Windowed history: pull older pages when the top is reached.
+    // The VM gates auto-follow + badge counting on this flag; the Screen is
+    // the only one who sees geometry, so it reports every transition.
+    // Landing back on index 0 (user drag or FAB) clears the pending count.
+    LaunchedEffect(atLatest) { viewModel.setUserAtLatest(atLatest) }
+    // Windowed history: pull older pages when the OLDER boundary is crossed.
     var loadingOlder by remember { mutableStateOf(false) }
+    var loadingNewer by remember { mutableStateOf(false) }
 
-    // Identity of the newest row. The provider refresh can REPLACE the Room
-    // window with an exactly-equal-sized list; keying the anchor on size alone
-    // then never re-fires and the user sits on the oldest row of the window.
-    // "id:date" of the tail guarantees the jump-to-newest happens once per
-    // open — and never yanks the user back down after they scrolled up.
-    val newestMessageKey = messages.lastOrNull()?.let { "${it.id}:${it.date}" }
-
-    LaunchedEffect(threadId, phone, chatItems.size, newestMessageKey) {
-        if (chatItems.isEmpty()) return@LaunchedEffect
-        when {
-            !anchoredToBottom -> {
-                // First layout of this conversation: land on the newest message
-                // immediately (requestScrollToItem applies before the next frame —
-                // the user never sees a scroll animation from top to bottom).
-                listState.requestScrollToItem(chatItems.lastIndex)
-                anchoredToBottom = true
+    // One-shot scroll intents after a window REPLACE (jumpToLatest /
+    // jumpToOldest / newer-crawl re-anchor). Ordinary pagination never
+    // emits one — see ConversationScrollCommand docs.
+    LaunchedEffect(threadId, phone) {
+        viewModel.scrollCommands.collect { cmd ->
+            val target = when (cmd) {
+                is ConversationScrollCommand.Latest -> 0
+                is ConversationScrollCommand.Oldest ->
+                    // Anchor on the oldest row of the freshly loaded window:
+                    // the LAST message item (date separators trail their day).
+                    chatItems.indexOfLast { it is ChatListItem.MessageItem }
+                        .takeIf { it >= 0 } ?: (chatItems.size - 1)
             }
-            forceScrollToBottom || atBottom -> {
-                // Own outgoing message, or following live updates at bottom.
-                listState.requestScrollToItem(chatItems.lastIndex)
-                forceScrollToBottom = false
-            }
+            listState.scrollToItem(target)
         }
     }
-    // Older pages load ONLY after a REAL user upward scroll reaches the top.
-    // canScrollBackward lies for small windows: a freshly opened 12-message
-    // chat is not scrollable-back at startup, which looked exactly like
-    // "top reached" and fetched history nobody asked for. Here the DRAG
-    // itself is the precondition: firstVisibleItemIndex must decrease while a
-    // scroll is in progress and arrive at index 0. Initial render ≠ request.
+
+    // OLDER crawl — LATEST mode, real user drag toward the older boundary.
+    // canScrollBackward lies for small windows, and "index at boundary"
+    // alone fires on initial render; the DRAG is the precondition:
+    // firstVisibleItemIndex must INCREASE (older direction post-flip) while
+    // a scroll is in progress and arrive at the data tail.
     LaunchedEffect(threadId, phone) {
         loadingOlder = false
+        var prevIndex = -1
+        snapshotFlow {
+            Triple(
+                listState.firstVisibleItemIndex,
+                listState.isScrollInProgress,
+                viewModel.windowMode
+            )
+        }
+            .distinctUntilChanged()
+            .collect { (index, scrolling, mode) ->
+                prevIndex = if (mode != ConversationWindowMode.LATEST) -1 else prevIndex
+                if (mode != ConversationWindowMode.LATEST) return@collect
+                val movedOlderWhileDragging =
+                    scrolling && prevIndex >= 0 && index > prevIndex
+                prevIndex = index
+                if (
+                    movedOlderWhileDragging &&
+                    !loadingOlder && !viewModel.isLoadingOlder &&
+                    viewModel.hasMoreOlder() &&
+                    listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                        ?.let { it >= listState.layoutInfo.totalItemsCount - 2 } == true
+                ) {
+                    loadingOlder = true
+                    viewModel.loadOlderMessages()
+                    kotlinx.coroutines.delay(400) // let composition settle before re-arming
+                    loadingOlder = false
+                }
+            }
+    }
+
+    // NEWER crawl — OLDEST mode (after "Go to first message"): dragging
+    // toward the newest edge (index DECREASING) at the data head pulls the
+    // next keyset page forward in time. The VM re-emits an Oldest-anchor
+    // command after each merge so the row being read never slides.
+    LaunchedEffect(threadId, phone) {
+        loadingNewer = false
         var prevIndex = -1
         snapshotFlow {
             listState.firstVisibleItemIndex to listState.isScrollInProgress
         }
             .distinctUntilChanged()
             .collect { (index, scrolling) ->
-                val movedUpWhileDragging = scrolling && prevIndex >= 0 && index < prevIndex
+                if (viewModel.windowMode != ConversationWindowMode.OLDEST) {
+                    prevIndex = -1
+                    return@collect
+                }
+                val movedNewerWhileDragging =
+                    scrolling && prevIndex >= 0 && index < prevIndex
                 prevIndex = index
                 if (
-                    movedUpWhileDragging && index == 0 &&
-                    !loadingOlder && anchoredToBottom && viewModel.hasMoreOlder()
+                    movedNewerWhileDragging && index == 0 &&
+                    !loadingNewer && !viewModel.isLoadingNewer &&
+                    viewModel.hasMoreNewer()
                 ) {
-                    loadingOlder = true
-                    viewModel.loadOlderMessages()
-                    kotlinx.coroutines.delay(400) // let composition settle before re-arming
-                    loadingOlder = false
+                    loadingNewer = true
+                    viewModel.loadNewerMessages()
+                    kotlinx.coroutines.delay(400)
+                    loadingNewer = false
                 }
             }
     }
@@ -422,7 +457,8 @@ fun ConversationScreen(
                         context.startActivity(callIntent)
                     }
                 },
-                onVideoClick = {}
+                onVideoClick = {},
+                onGoToFirstMessage = { viewModel.jumpToOldest() }
             )
         }
     ) { padding ->
@@ -457,24 +493,36 @@ fun ConversationScreen(
                     )
                 }
             } else {
+                // Chat area + floating overlays share one Box so the
+                // Jump-to-latest button can pin itself bottom-end over the
+                // list without consuming layout space.
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 // ── Pull-to-refresh (Instagram-style): drag down at the top of
                 // the thread to silently re-check the provider for updates.
                 // Spinner is bound to the ViewModel's real refresh state.
+                // The newest row of the window sits at data index 0 (the
+                // OLDEST crawl never emits a scroll command: in reverse
+                // layout a merged page grows at index 0 — the visual bottom
+                // — so the row being read never slides.)
                 androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                     isRefreshing = viewModel.isRefreshing,
                     onRefresh = {
                         if (!viewModel.isRefreshing) viewModel.refresh()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     state = listState,
+                    reverseLayout = true,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    if (loadingOlder) {
-                        item(key = "older_messages_sync") {
+                    // reverseLayout: data head = visual BOTTOM (newest edge),
+                    // data tail = visual TOP (oldest edge). The spinner for
+                    // the NEWER crawl (OLDEST mode) sits at the newest edge.
+                    if (viewModel.isLoadingNewer) {
+                        item(key = "newer_messages_sync") {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -488,7 +536,7 @@ fun ConversationScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = stringResource(R.string.conv_syncing_older),
+                                    text = stringResource(R.string.conv_syncing_newer),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -538,6 +586,79 @@ fun ConversationScreen(
                             }
                         }
                     }
+                    // OLDER crawl spinner at the DATA tail = visual TOP edge
+                    // (reverseLayout), which is exactly where the user dragged.
+                    if (viewModel.isLoadingOlder) {
+                        item(key = "older_messages_sync") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.conv_syncing_older),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                }
+
+                // ── Floating Jump-to-latest (v2.6.7 goal #4) ───────────────
+                // Reverse layout: newest is data index 0 = visual bottom.
+                // The button appears the moment the user drifts away from it;
+                // the badge counts messages that arrived while reading
+                // history — pressing clears the count AND jumps.
+                if (!atLatest && chatItems.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(end = 14.dp, bottom = 110.dp),
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    Box {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                viewModel.setUserAtLatest(true)
+                                viewModel.jumpToLatest()
+                            },
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDownward,
+                                contentDescription = stringResource(R.string.jump_to_latest)
+                            )
+                        }
+                        val pending = viewModel.pendingNewMessagesCount
+                        if (pending > 0) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-4).dp)
+                            ) {
+                                Text(
+                                    text = if (pending > 99) "99+" else pending.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
                 }
                 }
             }
@@ -847,8 +968,11 @@ fun ConversationScreen(
                             attachedAudioUri = null
                             // Message is leaving as a real send — drop the draft.
                             draftRepo.set(draftKey, "")
-                            // Always land the view on our new message.
-                            forceScrollToBottom = true
+                            // Always land the view on our new message: sending
+                            // re-arms latest-following, and from history we
+                            // jump outright (reverse layout pins index 0).
+                            viewModel.setUserAtLatest(true)
+                            if (!atLatest) viewModel.jumpToLatest()
 
                             if (currentImage != null) {
                                 viewModel.sendImageMessage(

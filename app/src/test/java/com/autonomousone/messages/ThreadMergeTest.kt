@@ -71,4 +71,28 @@ class ThreadMergeTest {
         assertEquals(11L, window.first().id)
         assertEquals(50L, window.last().id)
     }
+
+    @Test
+    fun `appendNewer merges forward-crawl rows into canonical order without duplicates`() {
+        val current = listOf(sms(1, 100), sms(2, 200))
+        val newer = listOf(sms(2, 200), sms(3, 300)) // overlapping tail row
+        val merged = ThreadMerge.appendNewer(current, newer)
+        assertEquals(listOf(1L, 2L, 3L), merged.map { it.id })
+        assertEquals(merged.map { it.date }, merged.map { it.date }.sorted())
+    }
+
+    @Test
+    fun `appendNewer replaces an on-screen row with the fresher provider copy`() {
+        val onScreen = listOf(sms(1, 100, "read receipt pending"))
+        val fresh = listOf(sms(1, 100, "read receipt pending").copy(status = 0))
+        val merged = ThreadMerge.appendNewer(onScreen, fresh)
+        assertEquals(1, merged.size)
+        assertEquals(0, merged.first().status)
+    }
+
+    @Test
+    fun `appendNewer with empty newer is a no-op`() {
+        val current = listOf(sms(1, 100), sms(2, 200))
+        assertEquals(current, ThreadMerge.appendNewer(current, emptyList()))
+    }
 }

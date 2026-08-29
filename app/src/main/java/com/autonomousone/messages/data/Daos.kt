@@ -21,6 +21,23 @@ interface MessageDao {
     )
     suspend fun pageForThread(threadId: Long, limit: Int, offset: Int): List<MessageEntity>
 
+    /**
+     * Hot-path newest window for instant-open. Same indexed scan as
+     * pageForThread but with no OFFSET clause — the conversation open path
+     * always wants offset 0, and an OFFSET of 0 makes SQLite planners (and
+     * reviewers) ask unnecessary questions. Kept separate so a future
+     * migration/rebuild that genuinely pages can still use pageForThread.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE threadId = :threadId
+        ORDER BY date DESC, providerId DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun newestWindowForThread(threadId: Long, limit: Int): List<MessageEntity>
+
     /** Reactive tail for the open conversation (Room invalidation drives UI). */
     @Query(
         """
@@ -42,18 +59,39 @@ interface MessageDao {
     )
     suspend fun newestForAddress(address: String, limit: Int): List<MessageEntity>
 
-    /** Newest message per thread — used to rebuild conversations in one pass. */
+    /**
+     * Newest message per thread — used to rebuild conversations in one pass.
+     * The old MAX(date)+GROUP BY form picked an ARBITRARY row among equal-date
+     * ties (a send and its delivery receipt share a timestamp constantly);
+     * the correlated rowid subquery makes the pick deterministic: date, then
+     * direction (outgoing type=2 wins over incoming), then provider id.
+     */
     @Query(
         """
-        SELECT * FROM messages m
-        WHERE m.date = (
-            SELECT MAX(m2.date) FROM messages m2
+        SELECT m.*
+        FROM messages m
+        WHERE m.rowid = (
+            SELECT m2.rowid
+            FROM messages m2
             WHERE m2.threadId = m.threadId
+            ORDER BY m2.date DESC, m2.source DESC, m2.providerId DESC
+            LIMIT 1
         )
-        GROUP BY m.threadId
         """
     )
     suspend fun newestPerThread(): List<MessageEntity>
+
+    /** Deterministic single-thread newest row for projection rebuilds. */
+    @Query(
+        """
+        SELECT *
+        FROM messages
+        WHERE threadId = :threadId
+        ORDER BY date DESC, source DESC, providerId DESC
+        LIMIT 1
+        """
+    )
+    suspend fun newestForThread(threadId: Long): MessageEntity?
 
     @Query("SELECT MAX(date) FROM messages WHERE source = :source")
     suspend fun newestDateFor(source: String): Long?
@@ -138,16 +176,25 @@ interface ConversationDao {
     @Query(
         """
         INSERT INTO conversations (
-            threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount
+            threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
+            lastMessageType
         )
         VALUES (
-            :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount
+            :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
+            :lastMessageType
         )
         ON CONFLICT(threadId) DO UPDATE SET
             normalizedAddress = excluded.normalizedAddress,
             rawAddress = excluded.rawAddress,
-            snippet = excluded.snippet,
-            lastMessageDate = excluded.lastMessageDate,
+            snippet = CASE
+                WHEN excluded.lastMessageDate >= conversations.lastMessageDate
+                    THEN excluded.snippet
+                ELSE conversations.snippet END,
+            lastMessageDate = MAX(excluded.lastMessageDate, conversations.lastMessageDate),
+            lastMessageType = CASE
+                WHEN excluded.lastMessageDate >= conversations.lastMessageDate
+                    THEN excluded.lastMessageType
+                ELSE conversations.lastMessageType END,
             unreadCount = excluded.unreadCount
         """
     )
@@ -157,7 +204,8 @@ interface ConversationDao {
         rawAddress: String,
         snippet: String,
         lastMessageDate: Long,
-        unreadCount: Int
+        unreadCount: Int,
+        lastMessageType: Int = 1
     )
 
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")
