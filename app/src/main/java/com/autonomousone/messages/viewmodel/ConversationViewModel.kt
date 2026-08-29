@@ -116,6 +116,29 @@ class ConversationViewModel(
         }
     }
 
+    /**
+     * v2.6.8 motion polish — true from the moment Send is tapped until the
+     * follow-to-newest glide finishes. Inserting the optimistic bubble can
+     * make the reverse-layout LazyColumn transiently shift
+     * firstVisibleItemIndex while it re-anchors; without this latch the ↓
+     * button flashes exactly after every send. While it is on the FAB is
+     * pinned hidden no matter what the layout does mid-flight.
+     */
+    var ownSendFollowActive by mutableStateOf(false)
+        private set
+
+    /** Arm the single Send intent BEFORE the optimistic insert lands. */
+    fun beginOwnSend() {
+        ownSendFollowActive = true
+        userAtLatest = true
+        pendingNewMessagesCount = 0
+    }
+
+    /** Called once the screen's animateScrollToItem(0) has settled. */
+    fun finishOwnSendFollow() {
+        ownSendFollowActive = false
+    }
+
     private val _scrollCommands = MutableSharedFlow<ConversationScrollCommand>(extraBufferCapacity = 1)
     val scrollCommands = _scrollCommands.asSharedFlow()
 

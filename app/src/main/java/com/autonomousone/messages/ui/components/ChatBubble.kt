@@ -180,17 +180,19 @@ fun ChatBubble(
         MaterialTheme.colorScheme.onPrimaryContainer
     }
 
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.92f, animationSpec = tween(300))
+    // v2.6.8: the fake `AnimatedVisibility(visible = true)` wrapper that
+    // used to sit here never actually animated (a constant-visible AV plays
+    // no enter on first composition) and it captured the incoming modifier
+    // inside a dead lambda. Row identity/motion is now the LazyColumn's job
+    // via Modifier.animateItem() at the call site — one coordinated motion
+    // system, not two competing ones.
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = if (incoming) Arrangement.Start else Arrangement.End
     ) {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(vertical = 3.dp),
-            horizontalArrangement = if (incoming) Arrangement.Start else Arrangement.End
-        ) {
-            Column(horizontalAlignment = if (incoming) Alignment.Start else Alignment.End) {
+        Column(horizontalAlignment = if (incoming) Alignment.Start else Alignment.End) {
                 Box(
                     modifier = Modifier
                         .widthIn(min = 80.dp, max = 300.dp)
@@ -377,7 +379,6 @@ fun ChatBubble(
                 }
             }
         }
-    }
 }
 
 private fun statusVisualFor(status: Int): StatusVisual = when (status) {

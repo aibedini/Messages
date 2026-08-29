@@ -12,6 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInHorizontally
@@ -21,6 +24,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,6 +86,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -337,13 +345,40 @@ fun ConversationScreen(
     //
     // "at latest" now means firstVisibleItemIndex == 0 (was lastIndex before
     // the flip). Scrolling toward OLDER history INCREASES the index.
+    // v2.6.8: tolerant — a bubble is "at latest" as long as the newest row is
+    // still visible anywhere on screen, or we are within one row of it. The
+    // reverse-layout LazyColumn can transiently nudge firstVisibleItemIndex
+    // while it re-anchors around an insertion; a strict index == 0 made the ↓
+    // button flash right after every send over a few pixels of drift.
     val atLatest by remember {
-        derivedStateOf { listState.firstVisibleItemIndex == 0 }
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val newestVisible = info.visibleItemsInfo.any { it.index == 0 }
+            newestVisible || listState.firstVisibleItemIndex <= 1
+        }
     }
     // The VM gates auto-follow + badge counting on this flag; the Screen is
     // the only one who sees geometry, so it reports every transition.
     // Landing back on index 0 (user drag or FAB) clears the pending count.
     LaunchedEffect(atLatest) { viewModel.setUserAtLatest(atLatest) }
+
+    // v2.6.8: FAB visibility is debounced. Momentary layout jitter (bubble
+    // insertion, re-anchor) must never surface the button — only a real,
+    // sustained drift away from the newest edge, ~180ms later. Own-send
+    // glides pin it hidden outright via viewModel.ownSendFollowActive.
+    var showJumpFab by remember { mutableStateOf(false) }
+    LaunchedEffect(atLatest, viewModel.ownSendFollowActive) {
+        if (atLatest || viewModel.ownSendFollowActive) {
+            showJumpFab = false
+        } else {
+            delay(180)
+            if (!atLatest && !viewModel.ownSendFollowActive) {
+                showJumpFab = true
+            }
+        }
+    }
+    // For the single Send intent (insert bubble → follow it smoothly).
+    val screenScope = rememberCoroutineScope()
     // Windowed history: pull older pages when the OLDER boundary is crossed.
     var loadingOlder by remember { mutableStateOf(false) }
     var loadingNewer by remember { mutableStateOf(false) }
@@ -353,15 +388,27 @@ fun ConversationScreen(
     // emits one — see ConversationScrollCommand docs.
     LaunchedEffect(threadId, phone) {
         viewModel.scrollCommands.collect { cmd ->
-            val target = when (cmd) {
-                is ConversationScrollCommand.Latest -> 0
-                is ConversationScrollCommand.Oldest ->
-                    // Anchor on the oldest row of the freshly loaded window:
-                    // the LAST message item (date separators trail their day).
-                    chatItems.indexOfLast { it is ChatListItem.MessageItem }
+            when (cmd) {
+                is ConversationScrollCommand.Latest -> {
+                    // v2.6.8: soft landing. If the view is far from the newest
+                    // edge, teleport just short of it first so we never
+                    // animate through hundreds of rows, then glide the last
+                    // stretch. A hard scrollToItem(0) here was a visible jump.
+                    if (listState.firstVisibleItemIndex > 12) {
+                        listState.scrollToItem(3)
+                    }
+                    listState.animateScrollToItem(0)
+                }
+                is ConversationScrollCommand.Oldest -> {
+                    // Window REPLACE (Go to first message / newer-crawl
+                    // re-anchor): content changed wholesale, so a hard anchor
+                    // on the oldest row of the freshly loaded window is right
+                    // — the LAST message item (date separators trail their day).
+                    val target = chatItems.indexOfLast { it is ChatListItem.MessageItem }
                         .takeIf { it >= 0 } ?: (chatItems.size - 1)
+                    listState.scrollToItem(target)
+                }
             }
-            listState.scrollToItem(target)
         }
     }
 
@@ -576,8 +623,22 @@ fun ConversationScreen(
                                 }
                             }
                             is ChatListItem.MessageItem -> {
+                                // v2.6.8: real enter/placement motion. A new
+                                // bubble (incoming, or our optimistic send)
+                                // gently fades in and springs into its slot;
+                                // existing rows slide over instead of
+                                // snapping. Stable key above = per-item
+                                // identity, so only the new row animates.
                                 ChatBubble(
                                     sms = item.sms,
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = tween(140),
+                                        placementSpec = spring(
+                                            dampingRatio = 0.82f,
+                                            stiffness = 420f
+                                        ),
+                                        fadeOutSpec = tween(100)
+                                    ),
                                     onForward = { text ->
                                         navController.navigate(Screen.NewConversation.createForwardRoute(text))
                                     },
@@ -615,16 +676,26 @@ fun ConversationScreen(
 
                 // ── Floating Jump-to-latest (v2.6.7 goal #4) ───────────────
                 // Reverse layout: newest is data index 0 = visual bottom.
-                // The button appears the moment the user drifts away from it;
-                // the badge counts messages that arrived while reading
-                // history — pressing clears the count AND jumps.
-                if (!atLatest && chatItems.isNotEmpty()) {
+                // v2.6.8: driven by the debounced showJumpFab (never flashes
+                // on layout jitter or an own-send glide) and it fades+scales
+                // in/out instead of popping binary. The badge counts messages
+                // that arrived while reading history — pressing clears the
+                // count AND glides to the newest edge.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(end = 14.dp, bottom = 110.dp),
                     contentAlignment = Alignment.BottomEnd
                 ) {
+                  Column {
+                    AnimatedVisibility(
+                        visible = showJumpFab && chatItems.isNotEmpty(),
+                        enter = fadeIn(tween(140)) + scaleIn(
+                            initialScale = 0.82f,
+                            animationSpec = spring(stiffness = 500f)
+                        ),
+                        exit = fadeOut(tween(100)) + scaleOut(targetScale = 0.88f)
+                    ) {
                     Box {
                         SmallFloatingActionButton(
                             onClick = {
@@ -658,6 +729,7 @@ fun ConversationScreen(
                             }
                         }
                     }
+                  }
                 }
                 }
                 }
@@ -923,9 +995,21 @@ fun ConversationScreen(
                     }
 
                     val canSend = message.isNotBlank() || attachedImageUri != null || attachedAudioUri != null
+                    // v2.6.8: ONE touch target with real press feedback. The
+                    // old shape stacked combinedClickable on top of an
+                    // IconButton (two clickables, a dead outer onClick={}).
+                    // Now: pressed → 0.9, ready → 1.0, disabled → 0.86,
+                    // spring-eased; press ripple suppressed so the scale is
+                    // the feedback.
+                    val sendInteractionSource = remember { MutableInteractionSource() }
+                    val sendPressed by sendInteractionSource.collectIsPressedAsState()
                     val sendScale by animateFloatAsState(
-                        targetValue = if (canSend) 1f else 0.85f,
-                        animationSpec = spring(stiffness = 400f),
+                        targetValue = when {
+                            sendPressed -> 0.9f
+                            canSend -> 1f
+                            else -> 0.86f
+                        },
+                        animationSpec = spring(dampingRatio = 0.72f, stiffness = 700f),
                         label = "sendScale"
                     )
 
@@ -955,53 +1039,99 @@ fun ConversationScreen(
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            if (!canSend) return@IconButton
-                            val destination = if (recipientPhone.isNotBlank()) recipientPhone else phone
-                            val msgToSend = message
-                            val currentImage = attachedImageUri
-                            val currentAudio = attachedAudioUri
-
-                            message = ""
-                            attachedImageUri = null
-                            attachedAudioUri = null
-                            // Message is leaving as a real send — drop the draft.
-                            draftRepo.set(draftKey, "")
-                            // Always land the view on our new message: sending
-                            // re-arms latest-following, and from history we
-                            // jump outright (reverse layout pins index 0).
-                            viewModel.setUserAtLatest(true)
-                            if (!atLatest) viewModel.jumpToLatest()
-
-                            if (currentImage != null) {
-                                viewModel.sendImageMessage(
-                                    threadId = threadId,
-                                    phone = destination,
-                                    imageUri = currentImage,
-                                    caption = msgToSend
-                                )
-                            } else if (currentAudio != null) {
-                                viewModel.sendAudioMessage(
-                                    threadId = threadId,
-                                    phone = destination,
-                                    audioUri = currentAudio,
-                                    caption = msgToSend
-                                )
-                            } else {
-                                viewModel.sendMessage(
-                                    threadId = threadId,
-                                    phone = destination,
-                                    message = msgToSend,
-                                    subscriptionOverride = selectedSubId
-                                )
-                            }
-                        },
-                        enabled = canSend,
+                    // ── The Send button (v2.6.8 motion polish) ──────────────
+                    // A single touch target (no IconButton + combinedClickable
+                    // double-clickable hack). Tap = one Send intent:
+                    // beginOwnSend() latches the FAB away FIRST, the
+                    // optimistic bubble is inserted immediately, then the
+                    // list FOLLOWS the bubble with a short glide —
+                    // scrollToItem(3) past long stretches, animate the rest —
+                    // and finishOwnSendFollow() un-latches when it settles.
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Transparent,
                         modifier = Modifier
+                            .size(48.dp)
                             .scale(sendScale)
                             .combinedClickable(
-                                onClick = {},
+                                interactionSource = sendInteractionSource,
+                                indication = null,
+                                onClick = {
+                                    if (!canSend) return@combinedClickable
+                                    val destination = if (recipientPhone.isNotBlank()) recipientPhone else phone
+                                    val msgToSend = message
+                                    val currentImage = attachedImageUri
+                                    val currentAudio = attachedAudioUri
+
+                                    message = ""
+                                    attachedImageUri = null
+                                    attachedAudioUri = null
+                                    // Message is leaving as a real send — drop the draft.
+                                    draftRepo.set(draftKey, "")
+
+                                    // A single intent: bubble first, the view
+                                    // follows it — never jump-then-insert.
+                                    val wasFarFromLatest =
+                                        listState.firstVisibleItemIndex > 12
+                                    val sendingIntoHistory =
+                                        viewModel.windowMode == ConversationWindowMode.OLDEST
+                                    viewModel.beginOwnSend()
+
+                                    if (currentImage != null) {
+                                        viewModel.sendImageMessage(
+                                            threadId = threadId,
+                                            phone = destination,
+                                            imageUri = currentImage,
+                                            caption = msgToSend
+                                        )
+                                    } else if (currentAudio != null) {
+                                        viewModel.sendAudioMessage(
+                                            threadId = threadId,
+                                            phone = destination,
+                                            audioUri = currentAudio,
+                                            caption = msgToSend
+                                        )
+                                    } else {
+                                        viewModel.sendMessage(
+                                            threadId = threadId,
+                                            phone = destination,
+                                            message = msgToSend,
+                                            subscriptionOverride = selectedSubId
+                                        )
+                                    }
+
+                                    if (sendingIntoHistory) {
+                                        // The VM replaces the window with the
+                                        // latest one and emits its own Latest
+                                        // scroll command; the collector glides
+                                        // there. Don't race it — release the
+                                        // latch once the window is back in
+                                        // LATEST mode (the replace completed).
+                                        screenScope.launch {
+                                            withTimeoutOrNull(1500) {
+                                                while (viewModel.windowMode !=
+                                                    ConversationWindowMode.LATEST
+                                                ) {
+                                                    delay(50)
+                                                }
+                                            }
+                                            viewModel.finishOwnSendFollow()
+                                        }
+                                    } else {
+                                        // LATEST mode: the optimistic bubble is
+                                        // already at index 0. Nudge the viewport
+                                        // near the edge without animating
+                                        // hundreds of rows, then glide onto the
+                                        // bubble itself.
+                                        screenScope.launch {
+                                            if (wasFarFromLatest) {
+                                                listState.scrollToItem(3)
+                                            }
+                                            listState.animateScrollToItem(0)
+                                            viewModel.finishOwnSendFollow()
+                                        }
+                                    }
+                                },
                                 onLongClick = {
                                     // Long-press send = schedule instead of send now.
                                     if (message.isNotBlank()) showScheduleDialog = true
@@ -1010,7 +1140,8 @@ fun ConversationScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .fillMaxSize()
+                                .padding(4.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (canSend) MaterialTheme.colorScheme.primary

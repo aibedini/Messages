@@ -1,6 +1,7 @@
 package com.autonomousone.messages.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -83,7 +84,14 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.Home.route) {
+        composable(
+            Screen.Home.route,
+            // v2.6.8 motion polish: leaving Home is just a quick fade — the
+            // incoming Conversation carries the (shallow) slide. Two full
+            // 350ms slides over each other read cheap.
+            exitTransition = { fadeOut(tween(90)) },
+            popEnterTransition = { fadeIn(tween(140)) }
+        ) {
             HomeScreen(
                 hasPermission = hasPermission,
                 isDefaultSmsApp = isDefaultSmsApp,
@@ -160,6 +168,32 @@ fun AppNavigation(
 
         composable(
             route = Screen.Conversation.route,
+            // v2.6.8 motion polish: Home → Conversation opens with a SHALLOW
+            // slide — the page moves ~16% of its width, not the whole screen,
+            // in 210ms with a FastOutSlowIn curve, over a quick 110ms fade.
+            // Back glides the thread ~18% to the right in ~200ms while Home
+            // fades underneath. Reads far more premium than two full 350ms
+            // slides stacking on top of each other.
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(
+                        durationMillis = 210,
+                        easing = FastOutSlowInEasing
+                    ),
+                    initialOffset = { (it * 0.16f).toInt() }
+                ) + fadeIn(tween(110))
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(
+                        durationMillis = 200,
+                        easing = FastOutSlowInEasing
+                    ),
+                    targetOffset = { (it * 0.18f).toInt() }
+                ) + fadeOut(tween(200))
+            },
             arguments = listOf(
                 navArgument("threadId") {
                     type = NavType.LongType
