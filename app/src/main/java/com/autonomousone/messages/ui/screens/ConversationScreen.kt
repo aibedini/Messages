@@ -10,7 +10,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import com.autonomousone.messages.navigation.ConversationLaunchStore
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
@@ -121,6 +126,7 @@ import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
+import com.autonomousone.messages.ui.conversation.MessageEntrance
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.utils.formatDateHeader
@@ -515,35 +521,29 @@ fun ConversationScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            if (viewModel.isLoading && chatItems.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Windowed load is a single small page — keep it minimal.
-                    CircularProgressIndicator()
-                }
-            } else if (chatItems.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    EmptyView(
-                        title = stringResource(R.string.conv_start_title),
-                        subtitle = stringResource(R.string.conv_start_subtitle, title),
-                        buttonText = null,
-                        onButtonClick = null
-                    )
-                }
-            } else {
-                // Chat area + floating overlays share one Box so the
-                // Jump-to-latest button can pin itself bottom-end over the
-                // list without consuming layout space.
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // v2.6.9 first-paint: never "blank → POP". While the first
+            // Room page is in flight, the last bubble Home already showed
+            // is kept on screen via ConversationLaunchStore; cold/no-snapshot
+            // gets a quiet skeleton. When real rows arrive the two states
+            // crossfade (100/70ms) — same bottom anchor, so the swap reads
+            // as history quietly filling in above, not a re-mount.
+            val launchSnapshot = remember(threadId) {
+                ConversationLaunchStore.peek(threadId)
+            }
+            AnimatedContent(
+                targetState = chatItems.isNotEmpty(),
+                transitionSpec = {
+                    fadeIn(tween(100)) togetherWith fadeOut(tween(70))
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { hasRealMessages ->
+                if (hasRealMessages) {
+                    // Chat area + floating overlays share one Box so the
+                    // Jump-to-latest button can pin itself bottom-end over
+                    // the list without consuming layout space.
+                    Box(modifier = Modifier.fillMaxSize()) {
                 // ── Pull-to-refresh (Instagram-style): drag down at the top of
                 // the thread to silently re-check the provider for updates.
                 // Spinner is bound to the ViewModel's real refresh state.
@@ -623,27 +623,39 @@ fun ConversationScreen(
                                 }
                             }
                             is ChatListItem.MessageItem -> {
-                                // v2.6.8: real enter/placement motion. A new
-                                // bubble (incoming, or our optimistic send)
-                                // gently fades in and springs into its slot;
-                                // existing rows slide over instead of
-                                // snapping. Stable key above = per-item
-                                // identity, so only the new row animates.
-                                ChatBubble(
-                                    sms = item.sms,
+                                // v2.6.9: motion split. animateItem owns
+                                // PLACEMENT ONLY (existing bubbles glide apart
+                                // with a critical-damped spring — no bounce,
+                                // no fade, no flicker on re-anchor). The
+                                // bubble's ENTER is MessageEntrance, and it is
+                                // mounted only for ids the ViewModel marked
+                                // live (own send / incoming at latest edge) —
+                                // never for the initial Room hydration.
+                                val sms = item.sms
+                                MessageEntrance(
+                                    messageId = sms.id,
+                                    animate = viewModel.shouldAnimateEntry(sms.id),
+                                    outgoing = sms.type == 2,
                                     modifier = Modifier.animateItem(
-                                        fadeInSpec = tween(140),
+                                        fadeInSpec = null,
+                                        fadeOutSpec = null,
                                         placementSpec = spring(
-                                            dampingRatio = 0.82f,
-                                            stiffness = 420f
-                                        ),
-                                        fadeOutSpec = tween(100)
+                                            dampingRatio = 1f,
+                                            stiffness = 550f
+                                        )
                                     ),
-                                    onForward = { text ->
-                                        navController.navigate(Screen.NewConversation.createForwardRoute(text))
-                                    },
-                                    onPhoneClick = { number -> phoneActionNumber = number }
-                                )
+                                    onAnimationFinished = {
+                                        viewModel.consumeEntryAnimation(sms.id)
+                                    }
+                                ) {
+                                    ChatBubble(
+                                        sms = sms,
+                                        onForward = { text ->
+                                            navController.navigate(Screen.NewConversation.createForwardRoute(text))
+                                        },
+                                        onPhoneClick = { number -> phoneActionNumber = number }
+                                    )
+                                }
                             }
                         }
                     }
@@ -732,6 +744,23 @@ fun ConversationScreen(
                   }
                 }
                 }
+                }
+                } else if (launchSnapshot != null) {
+                    LaunchPreview(snapshot = launchSnapshot)
+                } else if (viewModel.isLoading) {
+                    QuietConversationSkeleton()
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        EmptyView(
+                            title = stringResource(R.string.conv_start_title),
+                            subtitle = stringResource(R.string.conv_start_subtitle, title),
+                            buttonText = null,
+                            onButtonClick = null
+                        )
+                    }
                 }
             }
 
@@ -944,7 +973,18 @@ fun ConversationScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    // v2.6.9: sending a multi-line message used to collapse
+                    // the composer 110dp→50dp in ONE frame while the bubble
+                    // also appeared — two layout shifts stacked. animateContentSize
+                    // makes the composer fold away smoothly so the three motions
+                    // (collapse + bubble rise + row placement) read as one event.
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = 160,
+                            easing = FastOutSlowInEasing
+                        )
+                    ),
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 tonalElevation = 3.dp
@@ -1431,4 +1471,57 @@ private fun ScheduleSendDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+// ── v2.6.9 first-paint helpers ───────────────────────────────────────────
+
+/**
+ * The handoff frame: Home's latest message, rendered as a real ChatBubble
+ * pinned bottom — exactly where the LazyColumn will show it one moment
+ * later, so the crossfade is invisible and only history "fills" above.
+ */
+@Composable
+private fun LaunchPreview(snapshot: ConversationLaunchStore.Snapshot) {
+    val previewSms = remember(snapshot) {
+        Sms(
+            id = -1L,
+            threadId = snapshot.threadId,
+            sender = snapshot.phone,
+            message = snapshot.message,
+            date = snapshot.date,
+            unread = false,
+            type = snapshot.type
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        ChatBubble(sms = previewSms)
+    }
+}
+
+/** Three low-alpha placeholder bubbles. No shimmer — silence, not theater. */
+@Composable
+private fun QuietConversationSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.Bottom,
+        horizontalAlignment = Alignment.End
+    ) {
+        listOf(52, 70, 44).forEach { widthDp ->
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 6.dp)
+                    .width(widthDp.dp)
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+            )
+        }
+    }
 }

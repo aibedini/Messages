@@ -69,6 +69,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.R
+import com.autonomousone.messages.navigation.ConversationLaunchStore
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
@@ -418,6 +419,20 @@ fun HomeScreen(
                                     message = "🔎 ${hit.sms.message.take(80)}"
                                 ),
                                 onClick = {
+                                    // Same first-paint handoff as normal rows.
+                                    ConversationLaunchStore.put(
+                                        ConversationLaunchStore.Snapshot(
+                                            threadId = hit.sms.threadId,
+                                            phone = hit.sms.sender,
+                                            name = viewModel.contactNames[
+                                                com.autonomousone.messages.repository.ContactRepository
+                                                    .normalizePhone(hit.sms.sender)
+                                            ] ?: hit.sms.sender,
+                                            message = hit.sms.message,
+                                            date = hit.sms.date,
+                                            type = hit.sms.type
+                                        )
+                                    )
                                     navController.navigate(
                                         Screen.Conversation.createRoute(hit.sms.threadId, hit.sms.sender)
                                     )
@@ -456,8 +471,31 @@ fun HomeScreen(
                             // latest message was sent by the user (type 2).
                             showYouMarker = sms.type == 2,
                             onClick = {
+                                // v2.6.9 first-paint handoff: the row Home is
+                                // showing right now IS the conversation's last
+                                // bubble. Stash it (no IO) so Conversation's
+                                // very first frame is never blank.
+                                val displayName =
+                                    viewModel.contactNames[
+                                        com.autonomousone.messages.repository.ContactRepository
+                                            .normalizePhone(sms.sender)
+                                    ] ?: sms.sender
+                                ConversationLaunchStore.put(
+                                    ConversationLaunchStore.Snapshot(
+                                        threadId = sms.threadId,
+                                        phone = sms.sender,
+                                        name = displayName,
+                                        message = sms.message,
+                                        date = sms.date,
+                                        type = sms.type
+                                    )
+                                )
                                 navController.navigate(
-                                    Screen.Conversation.createRoute(sms.threadId, sms.sender)
+                                    Screen.Conversation.createRoute(
+                                        threadId = sms.threadId,
+                                        phone = sms.sender,
+                                        name = displayName
+                                    )
                                 )
                             },
                             onPin = { viewModel.togglePin(sms) },

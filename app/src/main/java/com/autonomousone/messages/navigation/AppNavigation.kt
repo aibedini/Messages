@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.first
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -25,6 +26,8 @@ fun AppNavigation(
     isDefaultSmsApp: Boolean,
     pendingShare: MainActivity.SharePayload? = null,
     onShareConsumed: () -> Unit = {},
+    pendingNavigation: AppLaunchTarget? = null,
+    onNavigationConsumed: () -> Unit = {},
     onRequestDefaultApp: () -> Unit,
     onRequestPermissions: () -> Unit
 ) {
@@ -40,6 +43,47 @@ fun AppNavigation(
             }
             onShareConsumed()
         }
+    }
+
+    // v2.6.9: notification deep-link. The NavHost starts on "splash", so
+    // navigating immediately would land the conversation behind (or on top
+    // of) splash. Wait until the back stack actually reaches Home or an
+    // existing conversation, then consume:
+    //  - app closed  -> splash -> Home -> Conversation
+    //  - app on Home -> onNewIntent -> Conversation
+    //  - app on another conversation -> pop it, open the target thread
+    //  - app locked  -> the state survives; consumed after unlock composes
+    //    AppNavigation again (pendingNavigation is still set)
+    // launchSingleTop + the current-thread guard keep a same-thread
+    // notification from stacking a duplicate destination.
+    LaunchedEffect(pendingNavigation) {
+        val target = pendingNavigation ?: return@LaunchedEffect
+
+        navController.currentBackStackEntryFlow.first { entry ->
+            val route = entry.destination.route
+            route == Screen.Home.route || route?.startsWith("conversation/") == true
+        }
+
+        if (target is AppLaunchTarget.Conversation) {
+            val currentThread = navController.currentBackStackEntry
+                ?.arguments
+                ?.getLong("threadId")
+
+            if (currentThread != target.threadId) {
+                navController.navigate(
+                    Screen.Conversation.createRoute(
+                        threadId = target.threadId,
+                        phone = target.phone,
+                        name = target.name
+                    )
+                ) {
+                    popUpTo(Screen.Home.route) { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        }
+
+        onNavigationConsumed()
     }
 
     NavHost(

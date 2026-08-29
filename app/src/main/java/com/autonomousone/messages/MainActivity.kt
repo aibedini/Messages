@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.navigation.AppLaunchIntent
+import com.autonomousone.messages.navigation.AppLaunchTarget
 import com.autonomousone.messages.navigation.AppNavigation
 import com.autonomousone.messages.onboarding.OnboardingPolicy
 import com.autonomousone.messages.onboarding.OnboardingPreferences
@@ -56,6 +58,15 @@ class MainActivity : AppCompatActivity() {
      */
     private val pendingShareState = mutableStateOf<SharePayload?>(null)
 
+    /**
+     * v2.6.9: pending notification deep-link target. The old code set
+     * extra_thread_id on the tap intent but parsed nothing, so tapping a
+     * notification only opened the app. Now AppLaunchIntent.parse handles it
+     * and AppNavigation consumes the target once Home is actually mounted
+     * (never on top of splash), surviving the app-lock gate.
+     */
+    private val pendingNavigationState = mutableStateOf<AppLaunchTarget?>(null)
+
     /** Immutable result of parsing a share/send intent. */
     data class SharePayload(val phone: String, val text: String)
 
@@ -80,7 +91,7 @@ class MainActivity : AppCompatActivity() {
 
         // Cold-start share/send: parse the launching intent before first frame.
         if (savedInstanceState == null) {
-            pendingShareState.value = parseShareIntent(intent)
+            handleInboundIntent(intent)
         }
 
         // App lock gate: lock whenever we come back from the background while
@@ -180,6 +191,8 @@ class MainActivity : AppCompatActivity() {
                             isDefaultSmsApp = isDefaultApp,
                             pendingShare = pendingShareState.value,
                             onShareConsumed = { pendingShareState.value = null },
+                            pendingNavigation = pendingNavigationState.value,
+                            onNavigationConsumed = { pendingNavigationState.value = null },
                             onRequestDefaultApp = { requestDefaultSmsApp(defaultAppLauncher) },
                             onRequestPermissions = {
                                 when {
@@ -215,6 +228,20 @@ class MainActivity : AppCompatActivity() {
     /** Warm delivery: share sheet targeting the already-running activity. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // v2.6.9: setIntent so a later recomposition/process-death still sees
+        // the newest inbound intent, not the original launcher one.
+        setIntent(intent)
+        handleInboundIntent(intent)
+    }
+
+    /**
+     * v2.6.9: single entry point for every externally-launched intent —
+     * notification deep-links (OPEN_CONVERSATION) and share/send payloads
+     * parse here; whichever yields non-null becomes a pending state the
+     * navigation layer consumes once Home is mounted.
+     */
+    private fun handleInboundIntent(intent: Intent?) {
+        pendingNavigationState.value = AppLaunchIntent.parse(intent)
         pendingShareState.value = parseShareIntent(intent)
     }
 

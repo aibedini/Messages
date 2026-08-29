@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -137,6 +138,43 @@ class ConversationViewModel(
     /** Called once the screen's animateScrollToItem(0) has settled. */
     fun finishOwnSendFollow() {
         ownSendFollowActive = false
+    }
+
+    /**
+     * v2.6.9 live-entry motion: ids of messages that appeared WHILE the
+     * screen was open (own optimistic send, incoming SMS near the latest
+     * edge). Only these bubbles get MessageEntrance; the initial Room/cache
+     * hydration must never animate per-bubble. Consumed by the screen once
+     * a bubble finished entering so scrolling back later shows it static.
+     */
+    private val liveEntryIds =
+        mutableStateMapOf<Long, Unit>()
+
+    fun shouldAnimateEntry(
+        id: Long
+    ): Boolean {
+        return liveEntryIds.containsKey(id)
+    }
+
+    fun consumeEntryAnimation(
+        id: Long
+    ) {
+        liveEntryIds.remove(id)
+    }
+
+    /** Mark BEFORE inserting the message into [messages] — order matters. */
+    private fun markForEntryAnimation(
+        id: Long
+    ) {
+        liveEntryIds[id] = Unit
+
+        // Bounded set: oldest marks evict first; 24 is far above anything
+        // that can be on/near screen at once.
+        while (liveEntryIds.size > 24) {
+            liveEntryIds.keys.firstOrNull()?.let {
+                liveEntryIds.remove(it)
+            } ?: break
+        }
     }
 
     private val _scrollCommands = MutableSharedFlow<ConversationScrollCommand>(extraBufferCapacity = 1)
@@ -675,6 +713,12 @@ class ConversationViewModel(
                     }
                     if (!isDuplicate) {
                         val readIncoming = incomingSms.copy(unread = false)
+                        // v2.6.9: only a bubble the user can actually see
+                        // earns the entrance motion — reading history must
+                        // not animate an off-screen insertion.
+                        if (userAtLatest) {
+                            markForEntryAnimation(readIncoming.id)
+                        }
                         messages.add(readIncoming)
                         // Mirror into the instant-open cache so leaving and
                         // re-entering shows this message with no reload.
@@ -862,6 +906,7 @@ class ConversationViewModel(
             type = 2,
             status = android.provider.Telephony.Sms.STATUS_PENDING
         )
+        markForEntryAnimation(optimisticSms.id)
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)
         // Our own write: append to the cached thread instead of invalidating it,
@@ -922,6 +967,7 @@ class ConversationViewModel(
             unread = false,
             type = 2
         )
+        markForEntryAnimation(optimisticSms.id)
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)
 
@@ -962,6 +1008,7 @@ class ConversationViewModel(
             unread = false,
             type = 2
         )
+        markForEntryAnimation(optimisticSms.id)
         messages.add(optimisticSms)
         optimisticMessages.add(optimisticSms)
 

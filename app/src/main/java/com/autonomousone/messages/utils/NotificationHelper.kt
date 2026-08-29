@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
@@ -15,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.R
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.navigation.AppLaunchIntent
 import com.autonomousone.messages.receiver.NotificationActionReceiver
 import com.autonomousone.messages.repository.ContactRepository
 
@@ -81,17 +83,31 @@ object NotificationHelper {
         // Check for OTP code in message
         val otpCode = extractOtpCode(sms.message)
 
-        // Tap action pending intent to open MainActivity
+        // v2.6.9: the tap used to put extra_thread_id/extra_phone/extra_name
+        // on a plain MainActivity intent nobody parsed — tapping a
+        // notification just opened the app. Now it carries a real action
+        // MainActivity (AppLaunchIntent.parse) understands, plus a per-thread
+        // data URI so PendingIntents of different threads stay distinct.
         val tapIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("extra_thread_id", sms.threadId)
-            putExtra("extra_phone", sms.sender)
-            putExtra("extra_name", displayName)
+            action = AppLaunchIntent.ACTION_OPEN_CONVERSATION
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(AppLaunchIntent.EXTRA_THREAD_ID, sms.threadId)
+            putExtra(AppLaunchIntent.EXTRA_PHONE, sms.sender)
+            putExtra(AppLaunchIntent.EXTRA_NAME, displayName)
+            data = Uri.parse("messages://conversation/${sms.threadId}")
+        }
+
+        val requestCode = if (sms.threadId > 0L) {
+            (sms.threadId xor (sms.threadId ushr 32)).toInt()
+        } else {
+            sms.sender.hashCode()
         }
 
         val tapPendingIntent = PendingIntent.getActivity(
             context,
-            sms.sender.hashCode(),
+            requestCode,
             tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
