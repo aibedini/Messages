@@ -12,20 +12,16 @@ sealed class Screen(val route: String) {
         /** Route used from the nav graph declaration. */
         val baseRoute: String = "new_conversation"
 
-        fun createForwardRoute(text: String): String {
-            val encoded = URLEncoder.encode(text, StandardCharsets.UTF_8.toString())
-            return "new_conversation?forward=$encoded"
-        }
+        fun createForwardRoute(text: String): String =
+            "new_conversation?forward=${encode(text)}"
+
         /**
          * External share/send entry point. [phone] pre-fills the recipient
          * search, [draftText] lands in the composer as a DRAFT — the user
          * still presses Send.
          */
-        fun createDraftRoute(phone: String, draftText: String): String {
-            val encodedPhone = URLEncoder.encode(phone, StandardCharsets.UTF_8.toString())
-            val encodedDraft = URLEncoder.encode(draftText, StandardCharsets.UTF_8.toString())
-            return "new_conversation?forward=&draft=$encodedDraft&shared_phone=$encodedPhone"
-        }
+        fun createDraftRoute(phone: String, draftText: String): String =
+            "new_conversation?forward=&draft=${encode(draftText)}&shared_phone=${encode(phone)}"
     }
 
     object Gateway : Screen("gateway")
@@ -42,6 +38,17 @@ sealed class Screen(val route: String) {
          */
         fun cleanArg(raw: String?): String =
             raw?.takeIf { it.isNotEmpty() && '{' !in it && '}' !in it } ?: ""
+
+        /**
+         * v2.6.18: percent-encode a navigation argument. Deliberately NOT
+         * URLEncoder.encode — that is a FORM encoder ("a b" -> "a+b") while
+         * URI/Nav query decoding is percent-style ("a+b" means the literal
+         * name "a+b"). Form-encoding a contact display name turned
+         * "hamid dadash" into the header text "hamid+dadash".
+         */
+        fun encode(text: String): String =
+            URLEncoder.encode(text, StandardCharsets.UTF_8.name())
+                .replace("+", "%20")
     }
 
     object Settings : Screen("settings")
@@ -63,38 +70,19 @@ sealed class Screen(val route: String) {
             name: String = "",
             forward: String = "",
             draft: String = ""
-        ): String {
-            val encodedPhone = if (phone.isNotBlank()) {
-                URLEncoder.encode(phone, StandardCharsets.UTF_8.toString())
-            } else ""
-            val encodedName = if (name.isNotBlank()) {
-                URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
-            } else ""
-            val encodedForward = if (forward.isNotBlank()) {
-                URLEncoder.encode(forward, StandardCharsets.UTF_8.toString())
-            } else ""
-            val encodedDraft = if (draft.isNotBlank()) {
-                URLEncoder.encode(draft, StandardCharsets.UTF_8.toString())
-            } else ""
-
-            return "conversation/$threadId?phone=$encodedPhone&name=$encodedName&forward=$encodedForward&draft=$encodedDraft"
-        }
+        ): String =
+            "conversation/$threadId" +
+                "?phone=${encode(phone)}&name=${encode(name)}" +
+                "&forward=${encode(forward)}&draft=${encode(draft)}"
 
         fun createNewRoute(
             phone: String,
             name: String,
             forward: String = "",
             draft: String = ""
-        ): String {
-            val encodedPhone = URLEncoder.encode(phone, StandardCharsets.UTF_8.toString())
-            val encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
-            val encodedForward = if (forward.isNotBlank()) {
-                URLEncoder.encode(forward, StandardCharsets.UTF_8.toString())
-            } else ""
-            val encodedDraft = if (draft.isNotBlank()) {
-                URLEncoder.encode(draft, StandardCharsets.UTF_8.toString())
-            } else ""
-            return "conversation/0?phone=$encodedPhone&name=$encodedName&forward=$encodedForward&draft=$encodedDraft"
-        }
+        ): String =
+            "conversation/0" +
+                "?phone=${encode(phone)}&name=${encode(name)}" +
+                "&forward=${encode(forward)}&draft=${encode(draft)}"
     }
 }

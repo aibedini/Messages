@@ -261,6 +261,12 @@ fun AppNavigation(
             )
         ) { backStackEntry ->
             val threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L
+            // v2.6.18: NavType.StringType percent-decodes args at parse time
+            // (Uri.getQueryParameter honours %20, NOT form-style +). The bug
+            // was createRoute FORM-encoding names ("hamid dadash" ->
+            // "hamid+dadash" survived the decode). encode() now emits %20,
+            // so no extra decode call is needed here — and calling one would
+            // double-decode message text that legitimately contains %XX.
             val phone = backStackEntry.arguments?.getString("phone") ?: ""
             val name = backStackEntry.arguments?.getString("name") ?: ""
             val forward = Screen.cleanArg(backStackEntry.arguments?.getString("forward"))

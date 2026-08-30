@@ -98,13 +98,17 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
         // ── Send-segment ledger (SENT callbacks only) ──────────────────────
-        // ONE row per successfully-confirmed part: a 3-part message that got
-        // 2× RESULT_OK counts 2, not 3 and not 1 "send". The composite PK
-        // (rowId, partIndex) dedupes redelivered broadcasts. Gateway, manual,
-        // EVE and scheduled sends all dispatch through SmsSender, so every
-        // path lands here automatically. Failures are recorded too — they
-        // never count, but they make "3 of 4 parts sent" diagnosable later.
+        // ONE row per carrier-billable SEGMENT. v2.6.18: "confirmed" follows
+        // the v2.6.15 AMBIGUOUS_ACCEPTED verdict, NOT raw RESULT_OK: on the
+        // affected RIL/IR-MCI combinations the radio returns
+        // GENERIC_FAILURE for submits the SMSC actually accepted. Counting
+        // only RESULT_OK froze the Home chip at whatever it last honestly
+        // reached (user report: "stuck on 71") while messages kept sending
+        // and showing Sent. Explicit radio-level failures (NO_SERVICE,
+        // RADIO_OFF, NULL_PDU) are NOT billable and stay success=false.
         if (!delivered) {
+            val countable = ok ||
+                callbackResultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE
             val appContext = context.applicationContext
             try {
                 MessagesDatabase.get(appContext).sendSegmentDao().record(
@@ -114,7 +118,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         partCount = partCount,
                         sentAt = System.currentTimeMillis(),
                         subscriptionId = subscriptionId,
-                        success = ok
+                        success = countable
                     )
                 )
             } catch (e: Exception) {

@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * One confirmed outgoing SMS SEGMENT (modem callback, not send() attempt),
- * written from SmsStatusReceiver when the per-part SENT PendingIntent fires
- * with RESULT_OK.
+ * written from SmsStatusReceiver when the per-part SENT PendingIntent fires.
+ * v2.6.18: RESULT_OK and the AMBIGUOUS_ACCEPTED verdict (GENERIC_FAILURE —
+ * SMSC-accepted on affected RILs, per v2.6.15 policy) count as success;
+ * explicit radio errors (NO_SERVICE/RADIO_OFF/NULL_PDU) do not.
  *
  * The Home "N SMS today" counter counts ROWS, not logical messages: a 3-part
  * multipart send contributes 3 — what the carrier bills and what the user
