@@ -12,6 +12,12 @@ class MessagingPreferences(context: Context) {
 
     private val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
+    /**
+     * v2.6.13: escape hatch for feature-local keys that don't deserve a
+     * full property (currently: per-SIM SMSC seeds "smsc_sim_<subId>").
+     */
+    fun rawPrefs() = prefs
+
     companion object {
         private const val PREF_NAME = "messaging_prefs"
 

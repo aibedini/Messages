@@ -53,10 +53,9 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val partCount = intent.getIntExtra(EXTRA_PART_COUNT, 1).coerceAtLeast(1)
         val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
         val delivered = intent.action == ACTION_SMS_DELIVERED
+        val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
         val ok = resultCode == Activity.RESULT_OK
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val prefix = "${rowId}_${if (delivered) "delivered" else "sent"}"
-        val failedKey = "${rowId}_failed"
 
         // v2.6.12: exact diagnostic for the "red ! but message WAS delivered"
         // report. RESULT_ERROR_GENERIC_FAILURE is modem-level and ambiguous:
@@ -100,29 +99,58 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
         val nextStatus = synchronized(LOCK) {
-            if (!ok) {
-                prefs.edit().putBoolean(failedKey, true).apply()
-                Telephony.Sms.STATUS_FAILED
-            } else if (prefs.getBoolean(failedKey, false)) {
-                // A later success from another multipart segment must never
-                // overwrite an already-observed failure.
-                Telephony.Sms.STATUS_FAILED
-            } else {
-                val completed = prefs.getStringSet(prefix, emptySet()).orEmpty().toMutableSet()
-                completed += partIndex.toString()
-                prefs.edit().putStringSet(prefix, completed).apply()
-                if (completed.size >= partCount) {
-                    if (delivered) Telephony.Sms.STATUS_COMPLETE else Telephony.Sms.STATUS_NONE
+            // v2.6.13: SENT-failure vs DELIVERED-failure are different events.
+            // A delivery-report error on one part of a multipart message is a
+            // carrier reporting gap — the submit was already accepted and
+            // sent — and must never downgrade the row to FAILED (the field
+            // bug: red ! on delivered Persian SMS). Only a SENT-phase failure
+            // is authoritative and sticky.
+            val sentFailKey = "${rowId}_sent_failed"
+            val dlvFailKey = "${rowId}_dlv_failed"
+            val sentDoneKey = "${rowId}_sent_parts"
+            val dlvDoneKey = "${rowId}_dlv_parts"
+            val edit = prefs.edit()
+
+            if (phase == SmsStatusPolicy.Phase.SENT && !ok) {
+                edit.putBoolean(sentFailKey, true)
+            } else if (phase == SmsStatusPolicy.Phase.DELIVERED && !ok) {
+                edit.putBoolean(dlvFailKey, true)
+                Log.w(
+                    TAG,
+                    "delivery-report gap: rowId=$rowId part=${partIndex + 1}/$partCount " +
+                        "resultCode=$resultCode codeName=${resultCodeName(resultCode)} — " +
+                        "message stays SENT (delivery may have happened; reports are lossy)"
+                )
+            }
+
+            val sentDone = prefs.getStringSet(sentDoneKey, emptySet()).orEmpty().toMutableSet()
+            val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
+            if (ok) {
+                if (phase == SmsStatusPolicy.Phase.SENT) {
+                    sentDone += partIndex.toString()
+                    edit.putStringSet(sentDoneKey, sentDone)
                 } else {
-                    Telephony.Sms.STATUS_PENDING
+                    dlvDone += partIndex.toString()
+                    edit.putStringSet(dlvDoneKey, dlvDone)
                 }
             }
+            edit.apply()
+
+            SmsStatusPolicy.nextStatus(
+                phase = phase,
+                partOk = ok,
+                sentFailSticky = prefs.getBoolean(sentFailKey, false),
+                dlvFailSticky = prefs.getBoolean(dlvFailKey, false),
+                sentPartsDone = sentDone.size,
+                dlvPartsDone = dlvDone.size,
+                partCount = partCount
+            )
         }
+
 
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
 
-        // V2: Targeted status mutation — only refresh this specific message.
-        // No full provider scan, no conversation rebuild.
+        // v2.6.13: targeted status mutation — only refresh this message.
         TelephonySyncCoordinator.get(context).mutate(
             MessageMutation.RefreshStatus(
                 source = MessageEntity.SOURCE_SMS,
