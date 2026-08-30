@@ -1,6 +1,7 @@
 package com.autonomousone.messages.sms
 
 import android.provider.Telephony
+import android.telephony.SmsManager
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -30,6 +31,31 @@ class SmsStatusPolicyTest {
 
     private val SENT = SmsStatusPolicy.Phase.SENT
     private val DLV = SmsStatusPolicy.Phase.DELIVERED
+
+    @Test fun genericSentFailureIsAmbiguous() {
+        assertEquals(
+            true,
+            SmsStatusPolicy.isAmbiguousSentFailure(SENT, SmsManager.RESULT_ERROR_GENERIC_FAILURE)
+        )
+    }
+
+    @Test fun concreteSentFailuresRemainAuthoritative() {
+        assertEquals(
+            false,
+            SmsStatusPolicy.isAmbiguousSentFailure(SENT, SmsManager.RESULT_ERROR_NO_SERVICE)
+        )
+        assertEquals(
+            false,
+            SmsStatusPolicy.isAmbiguousSentFailure(SENT, SmsManager.RESULT_ERROR_RADIO_OFF)
+        )
+    }
+
+    @Test fun genericDeliveryFailureIsOnlyAReportGap() {
+        assertEquals(
+            false,
+            SmsStatusPolicy.isAmbiguousSentFailure(DLV, SmsManager.RESULT_ERROR_GENERIC_FAILURE)
+        )
+    }
 
     @Test fun sentPartFailedIsFailed() {
         assertEquals(Telephony.Sms.STATUS_FAILED, s(SENT, ok = false))

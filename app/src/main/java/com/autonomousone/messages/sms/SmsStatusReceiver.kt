@@ -55,6 +55,13 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val delivered = intent.action == ACTION_SMS_DELIVERED
         val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
         val ok = resultCode == Activity.RESULT_OK
+        // Some Iranian carrier/RIL combinations return GENERIC_FAILURE after
+        // accepting UCS-2 submits. The recipient can receive and answer while
+        // the sender UI shows a red "Not delivered" (field report, v2.6.14).
+        // Treat only this ambiguous SENT result as resolved-but-unconfirmed;
+        // concrete failures such as NO_SERVICE/RADIO_OFF remain authoritative.
+        val softSentFailure = SmsStatusPolicy.isAmbiguousSentFailure(phase, resultCode)
+        val statusOk = ok || softSentFailure
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         // v2.6.12: exact diagnostic for the "red ! but message WAS delivered"
@@ -62,9 +69,10 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // the SMSC may still accept and deliver a UCS-2 (Persian) submit.
         // Logging the precise code + part lets us tune retry policy per code.
         if (!ok) {
+            val verdict = if (softSentFailure) "AMBIGUOUS_ACCEPTED" else "FAILED"
             Log.w(
                 TAG,
-                "sms callback FAILED rowId=$rowId part=${partIndex + 1}/$partCount " +
+                "sms callback $verdict rowId=$rowId part=${partIndex + 1}/$partCount " +
                     "phase=${if (delivered) "DELIVERED" else "SENT"} resultCode=$resultCode " +
                     "codeName=${resultCodeName(resultCode)}"
             )
@@ -99,20 +107,18 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
         val nextStatus = synchronized(LOCK) {
-            // v2.6.14: SENT failure is PROVISIONAL, delivery is evidence.
-            // IR-MCI/UCS-2 radio returns GENERIC_FAILURE on messages the SMSC
-            // actually accepted; a successful DELIVERED report for ANY part
-            // refutes that (the network reached the handset) and lifts the row
-            // out of FAILED. A delivery-report error on one part of a
-            // multipart message is a carrier reporting gap and never
-            // downgrades a fully-sent message (the v2.6.13 fix, kept).
+            // Authoritative SENT failures remain sticky. GENERIC_FAILURE has
+            // already been classified above as resolved-but-unconfirmed on the
+            // affected carrier/RIL path, so it never poisons sentFailKey. A
+            // delivery-report error is only a reporting gap and cannot
+            // downgrade a sent message.
             val sentFailKey = "${rowId}_sent_failed"
             val dlvFailKey = "${rowId}_dlv_failed"
             val sentDoneKey = "${rowId}_sent_parts"
             val dlvDoneKey = "${rowId}_dlv_parts"
             val edit = prefs.edit()
 
-            if (phase == SmsStatusPolicy.Phase.SENT && !ok) {
+            if (phase == SmsStatusPolicy.Phase.SENT && !statusOk) {
                 edit.putBoolean(sentFailKey, true)
             } else if (phase == SmsStatusPolicy.Phase.DELIVERED && !ok) {
                 edit.putBoolean(dlvFailKey, true)
@@ -126,7 +132,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
 
             val sentDone = prefs.getStringSet(sentDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
-            if (ok) {
+            if (statusOk) {
                 if (phase == SmsStatusPolicy.Phase.SENT) {
                     sentDone += partIndex.toString()
                     edit.putStringSet(sentDoneKey, sentDone)
@@ -139,7 +145,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
 
             SmsStatusPolicy.nextStatus(
                 phase = phase,
-                partOk = ok,
+                partOk = statusOk,
                 sentFailSticky = prefs.getBoolean(sentFailKey, false),
                 dlvFailSticky = prefs.getBoolean(dlvFailKey, false),
                 sentPartsDone = sentDone.size,

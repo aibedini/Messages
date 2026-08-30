@@ -1,17 +1,17 @@
 package com.autonomousone.messages.sms
 
 import android.provider.Telephony
+import android.telephony.SmsManager
 
 /**
- * v2.6.14: pure status-transition policy for SMS modem callbacks.
+ * Pure status-transition policy for SMS modem callbacks.
  *
  * Separated from [SmsStatusReceiver] so the delivery-report semantics are
  * unit-testable without Android. The contract (matches Google Messages / AOSP):
  *
- *  1. A SENT-phase failure is PROVISIONAL — the radio often reports
- *     GENERIC_FAILURE on messages the SMSC actually accepted (observed with
- *     UCS-2 Persian SMS on IR-MCI). It shows FAILED (with the Resend affordance)
- *     until proven otherwise.
+ *  1. An authoritative SENT-phase failure is FAILED. The receiver classifies
+ *     GENERIC_FAILURE as ambiguous on the affected carrier/RIL path because
+ *     field evidence shows those UCS-2 messages can still be delivered.
  *
  *  2. All SENT parts OK → the message IS sent. Its floor is
  *     [Telephony.Sms.STATUS_NONE] (single tick).
@@ -29,6 +29,15 @@ import android.provider.Telephony
 object SmsStatusPolicy {
 
     enum class Phase { SENT, DELIVERED }
+
+    /**
+     * RESULT_ERROR_GENERIC_FAILURE is not authoritative on the affected
+     * carrier/RIL path: UCS-2 messages can be delivered despite this result.
+     * Keep this exception phase-specific; a failed delivery report remains a
+     * reporting gap and all concrete SENT error codes remain failures.
+     */
+    fun isAmbiguousSentFailure(phase: Phase, resultCode: Int): Boolean =
+        phase == Phase.SENT && resultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE
 
     /**
      * @param phase          which callback is being processed now
@@ -54,7 +63,7 @@ object SmsStatusPolicy {
         dlvPartsDone > 0 && dlvPartsDone >= partCount -> Telephony.Sms.STATUS_COMPLETE
         dlvPartsDone > 0 -> Telephony.Sms.STATUS_NONE  // refutes FAILED; floor SENT
 
-        // ── 1. no delivery evidence: the SENT verdict stands (provisionally) ──
+        // ── 1. no delivery evidence: an authoritative SENT failure stands ──
         phase == Phase.SENT && !partOk -> Telephony.Sms.STATUS_FAILED
         sentFailSticky -> Telephony.Sms.STATUS_FAILED
 
