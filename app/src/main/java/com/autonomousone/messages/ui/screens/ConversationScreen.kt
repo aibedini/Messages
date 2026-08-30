@@ -95,10 +95,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -328,6 +330,9 @@ fun ConversationScreen(
     val chatItems by remember {
         derivedStateOf { buildReverseChatItems(messages) }
     }
+    // Long-lived scroll collectors must see the latest mapped list without
+    // restarting (and potentially missing) a one-shot SharedFlow command.
+    val currentChatItems by rememberUpdatedState(chatItems)
 
     val recipientPhone = remember(phone, messages.size) {
         if (phone.isNotBlank()) phone
@@ -396,6 +401,26 @@ fun ConversationScreen(
         viewModel.scrollCommands.collect { cmd ->
             when (cmd) {
                 is ConversationScrollCommand.Latest -> {
+                    // The VM emits immediately after mutating its snapshot
+                    // list. On a busy device this collector can run before
+                    // LazyColumn has composed/measured the new index 0, making
+                    // animateScrollToItem(0) a no-op. Wait until the exact row
+                    // is mapped, then until LazyColumn observes that item count.
+                    cmd.messageId?.let { targetId ->
+                        withTimeoutOrNull(1_000) {
+                            snapshotFlow {
+                                currentChatItems.any {
+                                    it is ChatListItem.MessageItem &&
+                                        it.sms.id == targetId
+                                }
+                            }.first { it }
+                            snapshotFlow {
+                                listState.layoutInfo.totalItemsCount to currentChatItems.size
+                            }.first { (laidOut, expected) ->
+                                expected > 0 && laidOut >= expected
+                            }
+                        }
+                    }
                     // v2.6.8: soft landing. If the view is far from the newest
                     // edge, teleport just short of it first so we never
                     // animate through hundreds of rows, then glide the last
@@ -606,12 +631,7 @@ fun ConversationScreen(
                     }
                     items(
                         items = chatItems,
-                        key = { item ->
-                            when (item) {
-                                is ChatListItem.DateSeparator -> "date_${item.dateText}"
-                                is ChatListItem.MessageItem -> "sms_${item.sms.id}"
-                            }
-                        }
+                        key = ::chatItemKey
                     ) { item ->
                         when (item) {
                             is ChatListItem.DateSeparator -> {

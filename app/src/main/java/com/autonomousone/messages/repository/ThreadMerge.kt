@@ -25,7 +25,9 @@ object ThreadMerge {
     /** Two rows are the "same message" when ids match, or body matches within 5 s. */
     internal fun sameMessage(a: Sms, b: Sms): Boolean =
         a.id == b.id ||
-                (a.message == b.message && kotlin.math.abs(a.date - b.date) < 5000L)
+                (a.type == b.type &&
+                    a.message == b.message &&
+                    kotlin.math.abs(a.date - b.date) < 5000L)
 
     /**
      * Merges [fresh] (any rows newer or equal to what we show, from the

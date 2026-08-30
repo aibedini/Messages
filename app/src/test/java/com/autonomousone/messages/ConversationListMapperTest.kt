@@ -89,7 +89,7 @@ class ConversationListMapperTest {
         val messages = listOf(sms(5, 1234L))
         val rows = buildReverseChatItems(messages)
 
-        assertEquals("msg_5_1234", chatItemKey(rows.first()))
+        assertEquals("msg_5_1234_1", chatItemKey(rows.first()))
         val sep = ChatListItem.DateSeparator(dayKey = "2026-100", dateText = "whatever")
         assertEquals("date_2026-100", chatItemKey(sep))
     }
@@ -99,5 +99,17 @@ class ConversationListMapperTest {
         val pos = sms(7, 1000L)
         val neg = sms(-7, 1000L)
         assertTrue(chatItemKey(ChatListItem.MessageItem(pos)) != chatItemKey(ChatListItem.MessageItem(neg)))
+    }
+
+    @Test
+    fun `duplicate provider row from self sms race is emitted once`() {
+        val first = sms(42, 1_000L, "self")
+        val refreshed = first.copy(status = android.provider.Telephony.Sms.STATUS_COMPLETE)
+
+        val rows = buildReverseChatItems(listOf(first, refreshed))
+        val messages = rows.filterIsInstance<ChatListItem.MessageItem>()
+
+        assertEquals(1, messages.size)
+        assertEquals(android.provider.Telephony.Sms.STATUS_COMPLETE, messages.single().sms.status)
     }
 }

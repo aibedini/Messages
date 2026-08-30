@@ -2,6 +2,7 @@ package com.autonomousone.messages
 
 import android.app.Application
 import android.util.Log
+import com.autonomousone.messages.utils.DiagnosticLog
 
 /**
  * App-owned process hooks.
@@ -18,6 +19,7 @@ class MessagesApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        DiagnosticLog.initialize(this)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
@@ -27,6 +29,7 @@ class MessagesApp : Application() {
                 // crashGuard logs carry the structured fields (threadId,
                 // page, syncState); this one is the last-resort net.
                 Log.e("CRASH_GUARD", "Uncaught on '${thread.name}'", error)
+                DiagnosticLog.event("CRASH", "uncaught thread=${thread.name}", error)
             } catch (_: Throwable) {
                 // Logging must never mask the original crash.
             }

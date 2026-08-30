@@ -12,6 +12,7 @@ import android.widget.Toast
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
+import com.autonomousone.messages.utils.DiagnosticLog
 
 /**
  * Sends SMS honouring the user's Messaging preferences:
@@ -159,9 +160,15 @@ class SmsSender(
         try {
             // Split long messages into multi-part SMS if needed
             val parts = manager.divideMessage(text)
-            // A SENT callback is always required: it moves the row out of the
-            // transient PENDING state and reports modem/SIM failures. Delivery
-            // callbacks remain opt-in because carriers may charge for them.
+            DiagnosticLog.event(
+                "SMS_SEND",
+                "dispatch row=$sentId phone=${DiagnosticLog.phoneToken(phone)} " +
+                    "sub=$effectiveSubId parts=${parts.size} reports=$wantReports " +
+                    "smsc=${if (scAddress == null) "sim-default" else "manual"}"
+            )
+            // A SENT callback resolves local hand-off telemetry. Delivery
+            // callbacks request the network SMS-STATUS-REPORT PDU and are ON by
+            // default; the user may opt out in Messaging settings.
             val sentIntents = ArrayList<PendingIntent>(parts.size).apply {
                 repeat(parts.size) { part ->
                     add(buildStatusPendingIntent(
@@ -197,9 +204,15 @@ class SmsSender(
                 "SMS queued to $phone (id=$sentId, subId=$effectiveSubId, " +
                     "smsc=${if (scAddress != null) "custom" else "network"}, reports=$wantReports)"
             )
+            DiagnosticLog.event("SMS_SEND", "accepted row=$sentId parts=${parts.size}")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending SMS to $phone", e)
+            DiagnosticLog.event(
+                "SMS_SEND",
+                "dispatch-exception row=$sentId phone=${DiagnosticLog.phoneToken(phone)}",
+                e
+            )
             updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
             if (showToast) {
                 Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
@@ -244,11 +257,22 @@ class SmsSender(
             // ledger (null = platform default; recorded as -1/unknown).
             .putExtra(SmsStatusReceiver.EXTRA_SUBSCRIPTION_ID, subscriptionId ?: -1)
         val requestCode = 31 * (31 * action.hashCode() + rowId.hashCode()) + partIndex
+        // SmsManager fills callback-only extras (delivery "pdu" and optional
+        // SENT "errorCode") when firing this PendingIntent. FLAG_IMMUTABLE
+        // discards those fill-in extras, which made delivery reports
+        // unparseable. The intent is explicit to our non-exported receiver,
+        // keeping the required mutability tightly scoped. It is deliberately
+        // not one-shot: a temporary TP-Status may later advance to delivered.
+        val mutability = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE
+        } else {
+            0
+        }
         return PendingIntent.getBroadcast(
             context,
             requestCode,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or mutability
         )
     }
 
@@ -297,6 +321,11 @@ class SmsSender(
             id
         } catch (e: Exception) {
             Log.e(TAG, "Error persisting sent SMS to DB", e)
+            DiagnosticLog.event(
+                "SMS_PROVIDER",
+                "insert-failed phone=${DiagnosticLog.phoneToken(phone)}",
+                e
+            )
             System.currentTimeMillis()
         }
     }

@@ -24,7 +24,9 @@ import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadPager
 import com.autonomousone.messages.sms.SmsSender
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -177,8 +179,56 @@ class ConversationViewModel(
         }
     }
 
-    private val _scrollCommands = MutableSharedFlow<ConversationScrollCommand>(extraBufferCapacity = 1)
+    // A burst can enqueue several live rows before Compose completes a frame.
+    // We only need the newest follow request, so retain it instead of letting
+    // tryEmit() silently fail while the single-slot buffer is occupied.
+    private val _scrollCommands = MutableSharedFlow<ConversationScrollCommand>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val scrollCommands = _scrollCommands.asSharedFlow()
+
+    /**
+     * Adds a genuinely live row and applies the same follow/animation policy
+     * to incoming SMS and sends produced outside this screen (REST, queue,
+     * notification quick reply). The decision is captured before insertion:
+     * reverse-layout may briefly re-anchor after the new index 0 exists.
+     */
+    private fun appendLiveMessage(row: Sms, source: String): Boolean {
+        val duplicate = messages.any { existing ->
+            existing.id == row.id ||
+                (existing.type == row.type &&
+                    existing.message == row.message &&
+                    kotlin.math.abs(existing.date - row.date) < 5000L)
+        }
+        if (duplicate) return false
+
+        if (windowMode == ConversationWindowMode.OLDEST) {
+            pendingNewMessagesCount++
+            ThreadMessageCache.append(currentThreadId, currentPhone, row)
+            DiagnosticLog.event(
+                "CHAT_LIVE",
+                "source=$source id=${row.id} mode=oldest follow=false"
+            )
+            return false
+        }
+
+        val shouldFollow = userAtLatest || ownSendFollowActive
+        if (shouldFollow) markForEntryAnimation(row.id)
+        messages.add(row)
+        ThreadMessageCache.append(currentThreadId, currentPhone, row)
+
+        if (shouldFollow) {
+            _scrollCommands.tryEmit(ConversationScrollCommand.Latest(row.id))
+        } else {
+            pendingNewMessagesCount++
+        }
+        DiagnosticLog.event(
+            "CHAT_LIVE",
+            "source=$source id=${row.id} follow=$shouldFollow"
+        )
+        return true
+    }
 
     /**
      * Last swallowed background failure, surfaced once as a dismissible
@@ -250,6 +300,12 @@ class ConversationViewModel(
                 "Conversation job failed ($context) threadId=$currentThreadId " +
                     "phone=${if (currentPhone.isNotBlank()) "set" else "none"} " +
                     "msgCount=${messages.size}",
+                e
+            )
+            DiagnosticLog.event(
+                "CONVERSATION_CRASH",
+                "job=$context thread=$currentThreadId phone=${DiagnosticLog.phoneToken(currentPhone)} " +
+                    "messages=${messages.size}",
                 e
             )
             viewModelScope.launch(Dispatchers.Main) {
@@ -448,6 +504,10 @@ class ConversationViewModel(
         (lists.asList().flatten()).distinctBy { it.id }.sortedWith(chronologicalOrder)
 
     fun loadConversation(threadId: Long, phone: String = "") {
+        DiagnosticLog.event(
+            "CONVERSATION",
+            "open thread=$threadId phone=${DiagnosticLog.phoneToken(phone)} currentMessages=${messages.size}"
+        )
         currentThreadId = threadId
         if (phone.isNotBlank()) {
             currentPhone = phone
@@ -693,51 +753,10 @@ class ConversationViewModel(
                 val isMatch = ContactRepository.sameConversation(incomingSms.sender, currentPhone)
 
                 if (isMatch) {
-                    // AW: while reading OLD history an incoming 2026 message
-                    // must NOT be dropped into a 2017 window — that would
-                    // create a fake-contiguous list with years-wide gaps.
-                    // Count it for the Jump-to-latest badge instead; the
-                    // latest cache still learns about it for the next open.
-                    if (windowMode == ConversationWindowMode.OLDEST) {
-                        pendingNewMessagesCount++
-                        ThreadMessageCache.append(currentThreadId, currentPhone, incomingSms.copy(unread = false))
-                        viewModelScope.launch(Dispatchers.IO) {
-                            repository.markThreadAsRead(currentThreadId, currentPhone)
-                        }
-                        return@collect
-                    }
-                    val isDuplicate = messages.any {
-                        it.id == incomingSms.id ||
-                                (it.message == incomingSms.message &&
-                                        Math.abs(it.date - incomingSms.date) < 5000)
-                    }
-                    if (!isDuplicate) {
-                        val readIncoming = incomingSms.copy(unread = false)
-                        // v2.6.9: only a bubble the user can actually see
-                        // earns the entrance motion — reading history must
-                        // not animate an off-screen insertion.
-                        if (userAtLatest) {
-                            markForEntryAnimation(readIncoming.id)
-                        }
-                        messages.add(readIncoming)
-                        // Mirror into the instant-open cache so leaving and
-                        // re-entering shows this message with no reload.
-                        ThreadMessageCache.append(currentThreadId, currentPhone, readIncoming)
-                        // Auto-follow ONLY while the user is actually pinned
-                        // to the newest edge; reading history must never be
-                        // yanked away — the FAB badge counts instead.
-                        if (userAtLatest) {
-                            viewModelScope.launch(Dispatchers.Main) {
-                                _scrollCommands.tryEmit(
-                                    ConversationScrollCommand.Latest(readIncoming.id)
-                                )
-                            }
-                        } else {
-                            pendingNewMessagesCount++
-                        }
-                        viewModelScope.launch(Dispatchers.IO) {
-                            repository.markThreadAsRead(currentThreadId, currentPhone)
-                        }
+                    val readIncoming = incomingSms.copy(unread = false)
+                    appendLiveMessage(readIncoming, source = "incoming")
+                    viewModelScope.launch(Dispatchers.IO) {
+                        repository.markThreadAsRead(currentThreadId, currentPhone)
                     }
                 }
             }
@@ -840,16 +859,18 @@ class ConversationViewModel(
     private fun observeOutgoingSent() {
         viewModelScope.launch {
             SmsEventBus.outgoingSentFlow.collect { sent ->
-                if (!ContactRepository.sameConversation(sent.phone, currentPhone)) return@collect
+                val sameThread = sent.threadId != 0L && sent.threadId == currentThreadId
+                if (!sameThread &&
+                    !ContactRepository.sameConversation(sent.phone, currentPhone)
+                ) return@collect
                 val normSent = ContactRepository.normalizePhone(sent.phone)
                 val row = Sms(
-                    id = sent.date, threadId = currentThreadId, sender = normSent,
+                    id = sent.date,
+                    threadId = sent.threadId.takeIf { it != 0L } ?: currentThreadId,
+                    sender = normSent,
                     message = sent.message, date = sent.date, unread = false, type = 2
                 )
-                val duplicate = messages.any {
-                    it.message == row.message && kotlin.math.abs(it.date - row.date) < 5000L
-                }
-                if (!duplicate) messages.add(row)
+                appendLiveMessage(row, source = "outgoing-event")
             }
         }
     }
@@ -862,7 +883,11 @@ class ConversationViewModel(
     private fun mergeOptimistic(persisted: List<Sms>): List<Sms> {
         if (optimisticMessages.isEmpty()) return emptyList()
         val remaining = optimisticMessages.filter { opt ->
-            persisted.none { it.message == opt.message && Math.abs(it.date - opt.date) < 5000L }
+            persisted.none {
+                it.type == opt.type &&
+                    it.message == opt.message &&
+                    Math.abs(it.date - opt.date) < 5000L
+            }
         }
         optimisticMessages.clear()
         optimisticMessages.addAll(remaining)

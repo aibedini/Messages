@@ -53,9 +53,12 @@ class MessagingPreferences(context: Context) {
         const val SUBSCRIPTION_UNSET = -1
     }
 
-    /** Request SMS delivery reports and surface Delivered/Failed status. Default: OFF. */
+    /**
+     * Request network SMS-STATUS-REPORT PDUs. Default: ON so delivery can be
+     * proven when the carrier supports reports; users can still opt out.
+     */
     var deliveryReportsEnabled: Boolean
-        get() = prefs.getBoolean(KEY_DELIVERY_REPORTS, false)
+        get() = prefs.getBoolean(KEY_DELIVERY_REPORTS, true)
         set(value) = prefs.edit().putBoolean(KEY_DELIVERY_REPORTS, value).apply()
 
     /**

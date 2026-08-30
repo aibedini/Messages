@@ -1,80 +1,78 @@
 package com.autonomousone.messages.sms
 
 import android.provider.Telephony
-import android.telephony.SmsManager
 
 /**
  * Pure status-transition policy for SMS modem callbacks.
  *
  * Separated from [SmsStatusReceiver] so the delivery-report semantics are
- * unit-testable without Android. The contract (matches Google Messages / AOSP):
+ * unit-testable without Android. The contract is intentionally evidence-based:
  *
- *  1. An authoritative SENT-phase failure is FAILED. The receiver classifies
- *     GENERIC_FAILURE as ambiguous on the affected carrier/RIL path because
- *     field evidence shows those UCS-2 messages can still be delivered.
+ *  1. A completed SENT callback resolves its part for UI aggregation. Its raw
+ *     modem result remains diagnostic data and cannot poison provider status.
  *
- *  2. All SENT parts OK → the message IS sent. Its floor is
+ *  2. All SENT callbacks received → the message is Sent/unknown. Its floor is
  *     [Telephony.Sms.STATUS_NONE] (single tick).
  *
  *  3. DELIVERED callbacks are evidence and can only UPGRADE status —
- *     a successful delivery report for ANY part REFUTES an earlier SENT
- *     failure (the network reached the handset; the earlier radio error was
- *     a lie) and lifts the row at least to SENT, to Delivered once every
- *     part has reported. A delivery-report failure on one part of a
- *     multipart message is a carrier reporting gap and never downgrades
- *     a fully-sent message to FAILED.
+ *     a successful report for every part produces Delivered. Only a parsed
+ *     permanent TP-Status can produce Failed; a missing/malformed callback
+ *     remains unknown and never downgrades Sent.
  *
  *  4. All DELIVERED parts OK → [Telephony.Sms.STATUS_COMPLETE].
  */
 object SmsStatusPolicy {
 
     enum class Phase { SENT, DELIVERED }
+    enum class DeliveryEvidence { DELIVERED, TEMPORARY, FAILED, UNKNOWN }
 
     /**
-     * RESULT_ERROR_GENERIC_FAILURE is not authoritative on the affected
-     * carrier/RIL path: UCS-2 messages can be delivered despite this result.
-     * Keep this exception phase-specific; a failed delivery report remains a
-     * reporting gap and all concrete SENT error codes remain failures.
+     * Maps the TP-Status from a 3GPP SMS-STATUS-REPORT (TS 23.040 §9.2.3.15).
+     * The two high group bits define completed, temporary, permanent, and
+     * temporary-but-no-longer-retrying states. Unknown/vendor values remain
+     * UNKNOWN instead of inventing a delivery verdict.
      */
-    fun isAmbiguousSentFailure(phase: Phase, resultCode: Int): Boolean =
-        phase == Phase.SENT && resultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE
+    fun classify3gppTpStatus(status: Int): DeliveryEvidence = when (status) {
+        in 0x00..0x1f -> DeliveryEvidence.DELIVERED
+        in 0x20..0x3f -> DeliveryEvidence.TEMPORARY
+        in 0x40..0x7f -> DeliveryEvidence.FAILED
+        else -> DeliveryEvidence.UNKNOWN
+    }
+
+    /** Android documents 2 << 16 as the CDMA "received" status. */
+    fun classify3gpp2Status(status: Int): DeliveryEvidence =
+        if (status == (2 shl 16)) DeliveryEvidence.DELIVERED
+        else DeliveryEvidence.UNKNOWN
 
     /**
-     * @param phase          which callback is being processed now
-     * @param partOk         resultCode == RESULT_OK for THIS callback
-     * @param sentFailSticky a SENT part failed earlier for this row
-     * @param dlvFailSticky  a DELIVERED part failed earlier for this row
-     *                       (diagnostics only; never authoritative)
-     * @param sentPartsDone  distinct SENT parts confirmed OK so far (incl. now)
+     * @param sentPartsDone  distinct SENT callbacks received so far (incl. now)
      * @param dlvPartsDone   distinct DELIVERED parts confirmed OK so far (incl. now)
      * @param partCount      total parts of the message
      */
     fun nextStatus(
-        phase: Phase,
-        partOk: Boolean,
-        sentFailSticky: Boolean,
-        dlvFailSticky: Boolean,
         sentPartsDone: Int,
         dlvPartsDone: Int,
+        dlvPartsPending: Int,
+        dlvPartsFailed: Int,
         partCount: Int
     ): Int = when {
-        // ── 3a. delivery evidence: the message reached the handset. A
-        //      successful DELIVERED report outranks every SENT error. ──
+        // ── delivery evidence: every part reached the handset ──
         dlvPartsDone > 0 && dlvPartsDone >= partCount -> Telephony.Sms.STATUS_COMPLETE
-        dlvPartsDone > 0 -> Telephony.Sms.STATUS_NONE  // refutes FAILED; floor SENT
 
-        // ── 1. no delivery evidence: an authoritative SENT failure stands ──
-        phase == Phase.SENT && !partOk -> Telephony.Sms.STATUS_FAILED
-        sentFailSticky -> Telephony.Sms.STATUS_FAILED
+        // A parsed TP-Status is authoritative network evidence. For a logical
+        // multipart SMS, one permanently failed part means the whole body was
+        // not delivered intact.
+        dlvPartsFailed > 0 -> Telephony.Sms.STATUS_FAILED
+        dlvPartsPending > 0 -> Telephony.Sms.STATUS_PENDING
 
-        // ── 2. still sending: not every SENT part confirmed yet ─────────
+        // Partial positive evidence cannot claim whole-message delivery.
+        dlvPartsDone > 0 -> Telephony.Sms.STATUS_NONE
+
+        // ── still collecting multipart SENT callbacks ──
         sentPartsDone < partCount -> Telephony.Sms.STATUS_PENDING
 
         // ── fully sent; partial/gapped delivery reports keep the single tick ──
         else -> Telephony.Sms.STATUS_NONE
     }
 
-    /** True when a DELIVERED-part failure was recorded (diagnostics only). */
-    fun isDeliveryGap(partOk: Boolean, phase: Phase): Boolean =
-        phase == Phase.DELIVERED && !partOk
 }

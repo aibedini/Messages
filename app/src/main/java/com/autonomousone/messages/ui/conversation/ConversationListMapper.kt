@@ -37,11 +37,18 @@ sealed interface ChatListItem {
 fun buildReverseChatItems(messagesAscending: List<Sms>): List<ChatListItem> {
     if (messagesAscending.isEmpty()) return emptyList()
 
+    // Provider refresh + live incoming can race on self-SMS and briefly hand
+    // Compose the same provider row twice. LazyColumn requires unique keys and
+    // throws when a duplicate reaches it. Keep the freshest copy for each
+    // provider/model id before building UI rows.
+    val uniqueMessages = LinkedHashMap<Long, Sms>()
+    messagesAscending.forEach { uniqueMessages[it.id] = it }
+
     return buildList {
         var currentDayKey: String? = null
         var currentHeader: String? = null
 
-        messagesAscending.asReversed().forEach { sms ->
+        uniqueMessages.values.sortedBy { it.date }.asReversed().forEach { sms ->
             val dayKey = localDayKey(sms.date)
             val header = formatDateHeader(sms.date)
 
@@ -66,7 +73,7 @@ fun buildReverseChatItems(messagesAscending: List<Sms>): List<ChatListItem> {
 fun chatItemKey(item: ChatListItem): String = when (item) {
     is ChatListItem.DateSeparator -> "date_${item.dayKey}"
     // MMS model ids are negative; "msg_-7_date" stays unique vs "msg_7_date".
-    is ChatListItem.MessageItem -> "msg_${item.sms.id}_${item.sms.date}"
+    is ChatListItem.MessageItem -> "msg_${item.sms.id}_${item.sms.date}_${item.sms.type}"
 }
 
 private fun localDayKey(epochMillis: Long): String {

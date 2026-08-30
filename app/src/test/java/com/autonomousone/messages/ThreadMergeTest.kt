@@ -56,6 +56,17 @@ class ThreadMergeTest {
     }
 
     @Test
+    fun `self sms keeps outgoing and incoming copies distinct`() {
+        val outgoing = sms(10, 1_000, body = "loopback").copy(type = 2)
+        val incoming = sms(11, 1_100, body = "loopback").copy(type = 1)
+
+        val merged = ThreadMerge.mergeTail(listOf(outgoing), listOf(incoming))
+
+        assertEquals(listOf(2, 1), merged.map { it.type })
+        assertEquals(listOf(10L, 11L), merged.map { it.id })
+    }
+
+    @Test
     fun `prependOlder drops rows already on screen`() {
         val existing = listOf(sms(40, 400), sms(41, 410))
         val olderPage = listOf(sms(38, 380), sms(39, 390), sms(40, 400))

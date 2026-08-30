@@ -50,10 +50,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.core.content.FileProvider
 import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.R
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.viewmodel.DataToolsViewModel
+import com.autonomousone.messages.utils.DiagnosticLog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -254,6 +256,57 @@ fun SettingsScreen(
                 val context = LocalContext.current
                 val dataTools: DataToolsViewModel = viewModel()
                 var showDeleteDialog by remember { mutableStateOf(false) }
+
+                // Privacy-aware rotating diagnostic log. The export contains
+                // state transitions/result codes, never SMS bodies or full
+                // phone numbers.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val file = DiagnosticLog.createExportFile(context)
+                            if (file == null) {
+                                Toast.makeText(context, R.string.diagnostics_export_failed, Toast.LENGTH_SHORT).show()
+                            } else {
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    file
+                                )
+                                val share = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(share, context.getString(R.string.diagnostics_export))
+                                )
+                            }
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.diagnostics_export),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.diagnostics_export_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Export row
                 Row(

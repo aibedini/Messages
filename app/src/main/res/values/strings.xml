@@ -174,6 +174,9 @@
     <string name="settings_quick_replies_subtitle">Message templates with /shortcuts</string>
     <string name="settings_quick_replies_hint">Type /c1 in any chat to send a pre-defined reply</string>
     <string name="settings_working">Working…</string>
+    <string name="diagnostics_export">Export diagnostic log</string>
+    <string name="diagnostics_export_desc">Share crashes, SMS result codes and state transitions. Message text and full phone numbers are excluded.</string>
+    <string name="diagnostics_export_failed">Could not create diagnostic log</string>
     <string name="settings_version">Version</string>
     <string name="settings_version_code">Version code</string>
     <string name="settings_package">Package</string>

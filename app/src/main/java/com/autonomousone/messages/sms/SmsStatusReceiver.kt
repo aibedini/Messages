@@ -8,12 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import android.telephony.SmsMessage
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessageMutation
 import com.autonomousone.messages.data.SendSegmentEntity
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,19 +35,20 @@ import kotlinx.coroutines.launch
 class SmsStatusReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        // v2.6.10: goAsync + explicit finish(). The async ledger write and the
-        // provider update below run past onReceive(); without goAsync the
-        // system may kill the process as soon as onReceive returns and the
-        // segment ledger / status update is lost.
+        // Capture BroadcastReceiver.resultCode before leaving onReceive, then
+        // keep the broadcast alive until provider + ledger persistence finish.
         val pendingResult = goAsync()
-        try {
-            processStatusIntent(context, intent)
-        } finally {
-            pendingResult.finish()
+        val callbackResultCode = resultCode
+        appScope.launch {
+            try {
+                processStatusIntent(context.applicationContext, intent, callbackResultCode)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
-    private fun processStatusIntent(context: Context, intent: Intent) {
+    private suspend fun processStatusIntent(context: Context, intent: Intent, callbackResultCode: Int) {
         val rowId = intent.getLongExtra(EXTRA_ROW_ID, -1L)
         if (rowId <= 0L) return
 
@@ -54,27 +57,43 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
         val delivered = intent.action == ACTION_SMS_DELIVERED
         val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
-        val ok = resultCode == Activity.RESULT_OK
-        // Some Iranian carrier/RIL combinations return GENERIC_FAILURE after
-        // accepting UCS-2 submits. The recipient can receive and answer while
-        // the sender UI shows a red "Not delivered" (field report, v2.6.14).
-        // Treat only this ambiguous SENT result as resolved-but-unconfirmed;
-        // concrete failures such as NO_SERVICE/RADIO_OFF remain authoritative.
-        val softSentFailure = SmsStatusPolicy.isAmbiguousSentFailure(phase, resultCode)
-        val statusOk = ok || softSentFailure
+        val ok = callbackResultCode == Activity.RESULT_OK
+        // A SENT callback is the modem's local transport ACK, not a delivery
+        // verdict. Affected Samsung/RIL combinations return multiple non-OK
+        // codes after the SMSC has accepted and delivered the message. Never
+        // write those vendor results into Telephony.Sms.STATUS as FAILED: that
+        // poisons the shared provider and makes every SMS app show a false
+        // "Not delivered". SmsSender still marks synchronous dispatch
+        // exceptions as real failures before any callback exists.
+        val deliveryEvidence = if (phase == SmsStatusPolicy.Phase.DELIVERED) {
+            parseDeliveryEvidence(intent, ok)
+        } else {
+            SmsStatusPolicy.DeliveryEvidence.UNKNOWN
+        }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        DiagnosticLog.event(
+            "SMS_CALLBACK",
+            "row=$rowId phase=$phase part=${partIndex + 1}/$partCount sub=$subscriptionId " +
+                "result=$callbackResultCode/${resultCodeName(callbackResultCode)} evidence=$deliveryEvidence " +
+                "radioError=${intent.getIntExtra("errorCode", 0)} " +
+                "pduBytes=${intent.getByteArrayExtra("pdu")?.size ?: 0}"
+        )
 
         // v2.6.12: exact diagnostic for the "red ! but message WAS delivered"
         // report. RESULT_ERROR_GENERIC_FAILURE is modem-level and ambiguous:
         // the SMSC may still accept and deliver a UCS-2 (Persian) submit.
         // Logging the precise code + part lets us tune retry policy per code.
         if (!ok) {
-            val verdict = if (softSentFailure) "AMBIGUOUS_ACCEPTED" else "FAILED"
+            val verdict = if (phase == SmsStatusPolicy.Phase.SENT) {
+                "TRANSPORT_UNCONFIRMED"
+            } else {
+                "DELIVERY_REPORT_GAP"
+            }
             Log.w(
                 TAG,
                 "sms callback $verdict rowId=$rowId part=${partIndex + 1}/$partCount " +
-                    "phase=${if (delivered) "DELIVERED" else "SENT"} resultCode=$resultCode " +
-                    "codeName=${resultCodeName(resultCode)}"
+                    "phase=${if (delivered) "DELIVERED" else "SENT"} resultCode=$callbackResultCode " +
+                    "codeName=${resultCodeName(callbackResultCode)}"
             )
         }
 
@@ -87,75 +106,94 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // never count, but they make "3 of 4 parts sent" diagnosable later.
         if (!delivered) {
             val appContext = context.applicationContext
-            appScope.launch {
-                try {
-                    MessagesDatabase.get(appContext).sendSegmentDao().record(
-                        SendSegmentEntity(
-                            rowId = rowId,
-                            partIndex = partIndex,
-                            partCount = partCount,
-                            sentAt = System.currentTimeMillis(),
-                            subscriptionId = subscriptionId,
-                            success = ok
-                        )
+            try {
+                MessagesDatabase.get(appContext).sendSegmentDao().record(
+                    SendSegmentEntity(
+                        rowId = rowId,
+                        partIndex = partIndex,
+                        partCount = partCount,
+                        sentAt = System.currentTimeMillis(),
+                        subscriptionId = subscriptionId,
+                        success = ok
                     )
-                } catch (e: Exception) {
-                    // Telemetry must never break status processing.
-                    Log.w(TAG, "send ledger write failed id=$rowId part=$partIndex", e)
-                }
+                )
+            } catch (e: Exception) {
+                // Telemetry must never break status processing.
+                Log.w(TAG, "send ledger write failed id=$rowId part=$partIndex", e)
+                DiagnosticLog.event(
+                    "SMS_LEDGER",
+                    "write-failed row=$rowId part=${partIndex + 1}/$partCount",
+                    e
+                )
             }
         }
 
         val nextStatus = synchronized(LOCK) {
-            // Authoritative SENT failures remain sticky. GENERIC_FAILURE has
-            // already been classified above as resolved-but-unconfirmed on the
-            // affected carrier/RIL path, so it never poisons sentFailKey. A
-            // delivery-report error is only a reporting gap and cannot
-            // downgrade a sent message.
-            val sentFailKey = "${rowId}_sent_failed"
-            val dlvFailKey = "${rowId}_dlv_failed"
-            val sentDoneKey = "${rowId}_sent_parts"
-            val dlvDoneKey = "${rowId}_dlv_parts"
+            // SENT transport results never poison provider delivery state. A
+            // delivery-report error is only a reporting gap and likewise
+            // cannot downgrade a sent message.
+            // Versioned keys deliberately ignore callback state written by the
+            // pre-PDU policies in v2.6.13..16.
+            val sentDoneKey = "v2617_${rowId}_sent_parts"
+            val dlvDoneKey = "v2617_${rowId}_dlv_parts"
+            val dlvPendingKey = "v2617_${rowId}_dlv_pending"
+            val dlvFailedKey = "v2617_${rowId}_dlv_failed"
             val edit = prefs.edit()
 
-            if (phase == SmsStatusPolicy.Phase.SENT && !statusOk) {
-                edit.putBoolean(sentFailKey, true)
-            } else if (phase == SmsStatusPolicy.Phase.DELIVERED && !ok) {
-                edit.putBoolean(dlvFailKey, true)
+            if (phase == SmsStatusPolicy.Phase.DELIVERED && !ok) {
                 Log.w(
                     TAG,
                     "delivery-report gap: rowId=$rowId part=${partIndex + 1}/$partCount " +
-                        "resultCode=$resultCode codeName=${resultCodeName(resultCode)} — " +
+                        "resultCode=$callbackResultCode codeName=${resultCodeName(callbackResultCode)} — " +
                         "message stays SENT (delivery may have happened; reports are lossy)"
                 )
             }
 
             val sentDone = prefs.getStringSet(sentDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
-            if (statusOk) {
-                if (phase == SmsStatusPolicy.Phase.SENT) {
-                    sentDone += partIndex.toString()
-                    edit.putStringSet(sentDoneKey, sentDone)
-                } else {
-                    dlvDone += partIndex.toString()
-                    edit.putStringSet(dlvDoneKey, dlvDone)
+            val dlvPending = prefs.getStringSet(dlvPendingKey, emptySet()).orEmpty().toMutableSet()
+            val dlvFailed = prefs.getStringSet(dlvFailedKey, emptySet()).orEmpty().toMutableSet()
+            if (phase == SmsStatusPolicy.Phase.SENT) {
+                sentDone += partIndex.toString()
+                edit.putStringSet(sentDoneKey, sentDone)
+            } else {
+                // Per-part evidence is monotonic: DELIVERED is strongest and
+                // can never be downgraded by a duplicate/stale report;
+                // TEMPORARY may advance to FAILED or DELIVERED. UNKNOWN leaves
+                // prior evidence untouched.
+                val part = partIndex.toString()
+                when (deliveryEvidence) {
+                    SmsStatusPolicy.DeliveryEvidence.DELIVERED -> {
+                        dlvPending.remove(part)
+                        dlvFailed.remove(part)
+                        dlvDone += part
+                    }
+                    SmsStatusPolicy.DeliveryEvidence.FAILED -> if (part !in dlvDone) {
+                        dlvPending.remove(part)
+                        dlvFailed += part
+                    }
+                    SmsStatusPolicy.DeliveryEvidence.TEMPORARY ->
+                        if (part !in dlvDone && part !in dlvFailed) dlvPending += part
+                    SmsStatusPolicy.DeliveryEvidence.UNKNOWN -> Unit
                 }
+                edit.putStringSet(dlvDoneKey, dlvDone)
+                    .putStringSet(dlvPendingKey, dlvPending)
+                    .putStringSet(dlvFailedKey, dlvFailed)
             }
             edit.apply()
 
             SmsStatusPolicy.nextStatus(
-                phase = phase,
-                partOk = statusOk,
-                sentFailSticky = prefs.getBoolean(sentFailKey, false),
-                dlvFailSticky = prefs.getBoolean(dlvFailKey, false),
                 sentPartsDone = sentDone.size,
                 dlvPartsDone = dlvDone.size,
+                dlvPartsPending = dlvPending.size,
+                dlvPartsFailed = dlvFailed.size,
                 partCount = partCount
             )
         }
 
 
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
+        DiagnosticLog.event("SMS_STATE", "row=$rowId providerStatus=$nextStatus evidence=$deliveryEvidence")
 
         // v2.6.13: targeted status mutation — only refresh this message.
         TelephonySyncCoordinator.get(context).mutate(
@@ -176,6 +214,44 @@ class SmsStatusReceiver : BroadcastReceiver() {
         else -> "CUSTOM_$code"
     }
 
+    /**
+     * deliveryIntent carries the raw SMS-STATUS-REPORT PDU. Parse TP-Status;
+     * only fall back to the successful delivery callback when a vendor omits
+     * or mangles the PDU. A failed callback without a parseable report is
+     * UNKNOWN and must never manufacture STATUS_FAILED.
+     */
+    private fun parseDeliveryEvidence(
+        intent: Intent,
+        callbackOk: Boolean
+    ): SmsStatusPolicy.DeliveryEvidence {
+        val pdu = intent.getByteArrayExtra("pdu")
+        val declaredFormat = intent.getStringExtra("format")
+        if (pdu != null && pdu.isNotEmpty()) {
+            val formats = listOfNotNull(
+                declaredFormat,
+                SmsMessage.FORMAT_3GPP,
+                SmsMessage.FORMAT_3GPP2
+            ).distinct()
+            for (format in formats) {
+                val report = kotlin.runCatching { SmsMessage.createFromPdu(pdu, format) }.getOrNull()
+                if (report != null && report.isStatusReportMessage) {
+                    val evidence = if (format == SmsMessage.FORMAT_3GPP2) {
+                        SmsStatusPolicy.classify3gpp2Status(report.status)
+                    } else {
+                        SmsStatusPolicy.classify3gppTpStatus(report.status)
+                    }
+                    DiagnosticLog.event(
+                        "SMS_DELIVERY_PDU",
+                        "format=$format tpStatus=${report.status} evidence=$evidence bytes=${pdu.size}"
+                    )
+                    return evidence
+                }
+            }
+        }
+        return if (callbackOk) SmsStatusPolicy.DeliveryEvidence.DELIVERED
+        else SmsStatusPolicy.DeliveryEvidence.UNKNOWN
+    }
+
     private fun updateProvider(context: Context, rowId: Long, status: Int, delivered: Boolean) {
         try {
             val values = ContentValues().apply {
@@ -191,6 +267,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             Log.d(TAG, "SMS callback persisted: id=$rowId status=$status")
         } catch (error: Exception) {
             Log.w(TAG, "Unable to persist SMS callback for id=$rowId", error)
+            DiagnosticLog.event("SMS_PROVIDER", "status-update-failed row=$rowId status=$status", error)
         }
     }
 
