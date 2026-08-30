@@ -73,6 +73,48 @@ class SmsSender(
     }
 
     /**
+     * v2.6.10: explicit outcome for machine callers (REST gateway).
+     *
+     * The old [send] returned a row id even when `SmsManager.sendTextMessage`
+     * threw — the gateway then answered HTTP 200 "success" for a message that
+     * never reached the modem. [dispatch] returns false on that path (and
+     * marks the row STATUS_FAILED); this API surfaces it so callers can
+     * return 503 instead of lying.
+     *
+     * Note on semantics: `Accepted` still means "handed to telephony", not
+     * "delivered" — SENT/DELIVERED arrive via the status receiver later.
+     */
+    fun sendWithOutcome(
+        phone: String,
+        text: String,
+        subscriptionIdOverride: Int? = null,
+        smscOverride: String? = null
+    ): SendOutcome {
+        val sentId = persistToSent(phone, text)
+        SmsEventBus.emitOutgoingSent(
+            threadId = 0L, // resolved by Home via phone match
+            phone = phone,
+            message = text,
+            date = System.currentTimeMillis()
+        )
+        val dispatched = dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = false)
+        return if (dispatched) {
+            SendOutcome.Accepted(rowId = sentId)
+        } else {
+            SendOutcome.Rejected(rowId = sentId, reason = "modem rejected send (see message STATUS_FAILED)")
+        }
+    }
+
+    /** Explicit result of a send hand-off to telephony. */
+    sealed interface SendOutcome {
+        /** Handed to SmsManager successfully; SENT/DELIVERED callbacks follow. */
+        data class Accepted(val rowId: Long) : SendOutcome
+
+        /** Telephony refused the send (SIM unavailable, radio off, ...). */
+        data class Rejected(val rowId: Long?, val reason: String) : SendOutcome
+    }
+
+    /**
      * Silent variant for machine callers (e.g. the EVE send queue):
      * persists + dispatches without user-facing toasts.
      * @return persisted row id on successful hand-off to telephony,

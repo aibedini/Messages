@@ -283,7 +283,16 @@ class GatewayPreferences(context: Context) {
 
     private fun storeEncrypted(key: String, plainValue: String) {
         val enc = SecureStore.encrypt(plainValue)
-        // Fall back to plaintext only if Keystore encryption is unavailable.
-        prefs.edit().putString(key, if (enc != null) ENC_PREFIX + enc else plainValue).apply()
+        // v2.6.10 fail-closed: secrets (API key, webhook secret, bearer token,
+        // registration secret) must NEVER degrade to plaintext when the
+        // Keystore is unavailable — that converts a crypto incident into a
+        // data-at-rest incident. If encryption fails, the secret is not
+        // persisted; the accessor re-encrypts any legacy plaintext values it
+        // finds on read, and callers see an empty/blank value until the
+        // Keystore recovers or the secret is re-issued (fail closed).
+        checkNotNull(enc) {
+            "SecureStore (Android Keystore) unavailable — refusing to persist $key as plaintext"
+        }
+        prefs.edit().putString(key, ENC_PREFIX + enc).apply()
     }
 }

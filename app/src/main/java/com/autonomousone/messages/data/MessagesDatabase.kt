@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.autonomousone.messages.BuildConfig
 
 /**
  * The app's local read-SSOT (phase-2 architecture): the UI reads from here;
@@ -220,17 +221,26 @@ abstract class MessagesDatabase : RoomDatabase() {
 
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    MessagesDatabase::class.java,
-                    "messages.db"
-                )
-                    .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
-                    // Destructive fallback ONLY when a migration path is missing
-                    // (never for a migration that runs but yields a bad schema).
-                    .fallbackToDestructiveMigration(dropAllTables = true)
-                    .build()
-                    .also { instance = it }
+                instance ?: build(context).also { instance = it }
             }
+
+        private fun build(context: Context): MessagesDatabase {
+            val builder = Room.databaseBuilder(
+                context.applicationContext,
+                MessagesDatabase::class.java,
+                "messages.db"
+            )
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+
+            // v2.6.10: destructive fallback is a DEBUG-only convenience. In
+            // release, a missing migration must fail loudly in QA — never
+            // silently wipe the local read model (send_segments ledger, sync
+            // state, projections) and force a full Telephony re-crawl on
+            // hundreds of thousands of rows.
+            if (BuildConfig.DEBUG) {
+                builder.fallbackToDestructiveMigration(dropAllTables = true)
+            }
+            return builder.build()
+        }
     }
 }

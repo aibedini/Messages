@@ -32,6 +32,19 @@ import kotlinx.coroutines.launch
 class SmsStatusReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        // v2.6.10: goAsync + explicit finish(). The async ledger write and the
+        // provider update below run past onReceive(); without goAsync the
+        // system may kill the process as soon as onReceive returns and the
+        // segment ledger / status update is lost.
+        val pendingResult = goAsync()
+        try {
+            processStatusIntent(context, intent)
+        } finally {
+            pendingResult.finish()
+        }
+    }
+
+    private fun processStatusIntent(context: Context, intent: Intent) {
         val rowId = intent.getLongExtra(EXTRA_ROW_ID, -1L)
         if (rowId <= 0L) return
 

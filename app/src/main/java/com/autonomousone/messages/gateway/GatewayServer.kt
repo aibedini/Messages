@@ -13,8 +13,8 @@ import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.Inet4Address
 import java.net.InetSocketAddress
@@ -66,6 +66,7 @@ class GatewayServer(
         // ── Request limits (DoS hardening) ──
         private const val MAX_BODY_BYTES = 1_000_000     // 1 MB request body cap
         private const val MAX_HEADERS = 100              // header count cap
+private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
         private const val MAX_IMAGE_DOWNLOAD_BYTES = 10_000_000 // 10 MB remote image cap
 
         /** Loose SMSC validation: optional +, digits only. */
@@ -149,25 +150,36 @@ class GatewayServer(
     private fun handleClient(socket: Socket) {
         try {
             socket.soTimeout = 10000
-            val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val rawInput = socket.getInputStream()
             val output = socket.getOutputStream()
 
-            // 1. Parse HTTP Request Line: "POST /api/v1/sms/send HTTP/1.1"
-            val requestLine = input.readLine() ?: return
+            // 1+2. v2.6.10: BYTE-based parsing. The old BufferedReader treated
+            // Content-Length as a CHAR count, but HTTP defines it in BYTES, so
+            // any multi-byte UTF-8 body (Persian text / emoji) mis-parsed or
+            // stalled until the socket timeout. Headers: raw bytes. Body: exact
+            // bytes, decoded as UTF-8 only after full read.
+            val headerBytes = readUntilHeaderEnd(rawInput, MAX_HEADERS_BYTES)
+            if (headerBytes == null) {
+                sendResponse(output, 400, JSONObject().put("error", "Malformed request headers"))
+                socket.close()
+                return
+            }
+            val headerText = String(headerBytes, Charsets.ISO_8859_1)
+            val headerLines = headerText.split("\r\n")
+            val requestLine = headerLines.firstOrNull() ?: return
             val parts = requestLine.split(" ")
             if (parts.size < 2) return
-
             val method = parts[0]
             val path = parts[1]
 
-            // 2. Parse HTTP Headers (capped to prevent header-flood memory growth)
+            // Headers (capped to prevent header-flood memory growth)
             val headers = mutableMapOf<String, String>()
             var contentLength = 0
-            var line: String?
-            while (input.readLine().also { line = it } != null) {
-                if (line.isNullOrBlank()) break
+            var chunked = false
+            for (line in headerLines.drop(1)) {
+                if (line.isBlank()) continue
                 if (headers.size >= MAX_HEADERS) break
-                val headerParts = line!!.split(":", limit = 2)
+                val headerParts = line.split(":", limit = 2)
                 if (headerParts.size == 2) {
                     val key = headerParts[0].trim().lowercase()
                     val value = headerParts[1].trim()
@@ -175,11 +187,20 @@ class GatewayServer(
                     if (key == "content-length") {
                         contentLength = value.toIntOrNull() ?: 0
                     }
+                    if (key == "transfer-encoding" && value.lowercase().contains("chunked")) {
+                        chunked = true
+                    }
                 }
             }
 
-            // 3. Parse HTTP Body — reject oversized bodies instead of allocating them
+            // 3. Body: bytes, not chars. Reject chunked / oversized / truncated.
             val body = when {
+                chunked -> {
+                    onRequestLog?.invoke("🚫 411 Length Required [$method $path] (chunked unsupported)")
+                    sendResponse(output, 411, JSONObject().put("error", "Transfer-Encoding: chunked not supported; send Content-Length"))
+                    socket.close()
+                    return
+                }
                 contentLength > MAX_BODY_BYTES -> {
                     onRequestLog?.invoke("🚫 413 Payload Too Large [$method $path] ($contentLength bytes)")
                     sendResponse(output, 413, JSONObject().put("error", "Request body too large"))
@@ -187,14 +208,19 @@ class GatewayServer(
                     return
                 }
                 contentLength > 0 -> {
-                    val buffer = CharArray(contentLength)
+                    val buffer = ByteArray(contentLength)
                     var read = 0
                     while (read < contentLength) {
-                        val r = input.read(buffer, read, contentLength - read)
+                        val r = rawInput.read(buffer, read, contentLength - read)
                         if (r <= 0) break
                         read += r
                     }
-                    String(buffer, 0, read)
+                    if (read < contentLength) {
+                        sendResponse(output, 400, JSONObject().put("error", "Truncated request body"))
+                        socket.close()
+                        return
+                    }
+                    String(buffer, 0, read, Charsets.UTF_8)
                 }
                 else -> ""
             }
@@ -316,16 +342,32 @@ class GatewayServer(
                             "error", "subscription_id must be a valid subscription id (-1 = default)"
                         ))
                     } else {
-                        val sentId = smsSender.send(phone, message, subscriptionId, smsc)
-                        onRequestLog?.invoke("📩 POST /api/v1/sms/send -> $phone")
-                        sendResponse(output, 200, JSONObject().apply {
-                            put("status", "success")
-                            put("id", sentId)
-                            put("phone", phone)
-                            put("message", message)
-                            if (hasSubId) put("subscription_id", subscriptionId ?: -1)
-                            if (smsc.isNotBlank()) put("smsc", smsc)
-                        })
+                        // v2.6.10: explicit outcome. A modem rejection is now
+                        // 503, never a lying 200 "success". 202 Accepted means
+                        // "handed to telephony"; SENT/DELIVERED arrive later
+                        // via the status callbacks.
+                        when (val outcome = smsSender.sendWithOutcome(phone, message, subscriptionId, smsc)) {
+                            is com.autonomousone.messages.sms.SmsSender.SendOutcome.Accepted -> {
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send accepted -> ${phone.takeLast(4)}")
+                                sendResponse(output, 202, JSONObject().apply {
+                                    put("status", "accepted")
+                                    put("id", outcome.rowId)
+                                    put("phone", phone)
+                                    put("message", message)
+                                    if (hasSubId) put("subscription_id", subscriptionId ?: -1)
+                                    if (smsc.isNotBlank()) put("smsc", smsc)
+                                })
+                            }
+                            is com.autonomousone.messages.sms.SmsSender.SendOutcome.Rejected -> {
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send REJECTED (${outcome.reason})")
+                                sendResponse(output, 503, JSONObject().apply {
+                                    put("status", "failed")
+                                    put("error", outcome.reason)
+                                    if (outcome.rowId != null) put("id", outcome.rowId)
+                                    put("phone", phone)
+                                })
+                            }
+                        }
                     }
                 }
                 cleanPath == "/api/v1/mms/send" && method == "POST" -> {
@@ -340,7 +382,7 @@ class GatewayServer(
                         if (imageUri == null) {
                             onRequestLog?.invoke("🖼 POST /api/v1/mms/send rejected (unsupported imageUrl)")
                             sendResponse(output, 400, JSONObject().put(
-                                "error", "imageUrl must be an https:// URL or a content:// URI"
+                                "error", "imageUrl must be an https:// URL on a public host"
                             ))                        } else {
                             val success = mmsSender.sendImage(phone, imageUri)
                             onRequestLog?.invoke("🖼 POST /api/v1/mms/send -> $phone (success=$success)")
@@ -786,19 +828,58 @@ class GatewayServer(
     }
 
     /**
-     * Resolve the caller-supplied MMS image reference into a readable Uri:
-     *  - `content://` URIs pass through (local provider access).
-     *  - `https://` URLs are downloaded into app cache and exposed through
-     *    FileProvider (this also makes remote-image MMS actually work, since
-     *    ContentResolver cannot open https URLs directly).
-     *  - Plain `http://` is rejected: targetSdk 36 blocks cleartext traffic, so
-     *    such downloads would silently fail — and plaintext fetches leak metadata.
-     * Anything else (`file://`, custom schemes, etc.) is rejected.
+     * v2.6.10: read raw header bytes up to the CRLFCRLF (or bare-LF) header
+     * terminator, capped at maxBytes. Byte-accurate; no charset decoding.
+     * Returns null when the cap is exceeded without a terminator.
+     */
+    private fun readUntilHeaderEnd(input: InputStream, maxBytes: Int): ByteArray? {
+        val buf = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
+        var prev = -1
+        var cur = input.read()
+        var count = 0
+        while (cur != -1 && count < maxBytes) {
+            buf.write(cur)
+            count++
+            if (prev == 0x0D && cur == 0x0A) { // saw CRLF; a blank line ends headers
+                val b1 = input.read()
+                val b2 = if (b1 != -1) input.read() else -1
+                if (b1 == 0x0D && b2 == 0x0A) {
+                    buf.write(b1); buf.write(b2)
+                    return buf.toByteArray()
+                }
+                if (b1 == 0x0A) { // bare-LF blank line also ends headers
+                    buf.write(b1)
+                    return buf.toByteArray()
+                }
+                if (b1 != -1) { buf.write(b1); count++ }
+                if (b2 != -1) { buf.write(b2); count++ }
+                prev = b2
+                cur = input.read()
+                continue
+            }
+            prev = cur
+            cur = input.read()
+        }
+        return if (count >= maxBytes && cur != -1) null else buf.toByteArray()
+    }
+
+    /**
+     * Resolve the caller-supplied MMS image reference into a readable Uri.
+     *
+     * v2.6.10 hardening (SSRF / provider-access surface):
+     *  - `content://` is NO LONGER accepted from remote API callers: a
+     *    gateway client must not aim the app at arbitrary ContentProviders
+     *    with the app's own permissions. UI-internal MMS flows still pass
+     *    content:// natively; this path is only the remote REST endpoint.
+     *  - `https://` downloads are restricted to PUBLIC hosts: loopback and
+     *    private ranges (10/8, 172.16/12, 192.168/16, 169.254/16, ULA
+     *    fc00::/7, v6 link/site-local) are refused so the phone cannot be
+     *    turned into a pivot into its own LAN.
+     *  - Plain `http://` stays rejected (cleartext policy).
      */
     private fun resolveImageUri(imageUrl: String): Uri? {
         return try {
             when {
-                imageUrl.startsWith("content://") -> Uri.parse(imageUrl)
                 imageUrl.startsWith("https://") -> downloadImageToCache(imageUrl)
                 else -> null
             }
@@ -808,8 +889,54 @@ class GatewayServer(
         }
     }
 
-    /** Download [urlString] into cache dir, capped at MAX_IMAGE_DOWNLOAD_BYTES. */
+    /** True when [host] resolves to a public (non-private/loopback) address. */
+    private fun isPublicHttpHost(host: String): Boolean {
+        val h = host.trim().trimEnd('.').lowercase()
+        if (h.isEmpty()) return false
+        val addr = runCatching { java.net.InetAddress.getByName(h) }.getOrNull() ?: return false
+        return when (addr) {
+            is java.net.Inet4Address -> {
+                val b = addr.address
+                val first = b[0].toInt() and 0xFF
+                val second = b[1].toInt() and 0xFF
+                !(
+                    first == 10 ||                             // 10/8
+                        (first == 172 && second in 16..31) ||  // 172.16/12
+                        (first == 192 && second == 168) ||     // 192.168/16
+                        (first == 169 && second == 254) ||     // 169.254/16 link-local
+                        first == 127 ||                        // loopback
+                        first == 0                             // 0.0.0.0/8
+                    )
+            }
+            is java.net.Inet6Address -> {
+                !addr.isLinkLocalAddress && !addr.isLoopbackAddress &&
+                    !addr.isAnyLocalAddress && !addr.isSiteLocalAddress &&
+                    !addr.isUniqueLocalUla()
+            }
+            else -> false
+        }
+    }
+
+    /** fc00::/7 unique-local check (first byte masked with 0xFE equals 0xFC). */
+    private fun java.net.Inet6Address.isUniqueLocalUla(): Boolean =
+        (address[0].toInt() and 0xFE) == 0xFC
+
+    /** True when the https URL host passes the public-host policy. */
+    private fun isAllowedRemoteImageUrl(urlString: String): Boolean {
+        return try {
+            val url = java.net.URL(urlString)
+            url.protocol == "https" && isPublicHttpHost(url.host)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun downloadImageToCache(urlString: String): Uri? {
+        // v2.6.10 SSRF guard, enforced here so EVERY download path is covered.
+        if (!isAllowedRemoteImageUrl(urlString)) {
+            Log.w(TAG, "Blocked non-public https imageUrl (SSRF guard)")
+            return null
+        }
         val conn = java.net.URL(urlString).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 15_000
