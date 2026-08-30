@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -122,7 +123,9 @@ fun ChatBubble(
     sms: Sms,
     modifier: Modifier = Modifier,
     onForward: ((String) -> Unit)? = null,
-    onPhoneClick: ((String) -> Unit)? = null
+    onPhoneClick: ((String) -> Unit)? = null,
+    /** v2.6.12: invoked with the original body when the user taps Resend. */
+    onResend: ((String) -> Unit)? = null
 ) {
     val incoming = sms.type == 1
 
@@ -290,6 +293,24 @@ fun ChatBubble(
                                 .padding(top = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // v2.6.12: GENERIC_FAILURE is ambiguous — the modem
+                            // reports a failure yet the SMSC may still deliver
+                            // the message (seen with UCS-2 / Persian texts on
+                            // some carriers). Offer an explicit one-tap resend
+                            // instead of only a dead red error icon.
+                            if (sms.status == Telephony.Sms.STATUS_FAILED && onResend != null) {
+                                Text(
+                                    text = stringResource(R.string.bubble_resend),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = FailedTint,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { onResend?.invoke(sms.message) }
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
                             Text(
                                 text = formatMessageTime(sms.date),
                                 fontSize = 11.sp,

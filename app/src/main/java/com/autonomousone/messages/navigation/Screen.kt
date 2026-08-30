@@ -16,7 +16,6 @@ sealed class Screen(val route: String) {
             val encoded = URLEncoder.encode(text, StandardCharsets.UTF_8.toString())
             return "new_conversation?forward=$encoded"
         }
-
         /**
          * External share/send entry point. [phone] pre-fills the recipient
          * search, [draftText] lands in the composer as a DRAFT — the user
@@ -30,6 +29,20 @@ sealed class Screen(val route: String) {
     }
 
     object Gateway : Screen("gateway")
+
+    companion object {
+        /**
+         * v2.6.12: a navigation argument that still contains a route
+         * placeholder ("{forward}", "{draft}") is a leaked PATTERN, never
+         * user data. Navigating with a pattern route (instead of a filled
+         * route) makes Navigation hand the literal "{forward}" back as the
+         * argument value and the composer "types" it. Sanitizing at the
+         * argument layer covers every current and future caller — including
+         * a process-death back-stack restore of a stale bad route.
+         */
+        fun cleanArg(raw: String?): String =
+            raw?.takeIf { it.isNotEmpty() && '{' !in it && '}' !in it } ?: ""
+    }
 
     object Settings : Screen("settings")
 

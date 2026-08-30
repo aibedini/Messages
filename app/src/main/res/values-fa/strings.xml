@@ -20,6 +20,7 @@
     <!-- ══════════ فهرست مکالمات ══════════ -->
     <string name="home_title">پیام‌ها</string>
     <string name="notif_channel_name">پیامک‌ها</string>
+    <string name="bubble_resend">ارسال مجدد</string>
     <string name="notif_channel_desc">اعلان‌های پیامک‌های دریافتی</string>
     <string name="notif_mark_read">علامت‌گذاری به‌عنوان خوانده‌شده</string>
     <string name="notif_reply">پاسخ</string>

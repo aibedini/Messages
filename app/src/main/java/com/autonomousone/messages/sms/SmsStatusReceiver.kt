@@ -1,6 +1,7 @@
 package com.autonomousone.messages.sms
 
 import android.app.Activity
+import android.telephony.SmsManager
 import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
@@ -56,6 +57,19 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val prefix = "${rowId}_${if (delivered) "delivered" else "sent"}"
         val failedKey = "${rowId}_failed"
+
+        // v2.6.12: exact diagnostic for the "red ! but message WAS delivered"
+        // report. RESULT_ERROR_GENERIC_FAILURE is modem-level and ambiguous:
+        // the SMSC may still accept and deliver a UCS-2 (Persian) submit.
+        // Logging the precise code + part lets us tune retry policy per code.
+        if (!ok) {
+            Log.w(
+                TAG,
+                "sms callback FAILED rowId=$rowId part=${partIndex + 1}/$partCount " +
+                    "phase=${if (delivered) "DELIVERED" else "SENT"} resultCode=$resultCode " +
+                    "codeName=${resultCodeName(resultCode)}"
+            )
+        }
 
         // ── Send-segment ledger (SENT callbacks only) ──────────────────────
         // ONE row per successfully-confirmed part: a 3-part message that got
@@ -115,6 +129,16 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 providerId = rowId
             )
         )
+    }
+
+    /** Human-readable name for a SmsManager result code (diagnostics only). */
+    private fun resultCodeName(code: Int): String = when (code) {
+        Activity.RESULT_OK -> "RESULT_OK"
+        SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "RESULT_ERROR_GENERIC_FAILURE"
+        SmsManager.RESULT_ERROR_NO_SERVICE -> "RESULT_ERROR_NO_SERVICE"
+        SmsManager.RESULT_ERROR_NULL_PDU -> "RESULT_ERROR_NULL_PDU"
+        SmsManager.RESULT_ERROR_RADIO_OFF -> "RESULT_ERROR_RADIO_OFF"
+        else -> "CUSTOM_$code"
     }
 
     private fun updateProvider(context: Context, rowId: Long, status: Int, delivered: Boolean) {

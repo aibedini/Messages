@@ -164,9 +164,9 @@ fun AppNavigation(
         ) { backStackEntry ->
             NewConversationScreen(
                 navController = navController,
-                forwardText = backStackEntry.arguments?.getString("forward") ?: "",
-                draftText = backStackEntry.arguments?.getString("draft") ?: "",
-                sharedPhone = backStackEntry.arguments?.getString("shared_phone") ?: ""
+                forwardText = Screen.cleanArg(backStackEntry.arguments?.getString("forward")),
+                draftText = Screen.cleanArg(backStackEntry.arguments?.getString("draft")),
+                sharedPhone = Screen.cleanArg(backStackEntry.arguments?.getString("shared_phone"))
             )
         }
 
@@ -263,8 +263,8 @@ fun AppNavigation(
             val threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L
             val phone = backStackEntry.arguments?.getString("phone") ?: ""
             val name = backStackEntry.arguments?.getString("name") ?: ""
-            val forward = backStackEntry.arguments?.getString("forward") ?: ""
-            val draft = backStackEntry.arguments?.getString("draft") ?: ""
+            val forward = Screen.cleanArg(backStackEntry.arguments?.getString("forward"))
+            val draft = Screen.cleanArg(backStackEntry.arguments?.getString("draft"))
 
             ConversationScreen(
                 threadId = threadId,

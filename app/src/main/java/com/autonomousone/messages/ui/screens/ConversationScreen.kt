@@ -521,6 +521,20 @@ fun ConversationScreen(
                 .padding(padding)
                 .imePadding()
         ) {
+            // v2.6.12: per-conversation SIM override is hoisted here (was
+            // composer-local) so the bubble Resend action reuses the exact
+            // SIM selection the composer chip would pick.
+            val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
+            val messagingPrefs = remember { com.autonomousone.messages.messaging.MessagingPreferences(context) }
+            val simRules = remember { com.autonomousone.messages.repository.SimRulesRepository.get(context) }
+            var selectedSubId by remember {
+                mutableStateOf(
+                    simRules.ruleFor(if (phone.isNotBlank()) phone else "")
+                        ?: messagingPrefs.sendSubscriptionId.takeIf {
+                            it != com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
+                        }
+                )
+            }
             // v2.6.9 first-paint: never "blank → POP". While the first
             // Room page is in flight, the last bubble Home already showed
             // is kept on screen via ConversationLaunchStore; cold/no-snapshot
@@ -651,9 +665,19 @@ fun ConversationScreen(
                                     ChatBubble(
                                         sms = sms,
                                         onForward = { text ->
-                                            navController.navigate(Screen.NewConversation.createForwardRoute(text))
+                                            navController.navigate(
+                                                Screen.NewConversation.createForwardRoute(text)
+                                            )
                                         },
-                                        onPhoneClick = { number -> phoneActionNumber = number }
+                                        onPhoneClick = { number -> phoneActionNumber = number },
+                                        onResend = { body ->
+                                            // v2.6.12: one-tap resend of a failed send
+                                            // through the same pipeline (rate limiter,
+                                            // SIM preference, optimistic UI).
+                                            viewModel.sendMessage(
+                                                threadId, recipientPhone, body, selectedSubId
+                                            )
+                                        }
                                     )
                                 }
                             }
@@ -877,21 +901,9 @@ fun ConversationScreen(
             }
 
             // ── SIM selector chip (only when 2+ SIMs are active) ────────────
-            val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
+            // v2.6.12: state hoisted to the screen level (selectedSubId above)
+            // so the bubble Resend action shares this exact SIM selection.
             val activeSims = remember { simManager.getActiveSims() }
-            val messagingPrefs = remember { com.autonomousone.messages.messaging.MessagingPreferences(context) }
-            val simRules = remember { com.autonomousone.messages.repository.SimRulesRepository.get(context) }
-            // Priority for the initial selection:
-            //   1. Per-contact rule (if this conversation has one)
-            //   2. Global default from Messaging settings
-            var selectedSubId by remember {
-                mutableStateOf(
-                    simRules.ruleFor(if (phone.isNotBlank()) phone else "")
-                        ?: messagingPrefs.sendSubscriptionId.takeIf {
-                            it != com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
-                        }
-                )
-            }
             if (activeSims.size >= 2) {
                 val current = activeSims.firstOrNull { it.subscriptionId == selectedSubId }
                 var simMenuOpen by remember { mutableStateOf(false) }

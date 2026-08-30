@@ -189,7 +189,11 @@ fun HomeScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    navController.navigate(Screen.NewConversation.route)
+                    // v2.6.12: baseRoute, NOT route — the route pattern carries
+                    // literal "{forward}/{draft}" placeholders which the nav
+                    // library then delivered AS the argument value, showing
+                    // "{forward}" in the forward banner on a plain new chat.
+                    navController.navigate(Screen.NewConversation.baseRoute)
                 },
                 expanded = isExpanded,
                 icon = {
@@ -327,7 +331,7 @@ fun HomeScreen(
                         },
                         buttonText = if (isInArchivedView || search.isNotBlank()) null else stringResource(R.string.conv_start_title),
                         onButtonClick = if (isInArchivedView || search.isNotBlank()) null else {
-                            { navController.navigate(Screen.NewConversation.route) }
+                            { navController.navigate(Screen.NewConversation.baseRoute) }
                         }
                     )
                 }

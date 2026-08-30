@@ -20,6 +20,7 @@
     <!-- ══════════ Home / conversation list ══════════ -->
     <string name="home_title">Messages</string>
     <string name="notif_channel_name">SMS Messages</string>
+    <string name="bubble_resend">Resend</string>
     <string name="notif_channel_desc">Notifications for incoming SMS messages</string>
     <string name="notif_mark_read">Mark as read</string>
     <string name="notif_reply">Reply</string>
