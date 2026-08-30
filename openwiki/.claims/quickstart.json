@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a3cab005a3d158a349c7eb283c6173b1e0544deca094c7f29579b6c0b9a4eca5",
+  "claims": [
+    {
+      "id": "claim_d76361c26033445fbda64d1a042a5a42",
+      "statement": "Messages is a single-APK Kotlin/Jetpack-Compose Android app that is simultaneously (a) a full default SMS/MMS app (Compose UI, onboarding, quick replies, drafts, blocklist, app lock, search, backup) and (b) an embedded self-hosted SMS/MMS gateway: a LAN HTTP REST server (default port 8080) plus a webhook engine; it targets minSdk 26 (Android 8.0+), targetSdk/compileSdk 36, and is currently versionName 2.6.19 / versionCode 61. It is a heavily extended fork of manjitrana/Messages.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L5-L16",
+          "version": "repo-lines-v1:sha256:5b363fae9f87b41545172ccbce356244db1e7fdd6b6fddb075d4695d16d8bbd8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMjI4M2VmYTIwODM0MTc3MTM3MWM5MzVlMDdjZmU1YjlmZTA2NzViMWRhMTc1ZjlmYjYyYmYxM2FlMDgzMzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhNjU0ZWY0Njg3NDM5MjE1ZmFkYzc5ZGNkYzNiMWZlOTNlMzVkZjE4YTlhOGVhMDk1YjBlYjhhNGYyMjhkMzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMThhMjQ5ZDlkNjdmN2U0NzQwNDBjZTlhMGI5NTRiZWE4ZTVjY2E4MDFmOWNjZDYxNTEzYzY4MzM0NTEzYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZTBkZWY4NzU1MDBhNGNkZDJmZjE5ZmY4NzE4ZWY3MjBlMWY3YjE0OWExNDRiNmJiMWQ3ZDI0MTZiZmUzODcifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L34-L49",
+          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L50-L50",
+          "version": "repo-lines-v1:sha256:9ffe58c59beaf458df0723a2f197aeea886cb4bb9782f88c1127c06f47e8f6d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWZmZTU4YzU5YmVhZjQ1OGRmMDcyM2EyZjE5N2FlZWE4ODZjYjRiYjk3ODJmODhjMTEyN2MwNmY0N2U4ZjZkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWZmZTU4YzU5YmVhZjQ1OGRmMDcyM2EyZjE5N2FlZWE4ODZjYjRiYjk3ODJmODhjMTEyN2MwNmY0N2U4ZjZkMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzM1NzNjMWI5NjMxNzAxZDdiYjg2ZGE2MjA2NGQ3ZWUzZTAxNTFjNzUxZGIyMWE4YjI5NmE4NjM4NjljMmE3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjY4NDJmZTEwNTdjMDczMTI3YjAxZDZiNjU3YjFjYTI4N2I5MjdkYzUwNjE3MjJjYjU0YTFkMWY3YzBkY2YzOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e20376b9ea64c4c92941e57e8c752c1",
+      "statement": "The only Gradle module is :app (root project name \"Messages\"); its namespace and applicationId are both com.autonomousone.messages, and dependency versions are centralized in the gradle/libs.versions.toml catalog (AGP 8.10.1, Kotlin 2.2.10, KSP, Room 2.8.4).",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L11-L14",
+          "version": "repo-lines-v1:sha256:91a827551c4c5537302e8fe655b60376561f3532dc612fd8c2a689cdd1a9560a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjBiNjZhZTJiZjc5YzJjNzk1NzRkOGMzYTdkOWIwMDBmMWNjMTUxY2U4NDU3MjRhZWUwNmM2ZmQ2MTBmZDhiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjVkZjAxY2FmMWY5MTA0NjZlNjk0Y2YwYzEwMGNkYTNiNmVjMDM1YzE1MTI3YzMzYWExMTI3MTlkMWRmNmFkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTQ0MDcwODVmMjc2M2RmMGI2NjM5NWYyZGRhY2Y0NWZkMjNhYzdmMzc4Nzk2NjhkOGYzNDNjM2IyMGQ4YzRiMiJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L1-L19",
+          "version": "repo-lines-v1:sha256:61a0bd5f4a77b4c1c8aa477e546232eea21621baf0e0921f9cac9de2cc322ade:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMzJmNjMwZTQ5OWJiZDBlNzY2MzMwY2I0N2Y5ZGEwYWViNzUzMjdhN2M4MzExYjA5ODY5MTZlMWU3NmQwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMjJmOGZiZWI0Y2Y0MzgxMzFmYTY5ZjhmYjllMWI1OThkMjM3NjNhZjVlYWI3NGYzNWE4M2NkYjY2YjkxMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1MTM5MjA5YmZiZDI2OTQ5NDZhNDJjZjUxNDg2MmU2MDQ0YzYzMDIxNGY1ZDE3NWJlMzM4NTBkOWQwMGQ4OGMifQ"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L47-L48",
+          "version": "repo-lines-v1:sha256:9a70e7ed9d43c0baf66679a19f92b8c1070087959c53e4a92f7f503b8b43403a:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmY3ZWE1MThmOWI2MzE4NGEzM2RiZmFiNDIzMGIyYWJhM2Y2OTkwY2M0MjA5MDZjZWU0MGU2MzdhZDU5ZDA4NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDYyNWRiY2Q0MjY5ZjhlZjRhMTIwMzdlMDZlMzIxNDZjMDgzNjgzNjhjNDkzNGQ5OWEzZDljZmQ2OTUxY2I0NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_58e6e85169174251b596eb425b0d996f",
+      "statement": "./gradlew assembleDebug builds the debug APK (app/build/outputs/apk/debug/app-debug.apk) and ./gradlew testDebugUnitTest runs the headless JVM unit-test suite; build-debug.yml (push/PR to master or main, Temurin JDK 17) runs exactly these two commands and uploads the debug APK, making it the only workflow that runs unit tests, while release.yml triggers on v* tags, builds the signed release APK, and publishes the GitHub Release.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L3-L37",
+          "version": "repo-lines-v1:sha256:d7981bd7efb52c8b1550eb4a8033c00cbbe518383e34e095b0c9a52c13e8798d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmRjNDgxNDlmNWE4M2QxZWQ2ZGJiMzliYmM3ZTJiOTAyYWEzZDM0ZDZiZDVhZTRiMjkxYjY4ZGYwY2E3OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1NTk3MmI5ODFhZDM2Yzg5NTVjNWIzZjNlNWNlZjkxYzJmNWEyZmYyNGMwMmJmZTIzYTcxMGNkZDgwNTcwNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhODA4NmY1MzI4MjhjMjQ5YzNmMzYxNDhiZmU0YzNhYzBjYTNjMWJjNmIwMDRhZjhhMzY5MGUyY2VmMDRjMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OWZlYjI1OWY0MjBlN2UyY2Q1YTdlMzIyMGZhMzU1YjgzMDViNDA3N2FhY2I3MTI1NDI1NmYzZjQ0YTdiYmQifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/release.yml#L5-L50",
+          "version": "repo-lines-v1:sha256:99c6d073c378890dcef3f1e62b6f3b5a2e1aeccfacb2e33fc1a78df84011d685:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NTg0MjlmMWJhN2NjZTA0NjVlMDAwMWFiODU3MGQ4MjhmY2M0NThkMmJiMGQ2ZmY3ZTE5MGI5MWZiOGY3N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkYzkxNjBhNWQwYzE0MDg0MzJmYzA2ZGY0MGE5ZjNkZmY1N2JkZWJjZTYxMjU2MTlmY2QxNDZiZmRmNzNjZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzMzYyYzE5ZmFlZGQ3MDQzMTVmNTg4ODMwZTRhNWQwODE5ZTY5ZDg5MjA3NjAyZGM2NTdhY2VhZDQzYTUyMWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4YWQwNmExODIyNmRhZTRjYmZlNzNiOGFmYmE1NmVjMjFiOWNhZDk1MjM5NTRiNGI0MTBmYjU5NDEyOTkyOTUifQ"
+        },
+        {
+          "resource": "repo://README.md#L146-L156",
+          "version": "repo-lines-v1:sha256:384d7d4164e798d68ffc6f3becbf5a05f5821a813d76d6a5d7253ecb725ee39d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZTY4MGY2ODMyODcxMWY5Y2Y5NjQ5OThiNmZhOWRkNmU0YzM0Y2EyOWQzYzRhY2RjNmRiMzIyMDg3MmE2YjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNTg1MzE2YTIyYWI5NzBkMzE0ZDUyMTA3MjYyOGUxMGNkN2Q4YjE1YWNiMzI1NmViZjllZDc4NWQ5NjViMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlM2I3ZmIzMDE2YTExZjA2MzM2MzUxMmJmNGQ5YjBmMDM3NzRmZGYyMWRmZmZkM2QzZTY1ZmMwOTc3OGFlZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViZmNlMjJiNTM0YmNmZDUxNzk4ZWU0Y2NkOWJiM2IxNWZhODNhOWUzMTZkOWQ3ZmJkY2VmNmM5NThiODVmZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd17ba703d0a41629f6675765729d18e",
+      "statement": "The Gradle property -PGATEWAY_BACKEND_URL overrides the default https://gaitway.autonomousone.in baked into the generated BuildConfig.GATEWAY_BACKEND_URL build field, and BuildConfig.APP_VERSION is derived from versionName as the single version source; at runtime GatewayPreferences.backendUrl prefers the user-configured setting and falls back to BuildConfig.GATEWAY_BACKEND_URL, enforcing HTTPS-only values.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L155-L156",
+          "version": "repo-lines-v1:sha256:9853beacfce97a3616a013f478d55c6a7d203dea579b0734143d83c0bebc8a00:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODc2ZWE5OTc5ZjE4YTY0MmIyOTRkNjY4NWIyNTg3MTc2ZjYwZWNmMDJkNTJmZmQ5MzNkYWExN2NiNWExYTM4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzM1ODUzMTZhMjJhYjk3MGQzMTRkNTIxMDcyNjI4ZTEwY2Q3ZDhiMTVhY2IzMjU2ZWJmOWVkNzg1ZDk2NWIxNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmFkYTg0ZTBjOTFkNGRjOTRjNzllYWI3NTI1MjMyMGU0NzFlZGEzYWViYmI2MmQ0NTFkMDNhZDMyMTlkOGM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWJmY2UyMmI1MzRiY2ZkNTE3OThlZTRjY2Q5YmIzYjE1ZmE4M2E5ZTMxNmQ5ZDdmYmRjZWY2Yzk1OGI4NWZkNiJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L43-L48",
+          "version": "repo-lines-v1:sha256:93c3be486c7b2187411cc746b60bc7563ad8d965715d3e6bdfe7587d14a3cfa3:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU2MWQ5Njc3MDM4YmU1ZTdkYjJkYzVjZTZlODVhODM5MzI1NDgwNDA4YWQ1MWRlMDYzMWVlZDI2MGIzMGY1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ0M2FkYThmMzg1N2U5YTgzZWJmMzdjOWMzYmRmM2I0ZmMyMjdmZTA4MDdiNTRhNzBjYzdiMTdhZGVjZjQzNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWQ4ZjM4ODgxM2EwZDBiMzY2NGNjZTNmZTExNjViOTU1NDY4M2EyYzJiMzhmNmNhMjI4MzkyNWEwYzMwOWE1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjdkMjMyMjQzODQ4NmQzYTVhZjFhZTJmNWQ4ZTRkMmI3ZTA4NWQwY2E5MDFkNzk5MjczNjVkYWFmNzA2MWVhYyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L163-L180",
+          "version": "repo-lines-v1:sha256:18475e6202285b09fe5c49dd7b6bfe2981de6c017a73ddfd2d8b98dc5f14c95a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkZWIzNzNmZjRkYjY5NTJiZjhkZTM1NDI2MmZiMzYwNGI0YmMwNTRhZWUwMThjMGU2YWRlMmYwMmIyZGZkNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljODEzYjVlODgzZDgxMWFkZjgyZWQ4ZGE0YTRmMzI4NWVhOWFmYzk3YTJlYzJjZDgwYjAwMDA1ODNlZmM3NGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ZDYzZjk5NGEzMGU1NDI2OWZiMzI1NmU3N2ExZjUxMzEyMDkxOGM3NGI1YTgxMTcyYWYxMTY3Mzc0N2E2NjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a9284bdf5c542118ba18c6284d8526c",
+      "statement": "The system Telephony content providers are the durable source of truth: MessagesDatabase is an explicitly labeled local read-SSOT shadow that the UI reads from, and IncomingMessageDispatcher fans out every received message from the persisted provider row's real id + threadId (not broadcast extras) so UI, webhooks, and notifications all react to provider state.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L11-L13",
+          "version": "repo-lines-v1:sha256:245173d4a549522f4c451f905b092605405e3488a58b33c567747dbeb6bc1cf4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVkNWFiYWNhMjI2ODBhZTk1MzM2NzAwZGY3NjYzNjE5N2E3Y2I2YzAwNGY0Y2Q3OWFjMWIxZmQyZjBhYzRhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2RkMGJhMmMyOTExNzg4ZGQwOWE3MjIzMzVjYzBiYjdlOWFlMzllY2IxYzY0YTc2OGM4MGJhMTVjODllNjM3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWFmOWU5N2JkMDFkNTUxZWYyZDRhM2E2YTFhNmI1NzdkODNjN2ExYTJkOGY0ZjAzNzE4MzZkYTJmMTI0ZDI1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTkwNTdmODY3YjAyMjFjMGNlZDc0YmUxZWY3YjJlOTk1OWI1YThjOTEwZjI2ZjRkZGI3MGMxYjllY2VmYWM2OSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L17-L31",
+          "version": "repo-lines-v1:sha256:b2e64c8dc75d0966cacaffa2d5a8ed7fc3a59d8e241ad20b72a942dca3b19aa3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmE0MjkzODJiMmUxNDcxOGUwZTM3YjA1NzBhOGExNzAyOTkxZmNkODQ5OGNkODQwNjBhOGJmNGYwNTAxN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlMDM2MWU2ODgyZTFhZGFhZWY0OTE4ZWU4NWQ4NWU4MjJkYTUxYTJlMzU4MzYyZmM2NDczOGRlYTcwYzdmZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0MjZlYzU0ZDJiYzFhODRiY2ViZTlhOTBkNTljNjMwODEwOGI5OGVlZmNlYmNiYzAxZWMxZDY2MGZhZTQ5ZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1fd6873a71dd444cb781f04ea0ff2c7c",
+      "statement": "The manifest wires the default-SMS-app surface: singleTask MainActivity with sms:/smsto:/mms:/mmsto: SENDTO and text/plain SEND intent filters; SmsReceiver with priority-999 SMS_RECEIVED and SMS_DELIVER filters; vendored mmslib PushReceiver (WAP_PUSH_DELIVER) and TransactionService; HeadlessSmsSendService for the required RESPOND_VIA_MESSAGE action; manifest-lifetime SmsStatusReceiver for durable SENT/DELIVERED callbacks; and the non-exported GatewayService foreground service (foregroundServiceType dataSync|specialUse). The application disables allowBackup (the app ships its own XML backup/restore instead).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L132-L163",
+          "version": "repo-lines-v1:sha256:062fc6284b9d7787216efb0d5d39c7e27d4e2c83e524d5ca07b2fced0fc36563:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxOWViNDEwYTE5YjdhZjQ0NDQ3ZTIxOTk5N2QwNDIzNGMxYjdlOTRjN2Q1YTRiMjZiOGM5Njk4NGE2ODUwYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjM2YwN2I5NjEzZWYzOWRiNGMwZWI3MWQwZTQwMTgzMDk1MWYwYWMxZTgwYmI1ZTMxODMyYTY1NWU2N2I1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkODRmZWNiMTAwYmQzNDkzNzYxMWRmZjIzOGJmM2QwYzU3MDM1OGQzMDU5MWU4ZGE4MGVhODI5ODlhNjgwN2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiOThmZmEyYWNhNTA2ODQ1YTdjODcyNjI3ZjhlZjVkMzk1MjI0M2NiNDVlMGQwNDRkZjk3MTc4Y2JiZDM5ZjEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L175-L184",
+          "version": "repo-lines-v1:sha256:fa82598634279596cda1debc00f419d9184d7c8f61db7723954fcfd16b3ba3c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzYmJmNmE5N2FlYWY2MGI1ZjAxNTY4MzBkOGM2YTcyNTk4NjRmMzQ4MjAyMzY5ZDA5ZjE5ZTllNjdhZWI2ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjM2YwN2I5NjEzZWYzOWRiNGMwZWI3MWQwZTQwMTgzMDk1MWYwYWMxZTgwYmI1ZTMxODMyYTY1NWU2N2I1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjMDY3MGQ2OTBlM2RkYTI3ZjljY2NmZTRkZDNiNzdiMzI1OTU5ZDUyYzhlMDQ1ZTI3ZWVjOGJkMmE2NWNkNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MDU4MTFkY2YxOWYwMWY0NzdlZjVhMjcxNmEyOTRlNTQyNGQ4MmNkNWJiNjgwZDkxMWM2ODI4ZDkwMzg0ZjIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L32-L41",
+          "version": "repo-lines-v1:sha256:394412b81bf2fe94b4dcbe2c79f28ce6506929106d061255ece0c51e0f6582ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2ZDA1NzNiMzUxM2YyZjdiZTg4MjRkM2YyYjUwZmIwNDBiYzAzMGE2MTlhMjQxYTg5YTY3NmRjNDE3MGU2YjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5NWVmMTNhZTlhOTBlN2M3NDJjNDEzZWE3NjgzNDQ4M2E0NzQyYjhmZmNiNzUzYTQxN2JmYmRiMGNjMzU5NDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMDFmZWY0NmNjNzdhNTJmZWFiZWE3YmQzM2FiMDcwMWYwMmRmZGJhYjRhYzViZDA5N2Y4ZDI2NTIzYWMxYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxYzU2Y2QxYWQ5MDk0Yjc3MzBhMTM0ZjlkMGQ4YWZiOWVhMWFkZmExZGRhYTkxODM0NzVjMzBiODc0ZThkYTIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L44-L93",
+          "version": "repo-lines-v1:sha256:467bfc74c654a457e5673a66609eb586629f67f8ab09dc59742b4bbac5ec3246:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMDZkYmFmYjg3YTM3Y2JjNzkwMmY3N2NiNWViMTczNmI3NGI2ZDY0N2M4MDdhMzQ2YWNmMjYyZWU3Mjk3NTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZmM5OTk3NzgxNTA5N2FlYjZmM2Q5NjAyZjcxNjcyMzMxNDVjMGU3YzI1MjI2ZDY3MjQ5MTE0MDU2MWU5YzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDIzMGRiZGJhNmRlOWI2ZjdjOWMyYzkyNGI4ZmZiNzVlZmZkNDg3YTNlMDlmMGU2OWE2ZWRmYjdjNjc5YWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NjRmYmUyMGU1ZTg2YjU3NDFhNTJmYzU0MGY2ODNlYWVhN2E3M2E2M2E5MDIyNjk1ZTBhZWE0ZGExOTBkMDcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L99-L119",
+          "version": "repo-lines-v1:sha256:ad7a023bb41f32547d0ce1c8efc6b7cb0609eb159e6acf5bfbcb03bcf2c2cc28:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMDZmY2MxODE3ZDYxOTJjOWMyYjFmMWIzZjJjNGUzNGE4ODhkNTQ5MjczOWNiZWQ3MDViMDhmZjkwYzlhNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlOTM4NjZkMWI2NTQ4NjJlNjc0MGQ1YTQ0MjUzMjhmNDllYmZkZjZhNzVlYzk2MzFlYWZiZDExN2U0MTEwOTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3OTcwNmM3ZTMwZmRhMDA1ODJhZmQwZjcwYTBhZTRiOGQ4NmI1NGZkOTgxYjI5Y2JhYWVlNjY3YTVmZjU3YTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1NWRlNDQ3NWIyOTIwOGY1ZmFlMGNkYTg5YTA1MDZiMTUxMzE0M2Y1ZTZjNGM2MzcxNjI2NzA5NDBhNThmZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_04594cfbc6914ed0a9d9951a93f9fdee",
+      "statement": "Gateway startup and transmission are consent-gated by GatewayAccessPolicy (canStart requires versioned user consent; canTransmit requires consent AND the runtime enabled flag), and revoking consent clears the enabled/desired flags, auto-start, and cloud credentials; GatewayService.startGateway silently refuses to start without consent.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt#L3-L6",
+          "version": "repo-lines-v1:sha256:3f67674d766a6e07f50363e9e321df1cacef5acb6e511bade22ef79993c38e2c:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDZmZjVlOTg2NDI3MmFkNGY3MmM3ZTg5OGEyOWM3NDk4MWU3MjY4ZmUyZTJhYzI0OTYwMTg1NTgyMGFjZjZiOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjE2ZjlhOGQ2ZjYwYTI2MjI0YjNjYTY4YzdkMTZkMTQ4MjgyNGM1OWE4M2I5MjJjOGUzNTRlOGU1MDY1ZmQ2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L127-L150",
+          "version": "repo-lines-v1:sha256:02ba9a0fea32db11818c23cc7679d273e71939032cd0f64dc0aa18b5ef64acd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MTUxMWMyMjlhYzc4ZWYyYjdiMmJiYmM2ZjFlZjA2ZTQ4N2UxMzgzODQ4ODkyNmViOTI0ZTk5MTEwMTgxMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZjVmNDUyNTYzNmJkMjA2MGUyMzRhMDg5ZDdlYzQ1YTk4N2I4YjZhMGFmNzQxNzM3ZGY3NmMyOTY2MGNlZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzNDY4MDhkNjBjNzIxMzZhYTI3NmU3MjUxZGJmNDE1YzUyY2MwNWExMDM5ODQzNjdiOTFlYzRmMzA4YjM1MjAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L77-L87",
+          "version": "repo-lines-v1:sha256:ba606f3ca54833a9cd0afd9c368839f0c355a95475d4e543fab3d0638852ae19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYTc4MGIyMTFiZTEyOGQ3ZmU3OTc5NGQ3MWVkZjcxZDZiYjkxYjZmZWRhNzkyYmE1MzgwNjFhM2FkZjdkMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxZTIzNzY0YmI0YmZhZTQwZTIxYTBkOWRiMzQzYmFkMzIzZDNlZjkyOTJjN2QxMmZkNGFiNDFlOWNjZTEyMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MzE0ZTVkYzJmZjhmNTE1MmRmMTZlOGY3ZTM5NmNlNTQ5ZDhkYmM5ZjZkZGYwOTQ5ZDkwYTNjM2FjOTQ1ZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d0054bd8dcab4fd9895ba1608bf23986",
+      "statement": "GatewayPreferences splits user intent from runtime state: gatewayDesiredEnabled is the persisted intent that start/stop flips and that survives reboot, while the isEnabled flag is a runtime mirror written only by ConnectionSupervisor; BootGatewayReceiver replays ACTION_START on BOOT_COMPLETED only when desired intent and consent both persist, so the gateway self-recovers after reboot with no manual step.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L24-L32",
+          "version": "repo-lines-v1:sha256:4b7f81200c02073c6ba8b41c3b03d9792c7e69201ec66a366db8a8693ef53c62:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmEyZDhmNDllMGQ0NmQwYjE4YTUyOWI1NjhmOTgzZWIxZDE2MDdiZjdjNjhmYTAzYTA0MzdhMDc0YzgxMDlmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDMyYTc4YjRiZjRkYjU0YzlmMGUzM2QwYjNjM2JlM2FiZTBmYjBjMTE5YTQ0MDlhNGRkMGEzZWEyMDA5OWIxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzg5MjA5YjEzZDAyNmIzNWM4MDk5YjkwNGE3ZjYxYjIzOWY5N2Q3ODY1YjEyMGYzMzM4OTIxY2UwYzA0ZTRiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTc5NjRiOWUyMDc2ODk3ZjEzYzE5OTI0OGJkZTFiM2Y3Mjg1ZjE4ZDJiMmRmNzM5ZDYxMTU5ZTMzNmU5NjYyMiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L56-L69",
+          "version": "repo-lines-v1:sha256:710032faa9061d3364c42df6f8e2d59ee81758cfaa401a851306d166313e55ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZDJhZWY0NTY2ZTBhYmVhN2U5ODFlOTgzOWRlMTcyYjQ2NGNiOWNjYmIxNDgzMzA0Yjk2OWMwMDQyYTc0NzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlNDQwNmQwMzA4ZDJmMmQ4NGE4ODFiYWU3ZGQ2MzRhY2FmN2Y5OTg5MzczNDk0ZTRlODNiOTgxODQ4ZGRjMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzNjJhOGUxOTE2MWUyODRmNThlYWUxM2IzMWIzYWM0MTA2YzhjYjI0ZTU2OGYyOWNhNTg1OWY2NTFjOTM0ZGQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt#L10-L29",
+          "version": "repo-lines-v1:sha256:0fbaa54dc24e1ec82e221983dcf31a05f610d4f82b43106a451db3918db17f0f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMGY0NTU0OWUwYjkzYjFkZjAxNTNlMTE1ODc4ZGEyMGRlZjNjYjFkMDYzYTE5ZTMwZDY2YmJkNDNhM2EzODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyOWE2N2MwODQ2NmY5NWMyZTA1NGNmOWU2NTNmNDA5NjM5ZjIyYzJjNTE5ZjJhNDljMGNlNjQ2ZmRiNzVhMzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7be4dbb5dada4109a8ba069b9fad89da",
+      "statement": "The REST gateway authenticates every request with the gateway API key (format gw_ + 32 hex chars, generated on first launch and stored encrypted with the Android Keystore via SecureStore with transparent migration of legacy plaintext), and hardens against abuse with per-IP brute-force lockout (8 consecutive failed auth attempts within 10 minutes triggers a 5-minute lockout) plus DoS caps (1 MB request body, 100 headers, 32 KB header block).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L74-L92",
+          "version": "repo-lines-v1:sha256:fceeb458d48ab7ce9c80fe248e86799960eee73872edde352c5f0c76a703bcc6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZjY5ZTgwYWZmNGM5YWMxYjIyMGI0MjIzODdhMjA0YWEzNzI3NzI1MjdjMjY4NzdjY2RhN2Y3YWJhNzVhNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmZDcyY2Q5NTg0NTM5NDRlYjRiZWVhYmU0MjkzMTM0YzdmODQ0NWY1M2Y1NmRjNTU3NWYyY2U5Y2NkZTY4MTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NWM2MDA5MDUzZjM5ZjkyYTNmMzU5ZDViZGQxMmE3YzAyNGIyN2Q0YmUxODMxZGFiY2U3ZWE5NDZkMTNmMGEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L58-L70",
+          "version": "repo-lines-v1:sha256:83df6f8480330003f5c3e00c2a8416196ac8b50189c2c48d7bf37e00ca42746d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0OWI1ODM4NGVhODZlOTVlNWQ5NDIwYjU5YTIwODQyNGIyNDMyOGNiNWIzMDlkZjQ5YTcxZDQ3NmJkZjE5MGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxMDE4Y2FmMzMwMzAwZDg1M2YxNTA0NzNiZWE4YmRkMGQ3MjY5OWRiMGIwMzMwYTkzYWIwYjliZmZlNzI2ZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhNWFlNGZjNGJmNjZhZWMyNDEyOTI0MGZjMjRiNGNiYjIxNGYyYzg5MjJiNjkxNTA3Y2Q1NjZmYjk1NmU1NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2OWZjMzU1NjYyZTI4NTMwYWU2MWRjYWUyMDZiYWVhNTA3YmU5ODE2MTUxZjllZThhMGU2Yjg0ZGNkZTYwZDYifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L12-L28",
+          "version": "repo-lines-v1:sha256:6a61e0eb81cf8614b7b0728dd01969bd17addde2dfd14352060ab3156b6e81ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwMzljMjk0ZmZmOGE1ZWM3OTJjYWE4M2EzYTA4ODE4N2JkODY1NDJjYjhmZDM2MTkxOTJmZGJiMTlhYmRlMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjYjczZWUwMTRlZDJiYWI0Mzc3ZjI4NTAzOWE2ZWI4NTZmMTQxZDUzMjljODgwMmZiYWY1NGNlYTEzNTVkNTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiYmEzNjZkYTRiMzY1ZmFmNDg0ZTQ3ZWQzMWQ0MDg2YTgxYTQ2MzVhYWYwNWRkM2MyYWE1MWI1MzZhNjg4ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwZDg5NGYxYWUyMGNhNzdkMGZjMDAxNTJjMTBkODE3MTJjOTk2MmVlOGQ1NWY0ODQ3YjNlMTk3MWQwZTIyNDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3863b4633a614f039d61adc85dd128ce",
+      "statement": "GatewayServer is a hand-rolled ServerSocket-based HTTP server (Android lacks com.sun.net.httpserver), using a single-thread acceptor and an 8-thread handler pool so slow handlers cannot starve accept(); it serves the /api/v1/* endpoints (sms/send, mms/send, sms/inbox, sms, status, sms/schedule CRUD), the EVE provider contract paths (/send, /send/status/{id}, /send/cancel/{id}, /send/capacity), and unauthenticated /health plus /ready readiness checks.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L230-L318",
+          "version": "repo-lines-v1:sha256:41aa789f30c1e18492d8d8194284afde933bf3ebc7cb2ef9a0dca86c7c7ae53a:eyJzZWxlY3RlZExpbmVDb3VudCI6ODksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzODk3YWNhZjkxMzNkZDgyZGVlZGNiMzc1NzM0NGIyODdlODhhOWIyMDVjNzVjZTBlMmM3YTNiZDdjOTYxODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2OTExNWZjNDExNWI2YmUxYTU4MTEzMzEzMzNlMTJmNmViMDkwYTI0ZDBhZjI3OTI5NGYxYzk2Y2I2OTNlMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiNDlhZDJlMTRjN2JmZTg5MGMxODRkMWJiNmRlODIwZmQ3NjJlOTk4OGM1YThlNTI4NWYwYjYyNzM3NmM1YzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L28-L48",
+          "version": "repo-lines-v1:sha256:1348172233a8b0880844259f07e519aa2d477461cc6b759e2dff2a39653c7e96:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViMDdmZjM5OTU5MTdlZDUyODk2OTIwNjUwNzVjNjViZjZmMGM5Mjc4MDE3MTYyMGNjMjk2MmYwZWVhYjBmMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2NmM3MTc3ODBjMDc2NDlhNWI3NGU5ZmYyYjVjOGM2ZWE3MTNlOGJjZDI3YmJmZmUzZTM2YTRjNzdjMDQ4MGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_89a3d2c2fa3a4382bedb485a5e2943f4",
+      "statement": "The gateway's outbound bridges are: BackendClient (central HTTPS-only HTTP client with Bearer token auth, 15s/30s timeouts, for the optional cloud relay register/heartbeat/event flow), WebhookEngine (fire-and-forget, consent-gated POST of incoming SMS to a user-configured HTTPS webhook with HMAC-SHA256 X-Signature plus idempotent cloud event upload), and OutboxPoller (outbound-only GMweb long-poll bridge: GET /gateway/pull then POST /gateway/ack, authenticated with the phone's own gateway API key, delivering polled tasks through EveSmsQueue).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt#L12-L56",
+          "version": "repo-lines-v1:sha256:d786ce2346c9a492615f817f5aa0a8efbe5142379ff638b5caa878b2c4ea0e96:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0YTY0ZjA2YmQzOWE1YTAwOTRmZTU5MDg2NTIzMzg2MjFmZjM3MmNmNWY4NmYyODNjMGM4OTZmZThjYmQ4NzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjhhNmYxZDEzOTg4MjE0NWE0ZmY0Y2ViYTc5N2M1NWE2NDJmYWFhZmI2YTVhN2ZiOWRmNTZiNGI4NzhmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZjliMDA3NDAyNzEzODE2Y2M5MWMwMzk2NTY1OTYyYzkwYmVjZDM3M2MzNjk5NDk2MzIwYjA0MWJhYzBlOTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L21-L34",
+          "version": "repo-lines-v1:sha256:188be4e7a63193c9f75cbe71650e9c6e601acce9a308ed1beade611a16fc061c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmE0MjkzODJiMmUxNDcxOGUwZTM3YjA1NzBhOGExNzAyOTkxZmNkODQ5OGNkODQwNjBhOGJmNGYwNTAxN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhZTBmMjA3NTYzZjM0MGQxMGM0NDgxOTE5NzJhYzk5ZDk4NGRlM2EwN2Y1YzRkNThiNjNjZmQ5ZTZhZDhmZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzODJjZDNjYTMyZTI2NDE3OWYwZWM5YjY3M2Y0MzliNzcyMjg5YmM5YzczYzc2ZWI2MDdhYjM3YjY3MzQ2MTgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L20-L47",
+          "version": "repo-lines-v1:sha256:49b5ad76d5b007f8ef4eaee2ef309237fd60f933dadeb6e5d329550780bb0f50:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiYTU2OTg5M2U2NzVmNzJhYWIyZjk2YmYzOWM3ZjA2NzMxZDlhMTM2N2NiYzJmNTQ1M2JkMjk3YjkzZTI3MTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5M2I0Mjc4MGVhNmZhODc0NzZmNzg1NzA3N2UwOTlmYThmOWQwNTdiMWQ2NDg1OGQyMTRmOWI1YjdlZmZiYzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3fbc849aaf1a4873aae7dbb27c04c139",
+      "statement": "EveSmsQueue is the persistent priority send-queue implementing the EVE \"Custom HTTP\" provider contract: it maps an Idempotency-Key to a stable requestId, processes messages highest-priority-first on a single worker, and tracks status QUEUED → ACTIVE → SENT|FAILED (or CANCELLED).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L14-L40",
+          "version": "repo-lines-v1:sha256:d4c6a06021990e67da5ed43568c07f030f7b14b83edbe105d3e06f2cdb8945d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2YzllNmQxNTY0YTNjYzA0ZDFmY2VkYTM3YzAzMmRkODUzNzAzN2UyYTI0ODA5MjJmNDRiZWFkM2NkYjYwZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmYWFkNzA4ZjhjMTdiZTY1NDhkYzNmMzZmZTM5YTUxNWIwMWRiMmUyMjQwMjM4M2NkMzgyNjc3MzQ2YjYyZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxZWYwNjNmM2Q1YzQ0MmIxNWQwNjQyNzhjYTRkODg0YWZkZjJmYmJjMTAzMGQ2YmE2ODFlZGNkYjU2ZDMxOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d4c836c077c94153a8826a3f3dbe3d16",
+      "statement": "The quality gate is a headless JUnit 4 unit-test suite under app/src/test (junit 4.13.2 is the only test dependency; no Robolectric), which runs on a bare JVM because testOptions sets unitTests.isReturnDefaultValues = true so Android APIs like android.util.Log no-op; the instrumented suite under app/src/androidTest is a single placeholder, so device-bound behavior (MMS receivers, the live gateway, ContentObserver) is verified on a device or emulator.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L106-L106",
+          "version": "repo-lines-v1:sha256:405ca47fda97d75e54888b11d96e86dbda4bd8ffef23f7e3778b79e601c9957a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYThmZmJmMGY1MDVjZGRmZmVhYzcxNzk3YjM2MDcyNjc3ZjNmMTI3ZTY0Mzc5MjA5NWRlNmI4OTdlMjI5NjRkMCJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L79-L82",
+          "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
+        },
+        {
+          "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt#L16-L23",
+          "version": "repo-lines-v1:sha256:0fdf1b3cd078b58c072954f5dc9267d3b1597590b51205ac13d15f2083e0cdd6:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJmNmQzZDE4Mjk4MmMwOWNlZGVkMmUxYzVjYWE1NTQxOTUyN2VjMGMxNTgyNmY5MDYxMzRjM2MxMmRmYjhmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTZjMjU4M2I3NmYxMGU5ZjE0ZDZlMjZhN2EyNzYxYzI3ODRmZDJhNzQ2OTBiYmEwZWIyNDMyNmY4MzhlYjMzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDEwYjM2YWE3NGE1OWJjZjRhODgxODU4MzdmNjU4YWZhZjM2NDZlZmYyYmIxNmMzOTI4ZDBlOTMzNWU5NDVkMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_42da9f063f2544e2b47cdb6357dd7972",
+      "statement": "The mmslib MMS stack is vendored as app/libs/mmslib-1.0.0.aar with its three POM runtime dependencies declared explicitly in the version catalog (file dependencies carry no transitive metadata), because JitPack — its only remote publication — has repeated CI-breaking outages and is deliberately absent from every Gradle repository; the Aliyun mirror in settings.gradle.kts is a scoped last-resort fallback for Google/Android artifacts only.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L122-L131",
+          "version": "repo-lines-v1:sha256:da5e32bd697eaa0ccea8dcd1ee0116f665686d9d920bc082eb910eddda8bac23:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMzhjNDdkZWI2ZWZiN2JkYTk5NTI2YjAyNmI4N2M3NzA2NjYwNGEwZDRiNGZmN2FiMTdlZGUyMDI3NWFhNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMTEwZDgwYTJkYTY4YjRlZjE2ZmI5NTgyNTVlM2I3ODdmNzc0NzIyYjcwOTYwZThhOGM0MzBlYmYwMjgzZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhMGJmOGU5ODkwZWM5OWYzYmFkYjg2ZmU3ZWNjZDc5MTdiMDk2YWM0NTc5NzNiYTdhZjA0YTk1MmE2YTY4NzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkNDdkZDY4MzU4ZmY0NjE3ZTFjNDdhZjY2MTljYThlODA2Y2Q5MGFjOGY1M2M3MjlkNDAzMDMyMTlhMDE0MmIifQ"
+        },
+        {
+          "resource": "repo://app/libs/mmslib-1.0.0.aar",
+          "version": "repo-file-v1:sha256:a385f03bec830db38e47f7de64123446dbe8a534c7dc8702b529999ef5ce2620"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L11-L19",
+          "version": "repo-lines-v1:sha256:e104f2694c68ab1821cccb8e95866201bd58993b1c27682dc19a4e9454d650f2:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmRkNGNjNzE1MGIxODdhMDUyNGM1OWY0NmRkNTQ3MmI5NTZiN2U0Y2UwNWUzYjNiYmU0YzI4OWQ1YWMxYjAyMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyMmY4ZmJlYjRjZjQzODEzMWZhNjlmOGZiOWUxYjU5OGQyMzc2M2FmNWVhYjc0ZjM1YTgzY2RiNjZiOTEyYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTc2MmQ5OWY3MmJhNTM5NmI1NDljMjE4N2QwOGRkZDAwMDlmZjYxNmNmMmIwODY4YjA1NGY4NzA1ZDM1YTRlMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUxMzkyMDliZmJkMjY5NDk0NmE0MmNmNTE0ODYyZTYwNDRjNjMwMjE0ZjVkMTc1YmUzMzg1MGQ5ZDAwZDg4YyJ9"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L41-L43",
+          "version": "repo-lines-v1:sha256:a83b74aa3acafa13dd68af2279ee419e941ba8d99a7b1a367c8f6e00ba65b48f:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ0NzZlZDYwZDcxNjk2MzMyZDdjN2NmYjBhMjNkMDMyNWEzMTUzMzYwOWVkMzRjYjQ3MjMzM2UxNWI5NzhjMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTAzN2FiZWI2MjRkYTZmYzI1MjMzOTMwMThhYzY5N2ZlOWQ1MWRlNzE1MTRmODY3MjA4YjBlMGJlYjRiNGIxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWQ1N2U2NjNmNGFlYjliNDFkZDgzMmI1Mzc5Y2U3Yzk2Yjc4YWU3NmRlMGE0OTg3NWYyZDE2MTE5NDA1NTc0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyJ9"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L9-L24",
+          "version": "repo-lines-v1:sha256:181348cdb57d1557c92c795d57ca5b399977130fa1ced9e50b03a575cfb7910d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3ZmQ4YTFlM2U0M2QyMzU2M2JkOWE1NTg0ZDRhNzhhOTU3MmFiMzUyODdjYThkZTUzOTJmMTE0MjBjMzUzMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwNDJjYTFkNjljNTJkNDNiOGIwOWQ5MjA5MWU0MmNkODcxMDI2NzEzMGY4NTFjODcwYjgxM2VkNDJjNjg1MDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_46f932ba432f4483882aab2611f40895",
+      "statement": "Release signing reads KEYSTORE_FILE/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD from environment (CI) or a gitignored keystore.properties (local), and degrades to an unsigned build when no keystore is present; all keystores and keystore.properties are gitignored, release.yml decodes a base64 keystore secret into keystore.jks before assembling, and scripts/generate-release-metadata.ps1 emits the APK SHA-256 and signer certificate SHA-256 for Play Protect appeals.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L29-L42",
+          "version": "repo-lines-v1:sha256:538bb6a847d328afe741e61c1cb4a3aa4c3e2cd1f1203066a65cf3803276bbfe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MTY3M2I2Y2FmMjgwZTVjZDk1M2YxNzk2Y2ZjMDFmMGQzOGIzZDA3ZDhiMGMxNGY0M2I2YTVjZjk2YjBiYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZGJjMWQxYjNmZmNjZWEyODVlNWZlYWRhOWZiYWJhNDc1ZTE4M2M2NDFkZTdlOTZmNGUwOTUxOTI0YjVmZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxZGE0Yzg2MjY3Mzk2YzFjODBiNTU1Y2U4ZDU4NGY1ODFhODg3MzVkYzRjYTVjNjZhMWQ1YzM3NDRjOGFlNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYjQ3NjI2MTZiZGViZjY2MmE2MTM0NmNjNTAwNjY1NWFkYjJkNGY4YTBiMGI5ZTkzNmVhMjc0NDMxNzFkZmEifQ"
+        },
+        {
+          "resource": "repo://.gitignore#L17-L26",
+          "version": "repo-lines-v1:sha256:04f16e2af9397052d38b8622745690a99b8de89fbe07afbc1874d0045e54cb4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViODQwNzhkYzRlMGJiZWQzZGM2YWEzMjY5ZWZjZTEyZmMyMDc5YWU2OGM3OGY5MjU5ODBhZDI3MGMyMmJlMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NmJhMWYyNDc5YzU1MmRkYzIzNDAxMTNhMjZkMTkwMzg4MjVkNzkzMTYxZDA3NzQzMjJkYzkzY2ExZmU0MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlODllMWI4NmQ0ZTVlOGJjOWY1MDcxNjMzOTk0YTZiZjdmZjE1YTNiYzg0NGQ0YTVkMmRmYjU2MDhjODdkM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4N2U3Yzc1NWE1ZTZiZjY0ZWFiYWYyZmQzMzQ4N2FiMzNiNjNiOGVhODQwM2RiZjYzMjIwOTA5ZDgyMzgzMDIifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L15-L32",
+          "version": "repo-lines-v1:sha256:22e26ccc22bd0e76811ee5ca4a566ae7042de704fbc83175492032892b4d1331:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNGZhZTE2OTc5OWM2MTQ5MDdiODhiMDQ1ODA4MTgzOGM1MTcyMjNkMzhmNGQ4NmJkYjlmYTZkOTNjMzg0YWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MWY0OTJkOTcwM2I2MTZiZjcwZDk5YmQ0Nzg1YWUxMDdkYWEyYmI5ZTcxOTQzYmVmODFkOTE4YjA0ZTExMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzOGEzNDAxN2ZkNjU1Y2ZjNzJiNDA3NzEzNGIzOTc3YmVjODk1N2RjMTBlN2NmMTE2MmFmZjM4OTY4NjgyZjEifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L51-L69",
+          "version": "repo-lines-v1:sha256:e0fb919b1e0fd1e56d6a2a8e82866a88fbfaea8c2aae082acd4dfea4443b206f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMGRkYTU1OTM3ZWFmMjZlZGNmNzIyNjliZTFmMWFiNWRiMDQyZmQxZDNlNWRlZTMzMjNmODJhZDJjYjdmZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliYzE5NTJjYWQ1MTJjN2VkZDYyMzg1ZTcwMTlhMjY2ZWQwYTk2ZTRiYWJkOTZiNjE3Yjk3NTY0NzljMDdjOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwMzM5YTYyNzQ3N2ViYmMyODU5ODZhYzE4MmM1OWYyYjFmOTdmMDg1YzU5ODhiYzdhOTEyNTU5NmQ2Yzg5OTgifQ"
+        },
+        {
+          "resource": "repo://scripts/generate-release-metadata.ps1#L1-L30",
+          "version": "repo-lines-v1:sha256:300a8e494d8f611725c8c151a1a5776a143a592b1df99fd4b967b6cc302f6de0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMTUyZjE3MGRkNTQ1NjA0MzdlZTAxNzY5MmUwNjRlZWNiMTJiZTEzYWMyMzRkZjlmMTU1ZTdiYzkyNDk3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1M2E3N2VjMjc2YjZmNDhhNWMyNTQ0NmQzOTVjMDFlOWNiMmNhN2M0MDBmZTU1MjMwN2Q3Mzc5NjFjMjJkMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3NGM0ZDZlMzQ4ZTk3ZDM2MTA3NDc4YmRlYWUwNDk3MDQyOWZmY2MzOGJlY2UwOGYwZGUyM2Q4M2EzMzZkNzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bed26eed4983484687b9ae1e4c0a4e73",
+      "statement": "AGENTS.md binds the repo's working conventions: source code and tests are authoritative over documentation; generated openwiki/ pages must not be hand-edited (a scheduled GitHub Actions workflow regenerates the wiki, so change source/docs and let it re-run); and the narrowest quiet validation that proves the changed behavior is preferred, with complete failure output preserved.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L3-L8",
+          "version": "repo-lines-v1:sha256:a9b5213573874317a6982b0d0201c8f3176c0d80c4c30fffeb620fc664b1430f:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk2ZGM0ODE0OWY1YTgzZDFlZDZkYmIzOWJiYzdlMmI5MDJhYTNkMzRkNmJkNWFlNGIyOTFiNjhkZjBjYTc5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzViMWYyNGU2MTgwNWVlMWE5YmM3ODA0N2UxZTRiM2Q4NjE1N2Q2ZTM3ZDhhYzBiY2JlYmQ1ZTY1ZTVlZjFhYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGNjNGJiNzlmNmViYzg1NTU5NzVmODdjMWJiZmFkYjQ0ODFmNzBiMDNjMWE3YjBjOWNjYjRlZTNkYWM3N2Q2MSJ9"
+        },
+        {
+          "resource": "repo://AGENTS.md#L7-L10",
+          "version": "repo-lines-v1:sha256:9eb409c08e8de7aa64760c896b4418feccc8ecb3129b33d529cbdcf4c07d2d1a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmNiM2Q0YTQ2NjliZGM3YTQwZDk4MDc3MzVkZjYwOGJmZTMxZDM4NjA2N2M5OTliNzUwYWFjNjMyYzFiNmQzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWI1Mzk1M2JmYjcyYzEyNjJiYmFlMmVhY2E3MmNhYmYxYWY0OTkyN2EwYmJhMTE1N2IyZDViZGIyODVjNGJkMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTA1MTY5OTI5YTliMjNhOWIwMDJiYjE5MDNhYTA3ZWMxZGE0ODA1ZjY3ZTEyNTBmYzZjOTQ4MDlmMzJlMGM3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzA4OWRmOTNmOGJhNTdhNGRkYmZkOGYwMTM5NjJjMzk3OGNlNGRiNjgxOTljNGRhNjY2NjQ5YjA5OTZjZWRhOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f50b4ff6db604b8392d7a59e967ed7bd",
+      "statement": "Room schemas are exported to app/schemas via the KSP room.schemaLocation argument (exported JSON currently spans versions 2 through 6, matching MessagesDatabase version 6), and the schema JSON files are build artifacts of history that must never be hand-edited; destructive fallback migration is intentional while the shadow remains non-authoritative and rebuildable from the provider.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L91-L95",
+          "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
+        },
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json",
+          "version": "repo-file-v1:sha256:d5024a3e0d190e6f591d1726fc921cbd4653b3a28a3bcbfeb353633eb3fd9f73"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
+          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+        },
+        {
+          "resource": "repo://docs/room-migration-strategy.md#L1-L24",
+          "version": "repo-lines-v1:sha256:b0444d7bfc3de73ff656fe3cff723f274e81738881d8087760d30248aa3e1345:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MmVhZWNiNWY4MjI1YjkzNWQ5YjNlODJmZWZhOTliOTAwYjI4YTk3YzMwNmI4NjhiYTdhZjZkNDk4M2JjMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExNjc2NTUwOTNkODY3NGMxMmRlODEwYzI1MGM3NjVlZjMzYmU3ZTAwNGY3ODcwNmE5Nzk3ODc5MDZlMGI4NDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4cfcc551e20045d5b82e2507b7c65272",
+      "statement": "First-run device flow: install the APK on an Android 8.0+ phone with an active SIM, complete onboarding (accept disclosure → set as default SMS app → grant SMS/Contacts permissions), then enable the gateway via 3-Dots Menu → SMS Gateway and copy the API key; the REST API is then reachable at http://<phone-ip>:8080 (X-API-Key auth), and scripts/test-gateway-api.ps1 live-smoke-tests every documented endpoint read-only by default with real SMS/MMS sends opt-in.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L51-L87",
+          "version": "repo-lines-v1:sha256:70f8fd24f06d1358b32003fab682e3c4530d777e65ab73a8436b49e1eabe6656:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5ZmU0OGY3Mzk3YjQ1YjZjYmQ0YjZmM2JiODlmMDhmYWVlMzY5MTU0MjczZTE4NWVmNWMzZDNkNzlhMzQ4M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0Mjk5MDgyMmI0YmE2ZWE0OGMxM2EyZmU2YTZlZWNhMTNlMWQyMDkwOThiMzEzYmIxOWZlOThlY2NiMWVjYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZTBkZWY4NzU1MDBhNGNkZDJmZjE5ZmY4NzE4ZWY3MjBlMWY3YjE0OWExNDRiNmJiMWQ3ZDI0MTZiZmUzODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjNTM5ZDIwZWFhYjY4YTI1MzYwM2NjYzVkOGFkODA4M2NmMjg5NWE0N2VlMTRhMDE1ZTI5YWZjY2QxNGNiNTcifQ"
+        },
+        {
+          "resource": "repo://scripts/test-gateway-api.ps1#L1-L28",
+          "version": "repo-lines-v1:sha256:857f7f146cedab17a5a66e19ceb9d881477b3f399002d1c67ada90170535e71c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MDU3YjIwOTk5NDY3NDdkZDI1YTFiNTAyZGJkOWFhOTUyZGY4ZmQ1OGFjY2ZkZTQzYzMwYzc4YjI3YmJkNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZmQzYjk0ZjYwY2E0YTg1OTMyYmY5YzVhN2VjMGFlMDU0ZWY0NjFkOTY4MTExMDhlYzMxMjk5ZmVlNGQyYzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b5366f8581434acd9586efba67a3b0ab",
+      "statement": "openwiki/ is a generated evidence index maintained by the daily (06:00 UTC) openwiki-update.yml workflow, which checks out with full history, runs openwiki code --update, and opens a PR touching openwiki/, AGENTS.md, CLAUDE.md, and the workflow itself — the stated reason hand-editing wiki pages is discouraged.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L3-L45",
+          "version": "repo-lines-v1:sha256:487d8cf73145cd701788f54ed97022e6010000b45e60cb39f5f8837f73860f67:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmRjNDgxNDlmNWE4M2QxZWQ2ZGJiMzliYmM3ZTJiOTAyYWEzZDM0ZDZiZDVhZTRiMjkxYjY4ZGYwY2E3OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjNjYyMzNiOGQ2NDcxNzQwOTAyMTAwZTBjNWM2YjE2Zjk0YzE5ZjRjNTAzN2I2ZWI1NjgwZTYwZWY5YjljYmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1YjFmMjRlNjE4MDVlZTFhOWJjNzgwNDdlMWU0YjNkODYxNTdkNmUzN2Q4YWMwYmNiZWJkNWU2NWU1ZWYxYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0ZTc5NGRkZjMyYTNlMmRhYWFkODgyNjMxM2MyNGY0ZTRjZGE2ZjYxYWJmNDE3ZTQ4OWJlMzlkNWI5OGE1NTkifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L51-L62",
+          "version": "repo-lines-v1:sha256:b3941feafd0b59515b056f1f10a8b461c703a407df0d33d6b18af12155730065:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxY2ZmNGFkMzNiYTkxYjE0OGUxYjFiODI5MGI4ZmZmMjdiMjAzZmFiZmVlNTg3MDI4MmRlMzY3MzgzYjFiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYTQxNjY0OTBiMTcyOWI1ZWNiZmFmYmRlMmY1YmFiMDlkMmY3ZWVmZTQ0ZGQ1ZWZkMDZkZmUyMDViYjYxYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmZTVjYTdmYmJkMTk5YTZhZDgyZGU1MmY0ZWE2NDMxODVmNjM1MGE4MGJhNTJkNWFkN2VlYTMyNTY3NzUwYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkODlkZGU2NjgwODU1NjRmYmRkYzFiZDc3MzAxMGMyNGNhZGViOTViYzQ2ZTcxMTBiMzE5N2NkYmJhN2NkZjgifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

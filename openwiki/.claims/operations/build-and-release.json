@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:ba908dbaad97d6db661b46e814c716c33292d26ea0528e60b9d8911b54d63864",
+  "claims": [
+    {
+      "id": "claim_b4438e2d50964b4e98dccdfed96c05ee",
+      "statement": "The repository is a single-module Android Gradle project: settings.gradle.kts sets rootProject.name to \"Messages\" and includes only :app, and the top-level build.gradle.kts declares the shared plugins (AGP, Kotlin, Kotlin Compose, KSP) with apply false so only the app module applies them.",
+      "evidence": [
+        {
+          "resource": "repo://build.gradle.kts#L1-L7",
+          "version": "repo-lines-v1:sha256:efdae9097fcd48149f280dfd4c2973db8a5fef11c2f4300314d6eacb3089b15a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGIyMzU2M2FlMjIyMjFjN2RkYWQxNGZmMzBkOTBlY2EwZmM3ZjYwMTc0NTRmNjlkNDViYWEyMGIzZjBlMDIzZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L47-L48",
+          "version": "repo-lines-v1:sha256:9a70e7ed9d43c0baf66679a19f92b8c1070087959c53e4a92f7f503b8b43403a:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmY3ZWE1MThmOWI2MzE4NGEzM2RiZmFiNDIzMGIyYWJhM2Y2OTkwY2M0MjA5MDZjZWU0MGU2MzdhZDU5ZDA4NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDYyNWRiY2Q0MjY5ZjhlZjRhMTIwMzdlMDZlMzIxNDZjMDgzNjgzNjhjNDkzNGQ5OWEzZDljZmQ2OTUxY2I0NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_88872d5cf81f4359950cc75f930c442c",
+      "statement": "The build pins AGP 8.10.1, Kotlin 2.2.10 (compiler and Compose plugin), KSP 2.2.10-2.0.2, Compose BOM 2026.02.01, and Room 2.8.4 in gradle/libs.versions.toml; the Gradle wrapper is 8.11.1 with a sha256-verified distribution URL; the Gradle daemon JVM is provisioned as toolchain 21 via org.gradle.toolchains.foojay-resolver-convention 1.0.0; both Gradle CI workflows use Temurin JDK 17 with gradle caching; and the app module compiles to Java 11 bytecode (sourceCompatibility/targetCompatibility VERSION_11 and JvmTarget.JVM_11).",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L17-L22",
+          "version": "repo-lines-v1:sha256:e6a11aa568f8e395c4b9c09cbfd19b989a102d2a49e2f648695efeb5b12de81d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWNhMjQwOGE4Y2RjYjM3ZDJiOTdhNDE0NDViY2E3OTQyMjdhM2M0ZmY4NzFmMzQ1MDlhOTRlYzg4N2M3Mjg2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTY1ZDFhMmMxYjVkMzMzZWQ1YWYwMGJhOTcwMzAxMDkyZjQzMmVlMTk2MGNkYWE2NzY3YjkzYjM4YjRmN2M0NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWUzMWM5YzY4YmUxMmJjOGQ0YmE1ZWQ1Mjk1ZTU3Yjc4ZTE4NWUwYjU2YWI3YTkyZWJiNDhiNjgyMzE2NzdkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODJjY2ViMjIwNTQzMjZiYWNlMWY2ZDgxNWNmZWMyZmMwZGQ0Y2Y5NDgzNmU2NDZhMjMwYTk5YjZjNzM2MTE4YiJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L70-L89",
+          "version": "repo-lines-v1:sha256:b58b2d6cfdc3fa2defb4fdab8a7dfa29ac149563c91dd05bbf0c7d0bb9a86a99:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjODg0NzcyY2FkMzNjMGIyMzk0MmEyOWJhOGY3Y2QwYzc3ZmVhMzUzNDc3MTU2YmU5Zjg4NDRiNjM5MzdlYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiZThlYjc3NjY5Y2I1ZTAwMTEzMGRkNzMyYmYzMWZlYjgxMWYzM2EwZDhhNzkzZTQyMGVkYWZiYzNmOWRiNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3Y2RiZGFlMmU1Y2U2ZDc0NWRjZjNhODlkYTcxNDg1NmUyNjEzNGU2NDg5ZDAyYjBmMTJkZjYwNGJmNzcxYzIifQ"
+        },
+        {
+          "resource": "repo://gradle/gradle-daemon-jvm.properties#L12-L12",
+          "version": "repo-lines-v1:sha256:c8b1b85e4f7e4d1b70805358383e475df2710faf6828cfa84f24b4c58c683915:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhiMWI4NWU0ZjdlNGQxYjcwODA1MzU4MzgzZTQ3NWRmMjcxMGZhZjY4MjhjZmE4NGYyNGI0YzU4YzY4MzkxNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhiMWI4NWU0ZjdlNGQxYjcwODA1MzU4MzgzZTQ3NWRmMjcxMGZhZjY4MjhjZmE4NGYyNGI0YzU4YzY4MzkxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmU0ODNiNTIxNTUwMzNmZmFmZTY1YTk1NGQyMmViOWQwODRiYjRkNzY1MGRiYmEzYWIxMzc2OThmODI2ZTMwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L1-L20",
+          "version": "repo-lines-v1:sha256:5d54fea71ae78a9b5cdeb747c3f4715650bce74bb4f79f60173113e31213765d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMzJmNjMwZTQ5OWJiZDBlNzY2MzMwY2I0N2Y5ZGEwYWViNzUzMjdhN2M4MzExYjA5ODY5MTZlMWU3NmQwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhNGNmYTBlZjU2ODVlM2ZhMGExNGZkYTdlNDM0MzVlMGNkN2FlYmI3OThiMDM4ZjQ3YmZkNzk2OWYzYzkxYzkifQ"
+        },
+        {
+          "resource": "repo://gradle/wrapper/gradle-wrapper.properties#L4-L5",
+          "version": "repo-lines-v1:sha256:380c00640cecd97ecd269b165da1876dd517fd2627902399a5d5fd53c30cf13a:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjA1MmM1NDI5NGIzMDEwY2YyMzRkZGVmYjRhODAzYjk4NTFkYmQ0YTJiMjIxZDE3MTA0YjIyMzgzOGZhMzk0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDNiM2Q5NWYzMTdhM2JlMGRmNzA1NjM0ODUyNzQyOWM5NWI0MGVhYmZmZjUzZTQxNjhhNTIwYmI3NTExZDg3OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGY5ODJmMDQwMDcxNDk3NjI4MDdmZmE5YmE0M2QwYjYyYjA2NmIzNDMyNTc2YWM1YjQzZjYzYTdiMGE3Y2JkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMThlYzQ1MjAxZjgyODk3NjhlMjgxMTk5NTEzZGQ5ZTRlNjk2MzY5OTE3NDhmMzI3YjIyNDJlOWY1MTc5ZTkzNyJ9"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L26-L28",
+          "version": "repo-lines-v1:sha256:34221885ee0dd684d44df52b2ee8165b2a2be2fd9499b964ff8e16eed5958df4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmU2NTcwZjE5YTIyMzA3ZTMyYzFjYWMzMzcwNDk3ZTUxOGNlZGZiYzU3MzU3MTVjYzUwMmFkZTc0YmExMjNhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2VhOGE3M2QyMThkZjIwNWQyMmQ1NjRmZTA0NmFlZmZkODJlZTgyMDI1YjBiODU4NTliNjRmNGE4YzFkOGYyZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2IyY2EwYWQzYzg4Njg5ODJiMTM4N2MyOGQ5YzI2OGM4YzE3YzdjYjMyMzZiMDRiNmI3ZWVlYzYyNzg1MzZlZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a98c50e9efc342e2911e495d4c2f4ef2",
+      "statement": "The app module targets namespace/applicationId com.autonomousone.messages, compileSdk 36, minSdk 26, targetSdk 36, enables both compose and buildConfig in buildFeatures, and is currently at versionCode 61 / versionName 2.6.19.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L11-L13",
+          "version": "repo-lines-v1:sha256:4c3c2424e5b8fe4b5cc6700ba777179cff6436af74c79547e3137b5258b71f5e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjBiNjZhZTJiZjc5YzJjNzk1NzRkOGMzYTdkOWIwMDBmMWNjMTUxY2U4NDU3MjRhZWUwNmM2ZmQ2MTBmZDhiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTRmMzZkODUyNGQ2MzFmNWQ1OTQ1ODUxODA3ZTk1YTNmMDY4OWRlODBhOTUyZmRkNjY4NDUzNWIxNDZlN2VjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjVkZjAxY2FmMWY5MTA0NjZlNjk0Y2YwYzEwMGNkYTNiNmVjMDM1YzE1MTI3YzMzYWExMTI3MTlkMWRmNmFkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWMwM2JmYzNkOTk0Y2VkOTY1MDZjMTAxMTk3MjNmODU0MGYyOWExMDkwNWQ2ODc3YzFhMDZiOTBkZDE3ZmM1NCJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L34-L49",
+          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L74-L77",
+          "version": "repo-lines-v1:sha256:175f89d04a64d71d80c50fad6d551f21c6a42a19d7b40fd41ca76bafd3be61d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWMyMGMzODg3N2I4NGJhMTRiMDM2ZTUyOTUzNmE2OWVlMzFiMGRiOWQyMGEzY2QyNjc0MjhlYjQ5NTE5YzJmOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjEyNmYwMTJhMmFjMjlkODc0YjExMjE2ZTA0ZDA0OWVmYWYxNWJlYmM3N2EzMmQ0ODgyYWJmODMwMDFkY2RmNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWVjNGRjNmZlNmNiMzdiMGViY2Q0YjMxZGEyOTE3NzFmZDIyMzc1NjYyODgwZWMwMGE5Mzk3ZTgyYjZmNTQ4ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_404098fcaa824e21a9c11ff011a95bee",
+      "statement": "Both pluginManagement and dependencyResolutionManagement resolve from google() and mavenCentral() first, with a content-scoped Aliyun mirror (https://maven.aliyun.com/repository/google) limited to com.android.*, com.google.*, and androidx.* groups as a last-resort fallback for networks where dl.google.com is unavailable; comments warn mirrors occasionally return 5xx which must not break CI, and repositoriesMode FAIL_ON_PROJECT_REPOS forbids module-level repository declarations.",
+      "evidence": [
+        {
+          "resource": "repo://settings.gradle.kts#L1-L45",
+          "version": "repo-lines-v1:sha256:e36601c8963084eb1f39af583a8a101f2d0b74ab2c4811c6ec8ee77afc15a66b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMjdhNWJiNzVhMDE0OWFhZDczNmQ1ZTBhMzA3NWQxODY1MzAzYzE2M2UxMzJmYzYxMzgxMmMxMjAwMjRlYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMjdjMmFkYzJlNmU3YzY0ZGI3ZDM2YzE2MGY1NzVmNzA4NGNjNWEyOTZlYjU5MTg4ZjQ3ZDkxM2ZlZDI2ZWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba593e813c954b718d60e7d63ab5d5a2",
+      "statement": "The MMS stack (org.fossify:mmslib:1.0.0, a Fossify fork of klinker android-smsmms) is vendored as the committed binary app/libs/mmslib-1.0.0.aar and consumed via implementation(files(\"libs/mmslib-1.0.0.aar\")) because JitPack, its only remote publication, has had repeated multi-day outages that failed CI dependency resolution; JitPack was removed from all repository lists, so nothing else in the build can depend on it, and the vendoring decision must be preserved.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L122-L128",
+          "version": "repo-lines-v1:sha256:bcd3177d86f3511122db3567c13365e7ac9344dcc913dbb71f644ddfd52db3cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTIzOGM0N2RlYjZlZmI3YmRhOTk1MjZiMDI2Yjg3Yzc3MDY2NjA0YTBkNGI0ZmY3YWIxN2VkZTIwMjc1YWE2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNmYzVlNGM5MmIwMmM5YzlhN2VjZjY3ZTE1MjEzYjAwNGM4NzRjYzg0NDI0NzQ3NmRiMjUyNGMzYjgyZGQ3YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGEwYmY4ZTk4OTBlYzk5ZjNiYWRiODZmZTdlY2NkNzkxN2IwOTZhYzQ1Nzk3M2JhN2FmMDRhOTUyYTZhNjg3NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTgyZGQ4Yjg2ODAzZjFlNGEyNTZjZjFiMjA1NDZhODgyMmY0NGIwNjdlNWE5MzYwZTMzOWZiZTI5YzNlMmUxMyJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L11-L15",
+          "version": "repo-lines-v1:sha256:5bc35e30b9da9450edf9460321da76c401cbe2da9f307dc534fd9fedd9613512:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmRkNGNjNzE1MGIxODdhMDUyNGM1OWY0NmRkNTQ3MmI5NTZiN2U0Y2UwNWUzYjNiYmU0YzI4OWQ1YWMxYjAyMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ5NGUwY2FiMzA4N2FjMWVjMjAyNzE2OWY0OWVkM2QzOTc0MTFjN2YwOTJmZWNjMDhmNGI2NjVkYTY0NTdhOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTc2MmQ5OWY3MmJhNTM5NmI1NDljMjE4N2QwOGRkZDAwMDlmZjYxNmNmMmIwODY4YjA1NGY4NzA1ZDM1YTRlMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWFkNzNiNzlhMjE5NjNjNTc3MjY2ZGM1NGI0YjMwMjAwNzJiNTVjODg5MzA3OTI2ZGU4M2E0ZDAyZGQ1NDhmNCJ9"
+        },
+        {
+          "resource": "repo://settings.gradle.kts#L41-L43",
+          "version": "repo-lines-v1:sha256:a83b74aa3acafa13dd68af2279ee419e941ba8d99a7b1a367c8f6e00ba65b48f:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ0NzZlZDYwZDcxNjk2MzMyZDdjN2NmYjBhMjNkMDMyNWEzMTUzMzYwOWVkMzRjYjQ3MjMzM2UxNWI5NzhjMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTAzN2FiZWI2MjRkYTZmYzI1MjMzOTMwMThhYzY5N2ZlOWQ1MWRlNzE1MTRmODY3MjA4YjBlMGJlYjRiNGIxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWQ1N2U2NjNmNGFlYjliNDFkZDgzMmI1Mzc5Y2U3Yzk2Yjc4YWU3NmRlMGE0OTg3NWYyZDE2MTE5NDA1NTc0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_04e17f7a732c44a69595a967ca266cc5",
+      "statement": "Because the vendored mmslib file dependency carries no transitive metadata, the three runtime dependencies from its published POM are declared explicitly in app/build.gradle.kts with versions pinned in libs.versions.toml: com.klinkerapps:logger 1.0.3, com.squareup.okhttp:okhttp 2.5.0, and com.squareup.okhttp:okhttp-urlconnection 2.5.0.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L128-L131",
+          "version": "repo-lines-v1:sha256:105e485179a467a8f726df9df135a8f4e5bbbbd899bdeeb38121be09e10bc25e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNmYzVlNGM5MmIwMmM5YzlhN2VjZjY3ZTE1MjEzYjAwNGM4NzRjYzg0NDI0NzQ3NmRiMjUyNGMzYjgyZGQ3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjMxMTBkODBhMmRhNjhiNGVmMTZmYjk1ODI1NWUzYjc4N2Y3NzQ3MjJiNzA5NjBlOGE4YzQzMGViZjAyODNmZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDQxNDQwODg2M2ZhMDE2MWYyZGVjNjUwYmY1MmIwMWU0ZTdlY2RkOTc1YmRkNmYxYmYyNmU4Y2Q2MDY0NzI5ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ0N2RkNjgzNThmZjQ2MTdlMWM0N2FmNjYxOWNhOGU4MDZjZDkwYWM4ZjUzYzcyOWQ0MDMwMzIxOWEwMTQyYiJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L16-L18",
+          "version": "repo-lines-v1:sha256:aad73b79a21963c577266dc54b4b3020072b55c889307926de83a4d02dd548f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdhOTlmYjc0MWY3ZTExMjRmM2I4ZWZhMzJhZmIzYWE5ZDY1YmM3OWQ3ODg3ZDRlM2ZlOTAyMDU2NTY0YTFhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDc5MDE1ZTBhNTg4ZjNmYmUzMWVmZTUyOTc2NTk1ZDZhOTU2ZjZiNmMwOTNiYzJlZGZkMDRlN2ZiYzViYmRlZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzlhNzRlOTBkMzQ3MTU4MjQ0OWZlYTFlODAxNjU3MjVmMjVmZTA4YWUyYzhkOGUyYWY5NWM4NjM2ZjdjNTAxNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjg3ODU2MmM5NzQwNTg1MDBiZTJlZGUyYmYzZDljZmZmMWJiYjEzZmQ4MmUwNWNhN2RkNWE3Mzc2ZTkwZTliNiJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L36-L38",
+          "version": "repo-lines-v1:sha256:59a2060fe6edafa505b926ff225d137c1cb49966600a256030d48e0f1b5c35d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmFmMGJjMTA5MzJjMzhkMzI5YTQzNjRhNWY2M2Y2MzM0YzFmYjA4MjM2N2QzODJiZDY5ZjRlNGU2YzMzZTljMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2E1NGU0YjM1OGU1NDUwNmM3OThiYzg1MTIyMWE0NGVmZWYzMzkwNDAyMzk5YWQ4MjIxY2E4NzBhOTBlMjUyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGI3MjhmZDRhZTQ4MDU2M2UxZTJlOGYyODI5NzkwNmM2NWFiZmNhMzgxNDU1OWEzZDlhYTU2N2UyYTM3YTFiZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTYyZWFkOGYwM2U5OTBmM2MzM2UwY2EwNDhjMjJkY2VkOWE1MWMyZDliNTI5Mzg2M2NmZTY0Yjg4YWE3NmU2NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ac569f794ec41b985dc931754dc21ae",
+      "statement": "The mmslib stack is wired into the app via manifest-referenced com.android.mms.transaction.PushReceiver and TransactionService for MMS receive, and app/proguard-rules.pro keeps com.klinker.android.** and com.android.mms.** whole (the transaction/PDU machinery is reached via the library's own broadcast wiring, not the manifest) plus -dontwarn for bundled legacy deps (com.squareup.okhttp, org.apache.http); the app's own gateway.** and model.** packages are also kept.",
+      "evidence": [
+        {
+          "resource": "repo://app/proguard-rules.pro#L1-L24",
+          "version": "repo-lines-v1:sha256:20e5b586aa6b601f1cc8bef83e426e4d92b1d39b59bfbe64a4ce4c992ff73090:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiNmY4M2Q4ZjIwZWFmYTdmZTJlNDA5ZTBhZjVjYzQ5YmQwZTc3NTU2Y2JkZWUwYTk5MzRhZWY1ODZjMTdmMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L100-L119",
+          "version": "repo-lines-v1:sha256:ef1916a969022fc5c6450c540ccfd7b93e7abd0ccc4bd70f13b243d36042af77:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmN2RkN2RiMGMxNGFjNjI4MzcxYjA4ZmRlM2Y3NDdkNzRjZjYwODRmYTk0MjI5Yzg4ZTE1NDYwMWQyZTFjOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlOTM4NjZkMWI2NTQ4NjJlNjc0MGQ1YTQ0MjUzMjhmNDllYmZkZjZhNzVlYzk2MzFlYWZiZDExN2U0MTEwOTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMzYmRiZGE5YzAxNTgxY2YxZGI1M2YyMTg1NzhlMTgwYmQwMzQ4NGU5NTY5NjM0OTBkODI0Y2JhMTJhNjJkZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1NWRlNDQ3NWIyOTIwOGY1ZmFlMGNkYTg5YTA1MDZiMTUxMzE0M2Y1ZTZjNGM2MzcxNjI2NzA5NDBhNThmZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_59157ab1a3f742698b0d39baeeda891e",
+      "statement": "gradle.properties sets org.gradle.jvmargs to -Xmx2048m -Dfile.encoding=UTF-8, intentionally disables the Gradle configuration cache (org.gradle.configuration-cache=false) to prevent stale AGP JdkImageTransform jlink path errors when IDE JDK paths change, and keeps org.gradle.java.home commented out for CI compatibility so Gradle uses the environment JAVA_HOME instead of a machine-specific JDK path.",
+      "evidence": [
+        {
+          "resource": "repo://gradle.properties#L7-L22",
+          "version": "repo-lines-v1:sha256:532b0dd6147364869f938330ab567676194a8e5287cdc3f3b60b234c9cf1652a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyZjc5YTAwYTNhNzUwNzc2ZDcxMWFiYmMwNTBhNzkwZWRlZDNjZTk5ZjBjMmY2MzFlNDNlN2U1OTY4NjljNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ZjJhMTJmZDU4NmQyMDJkZDVlYzcyOTZjYzdlNjllZGY5YmQ3NmEyZmE3YTdiMDU3NzRhZjVjMGRmZWVkZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZmE2NzAxZDlmYzA5ZGY2NDNhNmI3ZTFjNjkzNDY2OWIyODQ5YzM1NTM1N2E1NWNhNDBmMzExYjQyMjFiMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94710be314eb4c0d87f776d95fa734f6",
+      "statement": "BuildConfig.GATEWAY_BACKEND_URL is a String buildConfigField defaulting to https://gaitway.autonomousone.in and overridable at build time with -PGATEWAY_BACKEND_URL; at runtime GatewayPreferences.backendUrl returns a stored user preference if present, otherwise falls back to BuildConfig.GATEWAY_BACKEND_URL, and any stored value must start with https:// so the bearer token is never sent over plaintext HTTP; the value is displayed in SettingsScreen.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L155-L156",
+          "version": "repo-lines-v1:sha256:9853beacfce97a3616a013f478d55c6a7d203dea579b0734143d83c0bebc8a00:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODc2ZWE5OTc5ZjE4YTY0MmIyOTRkNjY4NWIyNTg3MTc2ZjYwZWNmMDJkNTJmZmQ5MzNkYWExN2NiNWExYTM4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzM1ODUzMTZhMjJhYjk3MGQzMTRkNTIxMDcyNjI4ZTEwY2Q3ZDhiMTVhY2IzMjU2ZWJmOWVkNzg1ZDk2NWIxNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmFkYTg0ZTBjOTFkNGRjOTRjNzllYWI3NTI1MjMyMGU0NzFlZGEzYWViYmI2MmQ0NTFkMDNhZDMyMTlkOGM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWJmY2UyMmI1MzRiY2ZkNTE3OThlZTRjY2Q5YmIzYjE1ZmE4M2E5ZTMxNmQ5ZDdmYmRjZWY2Yzk1OGI4NWZkNiJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L43-L46",
+          "version": "repo-lines-v1:sha256:58b8d39a6153e99c5efbdb35180a51bccc7b2b763e86f4ec2cb0a509e90c06e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU2MWQ5Njc3MDM4YmU1ZTdkYjJkYzVjZTZlODVhODM5MzI1NDgwNDA4YWQ1MWRlMDYzMWVlZDI2MGIzMGY1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTUyNjZjNzNmZGYwOTFjMmNiNThjYmZiZmZjM2YxOTY5Y2ZlYjAyYjAyNThlNGZjNDRmN2NiYWYzZTUxNWYxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWQ4ZjM4ODgxM2EwZDBiMzY2NGNjZTNmZTExNjViOTU1NDY4M2EyYzJiMzhmNmNhMjI4MzkyNWEwYzMwOWE1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDk3OGFhMTUxZjU3ZWI2NWM1ZWJhMDBiNDhhMjllZjE5YjE1YTFjYmZjMzg5MGNmMjc4NGU3OTkxNTRkMWYxNSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L165-L180",
+          "version": "repo-lines-v1:sha256:b7944f2b63da6966de91551fa2feddf107a415a61554c45cc593be1c67270170:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkxZWMyYzE5NmY3MDI2Y2FmYjlkODMwMGVlODVkM2M4OTVhOWY2YmMzM2YzNzBkY2ZmYTE4YWMxMjA0NWNmYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ZDYzZjk5NGEzMGU1NDI2OWZiMzI1NmU3N2ExZjUxMzEyMDkxOGM3NGI1YTgxMTcyYWYxMTY3Mzc0N2E2NjAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/SettingsScreen.kt#L701-L701",
+          "version": "repo-lines-v1:sha256:c7598b1c2028de8efe79259c99ada0c89a0bbafd2dfd1ea90209775db817c989:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzc1OThiMWMyMDI4ZGU4ZWZlNzkyNTljOTlhZGEwYzg5YTBiYmFmZDJkZmQxZWE5MDIwOTc3NWRiODE3Yzk4OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzc1OThiMWMyMDI4ZGU4ZWZlNzkyNTljOTlhZGEwYzg5YTBiYmFmZDJkZmQxZWE5MDIwOTc3NWRiODE3Yzk4OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2I2Y2E4ZmZkMDc0ZjUxZGYxYzQ4ODVlODU2YzgxNDMyMGVkMTMyZTk4ZDEyZmM5ZWNhZTlhNjRhMDg1Yzk0ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2JlOGViNzc2NjljYjVlMDAxMTMwZGQ3MzJiZjMxZmViODExZjMzYTBkOGE3OTNlNDIwZWRhZmJjM2Y5ZGI0ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fe8caa8695d34c8cad3084f6dd3e0bbf",
+      "statement": "BuildConfig.APP_VERSION is generated from defaultConfig versionName, making defaultConfig the single source of truth for the app version; the gateway components identify themselves with it: BackendClient sets User-Agent AndroidGateway/<APP_VERSION>, WebhookEngine sets Android-SMS-Gateway/<APP_VERSION>, and HeartbeatManager and RegistrationManager send it as the appVersion field in their payloads.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L47-L48",
+          "version": "repo-lines-v1:sha256:04abe7d74cc89075e23886ad118461992406d56e08c499ea4695c2e59b0e25c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTJmNTZmMmMxNDBlMWY3OWZmZTViZWY0MjdhZjI1ZDRjNTRjOGQ2OWZjZmU0YzA5ZjRmNGMwNzg3YThhM2FhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ0M2FkYThmMzg1N2U5YTgzZWJmMzdjOWMzYmRmM2I0ZmMyMjdmZTA4MDdiNTRhNzBjYzdiMTdhZGVjZjQzNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGI3MmYwMjNlZGYzNmZiMWRkNDAwYzE4ZDVhZjc0MzdkMWFiNGY0ODgxZDE1Yjk5YzAxZTEyMTQyZjJiYmZiYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjdkMjMyMjQzODQ4NmQzYTVhZjFhZTJmNWQ4ZTRkMmI3ZTA4NWQwY2E5MDFkNzk5MjczNjVkYWFmNzA2MWVhYyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt#L55-L55",
+          "version": "repo-lines-v1:sha256:23a97d2a4890aaa6df1ed52a67c945f4893a79b8fbda3c872c823558d7bde3bb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjNhOTdkMmE0ODkwYWFhNmRmMWVkNTJhNjdjOTQ1ZjQ4OTNhNzliOGZiZGEzYzg3MmM4MjM1NThkN2JkZTNiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjNhOTdkMmE0ODkwYWFhNmRmMWVkNTJhNjdjOTQ1ZjQ4OTNhNzliOGZiZGEzYzg3MmM4MjM1NThkN2JkZTNiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGU0NmMzMDE5N2EzZDJmZTFlM2Q1ZmIwNTliZmRlMzBlMzhlZGUxNmNiZjdmN2Y3YTkwOTlmZTRjYWUzZmM5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmYyOTgzYjlkMmI0YjQxNDFhMzM2YmIwMzEzNmEzODM2ZGE4ZmY5NTg2YTIwMDYyOWQ1YjU2OWYyMmUzYjE0ZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt#L139-L145",
+          "version": "repo-lines-v1:sha256:3cd900a239a4224de9ecb058ed3b9f1df9785be2ac754b78abbcde2c4602bd67:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWMxZTZhMmM4Y2VjMGFkMDQ3MTU4MGZiODMyM2I3Y2I0ZjI3YjcyNDk1NzZmMjFiYzYxOWMzOTI2MmZhNGQ3ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MWJmYWJjZmI2ZDg5ZmQ5ZjRlM2I3YmM0YTE3NGZkOTBjOTk4MTg2ZTRmZGUyYzhmYTM0ZTZkNWMyOTNhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzc1NGViYmZkOGVmZWE0ZDQ5ZWM1YzdhMzhiODcxNjA1Y2U0ZjMwYzk1Njc2ZDZlNTkxMGZjNDhmNTAzNDUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjZhNzRhZTI3ZDBjOTk4YmQyNjgzYmY1MDZlYjk2MTQ3ZWZhZjgyZjUzNmQzYTFiMWQ0YTZjZjg0YjEyYmFhOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/RegistrationManager.kt#L50-L50",
+          "version": "repo-lines-v1:sha256:f35b3a0f98da9e3879f81f36f153ecfba55195a1b01786b4eb0d9a232ebce405:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGFiOWFlNmU0YzAzNTMxODc1OTMyZDA4NjcxNjQ1MWM5MDQ5YTM0NGFiMzAyZTZlMjNhYzdjMjkyN2IzMTUzZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzQ2ZWU5ZmFkNGUzYmE0YWY2OGVkNmI3ZDM5MGMzNmQ3ODVhZDY5YmNiOWE4MWFhZWIzMzJjOTU5MmQzYTk4ZCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L67-L67",
+          "version": "repo-lines-v1:sha256:7ff0b0ab6438af3de5eca060e34a12176552894928250a3dc28bac02175089da:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ZmMGIwYWI2NDM4YWYzZGU1ZWNhMDYwZTM0YTEyMTc2NTUyODk0OTI4MjUwYTNkYzI4YmFjMDIxNzUwODlkYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ZmMGIwYWI2NDM4YWYzZGU1ZWNhMDYwZTM0YTEyMTc2NTUyODk0OTI4MjUwYTNkYzI4YmFjMDIxNzUwODlkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWQ1MGNlOWRiNGM3ZDc3Y2RmODU5ZjNmNWM4Yjc5MzU5MmIyMzI0NTAwNjI2MzhkMzJhM2I3NzM2NTliMzQ1YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDA3ZWU0NTBjODliZjYzMDUzNDE1ZmYwMDljZmI1Nzg3MjU0ZDAwMzU4YWQyYzI0MWU0NDljZGIxNjdlODQ3YiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a774ec2d15d64207a800d80973feeb3e",
+      "statement": "Signing credentials resolve with environment variables taking field-by-field precedence over the gitignored local file keystore.properties: KEYSTORE_FILE over storeFile, KEYSTORE_PASSWORD over storePassword, KEY_ALIAS over keyAlias, KEY_PASSWORD over keyPassword; keystore.properties is loaded only if it exists in the repo root, and storeFile is assigned only when a path is available from either source.",
+      "evidence": [
+        {
+          "resource": "repo://.gitignore#L17-L26",
+          "version": "repo-lines-v1:sha256:04f16e2af9397052d38b8622745690a99b8de89fbe07afbc1874d0045e54cb4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViODQwNzhkYzRlMGJiZWQzZGM2YWEzMjY5ZWZjZTEyZmMyMDc5YWU2OGM3OGY5MjU5ODBhZDI3MGMyMmJlMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NmJhMWYyNDc5YzU1MmRkYzIzNDAxMTNhMjZkMTkwMzg4MjVkNzkzMTYxZDA3NzQzMjJkYzkzY2ExZmU0MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlODllMWI4NmQ0ZTVlOGJjOWY1MDcxNjMzOTk0YTZiZjdmZjE1YTNiYzg0NGQ0YTVkMmRmYjU2MDhjODdkM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4N2U3Yzc1NWE1ZTZiZjY0ZWFiYWYyZmQzMzQ4N2FiMzNiNjNiOGVhODQwM2RiZjYzMjIwOTA5ZDgyMzgzMDIifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L15-L32",
+          "version": "repo-lines-v1:sha256:22e26ccc22bd0e76811ee5ca4a566ae7042de704fbc83175492032892b4d1331:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNGZhZTE2OTc5OWM2MTQ5MDdiODhiMDQ1ODA4MTgzOGM1MTcyMjNkMzhmNGQ4NmJkYjlmYTZkOTNjMzg0YWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MWY0OTJkOTcwM2I2MTZiZjcwZDk5YmQ0Nzg1YWUxMDdkYWEyYmI5ZTcxOTQzYmVmODFkOTE4YjA0ZTExMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzOGEzNDAxN2ZkNjU1Y2ZjNzJiNDA3NzEzNGIzOTc3YmVjODk1N2RjMTBlN2NmMTE2MmFmZjM4OTY4NjgyZjEifQ"
+        },
+        {
+          "resource": "repo://keystore.properties#L1-L4",
+          "version": "repo-lines-v1:sha256:00bcb99669e9f813b605a4899ba08efd06cc74c21fc078db7d5d2f9c8c6cbb31:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2M5NGJlYjU2YjhmOTZlNjM5YTk0ZTFjMjQwYTUxYTdmYmJiMzgwNWQ1ZmMyMmRlNTAzNTk2Y2MwOTA5ZTRhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWQzZmVjMTlkY2Y5YTg2ZWM4ZjEzZjJlNTllZWE3ODdjMDM3YzM2ODVmY2E3MjJmMGQ2ZGU4M2IzYTJhMzJkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_bb5fbe3776544e33870e7df468848893",
+      "statement": "buildTypes.release computes keystoreAvailable as KEYSTORE_FILE env set or non-blank storeFile property, and applies the release signing config only when true; otherwise the release build skips signing entirely and produces an unsigned APK rather than failing, which is the behavior when the CI KEYSTORE_BASE64 secret is missing.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L29-L42",
+          "version": "repo-lines-v1:sha256:538bb6a847d328afe741e61c1cb4a3aa4c3e2cd1f1203066a65cf3803276bbfe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MTY3M2I2Y2FmMjgwZTVjZDk1M2YxNzk2Y2ZjMDFmMGQzOGIzZDA3ZDhiMGMxNGY0M2I2YTVjZjk2YjBiYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZGJjMWQxYjNmZmNjZWEyODVlNWZlYWRhOWZiYWJhNDc1ZTE4M2M2NDFkZTdlOTZmNGUwOTUxOTI0YjVmZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxZGE0Yzg2MjY3Mzk2YzFjODBiNTU1Y2U4ZDU4NGY1ODFhODg3MzVkYzRjYTVjNjZhMWQ1YzM3NDRjOGFlNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYjQ3NjI2MTZiZGViZjY2MmE2MTM0NmNjNTAwNjY1NWFkYjJkNGY4YTBiMGI5ZTkzNmVhMjc0NDMxNzFkZmEifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L51-L69",
+          "version": "repo-lines-v1:sha256:e0fb919b1e0fd1e56d6a2a8e82866a88fbfaea8c2aae082acd4dfea4443b206f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMGRkYTU1OTM3ZWFmMjZlZGNmNzIyNjliZTFmMWFiNWRiMDQyZmQxZDNlNWRlZTMzMjNmODJhZDJjYjdmZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliYzE5NTJjYWQ1MTJjN2VkZDYyMzg1ZTcwMTlhMjY2ZWQwYTk2ZTRiYWJkOTZiNjE3Yjk3NTY0NzljMDdjOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwMzM5YTYyNzQ3N2ViYmMyODU5ODZhYzE4MmM1OWYyYjFmOTdmMDg1YzU5ODhiYzdhOTEyNTU5NmQ2Yzg5OTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_701f0ed1758c425eb6ce3d382474b835",
+      "statement": ".gitignore blocks all signing artifacts — *.jks, *.keystore, keystore-base64*.txt, keystore-final.txt, password.txt, alias.txt, app/release/, and keystore.properties — under an explicit rule that keystores and passwords are never committed, so local release builds rely solely on the local file and CI solely on GitHub secrets.",
+      "evidence": [
+        {
+          "resource": "repo://.gitignore#L17-L26",
+          "version": "repo-lines-v1:sha256:04f16e2af9397052d38b8622745690a99b8de89fbe07afbc1874d0045e54cb4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViODQwNzhkYzRlMGJiZWQzZGM2YWEzMjY5ZWZjZTEyZmMyMDc5YWU2OGM3OGY5MjU5ODBhZDI3MGMyMmJlMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NmJhMWYyNDc5YzU1MmRkYzIzNDAxMTNhMjZkMTkwMzg4MjVkNzkzMTYxZDA3NzQzMjJkYzkzY2ExZmU0MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlODllMWI4NmQ0ZTVlOGJjOWY1MDcxNjMzOTk0YTZiZjdmZjE1YTNiYzg0NGQ0YTVkMmRmYjU2MDhjODdkM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4N2U3Yzc1NWE1ZTZiZjY0ZWFiYWYyZmQzMzQ4N2FiMzNiNjNiOGVhODQwM2RiZjYzMjIwOTA5ZDgyMzgzMDIifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L15-L32",
+          "version": "repo-lines-v1:sha256:22e26ccc22bd0e76811ee5ca4a566ae7042de704fbc83175492032892b4d1331:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNGZhZTE2OTc5OWM2MTQ5MDdiODhiMDQ1ODA4MTgzOGM1MTcyMjNkMzhmNGQ4NmJkYjlmYTZkOTNjMzg0YWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MWY0OTJkOTcwM2I2MTZiZjcwZDk5YmQ0Nzg1YWUxMDdkYWEyYmI5ZTcxOTQzYmVmODFkOTE4YjA0ZTExMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzOGEzNDAxN2ZkNjU1Y2ZjNzJiNDA3NzEzNGIzOTc3YmVjODk1N2RjMTBlN2NmMTE2MmFmZjM4OTY4NjgyZjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0e9626b83b34ca5a7846e4f251ed243",
+      "statement": "The build-debug.yml workflow (Build Debug APK) triggers on push and pull request to master or main, runs on ubuntu-latest with Temurin JDK 17 and gradle caching, executes ./gradlew assembleDebug and ./gradlew testDebugUnitTest, and uploads app/build/outputs/apk/debug/app-debug.apk as the debug-apk artifact with 30-day retention; it is the only workflow that runs the unit-test suite.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L1-L38",
+          "version": "repo-lines-v1:sha256:5d440d68b81ada7bea5e39c295e77229298f7aaf6b337bee1a5b6695d7ab90ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MzAzMmYyYjE1ZmVmZjRiNWQ2OTUxNDE3NGRhZWU0MzBiZmZjMWJkMzhiODNlY2YzNjQwNWU3YWMyN2E5NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5OWZlYjI1OWY0MjBlN2UyY2Q1YTdlMzIyMGZhMzU1YjgzMDViNDA3N2FhY2I3MTI1NDI1NmYzZjQ0YTdiYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0fe531966ba42a08a021ab4915f329a",
+      "statement": "The release.yml workflow (Release APK) triggers only on push of a v* tag with contents: write permission; it decodes the KEYSTORE_BASE64 secret to keystore.jks (skipped when the secret is empty), runs ./gradlew assembleRelease with signing env vars mapped from secrets (KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD), and publishes app/build/outputs/apk/release/app-release.apk via softprops/action-gh-release@v1 as a non-draft, non-prerelease GitHub Release named Release <tag>.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L1-L52",
+          "version": "repo-lines-v1:sha256:0c4ac28458b7b4528fcc2ca78d2ad9db25bd8d435b55dcdd3d9d4f467f8dcbd8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NWRlNmEyZjc0NTY5ODNhYmE3YTIxYzRiYzUxMzFiMTMxOWRkZTMwOTg2NjgyOWZhZjcwZWFiMTM5ODI3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NTkyM2VjNmQ2ZjUzMGQ3YzU1MmI5MDhkNzlmMTNhMmE3ZTQ4YmEwNDZlNDhmM2M5OTZmNzg0ODFmMmY2MmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3656bad0e4fb480c9e9f54fe321b7f81",
+      "statement": "The release workflow does not run unit tests; test coverage is enforced on PRs and pushes by build-debug.yml, so a tagged release is trusted on the same code that passed the PR pipeline rather than being tested in the release run itself.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L30-L31",
+          "version": "repo-lines-v1:sha256:90586b71cc20269a481b3db038e51c9229dd7001ca92d1df663090b409f5872d:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTkzMWNkOTAyNmNhZTU0YjBjNjA3NjUwYTIyYWJjODliNGViYzA5MjMwNTZiNGE0MmNlMmNkY2IzNzJiNWNiNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDczZDllZjkwZDQ4NjEwM2JjNTM0N2YyNDMzNjkxMTI0N2Q5NDc5ZjNhYzg1NjY0ZTdmMDMwZDI4YTc4NTNlMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWMxMjA1NWQ4YTgzZjc1ZDcwMmU2NWRkYzk0YjJlYWMzYTZiNDZhZDUwNTU1YmUyNjIzMDVkMzZiMjRhYWJjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2FjNzgzMjI1ZTQxYWJmYmVjNDMyNmVhMDg1YTY5NTBiMjgxZmNjYWYxNTQ3NGQxZjMzYTcyNjM3OGRkZWE0ZCJ9"
+        },
+        {
+          "resource": "repo://.github/workflows/release.yml#L26-L31",
+          "version": "repo-lines-v1:sha256:934458897212a1b65dafba50a206545ebfd791f8d31120ab7d8e67133c4b133e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTY5OGY1MWQ1YWYyNDEyZDFjYzNjYmZlNzQzYzU3YmU4M2FkYWQ2YjE4NTZlMTQ1MDhlNDVkNDRjNDA4MzRlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwNzQ3ZWZkMzE2ZWNhZmEyZTM1MjM1NzkwZTM0ZTM0ZTA3M2VjNGMwZTMwMDYzMmJkY2M0ZjM5YTBiNGVmYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI1MDJhODMyZGNjYmQ2ZGE4NmMzMDY0MmU5OTk5ODc4Y2JiOTg4YTI5YTZlYWRmMjE0N2NmNTc1YjUwNDFhNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTI1YWM0NDE5NTFhZTBmZmEzYTJmYWQ2MzJlYzVjZDE1OTg5ZjhlNzAyMDRmNTk5YTkyNjY5NzU1ZDU2ODRjYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b104b0bac6c945dabc855e74697076a1",
+      "statement": "The openwiki-update.yml workflow runs daily at 06:00 UTC plus manual dispatch, checks out with fetch-depth: 0 (full history is required so openwiki code --update can diff HEAD against the commit it last documented, since a shallow clone yields an empty change summary), installs Node 22 with openwiki plus mermaid and jsdom for diagram validation, runs openwiki code --update --print with continue-on-error, opens a PR from branch openwiki/update covering openwiki, AGENTS.md, CLAUDE.md, and the workflow file, and propagates a failed run's outcome to the workflow status via a final exit 1 step.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L1-L74",
+          "version": "repo-lines-v1:sha256:c7f491c19f74076a4635ef1f4f5fa67281e14b6f7f9fece4969fc233ce5f8fbc:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2MDI3ODdhZjZkY2MwODM0ZGUxMjFjYmIxY2I5NWY5NDU5YjcyMWVhYjAzNDlmMTA1MDFiOTk2YzFjNzdmZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NzE4ZjA2N2I1ZTVjMWYwOTkxYTZlNzQ3MjZmZTJhMjNkMjY0MzQ1ZTA4ZTRlYWQwNGZhZjczYzI3ZWQ0NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6475c053777d4ed2b6f926c31d43517b",
+      "statement": "scripts/generate-release-metadata.ps1 (Windows PowerShell) locates the newest Android build-tools under the SDK root from sdk.dir in local.properties (or %LOCALAPPDATA%\\Android\\Sdk), then writes release-metadata.txt containing the aapt dump badging package line, the APK SHA-256, the signer #1 certificate SHA-256 from apksigner verify --print-certs, and a fixed play_protect_status note; docs/PLAY_PROTECT_APPEAL.md requires attaching this file and uploading the exact release APK without rebuilding when appealing the Play Protect internet-sideload warning.",
+      "evidence": [
+        {
+          "resource": "repo://docs/PLAY_PROTECT_APPEAL.md#L13-L27",
+          "version": "repo-lines-v1:sha256:504e040ffdb8b4718832c8d47e47db2d5f8eca4d99253468c1dbf79909bd99db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2Y2Q1OWM2NmY1NjExNTZiZWRkZGUxNzAyZjc2OGZhYmFhMTQxNWEzZDFhODA3ZWVkZGZiOGI0NmIwMDA1MjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0YWMxYjE2ZDkxYjc5OTZkNmJiMDc1YzI1MzZjYmZlOGEyYjgwMTJjMGY4MTY1ZTE4N2RlY2M1NThmMjQwZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2ODgyZjA3ZDkyMzljNTUxNWFjYzY4MGE4NWM3ZDdkN2Y1OTUwNzYwYTcyYmI4MTg2Nzc1ZWUwOGNlZDExZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlMzA0NzZkZWY4NWFmNzk2OWIyOTA5ZGMxMjNhMjAzOTc1MjQ0YThhMzEzNWQyZThhMzVlYTM4MGFkOWI2YzEifQ"
+        },
+        {
+          "resource": "repo://scripts/generate-release-metadata.ps1#L1-L35",
+          "version": "repo-lines-v1:sha256:c6a2e2162d0c8a8730e1ca9826becbe93b0adc66b9da5ef7210b2626f434f6fb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMTUyZjE3MGRkNTQ1NjA0MzdlZTAxNzY5MmUwNjRlZWNiMTJiZTEzYWMyMzRkZjlmMTU1ZTdiYzkyNDk3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2OWExOTgxZDU2NDE1YjI1ZDYzNmFlNTNkYzNjNTgxYzZmNjQwNjdhYmMyZDU1MTIyMDgxYTUxNmJmOTBkYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_818f1e3412ad4a118fe8a2c4610d9044",
+      "statement": "Releases are produced by bumping versionCode and versionName in defaultConfig (currently 61 / 2.6.19) and pushing a v* tag; each shipped version has a docs/release-vX.Y.Z.md note recording the versionCode and schema state, which is how versionCode history is tracked across releases.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L3-L6",
+          "version": "repo-lines-v1:sha256:2a9e77c5946c27cbf1f055f20adf283e159ffd3735e2dcc90edded2c35563c3b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk2ZGM0ODE0OWY1YTgzZDFlZDZkYmIzOWJiYzdlMmI5MDJhYTNkMzRkNmJkNWFlNGIyOTFiNjhkZjBjYTc5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjMwMWZjY2IyMDBkYjdkMWE3MWI0NmU3OTA3NTk5YWM4ZGQ4MjY4OTZjNzNiZmJjOGI4MDU4OTcwYzYxNWIxMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTZjYTNjN2QwMDNjNTA0YzRkZWMxYTNmMjA4N2JiY2U4NzQxNWZiOTNjNDE0OTlmNDUxZGUwOWEwODBkYjI1ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzk0NjJkNWYyYzIwN2U2YjRmODI4NDNkOTE1NGZmMGJiYWQwMzQzOTI0YjJjM2M0YmFiZDk5Yjg3Y2NkNGI4MiJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L34-L49",
+          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+        },
+        {
+          "resource": "repo://docs/release-v2.6.19.md#L1-L3",
+          "version": "repo-lines-v1:sha256:c651d26c5be1ed4958db3ebe6339c1a23ba1c4f749c1040cfa32ee819ccb391c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdjMDVhOWI1MjY3ZmEzMDE0OTdjZGY0ZTg1ZDExNmQ1NWYxYzIzNDhkNDdiODVlOWFhYTJiYzAwNzNhODBmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQ2NGZlZDZiOGY1NDVkZWU0YTIwM2VjN2M2NThmYWE4YWRiZTUzNmQzNTk0ZDIxMTZiMzk1YWEwZDhmZGJkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJlOWUyMzQ5NTVhNWEwZjZjMTJmMTIxZTBhY2JhMzM2NDljMWViZjU4OTg1YmYxMjAxZjViZjFhNmVkODBmYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9a6c4237a8764e69af030b914b45bdbf",
+      "statement": "KSP exports Room schemas to app/schemas via the room.schemaLocation argument so future schema versions can ship real Migration objects instead of destructive wipes, and the exported schema JSON files are committed build artifacts of history that must never be hand-edited (per docs/room-migration-strategy.md).",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L91-L95",
+          "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
+        },
+        {
+          "resource": "repo://docs/room-migration-strategy.md#L26-L33",
+          "version": "repo-lines-v1:sha256:04287a5dbeffe6ff5ff62cc232a61e328594aa674cea3d66f17633ebc43548e9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzI0NTg5MDk2ZGM5ZDIzMDllZjVlYmY1ZWUxZDk4ZjIzZDEzYjYxN2UwMzEyOGUyYmE3N2Y3ZGI2OTA4ZWZkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjBhZDA2ODc1YTU3ZGY3ODVlMGU4NTdhMGVlNDVmMTI5MjE0ZmM1MGQ2YzgzZGY1NTllZDVlZjFlOWE1YjRjNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTQxMmMxNjI3NDY3YjJkNGNiNDI3YTRlNzRjM2QwNWY0M2IxMmRhMzZmYTEyZGE2MTM3ZmQ5ODYwMjE5OGJiNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_75d2b7e206524d138fb1a9f749712fb9",
+      "statement": "testOptions.unitTests.isReturnDefaultValues = true makes android.util.Log and similar Android framework calls harmless no-ops in JVM unit tests, which is what allows the full JUnit suite to run headlessly in CI via ./gradlew testDebugUnitTest.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L30-L31",
+          "version": "repo-lines-v1:sha256:90586b71cc20269a481b3db038e51c9229dd7001ca92d1df663090b409f5872d:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTkzMWNkOTAyNmNhZTU0YjBjNjA3NjUwYTIyYWJjODliNGViYzA5MjMwNTZiNGE0MmNlMmNkY2IzNzJiNWNiNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDczZDllZjkwZDQ4NjEwM2JjNTM0N2YyNDMzNjkxMTI0N2Q5NDc5ZjNhYzg1NjY0ZTdmMDMwZDI4YTc4NTNlMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWMxMjA1NWQ4YTgzZjc1ZDcwMmU2NWRkYzk0YjJlYWMzYTZiNDZhZDUwNTU1YmUyNjIzMDVkMzZiMjRhYWJjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2FjNzgzMjI1ZTQxYWJmYmVjNDMyNmVhMDg1YTY5NTBiMjgxZmNjYWYxNTQ3NGQxZjMzYTcyNjM3OGRkZWE0ZCJ9"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L79-L82",
+          "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:750acf3133660688aa5455f03cc8855994eac212f1b6b0241bc2b48165e5f93a",
+  "claims": [
+    {
+      "id": "claim_b7c394f3ff3749e0b4db96e5b0262a68",
+      "statement": "ConnectionSupervisor replaces the old per-component 'just retry' logic (heartbeat stuck in a 5-minute backoff after a WiFi blip, LAN server bound to a stale DHCP address, outbox poller burning attempts against a dead radio) with a single reconcile loop over declarative desired state, summarized as state = f(desiredEnabled, hasConsent, online, serverIsUp, boundIp == nowIp). Every input change (user toggle, consent, network callback, IP change) merely nudges a conflated Channel (reconcileNow), so an in-flight action never misses an event — the next pass always sees the newest facts.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L100-L104",
+          "version": "repo-lines-v1:sha256:7212cf40321893c55d2dc0e54dc3693ea2825aa4de4c3c48bd98245a0b6eddc8:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGRlMDczOThkNTkzZmU0MDQwMDRiYTBmMDI4MjA2NTVhOTMwZDljYzg1NzMzYTc5OTE1MmZiNWYzMjhkZTczOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzY1NjgyM2MxMzY2MjRhNDI4NjFjNDcxMTg2ZTg4Y2Y1ZTAzNDY4YTUwZjFiZThiOGZkMGRkMmZlYmVhMTNjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjUyNGNiYzRmMzYyOTNlMjMzYWRlZWM2ZTA0NDU1NjZhZGVmMjZkYjAyZTEwNTU2ZGI4YWQ5YWEwMjEyY2FiZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L14-L48",
+          "version": "repo-lines-v1:sha256:ce5bb902b09834aad1771317c243fd3f5133c92c6dda78f6eee932f2d9ef5ff6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjU0NGE1ODg2MzQzNTBjMTkxNjlhODI0M2I1MzFiZjMwOTVlYjU3YzhmYjAzZTQ0ODM2OTQzZjA4MTY4ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmM2E2OWY0ZWIwY2NkOGRiZDk3NThmYTkxY2I5MjBkNWMyZjM0MmIwMGRjMTBlMjhkMWI1MzllMDI3YWYyNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMGViNTY4YjkwY2I1YzgwNTBlMzA4NGQ0ZjI0NzQ1MjlkNzgyZDVmNDA4MmM4ODdjMzk5ZDg5ZWUzZjMyYjcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L141-L143",
+          "version": "repo-lines-v1:sha256:d4706b869e1c60f09bd31aa668a8eaf611947bd320b3fe95a7266b98ab08bbd2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzdjYTdjNGQ3MWY5OWZiYzFmMjZiNDg2NjYyY2EzOWExMDc5ZjA4ZTcwMzYzMjAyMTNhMmMyZDNlMWQyYjAzMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjg2Nzg3YzA3YmRjYzFkMjFhODM1NjIwNDU2ZTVhMjM0MWFjMDZlZDJmNGE3YzU1N2VlZGFkYjI3YWFmZWIwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGMyZTkyMTQ4NDg4MDdhNjRkMWFhZWM3ZGUzNzVkZTgxZTMxNDVlMDNkOTdkNDhkNDE2OWM4NzllNjE4NTYwYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_87bb19ea7cfb4b6480dd3b6bd8c824f7",
+      "statement": "gatewayDesiredEnabled (SharedPreferences key gateway_desired_enabled) is the user's intent that the gateway runs: it is persisted, survives reboot and process death, is written only by ConnectionSupervisor.start()/stop(), and is never touched by runtime teardown (network loss, a stopped server, service death). This is the value that boot and START_STICKY recovery replay.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L125-L138",
+          "version": "repo-lines-v1:sha256:d90bdfe6f5fe4aa764283d37fd2ef1ed27b733df6e539c315a8d1629fdc84d75:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNTc0N2I5Y2FlZTdjZjA2YmVmOGEyOTIzNmY1OTgyMzZhZmVkMWFjYzlkMzhjYzFlNzAyMjg4ZDg2MDRlMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5N2YzMDBjZGMyZGIwMWNmNTA1YjYxMTNiYzkzZTUxYjkyMjA4ZDgxYzBmMzZjMjUzNzMyOTlhYzQ4MGZkOTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYTQ0YzUwOWY5YjI1NjI0NjkyNDQ0MzQ2MjJjZTdhYWNmNDdiNmQ3ODhmYjZkNTJjM2NjMjRjZGIzOGQ5NTYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L24-L32",
+          "version": "repo-lines-v1:sha256:4b7f81200c02073c6ba8b41c3b03d9792c7e69201ec66a366db8a8693ef53c62:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmEyZDhmNDllMGQ0NmQwYjE4YTUyOWI1NjhmOTgzZWIxZDE2MDdiZjdjNjhmYTAzYTA0MzdhMDc0YzgxMDlmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDMyYTc4YjRiZjRkYjU0YzlmMGUzM2QwYjNjM2JlM2FiZTBmYjBjMTE5YTQ0MDlhNGRkMGEzZWEyMDA5OWIxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzg5MjA5YjEzZDAyNmIzNWM4MDk5YjkwNGE3ZjYxYjIzOWY5N2Q3ODY1YjEyMGYzMzM4OTIxY2UwYzA0ZTRiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTc5NjRiOWUyMDc2ODk3ZjEzYzE5OTI0OGJkZTFiM2Y3Mjg1ZjE4ZDJiMmRmNzM5ZDYxMTU5ZTMzNmU5NjYyMiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L66-L69",
+          "version": "repo-lines-v1:sha256:cd516dfaaf86f44b7c0d0ed467788f74e26eed129276fe24abfa7369b628bb17:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGFmMmU5ZTc0MzI0OWRmMTc4YTI1OGVmZDJlYzdlZjk4NTAzY2I1Yzg1NzdhYTEzMjBkNTE0NmI1MGEyOGJhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFkMmFlZjQ1NjZlMGFiZWE3ZTk4MWU5ODM5ZGUxNzJiNDY0Y2I5Y2NiYjE0ODMzMDRiOTY5YzAwNDJhNzQ3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDRhZTkwMTRlZDhjZjYxZWNkZDhlNzE4MDAyNDZjMTE0ZTg2NDIyYmQ5OTViZGQ3ZWNhNjAxMjk3ODgyNTEwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTM2MmE4ZTE5MTYxZTI4NGY1OGVhZTEzYjMxYjNhYzQxMDZjOGNiMjRlNTY4ZjI5Y2E1ODU5ZjY1MWM5MzRkZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5b8cf097eee645dbb0c39aa91dcb922c",
+      "statement": "isEnabled (key gateway_enabled) is the runtime mirror: true while components are actually transmitting. It is derived and written only by ConnectionSupervisor — set false before stopping components on the disabled/offline paths, and set true only at the very end of a fully successful reconcile. Components gate on it but never write it.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L207-L263",
+          "version": "repo-lines-v1:sha256:1ad750528092157e2590386d4c29290cc157f58c883877eb4073f944a8adeeb4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMzBkZDE0ZTEyYzQwODQ5OWIzODg4YjJjMjdjNTAxYmNiMmIxZmNmMjg1YmEwZjBhYjVhNGZlOTM4NzA4YzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTE4MDhmYmY5N2NiNTExMzk4MWU3MjA0NDJhMGJiOWRjNDFiMTYxMTY0YTg3NjM1ZDUzYjFjNWNjMmM5NzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmOWYzNjA2OWU0YzczOWFjMjkxM2YxNDczZGRhM2ViM2E0MDIzMWFjYWM2N2FmZGJkYWZkNTdiNzI5YzlkNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L55-L64",
+          "version": "repo-lines-v1:sha256:b057095830bc47e40223ce0190371ccc0ef8a8c934576ed9a486d6d65b53fad8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5NTNkY2NkYzhlODJhMjU3Njg5Y2E2OGRkNjk0ODU1MGZiMzBkNWUwZWI1MWJkMWJhZWNlOGQ1MWE3NmQ1YTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ODQ1ODYyNWE0ZjgxNDdhZTQzMGNhZDRhOTc3ODJmYzlhYWJjZTlhYjBkN2RkY2UwZWRlNzY4YTBjNjdlYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiZGE4NDc0MjJmOTkzNmVmOWFmOTk3OThmN2Y5MjQ3MGI5NDc0MjcyOWI4MmVhNDhjOTUzNWVkZmNhZWE5NmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_72415ebd7f1d4b8b98a9867cdcaee4ea",
+      "statement": "hasGatewayConsent is versioned consent (stored version >= CURRENT_CONSENT_VERSION, currently 1) so a material data-use change can force a fresh opt-in; the supervisor's reconcile treats missing consent identically to 'not desired', and revoking consent clears consent, desired/enabled/auto-start, and cloud credentials.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L206-L219",
+          "version": "repo-lines-v1:sha256:ffd201a01f430daf318197be37a3627d07b347021d7b03d8300e6295f5941a29:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzOTNlOTU5YzBhYTM2OWJmZDE0MDA2OWVlNzUyZDY3OTdjZmMzMDdmYzg1NWQ4MTYxNDhiNTE3YjY5MjY1MzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L127-L150",
+          "version": "repo-lines-v1:sha256:02ba9a0fea32db11818c23cc7679d273e71939032cd0f64dc0aa18b5ef64acd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MTUxMWMyMjlhYzc4ZWYyYjdiMmJiYmM2ZjFlZjA2ZTQ4N2UxMzgzODQ4ODkyNmViOTI0ZTk5MTEwMTgxMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZjVmNDUyNTYzNmJkMjA2MGUyMzRhMDg5ZDdlYzQ1YTk4N2I4YjZhMGFmNzQxNzM3ZGY3NmMyOTY2MGNlZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzNDY4MDhkNjBjNzIxMzZhYTI3NmU3MjUxZGJmNDE1YzUyY2MwNWExMDM5ODQzNjdiOTFlYzRmMzA4YjM1MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_27053c534d2b4fcd811d8c7b1632bd30",
+      "statement": "Every transmission boundary gates on GatewayAccessPolicy.canTransmit(hasConsent, isEnabled), checked by HeartbeatManager, OutboxPoller, and WebhookEngine, so a supervisor-stopped gateway stops sending even if the service process is still alive; every start entry point gates on GatewayAccessPolicy.canStart(consent).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt#L3-L6",
+          "version": "repo-lines-v1:sha256:3f67674d766a6e07f50363e9e321df1cacef5acb6e511bade22ef79993c38e2c:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDZmZjVlOTg2NDI3MmFkNGY3MmM3ZTg5OGEyOWM3NDk4MWU3MjY4ZmUyZTJhYzI0OTYwMTg1NTgyMGFjZjZiOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjE2ZjlhOGQ2ZjYwYTI2MjI0YjNjYTY4YzdkMTZkMTQ4MjgyNGM1OWE4M2I5MjJjOGUzNTRlOGU1MDY1ZmQ2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt#L74-L80",
+          "version": "repo-lines-v1:sha256:a452659b6ee1bced312f3e460a9f22061dc312c258e5f2e6607e06fbfd11dba8:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjY3OGJhZTcyNTY4ZjM1MjRiZmY2Y2UxNmIyMzNmN2MxNmUwNjBkODdlNjhjNjFiNjEyZjE2NjRiOTJkNmM2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWZhZDEzZjFmZTM4ZDMwNzhhMjBhNjE2ZDI2NzhiMzRjYWMzMGU2ODdhZGUwNzIxZWI5MjU3NmFkYjUxMWE2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQxMGFjYmRhMzM3MWVkYjI1N2M4Mzg3MDQ3ZmMwZjMzYWU3ZTkyMjAwNzc4YjEyODc1ZDk4MzI0NzVhYzU3ZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L93-L97",
+          "version": "repo-lines-v1:sha256:d53b6247a7a6ca56f73f8bd92a207133af278332e965ef89ef6bbd7afa01f17c:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdjNWNmNDVmMzNjNmE2YmUzNTI1Y2ZlOGFlMGY2OTVkYjFiMzYyYjA0OGI0YmRmNjlkODc5OWZlNzk0Zjg0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGM2NDc5Y2MyMzA0NDBmZDQxZTgyMjQyMTg2Nzk2OTg1NTlkMjg5M2JkNjdiNDM4MGFmYWI4MTFiMzhhNTVhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDdjMjUwMTMxNTM2M2MxM2UyMjVmOTcxY2YzNzI2MmI4YzliMjg2YTQ3NDFlZDE4Y2MwMTQ2ZmU1MTg1ODQ2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODYyYWU2MWExZWY5OWQ5MTJjMWJiYjJmMDQxZDk2MjFiZjY5MjY1ZDkxYmIwZGY0NGE1ODYyY2ZmOTM1OWE5MSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L28-L33",
+          "version": "repo-lines-v1:sha256:3ab37e5b38afa19b0517834977a37f9c8464e7084bd9bcd91a992f317abcb5d5:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2RiZjEwZDczYzQyOTE5NTdkZmRmN2U4MGE0NjdkMWE3NjFjZjM0NTdiZWZjOGJiMmIzMDYyY2FhZmQwMzVjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGJjNzkwNGQ3MGI2YmM0MjFjZGVlYWUyNzY5OTM1YzVlZmMyYTE3ZGY5MzMwODU0NDczMTM4ZTJiNWNlZDcxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzFmMGQxODg3NWU1ZDIxN2MzMWZmMWZhZjllZjQzMDhlYTc2ZWJiNGVhOWFmM2FjY2NkNzA3NDJkZTQ2NjMyZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_dbd6c1fa347949cd8b322696e5c4a63f",
+      "statement": "All 'turn the gateway on' entry points funnel into ConnectionSupervisor.start(): the user toggle (GatewayViewModel.toggleServer → GatewayService.startGateway → startForegroundService ACTION_START → onStartCommand), the BootGatewayReceiver, the START_STICKY null intent, and the Doze watchdog. GatewayService.onStartCommand handles ACTION_STOP (supervisor.stop, full teardown, START_NOT_STICKY), ACTION_RETRY_NOW (startForeground + supervisor.retryNow, START_STICKY), and ACTION_START/null (consent check via canStart → stopSelf if missing, else startForeground + supervisor.start(), START_STICKY). Only the ACTION_STOP path and a consent-blocked start return START_NOT_STICKY.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L204-L232",
+          "version": "repo-lines-v1:sha256:2fbbeae9e0a3084613f3845f7f6f36919b5737f646b26b1d597fbb881bb40b5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyZTdmYmFjYjFmYjgyNzM1NDY3OTFhMzkxNTQ5ZDA0NWI3YzA3YmMzNDY3ODgxZDg3ZGU3YTRmZGY5NmVhZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5MTI3NDUzMjQ4MmVkNjVhODFjODk0MTU4N2MxZDljZmY2MDNlMDBkNDc2NGQ3MjQ2NmQyZGI2YzFhOWQ5NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmMmNiZTMzZGQ0OTJmODA3OWM4ZWNjMmViODk5MjNkMDhkYmExYmFjZjVkY2IwNjA2NjczMDhmMWIxZjc1NWYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt#L149-L165",
+          "version": "repo-lines-v1:sha256:6a19988ab140c21602f988b8706dbcfa9211c60381de66a0320ce8c3b1837d2c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzYWE2NjIwZmZiN2MxYWRhMTI0ZjcwZDM0ZWVjNThmYWE5ODk5MDk0YWJkY2M0Y2JmZTdiYTUxZWRhOTViOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5NzA4OGFhMzQ1MjkyM2YwNjkxNWE4Y2Q1YTVhMzJkNWM2Y2U2MmVlNjFmZTVkZWJjNDUxZDgwYTE5NDUwZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhYTFjNDkzNmNmYWE0MDk4MDg1YjM3ZDdhMTc5NjhkMDA2ZmM2M2Q4MGY1Y2UyMmNjZjVmOTY1ZGM1YTE0ZTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3bdab89d145148aa9d1994a7df422e22",
+      "statement": "GatewayService.startGateway(context) is the single choke point for the on-actions: it re-checks GatewayAccessPolicy.canStart(consent) before startForegroundService, so a phone whose consent was revoked silently drops the start (and onStartCommand re-checks consent on the ACTION_START/null branch and calls stopSelf).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L217-L222",
+          "version": "repo-lines-v1:sha256:b9356b732ca9af7932a21df3dd06d57273f0311181b5aa144093e14e8b1aba29:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjFlMTU5NGIyNDI2Yzk0ZTA0ZDRmZTg4NTdkZTQyYWFhY2E2ZjA2M2I3NjcwYTNmNDQzOTQ4ZTFiMTlhMzAxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjY3OGJhZTcyNTY4ZjM1MjRiZmY2Y2UxNmIyMzNmN2MxNmUwNjBkODdlNjhjNjFiNjEyZjE2NjRiOTJkNmM2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTQ4MTNiYjQ4YzRjYmQwZDEwYzk4OTY0NmJiMTU5OTcxNWNhYjZhZmE3OWFiOTNhOTM2MTU0ZjE2NjdiMTJlYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzQ4MmM5MWE1OTIyNTM1MDlhY2JiZGMwNTRhYTVhM2FiZWY4MTlmZDlmZGYwODQwMWZkNjYwMTgxMjgwMTY4NCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L77-L87",
+          "version": "repo-lines-v1:sha256:ba606f3ca54833a9cd0afd9c368839f0c355a95475d4e543fab3d0638852ae19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYTc4MGIyMTFiZTEyOGQ3ZmU3OTc5NGQ3MWVkZjcxZDZiYjkxYjZmZWRhNzkyYmE1MzgwNjFhM2FkZjdkMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxZTIzNzY0YmI0YmZhZTQwZTIxYTBkOWRiMzQzYmFkMzIzZDNlZjkyOTJjN2QxMmZkNGFiNDFlOWNjZTEyMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MzE0ZTVkYzJmZjhmNTE1MmRmMTZlOGY3ZTM5NmNlNTQ5ZDhkYmM5ZjZkZGYwOTQ5ZDkwYTNjM2FjOTQ1ZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ebec2b073c843079eea7876191575b6",
+      "statement": "ConnectionSupervisor.ensureLoop() (idempotent) launches the loop in the service scope with three sub-coroutines: (1) a collector on networkMonitor.onlineFlow() that calls retryNow() when the network flips online and the gateway is desired, else reconcileNow(); (2) a 10-second timer that nudges reconcileNow() — the local view of a LAN IPv4 change, where the boundIp != currentIp comparison inside reconcile() is the DHCP-rebind detection; (3) the main for(nudge in reconciles) loop that calls reconcile(). NetworkMonitor is the single source of truth for 'validated internet', requiring NET_CAPABILITY_VALIDATED (not just an up interface) so captive-portal/airplane networks are correctly offline.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L182-L204",
+          "version": "repo-lines-v1:sha256:1f340e297b51a4e8b15eef9c842d23cd8ff30e056b855275ae15ae6278472271:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ODIzNDFhZWRkYTZkOWNiNzY4MjdjOTVmMmVkMTFhMzEzMzIzMWUwZjYxYjNmNzQ0YWQ0ZGNkZjExYmZjYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZTY5YTVhNjVhMDVjODcxZTNiYjZjZmRiYmZkZTM1ZmYzYjlhNzIyY2Q2YmY2Yzg3OTkzOTkyMjNiMjc2ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMTdhNTA1YzFmMDg1Mjc5N2I5NTRiZmI0NmYyMTU4Nzk3NTYzMWUwODA4NzJjYjMzOGM5ZDliZWNjZWVjNTAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/NetworkMonitor.kt#L42-L75",
+          "version": "repo-lines-v1:sha256:e6813134af8f00da253308f3f77663c57c51a9a0b100877e0f9a7615a183443c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4OWM5ZmQyN2M1OGRhZjE0MzNhODU2ODIwYzJmMDNiZjUzNmUwZDVkNzhkOWQyMDcwMmE1NTY4ZTM4ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNDAzODNlNWEwNjNjZWQ3MzU0YTNkNGI1YzUyZWM2YzEwNDUzZGJiOWVlY2UyNmI3MGQzY2VlYWYzZjY5OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiMDA5NDg1NzU1ZWU3ZDYzYjljMzg0YWMzMGQ3NjQyMGI2MDY2YmE1NjczNTc3MGZlMjMyODE3M2VlOGEzM2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_760cb332da01464494bb02c638d806ad",
+      "statement": "ConnectionSupervisor.reconcile() is a short decision tree: (a) if not desired or no consent, set prefs.isEnabled=false first, then stop poller/heartbeat/server and set State.DISABLED; (b) if offline, set isEnabled=false, stop poller and heartbeat (the LAN server is left up), and set State.WAITING_FOR_NETWORK; (c) if online and desired, set State.RECONNECTING when the prior state was RECONNECTING/ERROR/WAITING_FOR_NETWORK, rebind the LAN server if needed, idempotently start heartbeat, start the outbox poller only when gmwebUrl is non-blank, and start shadow sync, then reset backoff to 5s, set isEnabled=true, and set State.CONNECTED.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L206-L264",
+          "version": "repo-lines-v1:sha256:8f3fe4978481a4c7b7730f84985e752d8ff10e674cf79efccc1a44a1f7eb795a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aa69def1250f4f54922ad3e712e55c64",
+      "statement": "A lost network is an expected condition, not a fault: the offline branch parks in WAITING_FOR_NETWORK (never ERROR) and makes zero HTTP requests, and it deliberately does NOT stop the LAN server because local clients do not need the internet.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L221-L231",
+          "version": "repo-lines-v1:sha256:825754db298359f8b2f3109cfdc5be1bd1f0ddc48f8b010b77acbddb2a36f7f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYWZkZWQ2MWUwNDM5YjNkZGJjMTQ0ZDBhNTJiZTVhZGU1NWY2YmNhYzNiMTgzMTM2YTkzOTU2YTE2ZTBlYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2MWE3YzA2OGUxYzA0NjM0ODE5NDdiNDhkMzNlNTQ3ZjQ2ODA2ZjJhM2MzZTkyM2ZlMWRhNDNiZDkxNmE0ZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4MzJhOTYzYmVjZjk1YjE1ZGQ4NGY2NWFhOGY0ZjM3NzlmNzY5MWI3MDVkMzViYzZkNzU3MjBhODkxYjc0YmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a8b8b6e1347b47f19af5eff4e8f83c4f",
+      "statement": "The State.CONNECTING value is declared in the enum and consumed by GatewayService.isServiceRunning, the notification, and the UI, but reconcile() never emits it — a fresh start transitions DISABLED → CONNECTED directly, and RECONNECTING is used whenever the gateway was already known-degraded before the pass.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L233-L235",
+          "version": "repo-lines-v1:sha256:8c4d2809863598a799a68a983b634c79b6fe3bdac5f299dc8932bfa431a0f67e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDdhOGJhODg3OTJhOWQ2YTI0YWM1Mzg1ZjUwNTJlNTYwMzM2ZGZhOWNjNjM4OWQ5YTYwZDZjNWU0YTZkZDNlZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzYxYTdjMDY4ZTFjMDQ2MzQ4MTk0N2I0OGQzM2U1NDdmNDY4MDZmMmEzYzNlOTIzZmUxZGE0M2JkOTE2YTRlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2I3YTUxZmI4NWRjOWQ3YjhmMGY0NGJmOGQyYjgyMGI4MTNhNzk5MzY2MjdiMWUxOTMyMTBmOWFhMjA3NmQyMCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L90-L97",
+          "version": "repo-lines-v1:sha256:758811cfbac07b1c7557417dcffda17d804cbef2a3a4829a4eaed0cfd01a8753:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQ4OWJkZTBlOGE4YmJhYWU4ODdmYzUwMDAxNmZkNzhkN2E4YzBkMTZmZmZmNzA2NGNlODcwOThkY2ZlMDNlMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U5OGViOTY4MGExNWE1MjNmYzZmNDUwMjlmYzJlMGQ4YTA2OTcwM2VhMmI2OThiYWJmMjVmZjc2NWRlZTE4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzQ1MzU3Zjc0Yjc5NWRiNjQ3YzRjMDlkOWE3YTU2NTQ0MWYxYmJmMTRkY2YxNmNkNTA4ZDZhZTQ5YTFlNmU0MyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L52-L57",
+          "version": "repo-lines-v1:sha256:719149172edba554d3d7e65f236ff51d07fbd2e94240bc8856449949d0462a3c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTBlYTQ5YzVjMmJiNjE3NTlmNTQ2MzlmNTM0ZjhlNDdlODUzYjgyNTNjNjBmZTcyY2MxZjJhODVhMDA4MDI4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhODU3MmI4ODhiMDhmNzk3OThhMTlhY2FkMWVmZGFmZWQwMjcwNDI1YTNlMWMyMmQ4ODhkMTA2ZDY1NjgzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODcwYzUyZGEwMjI2YjI2ZjhlNjBkMGViNWY4MzY4Y2Y5YmI5MjIzYTA4NTJkYWRjMDY1ZGQ4MjRjYjhjNDU3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTA2NWQ0ZWUxMzU0MTA0NzhlZjg3MWE1N2EzMGUzNWIxN2Y2ZjZiZmYzZmZiMmM5NmZmYjZkY2Y3NzYyMzA4OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_78a953063685457cb47829dd2c563eab",
+      "statement": "The DHCP-rebind condition in reconcile() is: server not running, OR (boundIp != '0.0.0.0' AND current LAN IP != '127.0.0.1' AND boundIp != currentIp); the current IP is '0.0.0.0' when bindAllInterfaces is set. When it fires, the supervisor logs 'LAN address changed (old → new) — rebinding server'.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L236-L243",
+          "version": "repo-lines-v1:sha256:79340e41008aca91d65fc7571ce65093e54d7a2ab27f7516ac579ee08b09b31c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjhjOTIwMzUwMTFkNjk3Y2JkN2E1MmViYTAzMTU3MDZkNDc1MjdlNDQ2YzcyOTU4NWUzNDIyYTU5ODFmMGQ1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhODU3MmI4ODhiMDhmNzk3OThhMTlhY2FkMWVmZGFmZWQwMjcwNDI1YTNlMWMyMmQ4ODhkMTA2ZDY1NjgzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGM0ZDI4MDk4NjM1OThhNzk5YTY4YTk4M2I2MzRjNzliNmZlM2JkYWM1ZjI5OWRjODkzMmJmYTQzMWEwZjY3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTJjZjVmYjM2ZjEwN2UwZTU0M2ZjMGIzZmQwYjY0ODU4Y2FkMzMyNDhmYWQwYzY0YzMyYzRjYWUwYjljM2VkMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c5eb29a68ac14457b5b06777f96e48ca",
+      "statement": "A stale or down LAN server is handled by instance replacement, not restart, by design: GatewayServer.stop() closes the socket and shutdownNow()s both the single-thread acceptor and the 8-thread handler pool, so a stopped instance cannot be started again; reconcile() therefore always builds a fresh GatewayServer via the newServer factory. Binding to 0.0.0.0 (bindAllInterfaces) exempts the address comparison, so that mode never rebinds.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L236-L253",
+          "version": "repo-lines-v1:sha256:edffbe13c1df3900750150a630f859bd74164e9bfaeac9a6d471a97958e6c6ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4YzkyMDM1MDExZDY5N2NiZDdhNTJlYmEwMzE1NzA2ZDQ3NTI3ZTQ0NmM3Mjk1ODVlMzQyMmE1OTgxZjBkNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNGQyODA5ODYzNTk4YTc5OWE2OGE5ODNiNjM0Yzc5YjZmZTNiZGFjNWYyOTlkYzg5MzJiZmE0MzFhMGY2N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZTU1OWY1ZjY3MDk0OGNhODU2ZjZkMGZhNmE0OTQ1OTQzZTEyNWM3ZGJkM2E0ZWJlYjUwNGUyYzExNDM4Y2MifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L95-L148",
+          "version": "repo-lines-v1:sha256:05d39487372da207af2a0f0d016eb3a3793fa670e6c2b825596584d3681909e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMTg2Y2JkMGYyZTFlNzJhYzBjYjdiMDBmODJiYzhjMTk0ODdiYjRiZjgxZmFkMzJhMjQxZDQ3MTc2NzBlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViOGYzODBmNzkwOTg3Nzc4MjI5MDYwMTZkNGUwNjQ3MGUyZmYyZjlkNmI2OTU0NjdhNGRhNDYxZTM0YjZmOTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyYzFiYTg4MzQ1NzU4NDVmNjBmZTIyMGEwY2VkMmQxMzlmYjkxOTM5OWQ0Mjc4YzJmYTk0MDEwOTYwMzhjMDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c906e7d850c414b807cac9bd73385ef",
+      "statement": "A bind failure (e.g. port taken) is not retried inside GatewayServer — start() is non-throwing and non-blocking and just logs. reconcile() throws IllegalStateException('bind failed on port …') when the fresh server is not isRunning(), and the loop's catch sets State.ERROR, waits backoffMs (starting at 5s), and doubles it up to a 300s cap before the next pass. retryNow() and any successful reconcile reset this ladder. 'The loop is the backoff' is what allows GatewayServer.start() to stay simple.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L192-L202",
+          "version": "repo-lines-v1:sha256:a78430802aa33d94fe9c26c9551251baf69af17264442ff18c948ed8ad7fa9b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NjM1ZTI4Njg1OWVkNGNhNjBlOTQyYThjOWRmYTVlMTM2ZGJiNWMyNGFhZjczMzg3YWY5ZGI2MGMyNjI4ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1OWNkOTYyOGY1YzVjOTQxYTk2NmEzYmNiMWRjZWI4N2U5MjVhNTc2ZDNmNTFjNmMyZmI5OTVjYzZkNDllZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L246-L249",
+          "version": "repo-lines-v1:sha256:6d5d4aa8bb40b4bb3f92fac8cdf44f8b842b1e381dec4bec203d450dcaeaebe7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc1NzY4YzlkYmNlOGVlNjA0NzZiNjgwMjljZjFkMTVhMzVkMGE3NWI1NDdhODdhMzY1OWIxNzY2Yzk2NWIyNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhODU3MmI4ODhiMDhmNzk3OThhMTlhY2FkMWVmZGFmZWQwMjcwNDI1YTNlMWMyMmQ4ODhkMTA2ZDY1NjgzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOThiMDJkNGMwMjM3YzQ4NDYwZTI4MjM3MGY5ZWVjYTAyMjUwOTZhZjMyNDE0YTNiY2IwYzllZjQzZGRmYTQwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmUzMzk5NDYyMmU5YWEyOTBjNzdhZjgxYjQyZTI5YjM0NGFlYzE1Y2YzZDk5ZTA4NTFkYjg0NDhkNzIxMzIyOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L125-L130",
+          "version": "repo-lines-v1:sha256:785f90aad0a060a346d2ffa3a32f94bb426ea6fa16181fa83dc2817f2e76c8cd:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWJkNGQ5YTVkMmFjNWY1Nzk3NGZmOWZkNjEyZDI3OWFiZThiMmMzYTRmOWI4YjkwYzZjNzRmMjBmYjE3NmE2ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2RlZDU3Y2RmNjI4ZTdiY2ZiN2Q3NjYzMmE4ZDcxNDg3MzRjMDQxYmM2NTAyMGRkODk2YmVmMTg4YTdhMjIxNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzc4YWRmOTBlMTRmMzQ1ZmEwMWEwNDc1ZTdjNTUyMThlNTZjMmEwZDc5NmUyNTM0NDJlZDY4NzFkZTExODkwMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1e7c19895a7b40a09dee5cc0b1bf1372",
+      "statement": "When the network flips online (validated), the supervisor calls retryNow() — not a plain reconcile — which guards on desired + consent + online, resets the loop backoff to 5s, calls ensureLoop() (reviving a dead loop), and calls components.retryHeartbeat(). HeartbeatManager.retryNow() resets the backoff ladder to its 1s base and pokes the heartbeat's conflated wake channel to cancel whatever backoff sleep (up to 5 minutes) is pending; a plain start() would no-op while the job is still alive and keep the old ladder in force. Net effect: a short WiFi re-association retries immediately instead of waiting out the 5-minute ladder.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L150-L165",
+          "version": "repo-lines-v1:sha256:cb0a46567830813e9370d88a083700aecd9edb369f2213a6d9cbe237b71fff72:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZjM2NTU0ZTI4N2U4ZDZiMjcyMTYyYWExYWE5YzJmY2VjMjdlNDY4MDQ4NGU3NGU0OTM4YTcxMTk1NWM1MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkZjM2Mjc1ZjhlNWNlMTgyZjY0ZDUwNmI3ODg2YjY4NWUwZTNiY2M5MDcxNmE1Yjk2ODllNTY1MzJmMTZiNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhNjNiYjUzZWYxY2U1MDRhNzRiMTBmYzc3MjY2N2Y2MTRkNTExZmE2MzFmNDYyMGFmY2RkYTIzNGMwY2NhMTIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt#L54-L66",
+          "version": "repo-lines-v1:sha256:5bea36d0c54ef519a37bf539c2b291973facaffd8dd057376c701a131f496f3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlMTViYjdkM2NjNzc4NzBmOGY1MTliOTRmNDNjYWQyYmRjMzNkMzczMjg2MTNiMDYzNjgzN2Q0ZTZjNDliODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiMDJmYjk2NTIxZGM3YjkxYWMzNzMxMDgwZWJkMGVmMzQyMzIyZDc1NWMyOWRlMmRmOTI3ZWViMjVhOGU3MDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczYmQwYTJiMjBmMDhmZTNjN2Y1Nzc1MDg1ODIzYzJlYzg5N2QzMjZhMDBiZGVlNGRlNzc0ZDE2OTczNjExYWEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt#L88-L97",
+          "version": "repo-lines-v1:sha256:5a911ac3b101379154de5c1151624de7ba3ee277535bb663ff783bd92ee70f77:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YmFjYTExNjc1OWIxMjAyNTgzZTE1Nzg1ZjI5Y2RiYjQwNzE5OWYwN2QxODA1OTAxYjM0OGQ3NzM2ZDE0MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NzhiYWU3MjU2OGYzNTI0YmZmNmNlMTZiMjMzZjdjMTZlMDYwZDg3ZTY4YzYxYjYxMmYxNjY0YjkyZDZjNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjZDNlM2E4MzEwNmFiYTM5MDZhNjgwM2I3ZDI2NjUzYTYwZDhjNDRkZWYzNDljOTY0OGRlYzUxODI4M2Y3Y2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiZThlYjc3NjY5Y2I1ZTAwMTEzMGRkNzMyYmYzMWZlYjgxMWYzM2EwZDhhNzkzZTQyMGVkYWZiYzNmOWRiNGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_240013e4256b4155b46e3f8a14ec621e",
+      "statement": "OutboxPoller independently gates on the network: while offline it sets State.IDLE and suspends on networkMonitor.onlineFlow().first { online -> online } — making zero HTTP requests (each would burn a 40s long-poll timeout against a dead radio) — and resumes the instant the network is validated, rather than relying on a timer.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L98-L109",
+          "version": "repo-lines-v1:sha256:0391c2cc1a731a9dae5967a99586614a00e7086f808e30941d4b687f81d40a58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNzEwMGNlNzFmNTM5NzQ2MTFmYTZmMjllYTBmN2ExNGZmYWVjZDAwY2I0YWExMmIyYzY4NDIwMzdlYmQ2NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzYTJjNTM3MTU2YzJhYjNkMTk5OTBiZDBlY2Y2YmQzMGU3ZmYxOTY3MTRjMzY3MGUzODUzNDU1MWFkZWEwYzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY2YzVlOWRlMWJjMWRmNzNhMjJiYWY0MGRkMDUzNDQ1MTcwYWZjMGY4ZTAyMDc3Y2UwZjY4NGYzMzMxOTg4ZmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_801a931e93404274887c7da328249294",
+      "statement": "Component death is healed by the reconcile loop itself: reconcile() re-runs on a 10-second cadence and on every network transition, and every action is idempotent (HeartbeatManager.start() returns immediately if its job is active but relaunches if not; OutboxPoller.start() is guarded by its running flag; the server is checked via isRunning() and rebound if the socket closed). There is no separate component-watchdog — idempotent re-runs of the loop are the restart mechanism.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L189-L192",
+          "version": "repo-lines-v1:sha256:177c264dd750d8146cffca3866670b1e1e276999df810a74e3be33721ecb8db1:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTVlMzU5YzUwNGI0MzEzNTJjM2EzN2VjZGIzMzBkYmU5ZjgxYzFlN2U4YmJkYjEzNWZhMGYxMTk5ZTc4ZDIxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzc2MzVlMjg2ODU5ZWQ0Y2E2MGU5NDJhOGM5ZGZhNWUxMzZkYmI1YzI0YWFmNzMzODdhZjlkYjYwYzI2MjhmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjFmYWRiYWYxOWUxMDM1OWJlZWE3MWFiMzA4NDllODFjOTc0YWU3ZGM2ODY2Y2QwZmViZjRjMWIyMGQ4YzMwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWY5N2Y5OTVlYjJiN2E0MmY5MWM3ZWE4MDUwM2IzNjNlNzBiOTJlMDVhZDlkZGEwYjQxNDk4ZGQxOWE2ODkzYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L255-L258",
+          "version": "repo-lines-v1:sha256:af280319cdf4e82028bab1751e4df50a1893177261f88532bc1583be074e1055:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt#L68-L71",
+          "version": "repo-lines-v1:sha256:bef1de3ff7edc2ef9da87d76bef32a0c61f947d6ce368c82461e67e30eb06506:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA1NzQ3YjljYWVlN2NmMDZiZWY4YTI5MjM2ZjU5ODIzNmFmZWQxYWNjOWQzOGNjMWU3MDIyODhkODYwNGUzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwZTI3MTZmYWIyMmIyNzIxOTBjNDQyNGI5YmZmZmY2NzViNWRiNGYxOGFlNWFiMjZmYjRmYTkyOWNkYjBlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTM4MmM2MTI0ZGFiNjlmY2U5NmZhMmQ1Y2EwZjU3YTgyMDUwMmYxZDlmNTRkMDE1ODNkZTk2YjcwZmY4ZTkyNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTI1NmMyNTgyOGY4YTIzZDA1YTIyNDIxMmRmMTI1Mzg3NjI5ODUyNjljMmUwZTM3ODJmZTc5MDg4ZDM5YmI4NyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L87-L89",
+          "version": "repo-lines-v1:sha256:3b69d7d805dabb4439cbd423a6c68046514e352a86d40a78e552f4d7513f12c2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGMwMWMwZjc2MjVhNDJiMzI0NzE1ZTUxYjcyZmE0NjdjYjVmMDFkMWRjNTcyODA0NWQ4MjJiNzllNmQ5ZjViMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjkyY2M0M2QzMDAzMDQ0MDg1ODQwNWJkNTEyYTRlNzI1MGE1ODY1ZTRlOGQxNzczZDE5YWNlMDlhODgxNmVkYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmFiYjU1ZTZlOWYxOTNlOGMwZDRmOGQ1MWQzNGIwYTIzMzEzMTliN2E3YzI4YWIyMGIwODUzODdiODQ4NTMzNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDdjMjUwMTMxNTM2M2MxM2UyMjVmOTcxY2YzNzI2MmI4YzliMjg2YTQ3NDFlZDE4Y2MwMTQ2ZmU1MTg1ODQ2NyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2e6de2b096284d358f148a33f4c39616",
+      "statement": "Manual self-heal is transport-agnostic: GatewayViewModel.reconnectNow() calls GatewayService.reconnectNow(context), which prefers the live supervisor (ConnectionSupervisor.peek()?.retryNow()) and only falls back to startForegroundService(ACTION_RETRY_NOW) when the service is gone; that start path rebuilds the supervisor in onCreate and onStartCommand then calls supervisor.retryNow(). The ViewModel's separate cloud register() call is a fast path only for phones that configure a cloud backend, so a pure android-pull (GMweb) gateway never reports a spurious 'Reconnect failed'.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L213-L216",
+          "version": "repo-lines-v1:sha256:4d8d2f84ae700ace59b5d88326e94f9ff8cdc8dd2d028cd8e5c2837e307edc9f:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTRlYTk3MGYzNmExNzliMmVmZDFmNjkzMGNhYmM5ODYxZWQ4MmYxZTg3YzU4Zjk2MGZkMWU2NjI2MWViNTE5ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhODU3MmI4ODhiMDhmNzk3OThhMTlhY2FkMWVmZGFmZWQwMjcwNDI1YTNlMWMyMmQ4ODhkMTA2ZDY1NjgzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDgyZTQ3NmQ1ODBhZjE4YWU1NjM0YzBjMWQxMTIzOGY2M2E0ZTNiNGM2ZDFkYTRjMWFiNTg1M2QxMDJlODM5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODdkNDgxNjRiNDY3ZmRjMmE1ZTQ1NzZkNzYzZjZhOWVhMTU3MDE0OTllYjE1ZDJmNWRjMTBlOTBjYzVkNzZjNiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L96-L118",
+          "version": "repo-lines-v1:sha256:7ff02a9763c061a7688d12bfb529d6d1f1865c357e7f4317404b1c53ed62b664:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1MTUzNzI2Mjg0M2Y1NjRmYmFiNDNhMDViNTI2NzcxYWJjNDYyOGQxYTUwOWM3NzlmNjc3MzgwMWIxODZkZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxYTQ3NTA2NjliYzQ3ODkxMTk3N2U1Zjk1ZTQwN2E0MTI2MzdkYWMyYzIwN2FkNWU2ODBlNTY2YjFhMDNmZGMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt#L167-L197",
+          "version": "repo-lines-v1:sha256:29e3d15750495a25ee035b21680474b42f76763f8909395926ea49ccab16f7cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyM2RjZDBhYWI2NTI0MDgyYjE2MzIwNzZiYmVhN2JlY2NmNjQzMzUxOTcwZGM1NGI3ZDA0M2I3OGQxOWViMzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2NDE3NzIyYzNlNzI0NzY0MDBjZGIxYTQ5ODFlNTIyMzhjYzY0ZThlYjliYTM2ZGIyN2YxYjJlNTZhOWNlOTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce63a2b2161a4119b79864efd754d7ca",
+      "statement": "Reboot recovery is automatic: BootGatewayReceiver is declared in the manifest for both BOOT_COMPLETED and LOCKED_BOOT_COMPLETED, and it proceeds only when gatewayDesiredEnabled && hasGatewayConsent, then calls GatewayService.startGateway(context) to replay ACTION_START. There is an asymmetry: although the manifest filters on both boot actions, the receiver's own guard lets only ACTION_BOOT_COMPLETED through (if intent.action != Intent.ACTION_BOOT_COMPLETED return), so recovery is effectively driven by BOOT_COMPLETED. Consent is re-checked inside startGateway, so a revoked consent silently drops the start.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L132-L142",
+          "version": "repo-lines-v1:sha256:362542107a9c55e0391307d99b16dc24dccd35b3f3010c68a065df60e236d9fb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxOWViNDEwYTE5YjdhZjQ0NDQ3ZTIxOTk5N2QwNDIzNGMxYjdlOTRjN2Q1YTRiMjZiOGM5Njk4NGE2ODUwYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZmM5OTk3NzgxNTA5N2FlYjZmM2Q5NjAyZjcxNjcyMzMxNDVjMGU3YzI1MjI2ZDY3MjQ5MTE0MDU2MWU5YzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkODRmZWNiMTAwYmQzNDkzNzYxMWRmZjIzOGJmM2QwYzU3MDM1OGQzMDU5MWU4ZGE4MGVhODI5ODlhNjgwN2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5NDM3YWM2ZjRjZDdkMGRjZGVkMTAwZDY4MGU5MTEyMGMxYzJmZTlmMzljMjU4NWFlYTYyYjQ5NTg0ZWEzM2IifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt#L19-L29",
+          "version": "repo-lines-v1:sha256:26ef485ef5e20bcb370562f0a13baeae43c4cfc5f82199568a7d537358300611:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNWY1MjEyZTEwNzkyMjE0OTczOGIyODNmZWFiMjg1ZGFkYzlkYzc2M2M1NzJhMGM3NzQxNjk1M2YxZjdkOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjNDJhMmE4Y2FjYjQzMmE5YjI0OGY5MjU1NmJhMzRjOWFjY2UwZjVhZWM0MDllMzViNGIzYmRmYzViMjg2NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyOWE2N2MwODQ2NmY5NWMyZTA1NGNmOWU2NTNmNDA5NjM5ZjIyYzJjNTE5ZjJhNDljMGNlNjQ2ZmRiNzVhMzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a5e8c83f41b4cf19c537ed1398abc97",
+      "statement": "Process-death recovery relies on START_STICKY: the on-actions return START_STICKY, so after the process is killed the system restarts the service with a null intent that lands in the ACTION_START/null branch, where supervisor.start() re-reads gatewayDesiredEnabled from prefs and reconciles from scratch — no intent payload is needed.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L217-L231",
+          "version": "repo-lines-v1:sha256:9e6662e33ef340b3c627edc1d4e163a7cd73f56433b8c669bb211f50430eb885:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZTE1OTRiMjQyNmM5NGUwNGQ0ZmU4ODU3ZGU0MmFhYWNhNmYwNjNiNzY3MGEzZjQ0Mzk0OGUxYjE5YTMwMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MWQ1YjkxMDJlYTlkOTJhMTM3OGRiYTg2YTZiNDIzYTRiYjgwMDU5Yzk1NTQ2MDEwM2ZiNTZiYmU2ZDdiOTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0ODEzYmI0OGM0Y2JkMGQxMGM5ODk2NDZiYjE1OTk3MTVjYWI2YWZhNzlhYjkzYTkzNjE1NGYxNjY3YjEyZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZjMxYWFhMDU0ZGNjYTY5NTVlOTg5NzFiNjVmZTcyNDViNWU2Zjk5YzdhMDJkYzkwMjQ1MGQzNDFkZjdjZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_69435cd2d4274761bc58042f9f26e393",
+      "statement": "Delayed revival under Doze is handled by an AlarmManager watchdog: GatewayService.onDestroy calls scheduleRestartWatchdog(), which, if consent is present and the runtime isEnabled is still true (i.e. the death was not user-initiated, since ACTION_STOP already cleared it), arms an alarm (setExactAndAllowWhileIdle, with an inexact setAndAllowWhileIdle fallback when exact alarms are disallowed) that fires ACTION_START after WATCHDOG_DELAY_MS (15s), even from Doze. The watchdog is never explicitly cancelled; the redundant ACTION_START it may deliver is harmless because supervisor.start() is idempotent. This closes the gap where START_STICKY revival is slow/suppressed under Doze and the GMweb pull bridge is dark (sends 503 android_gateway_unreachable).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L234-L267",
+          "version": "repo-lines-v1:sha256:22b557fe35bc4807fef5f3b1c6fd4cd5f4c0b3dbfc90432aad011948596b9999:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyMTRmMjkyYTUxNzNiYzNjZWMwZDk3Mjc1MTBlMDA3N2NjOTM5YWU5ZTkzYTFiYjJlYjhiMDJlMDgwYTJhMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2YWZjOGVjZGZhOGJjYWYxZWYwZDViMGM1ZWY1ZGUzZGIwNzBkZTY1YTQwMTM1NjgxNWEwMGU3OTkyNzYwOWUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L345-L353",
+          "version": "repo-lines-v1:sha256:eaefc68da26179f99a7034e3a0e82c66fa5efa68f2c032d455241dce11d452ee:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTdhNTA5ZjNjMDg2ZTI0NWI1ZGQzYmQyNmM5NzAyMTA4YzdkNjg0MmZhOWJlZjk5ZDk0ZTUwYjMyZTFkM2ZjNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzc1NGViYmZkOGVmZWE0ZDQ5ZWM1YzdhMzhiODcxNjA1Y2U0ZjMwYzk1Njc2ZDZlNTkxMGZjNDhmNTAzNDUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTFlZDg1ZjJhMjY1MWUyZTJlNjk2OWU4YTU0MDBhMzkzMzFmMTljNDIxZDA1ZmFlOWUwYTU5MWFhZTE2NDRkNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d31652987c145b6bdd5a3c6becc3592",
+      "statement": "Once the gateway is reconciled online, reconcile() also starts the Room shadow-sync component via TelephonySyncCoordinator.get(context).ensureLoopRunning() (wired as ManagedComponents.startSync). Unlike the other starts, ensureLoopRunning() starts the coordinator's mutation/reconcile coroutines without forcing a full reconcile, so it is cheap and idempotent to call on every pass.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L93-L95",
+          "version": "repo-lines-v1:sha256:da0c89813b48bf6a6de418963f05de69f9ad8acf474fd8eb4625cc50c65aff20:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmYxOGYwMzJkNmYwMzg4NzU3MjNiNGZmYTBkOTIyY2IwMDAyZWRlMjdjNmQ3NGRiZGQ4N2JlMGJlZTIwNjg4MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQyZWFkMDVhZTE2MDNjOWRmMzM4YTZmNTFkN2JlN2U4YmM4MWViZmE1NTI3MTVjM2I5YjIyZTg1ZjdhMTRmMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTUwOWExZDEwOTc2ZDhkMzAwZTQwY2IxMDU2NWYzNmU1NGVmM2RhNzYzMTA3Zjk5ZDUxNjJhZWJmYTAyMmE3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2NlNDlmMjc2NGZiNzJhODI5OGVkNTU3YzRmMjMyZDhlNDk5YzEyYTdiNTVhNjY3N2ZjYTM1ZDBjOTE2NzkyZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L255-L258",
+          "version": "repo-lines-v1:sha256:af280319cdf4e82028bab1751e4df50a1893177261f88532bc1583be074e1055:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L166-L170",
+          "version": "repo-lines-v1:sha256:2de45b8d9136f34f07e172ceefcfe06f55254cb2e94692740c6d4522f763ce1a:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWM2NDBkODJjNjkyMTNkYmRlYzUwYjBmOTAyMDE1M2I5M2Q2YjI3ZTIxOTBjNjZkODY4MWQ5MjUxYWMyMDg0ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTRiN2JiZDY3ZTQwZDVhMWJjMDU2YjFjY2I4NzYyMWU1ZWVjNzQzYzE0Mjk2MmYzMjlhNDBhMTYwNjZjZTNlOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzgwNjI1NmY0MDg4ODQ3MTA3Y2Y5MjQxZWY2OTgwODA3Y2RkMTliOTRjZDExZTE0MTAxYjJmY2FjODA5YzAzNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTgzZTlkYzE0OWMxYWExZjM3ZjlmMGI5ZjU4NjAyMDk3MDlkYWU1NTAzMmQxOWE1MDJmNDQyNjg1Mjc0ZjQyOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_79a875ced6df4b229dcf55979bdb86e9",
+      "statement": "Runtime truth surfaced to the UI and the persistent notification is always derived, never hand-set: GatewayService exposes static isServiceRunning computed from supervisorState (CONNECTED, CONNECTING, or RECONNECTING), and a collector mirrors supervisorState (and OutboxPoller state) into the low-importance notification so the user sees states like '📴 Waiting for a network connection…', '🔁 Reconnecting…', '⚠️ Retrying…', or 'SMS Gateway Active' instead of a silent dead gateway.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L174-L179",
+          "version": "repo-lines-v1:sha256:a9ef3614f9d125fab792e3e5936762012a2d9d0a1f09855c1de88cb567d430f3:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGNkMTY5ZGU3YjU3YTdkNzdkYzA2YjA4Yjg5ODM5ZTA2NzRkZTJhMmQ2NDk2MmQwNTc2NDYxOWJiMDliODU4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MWJmYWJjZmI2ZDg5ZmQ5ZjRlM2I3YmM0YTE3NGZkOTBjOTk4MTg2ZTRmZGUyYzhmYTM0ZTZkNWMyOTNhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTgzZTlkYzE0OWMxYWExZjM3ZjlmMGI5ZjU4NjAyMDk3MDlkYWU1NTAzMmQxOWE1MDJmNDQyNjg1Mjc0ZjQyOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTA2Zjc5Njc5YjcwMjNmZThkOGVhZTQ3YTY3MzZlZWRjOGZjZTY0YzIwODZlMDE5NTZjMjE4YjA2Y2ZlNzkxMyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L314-L343",
+          "version": "repo-lines-v1:sha256:36f8156169590ad41a7d397ca81d8c244b691090918052abaa4eae8cede409cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNWM3OGEzMjMzNDc4NTA2OTk1YmM2YjUwZDZmMWNlZWQzMDNhNzFjNDZjMThjM2Q4NzZjZTRkNmRjYzVmMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1MDIxYTVlM2NjYTlhZjljMzgzMzYzZDA2Y2U5MTMwYjg5NTBiMWIxNjA5YmYzN2E5MWRiZTQwNmRmM2JkNmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L52-L66",
+          "version": "repo-lines-v1:sha256:6faa347111293fb46224669d86f87e387aa663172c90680d2d51f111a58a7d1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZWE0OWM1YzJiYjYxNzU5ZjU0NjM5ZjUzNGY4ZTQ3ZTg1M2I4MjUzYzYwZmU3MmNjMWYyYTg1YTAwODAyODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYzU3MmVkM2EzZmQ4ZjBkNmI3ZTRlNTdkN2RiZDFkM2E2MGVlOWJmN2NmMWFlN2JkNmUwNTIyMGNlMGI3NzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3MGM1MmRhMDIyNmIyNmY4ZTYwZDBlYjVmODM2OGNmOWJiOTIyM2EwODUyZGFkYzA2NWRkODI0Y2I4YzQ1NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1OWI1YjIxYmQxYWI5NTEwMjY3NDhkYWQyY2I4OTgyZDcyZmRkNTljNDU5ODE3MDg5NjRiODIwNjQ3YzM3OTEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:ae2c03636d6431ab3a4651b30f903ad71c21d3766ffd4f6416d1a292791c7d11",
+  "claims": [
+    {
+      "id": "claim_1d04c24eea58411b866ee59248230233",
+      "statement": "Opening a conversation never loads the full thread; the screen keeps a bounded window (the newest pages by default, or the oldest pages after 'Go to first message') and walks the rest lazily one keyset page at a time in either time direction.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L30-L52",
+          "version": "repo-lines-v1:sha256:97483fa0a570a1b30153d5aa14bdf53fa7dbbaa7c5f5d5cb89ee89e1968a3802:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjU0NGE1ODg2MzQzNTBjMTkxNjlhODI0M2I1MzFiZjMwOTVlYjU3YzhmYjAzZTQ0ODM2OTQzZjA4MTY4ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlOWQyMjI4ODAwZGM4ZWExNGExOWQ5YzA1MDA2ZjQ2YWVlMTVhYjAzZGZkNzcyN2ZlMmM3M2RkZGVkMmQxZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2N2FlYThhMTFhMDk2NDBjOTY0ZWVjNjY1ZjkzNDkyNDIyZWZlNjRlNzQ4MzRkZWE0M2MxMGY1MGFkNDA1YzIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L506-L535",
+          "version": "repo-lines-v1:sha256:a04d228982d0c3488d705ce11c12af6120f2a13c064f1a96052cbe1e1215f566:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MzI3Nzc1YWQ2MWI4NDczNjUzYWU4NjhmMTAwYjkzZTg3NDM5OWE5MTcwNjI4ODEyNTEzZjlmMTg5M2Q5NzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlOGJjNDQyNjFiZGY3Y2ViNDljNTRhZGE5ODVhOWFkODAxZjljOWFhMTRlYjFmY2FmOTkwNTQzZDgzMjgwMmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3MTdjZDk3MGU4YzhlZjEzYjdmMzE1NGZiY2MxM2QwNjBjNDM2ZmVmMTE2NzgwMTNjYjRiNjYzMjFkZWM0YzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1MzEyOWI1MWI2YmIwNzFhYzk3YTQyM2VhZjNiOThkNzBmNDc2MTEyOTAzNmNkMWQyNzg3MWI3YTE4ZTMwMjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_49404a1e1c6d400c9678b9f8398d2c38",
+      "statement": "ThreadPager fetches INITIAL_PER_SOURCE=12 rows per source on a boundary page (the open page and the Go-to-first-message page) and PAGE_PER_SOURCE=40 per source on interior crawl pages; because SMS and MMS are queried independently the worst-case boundary read is 2x12 rows. OLDER_PAGE is a v2.6.5 compatibility alias for PAGE_PER_SOURCE.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L71-L83",
+          "version": "repo-lines-v1:sha256:9698066c122c2726dfbe95bc175ed496ecf23bbefc77cda8a8620d92443f1f6b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1YzllM2Y5ZTkxOTg3MGVkMTI1MzAxOWViMzRiMDgzMGNkYTEwNWQ5OGYyZWRmNDlhMGRiZGY0YmJkY2UyMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjOTNmZDVlNDE1NWU1N2IzOGY4ZTM5N2UxOWU5NGU3MWY1MWNlN2ZiNWZjNGEzY2YzMjRlZjNkMGIyZWFjZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e06f3501f4ff48c7af6f657760ef58f3",
+      "statement": "Canonical invariant: every public ThreadPager method returns rows oldest to newest (ASC). Descending order exists only inside a provider query (ORDER BY date DESC for the older crawl) and is flipped to ASC (mergeDescending(...).asReversed()) before returning, so the ViewModel and UI never see a DESC list.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L328-L328",
+          "version": "repo-lines-v1:sha256:c89bc2f3d2aca21e51189390660def3ad05d7293532d4755c073830d0db1251d:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg5YmMyZjNkMmFjYTIxZTUxMTg5MzkwNjYwZGVmM2FkMDVkNzI5MzUzMmQ0NzU1YzA3MzgzMGQwZGIxMjUxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg5YmMyZjNkMmFjYTIxZTUxMTg5MzkwNjYwZGVmM2FkMDVkNzI5MzUzMmQ0NzU1YzA3MzgzMGQwZGIxMjUxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODA5YjRjMzNkOWQ0M2ExYjZhZTJlMWE4MDI4Yzg1ZDU3OGU3NGU5MDM3N2FmMWY2MWFhYjNjZTYyYmYwMzczNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmRhMmE2ODgyMDM2OWZlOGU1MzYyZWJmOWJmY2FkYWQ3YzU5ZGNlZTk4YTY1NWU0YmVkYWM0MWUxNWI3YWY5MCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L46-L48",
+          "version": "repo-lines-v1:sha256:9a3791b4464d0cc6781a137c1931c0a4ad298e05bb890e0bebd66a223c898d8d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQwMTk3MGEzNmNkMDg1YjdhMWNhMzBmMjMyOGVmMmU5MmQ2MzFmZjUwZGNiYTA3ZGE2ZDc4NWVmMmE4MjJhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjFjZDhmMDJiODg2NDVjOWRiNTE5NDVjOGY1MGJjZTcwMWM3ZmVhN2ZjOWI1YmM2YzY5NjgxMTU3ZWQ3Y2NiZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTE1MDk0Nzg2YWZhMTQ3NDcyZWJhYTkwNDdmMDEzYmFmOTY2MjgwNTFlZGZjYmMyZDA2YTUxYzViNDNhMjhhYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjc3OGRjNjg0YTU1N2NiN2JiZmYzMDMxYTIyNGNhYTE2OTE0YzZjNWZkY2RlMmRkMmUwZDQxMGZhZTJlYTk1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f5198d42a9ff42a2b502a22967d146ad",
+      "statement": "Canonical invariant: SMS and MMS keep independent (date,id) cursors and independent exhaustion flags; a crawl direction is exhausted when smsExhausted AND (mmsExhausted OR threadId<=0). A single merged cursor previously let the source with the newer tail skip the other source's rows forever.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L149-L149",
+          "version": "repo-lines-v1:sha256:187ef9585e88fef79298c2b421a890d1f79656f9baea0573fdd51dd60983625a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg3ZWY5NTg1ZTg4ZmVmNzkyOThjMmI0MjFhODkwZDFmNzk2NTZmOWJhZWEwNTczZmRkNTFkZDYwOTgzNjI1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg3ZWY5NTg1ZTg4ZmVmNzkyOThjMmI0MjFhODkwZDFmNzk2NTZmOWJhZWEwNTczZmRkNTFkZDYwOTgzNjI1YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODg0NjU3YjI1NzZkNzZlZWFhM2ViMjliNDU0YzkxZWNkNmM3YTQ1YmQ1NWFlMTNiZDI2MzZlYWNmMWEyYTRlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjdiNDEwOTg1Y2JhNDFmY2FmM2UwMGFiNTE3ZDA3OGE0ZGQ1NjEzNjcxMDEyNDg2ODNjNWFiZWY0YzFkNTA5YyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L162-L162",
+          "version": "repo-lines-v1:sha256:187ef9585e88fef79298c2b421a890d1f79656f9baea0573fdd51dd60983625a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg3ZWY5NTg1ZTg4ZmVmNzkyOThjMmI0MjFhODkwZDFmNzk2NTZmOWJhZWEwNTczZmRkNTFkZDYwOTgzNjI1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg3ZWY5NTg1ZTg4ZmVmNzkyOThjMmI0MjFhODkwZDFmNzk2NTZmOWJhZWEwNTczZmRkNTFkZDYwOTgzNjI1YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWFiMTFiMjIxYzAwYTc3Mzg4OGFmYzNjYjM4OTQwOGEyYmJlZDNhYWY2NzQ3NjM1NWNhMzVhNmY3ZTc4ZDIwMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjdiNDEwOTg1Y2JhNDFmY2FmM2UwMGFiNTE3ZDA3OGE0ZGQ1NjEzNjcxMDEyNDg2ODNjNWFiZWY0YzFkNTA5YyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L204-L204",
+          "version": "repo-lines-v1:sha256:3b1ad51993397c2641bb4edd84065631a20fb2df7b08aaa2f881aa1d82f37781:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2IxYWQ1MTk5MzM5N2MyNjQxYmI0ZWRkODQwNjU2MzFhMjBmYjJkZjdiMDhhYWEyZjg4MWFhMWQ4MmYzNzc4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2IxYWQ1MTk5MzM5N2MyNjQxYmI0ZWRkODQwNjU2MzFhMjBmYjJkZjdiMDhhYWEyZjg4MWFhMWQ4MmYzNzc4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGE5M2IzYWMzMDAwMWJmNDc4OTlhNDcwOWE2MjA3NWFlYTg4NTNiN2U2ODI2ODcwYTJmMzc3MThjYWIwMTRkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGY2ZWEyMzMwYTJlZjNiYjlmMGYzNTI5MWIwOThiMDU3OGE1YjEwZjMxMThiMTEzYzFhZDhkOGJiMTBhNWNmZCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L50-L51",
+          "version": "repo-lines-v1:sha256:19821b9a8fc3481121487325caf09cd6a5116cc60918fbb5b1852de3940222b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjI1MTkyODQzMWM2ZDE2Yzk5NjI4NWQ2ZTdkZWE0YTVhYzFiZjBlOWZkMGFjMTA4MzJiMDIyNjQzMjAzMjA2OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQwMDc1N2ZiZDI5YTNkNzRmYjlhZDlhZTQ5YzBhMTI2NzZjZDhiY2E2OTQxYjM5ZDM1NWQ5ZThhZjVjYTdjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2I2ZjZkZDcwNDI5NDZiNDdjNThiZGJmMjZmYWQ1YTU3OTczODVlYWIwYTgxZTI3ZDMyZmJhMzAzZTRkNDdkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFkMjkyY2MzNDRjOWJlZGRkNDAyODc5MzhlMzIyZjVhYTdmMGYyYzYxMDNlNWM1M2VhOGE1NjM4Yjk0Yzk5YyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c65d9b9e88f4ca283a7d556291dc6b9",
+      "statement": "Canonical invariant: OFFSET paging ('skip the first N rows') is forbidden; every keyset step is O(page size), so a very old thread costs the same to open, to jump inside, and to walk as a small one.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L42-L44",
+          "version": "repo-lines-v1:sha256:de0fc55c5a6d93f3ec68d6ede1aa219f8d07ac45e8dc58e193fb3b97bfe63789:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTBkZGUyYzgzMDBkZTcxZjM0ZWU5NWE1M2MzMjk4MjU1YWI2OGI4ODVkYjE5YTE2NzQ0YWNhMDk3NjNiY2JiYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc1NmUxMmEyNmQ5NTNmODkzYjA0YmQ5N2ExZmU2MzA3NDRmZGUwNjZiMGJiYTkyYmEzMmVlOTI3MTJhYTNiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzFhMTdlZTc0NmVhMWRjNTNlNzQ3ZjE0NWY0MzRlNjg3MjBlZTNjZWE2ODRiM2Q5MzdlYTM3YjI2NmFiYzA0YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDIzMDc1NTY4YTc4MjQ3ZjdlNzQxMmI5NjA5ZWE3YWQxNDE2NjY0NmQ0MDlkZDAzYzQ0ZDQ2MWNlM2ZhYjRhYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ebf70917ca1c4fc28eba3dee245942c6",
+      "statement": "Canonical invariant: the 'oldest' boundary page (loadOldest) always reads the Telephony provider, never Room, because the Room shadow may still be backfilling historical messages and can be arbitrarily incomplete; 'Go to first message' must be correct even mid-backfill. The Room shadow is used only for the newest instant-open window and only once fully ready.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L166-L206",
+          "version": "repo-lines-v1:sha256:5897289c02ad62d9056b165a6fc4a9cfc59223559dc078b45f2cb3873d97a124:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3YjQxMDk4NWNiYTQxZmNhZjNlMDBhYjUxN2QwNzhhNGRkNTYxMzY3MTAxMjQ4NjgzYzVhYmVmNGMxZDUwOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5YTZhZDg5ZGQ5ZDczNWVhYmQyNDM3ODc1YWU3YWFjNGRhYTlkYjliZmMzZjM3YWQxMDZiZGQ1MmM1YzVhMjMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L450-L455",
+          "version": "repo-lines-v1:sha256:6ec5dddb7f24489765a9a85b47e3d5653f513ef4d3008acf6c54b820da1be8a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmEyZDhmNDllMGQ0NmQwYjE4YTUyOWI1NjhmOTgzZWIxZDE2MDdiZjdjNjhmYTAzYTA0MzdhMDc0YzgxMDlmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODBjYTE5NDg4MjI1OWFkNTBmM2I2YzMwNDEzYjM3Mzg3Y2FhYzllN2U5NmI5NjYxNmM3Y2MzMGFmMWM1ZGIzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzc1NGViYmZkOGVmZWE0ZDQ5ZWM1YzdhMzhiODcxNjA1Y2U0ZjMwYzk1Njc2ZDZlNTkxMGZjNDhmNTAzNDUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2M0YWIxZTM5NDAzODFjYmJiNjgwNzE2MWZiMDUzMDRlNjdkYzY2OWVlODIyNTNjNjgyNWU5OTM0NDIwYTYxOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ac8e683e9834932b28ea8cb243f0ef5",
+      "statement": "Each crawl cursor is a (date,id) pair advanced to the oldest (or newest) row the source returned, and the provider query carries a composite keyset predicate so same-timestamp ties page cleanly: the older crawl uses (date < ? OR (date = ? AND _id < ?)) ordered date DESC, _id DESC, and the newer crawl uses (date > ? OR (date = ? AND _id > ?)) ordered date ASC, _id ASC.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L280-L329",
+          "version": "repo-lines-v1:sha256:7dd715e5f35210ccd8e90aeaded6b8d8e3bf9eb27400a2caa13ea9a17399e4af:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMzJmNDMwNGUxMDY3YzQ2Y2M4ZTE4OGYwNWM2NmUzNTIyZWY2Y2ExMmMyNjMzMWU1ZDY1NWNjYzlkMGEyMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmMGJhZjNhNDYxMGFiZTBlODQwNTNkMDRlNWVlNjExYzAxNjJmZWZjODYyNjc2Y2QwNjRiNzgyNWMzMWE3NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkOGEwOTI3MmQyY2ZlMDg1NmM2MDNmOWIyNTExZmZkOGNhMjY1ODY4YzFjMWEzNjk2ZTNjYzA4OTRmOTFmNWYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L331-L379",
+          "version": "repo-lines-v1:sha256:27cb5547465f43b87a7a3879a9e0966148f724d004a6703cb506da83d5dff19d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0ZTE3NDc3NjUwMzNjMWE5YjJlYTRlOWY5ZWM5OTdlMDdjNDA1Mzk0NWQzOTExZmQ4YjRiNjNmYjRlNjNiODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NjY5Njk0MjdhYWU4ZWUxMTJlMDU2NGM5MDYzNzdjNDFiYWZjMTAxMzQxZjNhODI2NjllODc0YTA4NzEzMTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExYjdlNWYxMjg5MWQzZDRiMGY2YmRhODRkYmQ3NjUwOGY0MmQwYzgwZWM2NTNiOGM2Mjc0ZTI5NDQzNGRiMmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0ZGI3N2U0NjNkNDRjMDQ4OTI1MTU0MTMwOTllODhkYWNjNzlhYjEzZTUyMWNlMzhlZGYxNGRhMDU4Y2U2NDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d2e469d42f504f50ae3c930ad78d0bc6",
+      "statement": "MMS keyset arguments are converted to provider seconds (the model represents MMS dates in ms), and MMS model ids are negative (provider id negated by the cursor mapper), so the pager restores the real provider _id with abs() when advancing MMS cursors.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt#L315-L337",
+          "version": "repo-lines-v1:sha256:86958ed52ce7d62f539e923ddfb91ff6360635441e27a2d00949427762fe5216:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2YWIwMDg2ZWIyOTQwYmQxODI1ZmI0ZWNjODRkOWRiMjFhZmMyMDQ3ODgyZDQxN2ZhNTVjZDlmMDJjODRiMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0N2UyYjJjZGI5ZTU4ZTI1ODE3MTc0MDAxYTNmOGRlZGJhZjk0ZDM5NTkzZjQxNzdiNDY0NWVjNzg5Y2JhNDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwMDcxMjcyMDUxN2I0NTQxNWRjNGQ0OTVhYTE4NTZkYjMwN2E0Njc3YzhkYWRhMjI5MmM1MmNmYzc0ZjQ1MmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L200-L202",
+          "version": "repo-lines-v1:sha256:0e09c8557eb07eb8b661f6d18ae623ed6ad174e676bb941e619a2c2bea4332e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzk5Njg1ZmJmN2RiNTdjMDAzYjc2OGE3MmM4MWJhZDI5ZDRhOTU2MzMzYWEwZDA2M2I0MzhiZjAxYzkyOGQwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI3M2ZlMzhkMTkzNjVkZjJiZjBjNGIzNmI1MWJmMDU2N2E0YTdmNzM1MDU0NWFiNDkzZWZiODQ4NDFhMzAwYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI3YjczMTdhNGJlZmIwNWY2ZjVhZGU3NjE5NTNmYjI0MTUyMTBjN2MwZDZjNDllZDRiODBiMGE0Y2IzYTI1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2E2YTY3YjYxYzBhYWQ5YmY0OWVkOTcwOGMxOTVkMThlOGFlOGUyOGIzYTUxOWE5NmE0ZGZmZDIzZTU4OGIxYSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L310-L314",
+          "version": "repo-lines-v1:sha256:7a8e87ce23994f2f8f42925b1045723be07f98fd8225e771dd0c422a5baa78a5:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJmMmY4OTgyNDA2OTFlZmY0NWMzMDFkZTQwMjNiMDNlNmQyZTk0Y2M0YzQ2Mjg2YTM2NDdiMTJhZjIwYzc5ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzlhODU3MmI4ODhiMDhmNzk3OThhMTlhY2FkMWVmZGFmZWQwMjcwNDI1YTNlMWMyMmQ4ODhkMTA2ZDY1NjgzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2VjYmQ5ZGFjODM1YjNhNzI0ZjU3ZDUzYWI4N2Q3MDRmYzhlOGU3YTZiOTFmYzhhMmIzMzBiNTEyNThkMzkzYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTZlZDE1MjgwYWY2OTBlYjdkOGQ2ODI1MGZlNTUxZmMwOWQ1NmJjYzkwNDQ1NmViOTYxNDg5YjhjMTkxNzYxZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d111e200f939436bbf3980d05a86e084",
+      "statement": "While a conversation has no thread id yet (threadId==0, a phone-only new chat), ThreadPager builds the SMS selection as a normalized-address suffix match (last up to 7 digits of ContactRepository.normalizePhone) instead of a THREAD_ID=0 selection that would always return an empty page; MMS is skipped entirely for such threads and the exhaustion logic treats the SMS source alone as authoritative.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L114-L135",
+          "version": "repo-lines-v1:sha256:892ed4965292b2ce7fc90f3762afc4607ecab9c35e7d2f9549e8e943205a0808:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2YTNjY2IxNTM5YjUyYTVkY2U0OTQ0MjVmMTBlNmE2NDc4OGFjNTcyZWQwZTdjYzQ1MzY0MjEzMDk1ZjE4NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2MzI4ZWYzYmM2M2M4ZmM1OWViMzAwNzc3Y2IzNzgyNmIyOTJkOWFmZTZjOGFmNjI2Nzk1MmYwODI1ZTU5YmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkY2M0MGNmYjBhOWFlN2E0NGU3ZjBhNjA5Njk4ZDUyNDlkNjc3MzZmNzcyOGU2M2M1OWY1NjJiOWMzYmY1ZTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b05570c052c4291bc57daeefc84606a",
+      "statement": "Once the first loaded row reveals the real thread id, ConversationViewModel rebuilds the pager on that resolved thread id (and re-runs loadLatest to align the cursors) so subsequent loadOlder/loadNewer/loadNewerSince query the resolved thread rather than THREAD_ID=0.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L670-L678",
+          "version": "repo-lines-v1:sha256:384e4596df5c73240adbf9f6e6101154dc7cb0d6d50d849da392b04f15c45081:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Y1Njk3MTU2ZDc3YjkyM2RlMzRkYjcxMTI2OWUxZmY4MDZiM2FiMjQyNzczZjQxOWIwMzU3NGFiMGNiZTMxMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2U2N2UxMjhlNDNlYmM5YTFmOGNiNTQ4MWY4MjRiZGFkYTVkZmZiNTg1OTdhN2RmYzI0NGQxNDRhOTM0MDhjMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmNmNDA1ZDUxYmU0YzFkNWM2YjBjMGNkNjM1NWM4YzUyZjlkYTdkOGMyZTBlNzgwNzkxMzA5NTU3MmEyNmZhNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGJhZTFmMWExNmFjOWFiNDUxNmMwMzhlMTVhMDlkMjhhZWUxYTJiMWM4MTM3Y2NlNTU2ODk0MDMyZDliOTExNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d0ef0d36d1b64667ad2accda14d5b076",
+      "statement": "ThreadPager is isolated from Android behind the internal ThreadMessageSource interface (querySms/queryMms taking selection, args, sortOrder, limit). Production binds ProviderThreadMessageSource (which delegates to SmsRepository.querySmsRaw/queryMmsRaw, which apply the provider limit query parameter); the companion factory ThreadPager.forTesting(source, threadId, phone) is the 'PART AZ' unit-test seam that drives the pager from an in-memory fake and keeps exactly one public constructor so ThreadPager(getApplication(),...) resolves without overload ambiguity.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt#L238-L279",
+          "version": "repo-lines-v1:sha256:f02c693565195f5443b24f4cec39ecf7b0797fd0eb2db41d2938e56f1dd36ede:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3ZjMyMGYxYTBlMWZhZWQ5ZDQyYWZhZmY4NzEyYzgyMWMwOWRmYzcwYjZjMTM0YjNlYTVjNWEzMzkwMmY4OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhYWFiZjNmNjI3MzVjOGYzMDRhMDRhMzI4YTU0NDE5NTRjOWI0MjBhMTNlNmJmODQ3NGNjYjQ4YjA2OTQ5NzMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L14-L28",
+          "version": "repo-lines-v1:sha256:003d81e206eafb3cfd376aef3c8b9ee91f51fad7ed8c260d2d0a329bd6e86e4f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDY0ZmZjYjU4NTc4Y2JkMWQwYjJjZGY0YmQ0YTUwNGI2MmVkOTA4ZjY3NzJmZTgzZDVlZDYzZmQ3ZGVjZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiZTAyZDViMmZiM2Y4MDE4MzVjNWRiM2JmYzZjMTVjYmMyMTc1NDAxMzAxYzJlYTBhODdiZmUxMjY3NzI5ZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiZDZhNjhmMmE4YTVlNWQxNTgwMmY3Y2VhMjFhNjljOTM3NGYyMWZhMzU0Njk2ZjcwZmQ3ODZiMTIwYmQxMDMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L53-L69",
+          "version": "repo-lines-v1:sha256:1def81970a47a50ee866a66e3e77d9a0876001c1779c13b7fa8fb1401e456c25:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkYjBjZTNhYjgxNGVmNmZhYzkwZWFlYWRjNWU3YjQzYTFhZWQ5ODdkOTI0MTIxNzA3MTY4MzNhNzNlOGJhODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExZDExMDQ1YjkzOWFmODMwOTgyMDRlZTY0MGQxMTNmY2M2OTlmY2Q3NzkwMzFmYTNkOTY3YmRjYjk1OGEyYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxZTVlNjVjYjNkMGE3NWIzZjQ3MzY5NzIxYmVmMWQ3ZjdhOGQ2Y2EzODEwNDQ5MDQ3Mjg0NjdmMDUzMTc1MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5MzgxODk3YWIyN2ZhMDM2OGU3YmFiNTM3ZjA2MDViYTJmMmM5MzA1ZTY1MDExNjk0NzlmYWUzZjNhM2Q5MzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b1fbec86c1f4067b3475a7961a17af3",
+      "statement": "loadNewerSince(newestDate) returns rows strictly newer than the newest on screen (bounded to 100 rows per source, MMS date bound in seconds) and does not touch the crawl cursors; loadSmsRowsById re-reads visible outgoing SMS rows by provider id because a delivery-status callback rewrites the row in place with its date unchanged, so a strictly-newer tail query cannot observe PENDING->SENT/DELIVERED/FAILED transitions. Deprecated loadFirstPage() forwards to loadLatest() and hasMore aliases hasOlder.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L221-L263",
+          "version": "repo-lines-v1:sha256:ff09de339d49b492817687bad086324b5d5790818111feacf458f454be352edd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5N2RjMWVjMzRhYWJjODBjMzQ5ZDYwYTI5OGQ1NDRkZGI2ZWE0MmFmNzdmMjU2NDZkOWQxZDQyMmYxNmQxNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3YjQxMDk4NWNiYTQxZmNhZjNlMDBhYjUxN2QwNzhhNGRkNTYxMzY3MTAxMjQ4NjgzYzVhYmVmNGMxZDUwOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0YWE5MDI4YzI0MWMzODA5Yjc3NWQwZjE0YmExN2Y0OWU3NWQ1ZTQ1ODczN2ZlODFkMWViYWJlNGU0MGI5ODAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e82f568b244c43659252ebcbb6094abb",
+      "statement": "loadConversation is stale-while-revalidate: it first asks ThreadMessageCache.getStale (rows plus a mustRevalidate flag). A fresh entry short-circuits the provider read but the ViewModel still constructs the pager in that branch, because scroll-up history and the tail refresh silently degrade if no pager exists on a cache hit. Stale entries are painted and then revalidated against the provider.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L533-L605",
+          "version": "repo-lines-v1:sha256:8e65b6546032d9332c42f2372d5f725700f995c8386501961433149df5622483:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2YTA3MjMxOGZjMGFmYTQxMTc4YTBmMjA2OThmZWY2NzA2OWU4ODM1NTZiMTgyNDdlZWJjZTc2ZGUzZWI1YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NzhiYWU3MjU2OGYzNTI0YmZmNmNlMTZiMjMzZjdjMTZlMDYwZDg3ZTY4YzYxYjYxMmYxNjY0YjkyZDZjNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1MzI2YzQ1MGRjOWMxNTQzN2ZiODg1NGM1Y2ViOTNlODk4ZWM5ZmE5MjYxMDkwYmUzZDAxZTE1MjE2ZTE2ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2YWQwYzU4Yzk2MDI3OTFiYWViYWRlZjk1N2ViOWE5NjQzY2ViNGQ0YzAxODU0MGQ0ZmExYzkxNDY1NDI0MGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d84e3afe67934606a2b710c61d47b917",
+      "statement": "ThreadMessageCache is a per-process LruCache holding 24 threads, each entry capped at the newest 400 messages, keyed by (threadId << 32) | phoneHash so by-thread and by-phone lookups share an entry. A @Volatile generation counter marks freshness: put() stamps the current generation, append() writes into an existing entry WITHOUT bumping generation (so optimistic/live rows keep the entry 'fresh' for instant paint), getStale() hands out any entry but flags mustRevalidate when the entry's generation differs, and invalidate() drops one thread.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadMessageCache.kt#L20-L96",
+          "version": "repo-lines-v1:sha256:458b6aa622058bc51033cdfd0f05e8fe01aff31e08188a4d9b010ac7e8a5a708:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZWE1NjQyNTQ4NGJlZWFkM2QxMTY3MDI1MjY5MjM5NDkyZDE1ZGM1ZmYwZGViMzU0NjJkMzg4YWY3Y2YzZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhMzRiMzMxZGIxNTUwOTZkOTcyNDVmMWE3NTVkN2I0YTYwNjI5YWM0OTAwODIzNDYwYWU5ZTZmYmZkMDFjYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2391e3450f064146a8b17a3fee822e1e",
+      "statement": "ThreadMessageCache.generation is bumped by HomeViewModel's SmsContentObserver on every provider change, so a stale cached thread entry is never trusted twice across a Home-level provider mutation.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L84-L88",
+          "version": "repo-lines-v1:sha256:7c662be90c2477cd3ba2726a17e06af37b6d456d7d408aa3d89b910c1f696399:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmJkNDM4MThmZTk3MmI4NzNlNGI2NWIzMTNiZWY3YzMxZTcwZjVkZGMyMzVkYzFiZDk1OTAyYjI4ZDMyYjZhMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY4MDFlNDhkOGE5YmYzZWJhMTQ5OWU0ZmViZDQxMTI1NjZhNGNiMTAzYWVhOTZkYzVlYzIwYTAzMTgwZTgwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmYxMDlmOGIzNTI5OTY3ZjBmYmZiNzQzOWU1ZGMyYjFlMmYwNDcyMDg2ZDI5OWNjNjM5OWNiYzYxNGQ4YTEwMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_442daf69d04e48499e771e8f14f28563",
+      "statement": "On an in-memory cache miss (fresh process) the screen paints from the Room shadow via MessageDao.newestWindowForThread or newestForAddress, reading ROOM_WINDOW=20 rows (chosen to approximate the union of the provider pager's two 12-row per-source windows on the single merged table). Room may serve this paint only once TelephonySyncCoordinator.isShadowReady() confirms both SMS and MMS initial windows are complete; the date-DESC DAO rows are flipped to canonical ASC before painting, otherwise the bottom anchor would land on the window's oldest row.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt#L24-L60",
+          "version": "repo-lines-v1:sha256:8d2a2ad9e1069d9b91026c64104e266aafa5d3d10fbdce612716d34ec0968d6a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZTQwOGJhYmZhNTk0M2VjM2M3NzI1NGQ3MDMyNjQwZGY5ZjY5Mzk3ZjIzMjBkZDZlMmEyNTdlMGFlY2Q4ODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhZTI0Mjc5ZjJmMWU2YWRkOWVmZDM3YjFlODE5ZDA4ZjgwZTlkNjZmMmNjNzY1MGNlMTBhMTM5NmFiNTFmMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmMjkyMzMzYTk3MGM2NTlkMWE5MGFhY2I1YmVkNGIzZWI1NTMwOWQ1MTliZjdmZDVhZmJlYmQ4OGM0NjE3NDkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L103-L113",
+          "version": "repo-lines-v1:sha256:3c4fc8c93072403d12a05cc9e4d37a9487ef8003707e4d78ce329c1ed02fcf07:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjRmZTJlZDg3MWE0Nzc1YmY1MmFlMzM4ODdlMzVlNzVhZDc1NDFjMWI1MWFhOTY2YzRiY2QzMzBhZjJkYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1ZWUzZmUwOWNhZjlkZGM1OWFjOTRhNjhhM2FkODdmODE1YTNmMGVlYWYyM2QxNWZkOTQwZWEyZTdlOGI1NWUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L541-L578",
+          "version": "repo-lines-v1:sha256:7c988f958763d3c459f5c207b81852b9fb06b5f3c8ab1d77bf40fb9378fca8ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MWM1MThkMGU2MzAyYmEwYWU3MTViYzMyMjVhOGVkYWMyMDhlMjIzMmM1MGY2Mjg1YTgwNjgyZTQ1Nzg5MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1ODFiYTI1NDMxNzQ1YmUyY2Y0Mzc5ZmIwNmEyYzBiZTBjMWY3MDEzMmJkNjNlOTQ5ZmJmMzI3M2RlMmIzNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyNzMzZjNmY2ZiMmVmNTU1YjNjZGY4NzJiMzhmZjVkNzEyYjViMTJhZmMxZTk3YmRlNWI4OTQyMWEyZTJkNTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L61-L67",
+          "version": "repo-lines-v1:sha256:cfade17b74e1aca8c0cdcae0d8fc307a70e5402aa7173c8360533c63fdf4b3d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTM3NjBkZjQ0YjI5YjZhM2Y5OGE2NmI2MzI0ZWUwN2QwZmRjNmU2ODJiYTIxYzc0YWY4YWY0M2NlMjQ5MzJmNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U0ZmU1YzBmN2ZkMzNhNGFiN2FjYzk5ZmFmMWQzZTdiNGUxNjQ0YzU3MGE0NWI2ODk1MjIyZjU5YWI3ZWUwYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjMyYjhhMjIzNDY0Mzc3MGI4ZDE1MzhmMTQ5ODY4Mjk4NThlYTQ1ZDMxMWEwZGZjZDBmMWZiNzEzZmIzMDQzYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_eafa738686344659a25b5cec65080fea",
+      "statement": "When neither cache nor Room can paint, the loading spinner is shown only after a 120 ms grace period, because a windowed read (<=24 rows) usually finishes before a human would notice.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L606-L614",
+          "version": "repo-lines-v1:sha256:b985b4c97c25a790120ebc2ff39789e314418900416e8a50f7eddd45943c2778:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjhkNzllYTlhODQwYmEzODdlMWZhNDY5OGQyMmM2YjliNmY1NGJhNWEwM2U3NjVlMjNkMzhjOGUzMGEzZGFiZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzA0NzE1OWRmMGEyNWU1OGJlMTI4ZWRkNmM3OTJlZmU1MjhlZjQxYzBjYTM2MWVhOGUxMmEzZTYyYTc4YzU3YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGFhZGMwZGYyYWZiOTNmMGUyNGVmOWNiZDIwMGY0YjdjNTIyNDkyY2RmMDMyZWVkZmE3M2Y5YzQ2YzIxMTIxNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzdjZGNhMGU2MGM2OGM3NWY2N2JkNWI1MzJkYWYzNDhhZTJlMDQzZDYzODQ5MzYzOTQ5YTQ5MDIyNWYwMmEyNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_469c66824ad449dfa7345a535838d41d",
+      "statement": "ConversationWindowMode (LATEST / OLDEST) declares which end of the thread the visible window is anchored to: LATEST opens on the newest page and crawls older by scrolling up; OLDEST opens on the oldest page and crawls newer by scrolling down. Every open is deterministic: loadConversation resets windowMode to LATEST and clears pendingNewMessagesCount.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L36-L43",
+          "version": "repo-lines-v1:sha256:d0c16e500194f69270a652632387b41ae41aedfa331f97665ebad79807325198:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTYzZTJlMDdiNzhlYjM0YmVlMTBiODMyYWY0OGU4NGY2OWFhMTUwMmVlMjU5N2I5YmY0NjE1NmUxNDRlMzJiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzMzZmZhNDA5MGQ2ZGE2OTc5MDkxNDkyMDJmMmVjZTY5NTRkNTdmZjI2MWZlYjU2ZWMwYjQwYmI3MzM4OGI4YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTZmNjhjY2Q2ZWVmNzc1NzM2OTkxNDAwOTQzNzUyMGVkNGQ0OTJkZDllYWIzY2NmOTZiZjgzNDU1NzQyY2M0ZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L524-L527",
+          "version": "repo-lines-v1:sha256:30f842092c06ad89ec19e05c5d8bf9b7925c9e8955a2f6252c2e59b237d6f11e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTRmM2NkZWFhMzA5NWQ0ZjA2OTUxZDBlYmNkODJmMWIxNDhiN2U2YTViMmI1NDNiZTA3NzIyYTdiNWJlNjc4MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjY2YTY5NDM2NzQzMjA0YWQzNDhmZTk4MTUzYjE5NzNjNmQ4N2Y0Nzk4Y2QyYjM5NGEzZWNkM2RiZGUwMGNjYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjI2OWJjM2ZjODkzMmNlZDFhMWVkNDIxZWYxNWRiNDllOWM5MGZhNTY5ZTA1NTIxNjExYmJmYTQxMjk5NWM3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMyMTczMTA3ZjQ3NzM5Njk2OWEyYjllYTdmYTJjM2MwMDJiZmJjZmYxZmI1MjZjODIzMjZkYTEwMjk0YjYyMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc31809bf0084bb3909119734d8b18ac",
+      "statement": "In LATEST mode a scroll toward the older edge drives loadOlderMessages, which merges the page with ThreadMerge.prependOlder (dropping overlapping rows); in OLDEST mode a drag toward the newest edge drives loadNewerMessages, which merges with ThreadMerge.appendNewer. Each crawl is guarded by pager.hasMoreOlder/hasMoreNewer and a single in-flight job.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L320-L389",
+          "version": "repo-lines-v1:sha256:919e244537d18001f99d968f598b50dbbd68b58a52033f1ac56dba24c91bee97:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNzkxOWY1YzQ5NmJiMjZlN2I3OThkNmUyZjA0OWViYWRlZmI3YWI3Y2E1NDY0ZWQ4YzNjYTdhNzFkYWJiMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzODM0M2UwZDNhODk3MmI3MGVjZjQyYTQ1MDVhNjlhMjE5MWNkNTVkNmIzMTNmN2E4Yzk5M2EzODQxYTcyN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkMWY5MWJjNDNkYzBkMWM1Mzc3NjI0NmEwNjZjMjYwZDIwNjUxMzQ4OTI3Y2JkNDdjYzk1MzQ4MmQ5MDI1NjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiZjQxNTUwMTFjMjYzOTM3ODA0YTUyMDQwNzUyMzNhNTBiYjU0NzNjMzdhMTc5MWViOTQwNmIyNWI4NzU1MTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5d8c3027474e483981e08e71c9b990d9",
+      "statement": "jumpToLatest() in LATEST mode only emits a ConversationScrollCommand.Latest to index 0 (the newest window is already on screen). In OLDEST mode it must not animate through hundreds of pages: it builds a fresh ThreadPager, queries the latest window directly (O(page size)), replaces the whole window, cancels the in-flight crawls, and emits a Latest command carrying the newest message id; it also writes the latest window to ThreadMessageCache.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L398-L448",
+          "version": "repo-lines-v1:sha256:13d1da92a306cdd2b0e66cd500c652486e0b02fa70a280b3463a7c62140c6add:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhNTFiZTk1NzcyZWExMzZjMGIzMTIyMTVjZDg3YjBlOWQ0YmE5NGIzODhiMzJmNWI4NGYzNjIyMjA5Y2E2ZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyNDU5ZGQ5MjRkMDVkOGU1MTI1MzU0NzNiMWQzZWQyYjY4NWNiMTA0NmM2YjgyMGI0YTA3ODZhNzAyYzg0NDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0MGQ3ZmRiMzc0MTgxOTcxZGUzYjJjNjcyZmFiMmQ1MThmMmQ2OGY4ZGMzYTE3OGU3NGI0OWI5NDA3MGE3OTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b719398578e41c3a3496dc8f42857f2",
+      "statement": "jumpToOldest() (the top-bar 'Go to first message') performs one bounded date-ASC page from the provider (loadOldest: no full scan, no OFFSET, no wait on the historical backfill), replaces the window, flips to OLDEST mode, and emits an Oldest scroll command anchoring on the window's oldest row. It deliberately does NOT write to ThreadMessageCache because that cache is for the LATEST window only and caching an oldest page would re-open the thread years in the past.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L456-L496",
+          "version": "repo-lines-v1:sha256:99b530b945330752cb9eedb524a15371a6b3bb199924912dab2252ac4457376c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YzM1NWU4NWQwYzgwOTkwNzE0ZGJiN2YxNjY1MDM0MDM5ZGE4MDg5N2Q3NGUyMTc0YjM1M2U3ZjEwODQ2ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYzY4ZTFjYjI1ODM0N2ZkY2JkYjNhYjIwNzcwNzZhMjJiNzRjZTE4MzU2NTRmM2U3MzBjNGM1NTc1YWVmOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNDI5ODA4ZWQ3ZWNmZjA1NjRkZWE1MWJiMjIxMGVlYzA3MjJhOTM3MzllYzBlNGM3NTU2NWU2NmJlZmI0ZDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c79d635e248407e8317e1b0ff09b69a",
+      "statement": "A message arriving while the user reads OLDEST history is not dropped into the historical window (the gap to 'now' would be years wide): appendLiveMessage keeps it out of messages, appends it to ThreadMessageCache, and increments pendingNewMessagesCount. The count renders on the jump-to-latest button (badged '99+' past 99) and is cleared when the user reaches the newest edge (setUserAtLatest) or when a boundary jump completes.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L769-L786",
+          "version": "repo-lines-v1:sha256:189ae2b8f1d32b5bf3618e9c79566c78292fb22a894213c9c56f290579c099c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMjI0ZmQ3N2QzNTEyOGQ2Njc5Yzc4NzE1MWU0ODc5OWU4NWEwYzc0NDRiZjQzOGRjNjkxZmRlMmVlNzEyNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3YTVmZmEzZTA5NWRmMDViNmIzMzMzODcxYWJhMWMxYjNlMjVhYjNkYmYxZDQ5MmYxNTRjMmNjMmIxMjJmNTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiZDRmZmIwYjYwZjhiYmM2NjVjMzM4ZDJiM2Q3NTI5YTdkMzcxZTkzZGQ5Njk2YjA2YWQ5YTEzNGU4YjkxZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1YzRjNDllMzkxYjFjMjY4ZTgzMWNhZmU1OGQ2ZmE4OGNhZjNlMjI1ZTY5OTUwMGRiZDcyNjY2YTMyZjg2NDQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L114-L120",
+          "version": "repo-lines-v1:sha256:e9522851114473338e1b64e8907bce01b50e175a30adf5760159af101ae37d61:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I3MDU0OTc3NzY3NGEyODRiMTMzYjZhMGRhODkzY2VmZjAyZWE0NDUzNjA1ZjkxMzMzNTYyNWUxNWYxNWE2MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzg4ZjNlMzFjZTg4NjIxMTJjYWNlNDI0NDQ3NDgyMDRkZWIzZDBhY2I1ZWMyY2I5OGUxNTg5NjkzZGYzMzZlYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ0ZGI4MmNkY2RkMTZiNmVlNTNjN2QwOTBmNmJiZTFiYzk3NmI2NzFiOGI3MWQxOTdkNGFlZmI0OTkzNjlkMiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L206-L214",
+          "version": "repo-lines-v1:sha256:ff330e304d0d2e21993cc04bdb61e12e2217d063dd82cf27a5630154b4910bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVmMWEwZjc0ODkyNjFiZDRkMzgxZjYwNWUzM2UwZWVhNzAyZDYyYmQzMTMxODljZjgxZTY2MmJiN2E2MmVjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDU0OGJmNjM5NGJkN2EyZGI4NmRjYmFjMDYzMTc3ODY1YzU0N2Y1ODQwMTQ5ODdiZjZhMGE3Y2M4NjFhODc5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Q1ZWE2ZjdhNjM4ZmExZTY3ZDczNGIwZjk0NTVkNmFlYTA1ZjM5YWI5MWVhMzE1NTZkNGYwMGVhYzUzOTBkMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb31792d40e44372ba622bb48e921dcf",
+      "statement": "ConversationScrollCommand (Latest / Oldest, each carrying a message id) is a one-shot scroll intent emitted only after a window replace (jump-to-latest / jump-to-oldest); ordinary pagination never emits one because in reverse layout a merged page grows at index 0 and the row being read never slides. Commands flow through a capacity-1 SharedFlow with DROP_OLDEST so a burst retains only the newest follow request.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L185-L189",
+          "version": "repo-lines-v1:sha256:271d2f0ad9c174c313a3a077fea34fc233ee6720fb230fe3af723130cfa9358b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQxZTYwYWYwMjA4MDMyMGRmMGM3ZjE5YjIwM2MyMDZhZjY4OGNmNDk3NDUyZTc1ODg3MGI2YjFiMDc3MDFjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDE1NDFjNjI0NGE4MTQ4N2YyMGQzNTMxNDU3OTZlMDcwN2IyMTFhMGEwMjRiYjYyYjhkMDg3M2MyYzk4OWVhOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjAyOTZjOTBiMmNkMzI5MTkyZmU2Y2UzYzQzN2Y3MWVkMTIyYzY5Mjc5YTE4NGZkMWNkZDhiZjRkMzcxMzE4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTM4ZGYzODdlZmUwNmRlYTQ5NmI3ZjkyZDNmYjZjM2Q4MmRhZmU1Zjg4ZmIxMzI3ZGRlOGQwMWYwODYzM2VmYyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L222-L222",
+          "version": "repo-lines-v1:sha256:e413f3e5cc61054a32e4d291caa8ef1326d77ff3e73d6571f5b935e4404a30a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQxM2YzZTVjYzYxMDU0YTMyZTRkMjkxY2FhOGVmMTMyNmQ3N2ZmM2U3M2Q2NTcxZjViOTM1ZTQ0MDRhMzBhOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQxM2YzZTVjYzYxMDU0YTMyZTRkMjkxY2FhOGVmMTMyNmQ3N2ZmM2U3M2Q2NTcxZjViOTM1ZTQ0MDRhMzBhOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDk4Y2QyNzNmZTk3MjQ2YjQ0ZDI4NDVjZWM0NGUwNzAwMjRiMDlhMjBhZThhNmEzOTQ2MjRkMmU0MDVhYTQ1YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTJlODdiMzgxYzAzNTA0NGUzNTkyZWVmZDQ0MDIyOTBiY2JhNTk1OGU3YTI3OGU5ZDYxN2JlYzNiMjI0MGJlYyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L45-L54",
+          "version": "repo-lines-v1:sha256:9f09274a72272af1dabc34f83438ecdd0763a397fe89856f7c644ce9625b03cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMmQ0NDJkNmJkYTQ5Y2I5ZmRmMjkyNjYyYmZiNGVhMDQ2NjlkMjE2YWQ1OWRjNDhmMmNkYTUxY2Q3Y2QxMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhZThhYTg4ODZmNGEzOTNiOTZiMjIzNzRkODUxMDRkNjcwODgwY2U3NTM1ZDYxOTg4YWU4NWY1ZDg0NTgyZjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6e76820acfaf4736a67a0586da7e36d0",
+      "statement": "ConversationScreen consumes scroll commands: on Latest it waits (1 s timeout) for the target row to be composed and laid out, then if far from the newest edge teleports just short of index 0 and glides the last stretch with animateScrollToItem(0); on Oldest it hard-anchors on the window's last message item (date separators trail their day, so the last message row, not the last item, is the target).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L397-L444",
+          "version": "repo-lines-v1:sha256:34a71354f5e5dee4788277ba02cdb7b8713a864fe37916995c593bc2a8ed97ba:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhYmEzZWZjMDIwYzY3YzlkMDgzNDAxN2RiZGViZmNiM2E4Nzc2ZjViMjk1YmY3OTI3Yzg3YWYwOTZjMTA3MTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5ZDQwNTllMWNmOGNlNzQ4YTNhMjFhNzhhYTRhMDE1MzIwZGEyYTk5ZTlhOTFkNGNhYmU0ZmEyZmQ4Mjc2ZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmYzRiMDhiMGI2M2FhOGZmMDFkYzMwMzY2MDQzNDExZThkYTY5NjZjODRhMTcyMDNiNjg3MThiNTkwYThlYmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f501e5da865c443ba1e630637d13e5c6",
+      "statement": "The conversation LazyColumn runs with reverseLayout=true so data index 0 (newest) paints at the visual bottom and the oldest edge at the visual top; the OLDEST-mode newer crawl fires on a drag that reaches index 0, the LATEST-mode older crawl on a drag that reaches within two items of the data tail, and 'at latest' is tolerant (the newest row merely needs to stay visible or be within one row) so layout jitter during re-anchoring never flashes the jump button (which is debounced ~180 ms).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L364-L374",
+          "version": "repo-lines-v1:sha256:e50bda44055774de112b03c5621f15f4aeef3eecf14db5a4701cee638911127c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyYjQ2MTEyZThkMGIxNjcwOTIzN2Q1Zjg4YmY3MGQ5ZjRmNmI1YWIwODZlZTc0MzNlMjIwMTNiY2U1NGE4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MjM0Yzc5NGRjOTlmZGEzZWI3ZWUxYTgzYWVjM2NmYjRkMTQ2YzRkMGYzYzI0MmJkMjhlYjA5M2JiZGM2YmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyMjI5M2RjZWRlNWNiNTU3YTVhNWJkODRiOGUzMWU3YzQ2OGQ3MTRlYjhiODBmYTYzZWJjMzlmOTUwZGMzMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4OGU0ZWY4MTc4MTkyZmRmYjQ2NTRlZjRhNzViMjc0ZTExZmE3NmFjNDQzMzBhY2E5OGI2NzFhMDFiZGQ0YmMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L446-L513",
+          "version": "repo-lines-v1:sha256:648208faa5db8ece1f3f0ec50e9a099641ef8a0ea08703dbaf4f96ca40811f93:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5NmM1ZTc2MDY3MWVkZjMzMjcyMWM0YTQzNzliM2YxZWU3MzE0MzM2MTcxYjUxZjlhZDNkZTYzYmUyMGMzNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4MTllY2YzMGJlMzYyMjMwMTI5YTA0NjgwZGYxN2VkMmJkYTRjMzE0ZTdjODUzNmZiOGFkYWZkZTEyOGZiMDkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L600-L606",
+          "version": "repo-lines-v1:sha256:a0fe02fdda39c4cdf80341330c59d6aa92f81dc20c3405023db01835ae2962d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRkN2Q2NDU3YTM1YjRlNDA1M2JlMzM2NzA0ODkyYzdiYjBmZTRlYzRjNTUxNDE2YjZjMzA0NzRjNGVmY2JkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODc0MWU3MjJjZjI2ZmFmMmViMDFlMDI0ZTIzZDM1MDA5YjRiMzY4NzBjN2EzZjY1ZjdkYmZjZTEzZmUzNzhkMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDZhMjcwOWEwNDI4MmNiZGZmNTM3NDRmNjY5NzRmZTM1NGYxYzljMTE0NGQ4ZmQyMDMwMzZhMjk5MTFkNTRmNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmI4MGUzZmYxMDgxMWUzMjVlMDk0YTA5NTVkNjE0NGUzZDExNzFjOGJkYjgyZDcwZTdhMjBmNjA5YjlkOWJhYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a317c0228884420ae9d04cf18817cf1",
+      "statement": "refresh() is re-entrant-safe: a provider burst mid-refresh sets refreshRequestedAgain and exactly one more pass runs when the current one finishes, so no final update is dropped. One refreshOnce pass performs (1) pager.loadNewerSince(newestShown) for the cheap tail, (2) pager.loadSmsRowsById for every visible outgoing row, and (3) ThreadMerge.mergeTail of tail+status rows, then writes the result to ThreadMessageCache but ONLY in LATEST mode so an OLDEST-boundary window is never cached.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L777-L847",
+          "version": "repo-lines-v1:sha256:4657139b689e2be72e30e03e7464a98ab6fc25f0c49d02fcd6bf41c46994746c:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwZjcxYzFhYjliYjU4MTEyYWY3ZDIwODNlODYwMjNmNGVkNzRjNDMyMGRhYzJmNjdiMjcxMjk2ZWJjZDAzZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwODg5NTM4MWFlMTNhZTc2ODNiZDU0MDQwMzg2NjljOTUyNDliMzk2MWU1OTYyYjViYzQzNmQ0ZmNlNDhlNzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3eb7c54728a49b2bd06df0a25fd4122",
+      "statement": "ThreadMerge is the pure Android-free core of merge-based window updates: sameMessage treats two rows as identical when ids match OR when type and body match within 5 seconds (collapsing an optimistic send with a synthetic timestamp id into its provider-confirmed copy). mergeTail never drops an on-screen row and adopts the provider copy (preserving the display-side unread flag, which is also how PENDING bubbles pick up SENT status); prependOlder drops overlapping rows; appendNewer merges forward-crawl rows replacing on-screen duplicates with the fresher copy; tailWindow caps a list to its newest n. Every window mutation ends in the single canonicalChronological comparator (date, then abs(id), so SMS and negative-id MMS are comparable on one axis).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadMerge.kt#L23-L93",
+          "version": "repo-lines-v1:sha256:66ac470d517d35c5feea5cab02273248469bf52574af9669a18d6b2cc2ec4fca:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2M2M0MWM4ZGYzZjEzZTE4NGRhOTc5Zjg4Nzc5NDAxOTFkYjQzNDUxNzk5ZWVmNmJiNjI1NjMzNjc0OGZhMjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNjYyMzE5ODI0Y2YwMjE0ZWMwOWNlNTI4NzBkYTcxODE5MmIwY2U3NmFkMjhlYmQxMTU1YzRkNTRiMjY1YzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyZDFkMmYyMTNhYjdkNmEzZDNmNzg2ZGU4MjhkMjMxMzQwNWI5ODg3ZTc5MTI5OGJiODA3ODRiMDk2MzJiNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2acef4044c645efa9b39e178c8454b3",
+      "statement": "buildReverseChatItems maps the canonical ASC window into the reverse-layout data order: it first dedupes by provider/model id (a provider refresh and a live incoming event can race on a self-SMS and briefly hand Compose the same row twice, and LazyColumn throws on duplicate keys), then emits the newest message first with each day's DateSeparator trailing its group (so it paints above the day's messages like a section header). Row keys are identity-based (msg_<id>_<date>_<type>, where a negative MMS model id keeps msg_-7_... unique vs msg_7_..., and date_<yyyy-day>), never localized text.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationListMapper.kt#L19-L77",
+          "version": "repo-lines-v1:sha256:1083fbeeae727ebf898cce7405edddea7fe4e582e3f8eb6af5fae03ecf53a5d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNDU5YzE2Zjk0NDEwMjQxODdjZWY5NTVkOWU3MjFlNjVmOTdkZTNjN2Q5MjVmMmFkMzNhNTAzNDJlNmRkNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjY4MGFjM2Y0ODkzNTY5Y2Q2NjM3MWRhN2Q0YWY4NzliNjdlMDQwYWM0ZGMzMDZhYjcwODJmZjBkODhhMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMzYWZmYjU5OTE0ZDM3YTBjMWYyNmUxZjdhOTI0ZmIyY2U0ZTMyMDBmMzQ1MTMzMmYxZGRmNDk0N2JkNWVlYTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_953da75b4fe041b7a3b63e73ac0bdd2c",
+      "statement": "ThreadSnippet reconciles Home-list rows (built from Telephony.Threads, whose SNIPPET/DATE the platform updates only when a message row is correctly thread-associated) against the newest message actually known for each thread: when an outgoing row lands without a THREAD_ID or is associated late, the list row goes stale while the conversation screen (querying by address) shows the newer message. reconcileAll, used by HomeViewModel on both full and silent refresh, applies last-write-wins by timestamp and never copies the unread flag from an outgoing message (a thread whose newest message is your own send is by definition read).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadSnippet.kt#L23-L51",
+          "version": "repo-lines-v1:sha256:9128d0e1bc802b3bec5c1c382a2cf8c50473bdd3f6fb9b5b6841e25eb4be8f67:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMzU2MWNhMjQzMjVhYjE0MDlkMmFhZjk5OWI1OTNkYjBmNzk2Njc4NDQ5OTRlMjkyOGY0YWQ0NDA0ODZmYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxOGYzODFlNDZlYjlkNWM2Y2Q2OGY4Mzk3NGNlOTY2NTJlZTY4YWZlNWMzODA1MzVkYjVhOWMwMzlkNGY2NDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L282-L284",
+          "version": "repo-lines-v1:sha256:aa8ab17667313e990a6cb0e6f6ac8b90703a06dda2b05b02db989f187e6a67e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDAzNTE2OWU2NzNjNTYwYmU2NGY1OTg1NWE5NDYwMzVmNjQwNDk3ZDU5YmZjZDViY2IyMjM3OWZhNzBlYjg1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTljZTg0NTEzMjFmOTgyNmY1ZDY5NzNlNDU5MDhlNzZkNzM2OTQ3YzUxNTk1NzRkYzAyYjJmNmYxN2Y1NTIyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDMxMzlkMjk5ZTk4M2YwNDgwMzhlZGFhZGU2MTgwZGVjNWM1MjkyZDYzNjhlZmExNTUzZTc0MDU0YjE5ZTUzYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjZjZjI1NzIyN2VmMzMwMTkyMTFiMDc5YjdkMGU4M2IwZDlmZTZiNjNlZWE0NTg2NjRkZGIzYjc5YzRhNGUzZSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L329-L331",
+          "version": "repo-lines-v1:sha256:6de46da7c6a84cc85f7104da5b72fed0c864bbd46ccb78060d984167e711009c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI3N2MxNTZhMGZjMmUzM2RlN2RiMWVmNTQ5NTEzNjZmMTJmYzRhMTQwMmQwMGU4MTdmMDQyYThlODE4ZDM0NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTljZTg0NTEzMjFmOTgyNmY1ZDY5NzNlNDU5MDhlNzZkNzM2OTQ3YzUxNTk1NzRkYzAyYjJmNmYxN2Y1NTIyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjZjNDQ1MDM0MDhlMTViYTZjNzBkN2NmZDI4MWQ5ZWI0OGFjYmM0NmMyMDRhOWNkYWIzMTMyYTM3YTM3YTg2NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjJiNTViZDBiY2ZkMzdiZThhZDU0MDg2NTY2NGI3MTY0ZGE3Y2ExYjY3NzAxNjAwMWNiY2M4OTBlOTQ3NjQxNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_85dbbc0318b04c739f08f66e062b4445",
+      "statement": "ConversationViewModel guards concurrency and failures with a monotonic conversationGeneration stamp and per-thread job cancellation: every async job (initial load, older/newer page, refresh, spinner) captures the generation it started under and drops its result if the screen moved to another conversation, and opening a new conversation cancels the prior load/older/newer jobs. A crashGuard CoroutineExceptionHandler turns a failing provider/Room/pager query into an on-screen error state (errorMessage, isLoading=false) instead of an uncaught exception that kills the process, while rethrowing cancellation as a normal lifecycle event.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L275-L317",
+          "version": "repo-lines-v1:sha256:35fcf360fedbbe3322728887f31b50e525d530b6e6a60c4253fdb439ff8f46a6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMWNkMDNiNDFmNjAxNTM4ZTY1OTMyNjY5MGY1MThlNGE1MGJhMTJmMGQ3NDU2NjMzYjkxODk5M2FhZGNkNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2YzgwZjU5NzZjZDlkNTVhZDZmMGIzMWM0YmFjOTkxMjA5MGNhYmVjZDk5ZTdkMDhlYmU1NjY1NDI1YTVjODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0YTRkYzlmNTIyNTUyOTY1ZjM5ZTU2ZWM1ODIzOWM3ZmQyMjUyZGM5YmRiMDFiMzE1YTg5OTEwYzA2YWVkYzEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L517-L531",
+          "version": "repo-lines-v1:sha256:f5ee47da0e4608ee3b5e01dae28e14dbc76a06034d4d1caae54edf1ac7ad79ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5MDNkMDgwZDdmYTJjMTQwOGEyZTAyODg0MjE5NGNiZTFiMWE4ZDA3YzIyZmYxZmYwYzc3NWI3ZDEyZGI0MzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmOWY3ZDRiMWIxY2VmMWRiNGY4NTAyZGI5ZTAxZjcxNzZhOTdlMGM2MjBhZGY3MmFkMTBkNTM2NzA4MmQ0MGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3N2UyYmJiMWIxYWVkYjliNTE1Mzk4ZDI0NzJkYzk5MmQ4OGE3MGQ2Y2YzNDc0YjRmODU2MjVkMWU2MTI2NjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4NmU1OTZlYzdlZmE0NWE3ZGVmM2UzNWJjYWZiOWYzNjAwOGU4ZDgxN2M0YjY5YjlkYmM4YzU0Y2U0YmMxN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d7bd83a219ab41c09cfceb6dadb1745d",
+      "statement": "ThreadPagerTest drives the whole pager through a FakeSource implementing ThreadMessageSource that interprets the real selection strings the pager emits and records every selection it issues, so tests assert that keyset date<?/date>? + _id predicates are used and that no selection contains OFFSET. The suite guards five properties: every public method returns canonical ASC; loadLatest is a bounded newest window (never a full scan) that does not arm the newer crawl; older/newer crawls use strictly-ordered keyset predicates with no duplicates and no gaps when the two crawls meet in the middle; hasOlder/hasNewer exhaust correctly per source (an exhausted MMS source does not block SMS paging, and a phone-only thread never queries MMS); and loadOldest returns the ASC head window, disables the older crawl, and arms the newer direction.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadPagerTest.kt#L11-L121",
+          "version": "repo-lines-v1:sha256:2a0cfae154f29749bd4a50a8689630dd3ae0081247b734c1c5c779eacb1dab81:eyJzZWxlY3RlZExpbmVDb3VudCI6MTExLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NWQ1YWJhY2EyMjY4MGFlOTUzMzY3MDBkZjc2NjM2MTk3YTdjYjZjMDA0ZjRjZDc5YWMxYjFmZDJmMGFjNGE1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNjE5OTZiZGJlNjFmN2JlOGU0YjU4NzU4MjE2MWNhYzg4ZjgxOGJlMTY5NTVmMDdiNzU4OGY3ZjM5ZDBjNTkwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MTEyYzA0Zjc0MjE5YThlZjI1NDA2YmI5OGMwNmJjMzJlNjdiZmMxODhhNmYyNWNiOTNkNWE4NDAxOGQ5MGU4In0"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadPagerTest.kt#L126-L264",
+          "version": "repo-lines-v1:sha256:76a24e3fd9559568e86baeeeff668277e0a9e16bdb7f1403730936a5a06dc0b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhYzhjZTQ5MDk2ZmZhNmQ2OGYzOGMxOTk0MWYyOWZjYmIzYWNhYjFmZmI2YWVlZmEyMWY4ZmY5Nzk4ZDBhNTIxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwNDU2ZGQ4YTRmOTk2NzkxZjMzYjc0Nzk1OTRmYWZjYzU3ODUzOTczNTViN2NlYmJhYzdiNjAxNmI2NjM0MzcwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlMjJmYWE1MzViZDJlYTNkNTJlNzQxZWQ0NTQ0MzViN2ZlNDllODM1ODZlOTQzZDk4ZDgyYmJmYjI0ZDFmNWM1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b74c9df38ae47fdbf95163e7827954e",
+      "statement": "The merge helpers and UI mapping have dedicated regression suites: ThreadMergeTest covers merge idempotency, optimistic-row collapse, status refresh on unchanged id/date, prependOlder/appendNewer overlap handling, and tailWindow; ConversationListMapperTest pins the reverse-layout contract (index 0 is the newest message so open lands on latest, separators trail their day group, keys are identity-based with negative MMS ids colliding with nothing); ThreadSnippetTest covers reconcile/reconcileAll semantics including the outgoing-clears-unread rule.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ConversationListMapperTest.kt#L19-L98",
+          "version": "repo-lines-v1:sha256:9454274bde4a9d6dd8049964aa53103c041edf960ef352e69218d9cc65608f7b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3MzU5MDIwODRjZWQyNDM4ZDkwOTgzODY0ZDk4MzkxNDFiMjdhODkzM2I1OWIyZDI0M2ViNTAwODM2YjM0MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5YzczZmM3M2UyMTMzMjg2OGEwM2JjMDAxODVjZmE2NjYwNzQxMjdiZjUxNjA5YTI1NzdlMzE4YjY1ZmFhY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4ZTE1MjUxNmNjYTE4MTI4NDBlZGZiNTQ4NTRlYmVlMDg4NDg5YzMyODRkZTJiMmQzYWRkNzViZWNhMzQ3MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5ZjY2OWIwMjQ4M2Y0NDMwYjIzZDViMzA5Yzk1YWI4Y2I3YzAyZmQ5MGNlZjVkODZhNmNmMWNhM2RkY2Y0MTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadMergeTest.kt#L15-L93",
+          "version": "repo-lines-v1:sha256:0d682757254bcab9d576e045b954952cfccb4b66d4bf0fe6e73634a9bcd99557:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5ZWM4ZmQ4YjYzY2EzYTA0Yjg1MTZkOTFhNWMwYjVmMmJjZjhmYjA3NjYyNWVmMzY0MjYwNjczN2FmN2U5MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNmQwZjk4MTYxMDEyNTlmMjQzMDg4MzZjNGUyY2EwNzRlZGM5MWUxMDhkY2UxMDIyNGZlN2ZlNGNjYzBmMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0NzUyNmFjYzFjZWRiZmEwN2E1NWI4NWJhZmZkM2Q0Mzk3OGQzOTc4Njc4ODc3N2NkMzg4ZWQyMTBhMTBjNzQifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadSnippetTest.kt#L18-L69",
+          "version": "repo-lines-v1:sha256:c49e0a14ef18a1e779cb7de5145b1a1591069d1e5d4ac02ee85433a4c11f3318:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MzFkMDgyOWNmMTIwY2VjNDMxZjBiOWUxNmJmNjU2NmFiMGQ5YzA2ZGQ1NmM5OTUxNWJhZjIzZTY1NzJkNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWU3NDEyMWRkMDg0Mzk3NjY4YmI3ZDM4MGZjNTQ1YzVkMmMxMWU1Y2ZkOWJiZDQ5OTI1NjAxNDc5ZGJiNGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNmU2MWNkNjM1Mzg5OGMwYmZmZTA3NzUyMTM4OThiZjQxNjk4ZWFiOTY5ZjBlODgxNTE1YTFhZTkwM2I2ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1NWNiNjlkZjNjNjE0NDE5NGQ1ZGY3MmZiM2ZiZjEwM2Q1MTYxN2M3MjI4M2MwZjY1MWM3YzBlMzQ5NTkyZmEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

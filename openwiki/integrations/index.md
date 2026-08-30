@@ -1,0 +1,6 @@
+# Files
+
+- [Cloud Relay Backend](cloud-relay.md) - The optional push-style outbound bridge: device registration, 60s heartbeat with 1s-to-5min exponential backoff, incoming-SMS event upload with stable-eventId idempotency, and the GATEWAY_BACKEND_URL build-to-prefs config chain with enforced HTTPS.
+- [GMweb Pull Bridge (OutboxPoller)](gmweb-pull.md) - The outbound-only pull transport to a GMweb-API server: long-poll GET /gateway/pull, POST /gateway/ack, a Doze-survival partial wake lock held per pull cycle, and how polled tasks flow through EveSmsQueue into the native SIM send path.
+- [Incoming-SMS Webhooks and Cloud Events](incoming-webhooks.md) - Outbound notifications of received SMS: the user-configured HTTPS webhook POST with HMAC-SHA256 X-Signature, and the cloud-backend sms.received event upload with a deterministic eventId and a 500-entry sent-event cache — both fire-and-forget and gated by GatewayAccessPolicy.
+- [Gateway REST API and EVE Provider Contract](rest-api.md) - The inbound HTTP surface of the Messages app: GatewayServer's /api/v1 send, inbox, query, status, and schedule endpoints plus the EVE Custom HTTP provider contract (/send, /send/status, /send/cancel, /send/capacity, /ready, /health), API-key auth with per-IP lockout, error codes, and the persistent EveSmsQueue priority queue behind the send path.

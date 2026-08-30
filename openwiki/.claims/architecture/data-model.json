@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:d04fc4422a9f3636bbe4e357042d641c31705947f53d6bde452037742aff5420",
+  "claims": [
+    {
+      "id": "claim_7b3b67a00c2b4f3cb0614f61e0948b7a",
+      "statement": "MessagesDatabase (app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt) is the app's local read-SSOT Room database, built lazily as a process-wide singleton named messages.db, at version 6 with exportSchema enabled, registering five entities (MessageEntity, ConversationEntity, SyncStateEntity, MessageFts, SendSegmentEntity) and exposing one DAO accessor each (messageDao, conversationDao, syncStateDao, messageFtsDao, sendSegmentDao); TelephonySyncCoordinator is responsible for keeping it in step with the system Telephony provider.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L11-L48",
+          "version": "repo-lines-v1:sha256:e030c86e30c5f1d0af23df66a67699504b6df00c75739703321c7b2ddc1b61d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiYzVjODY1MzBhMGE2OGNmYmJkNDMxMGU1ZTE0YjY1NjlhOTYxZWE4YzQ1ZTlmOTM0OGZhMGY3ZmZkNWRjYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZjllOTdiZDAxZDU1MWVmMmQ0YTNhNmExYTZiNTc3ZDgzYzdhMWEyZDhmNGYwMzcxODM2ZGEyZjEyNGQyNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0YzExYmJlNmQ1ZTQ4ZTE5YzFkNWRjZWUyZDI2ODg4NTZlOTliNzA0Yzc5MmM4YjQ3ZDEyZDZlZDAxNmM5ZTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_532775eafd484bf09201abf9e33f0d64",
+      "statement": "The messages table is keyed by the composite primary key (source, providerId) because the provider's SMS and MMS _id sequences overlap, so a provider id alone is not unique across the two tables; source is \"sms\" or \"mms\" and MessageKey(source, providerId) mirrors the composite for in-memory identity so overlapping ids (e.g. SMS 52 vs MMS 52) never collide.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L7-L40",
+          "version": "repo-lines-v1:sha256:1c91068e93439a1b3d250a6fb0446b9f761930403dc20c7459d484075aea82b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3MjU1YTUzZmFmMzZmMjRjNDZmMWQ1NjBiNDRiNzA5YTg2YjBhMmNjMDQ5YjE1NzU0OWZhZjZkMzEyNmIwNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmMjFmNGZjNDMzZjNkY2YzNzIyMmI3OTAxNGU3MDM0ZjM0M2UyNDEzYzM4NDY4ZmEwMDJiMTQxOWNkYzA2NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlZjljODdiZmJlMjc4OTU1ZDBlMzU2ODNlMGUyN2Y5NGNjYjJiZDUwMTUyOTJlNWZmNWM4MTVmMDk3YTFlMDYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessageMutation.kt#L1-L7",
+          "version": "repo-lines-v1:sha256:c4d825d768f1a2728922fed8727f80eef845629143e1383a8966043b39d0c636:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjg3OGQ1Y2MwNzAzNzBmNjcxOGJjZTFiMTU5MmFlMDBmZDQxYzVmZmNiZjJmYjA1NzkwMjg4MjM5NThhYTE0NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjEwMzc4NTczYWEzNzVmMzA4YTYxZWJiOWNiOGJlODNjNTQ3ZDAxNDYwNTAxOTc5MWYyZDQwOTY0ODdlZTAzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzYxZTBmMTIzMjdlYjMyYzFhYjg4NTNhMjFiZjJmMzE2NTk0N2NhYjI5OGFiYTY4NTE0NGU5YjkwYWIwMmZiZSJ9"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageKeyTest.kt#L14-L51",
+          "version": "repo-lines-v1:sha256:2560d6fffc84d81d17092fc11a7be87695d36bef1124f5d0b2f1c2b446238531:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjU0NGE1ODg2MzQzNTBjMTkxNjlhODI0M2I1MzFiZjMwOTVlYjU3YzhmYjAzZTQ0ODM2OTQzZjA4MTY4ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYmY0MzZiMTU2NjZlYzAwNmE5MDk2NzE3NzdjNWVjZWJhZGFiNTFlYzM2YjU3NDQ4YzQ2MGE0NGZiNDA4YTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwNjY2MDBkZjQ2NjUyNTkzMWYxN2I3YjRlNzIwMmFlYjA2ZjgzYTE4OWJkNzFkNDRlNDQ1MjEzYTg5MGRhNmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7785301ed25849b7af7370363a67863a",
+      "statement": "All dates in the Room read model are normalized to epoch milliseconds: MMS rows arrive from the provider in seconds (SmsRepository multiplies Mms.DATE by 1000 when reading) and the sync layer's MMS keyset predicates divide the millis watermark back to exact whole seconds when querying the provider.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L10-L16",
+          "version": "repo-lines-v1:sha256:0fde23c1c3654bda9b017b165d238792d182a75949813cb70cd310da46fccd9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTIwYmVhODNjYjVhN2ViZDgwNjMyZjNhMGRiMTQxMjE0M2RjODBmOWUxNzIwMWU2YTY4M2UzZjg1ODg2MWUzZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRiNTQ0YTU4ODYzNDM1MGMxOTE2OWE4MjQzYjUzMWJmMzA5NWViNTdjOGZiMDNlNDQ4MzY5NDNmMDgxNjg4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWYyNDIzMmNjNzg0YzY5MTBlN2U1ZjJhNTI1YjliYjFkYWJkNzI2YWNlYTI0MzgzNDYxYTE3ZTY2ZGNlZTNmOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Y4ODE1Mjk0YjI4ZTBkNGEwMzQxNGI3NzkxZWI5ODgyODBlOWZmY2FlOGIxN2I0N2FmOTM4N2E1OTlkMjdkNSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L456-L478",
+          "version": "repo-lines-v1:sha256:1dd87305dc6cfff884fc0bb43101c1157bf1a8e738c3f26793c887c932e24fa7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYjk4MmNkNzlkYjljODRlOWNmMWMyODRmZmQ5NWNhNDdmMTlmMmJjNWNmNzgyNTkzYzkzM2JiZjBmMDBhYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNjAxNDRiYzQzODY0NGUzZWI4ZWViYTRkOGFlOWUxMzljYjU5ZDQ5YWNlZWY3ZWM2NzQzMzVhYjM1MTQ2YWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5YzIzODRmZjIyNzcxNmE0ODBjY2MwODVkNDUyOWUxMThkYWViMzJkNmZiYmEyZTdjNDhlNTUzNTQ5NTEwMDEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt#L315-L319",
+          "version": "repo-lines-v1:sha256:f01997392685b9c01dd6398169e7ad041fedcded6ec599651d6108685aa10759:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjZhYjAwODZlYjI5NDBiZDE4MjVmYjRlY2M4NGQ5ZGIyMWFmYzIwNDc4ODJkNDE3ZmE1NWNkOWYwMmM4NGIyNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxN2UxYzhjZWQ2MTYwM2ZiMDliYWRjNzI2MzNlZDEzNWY1YThjOWU5MTgwNzljNjMzZjgyNjU1NzUxZWMyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDQ3ZTJiMmNkYjllNThlMjU4MTcxNzQwMDFhM2Y4ZGVkYmFmOTRkMzk1OTNmNDE3N2I0NjQ1ZWM3ODljYmE0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmM5NThjY2IwZGY3OGQwMzcxZDZkOGY4ZTE5NDhiMzQyNGQ3NTYwYjU5Y2UyYjQyY2FhYTJlNDAxMTI4ZTA3ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_96e701d919fc4bf280c7bf0c2db5c9e9",
+      "statement": "MessageEntity.toSms() produces the UI row shape following the provider-reader convention: SMS ids are positive and MMS ids are negated (id = -providerId), so id > 0 means SMS and id < 0 means MMS, keeping distinctBy{it.id} and Compose keys from colliding across sources with overlapping provider _ids.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L65-L85",
+          "version": "repo-lines-v1:sha256:3a82a1b0588f15d4629cdc0f619a3e3a29cb670c6df6999e8d1f8ae319bdb10b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1OWJlNWQ1NDU1ZjljNDEyMDIyZTcxODk3NDFiODQzNjI1NDYyYmYzNDljZmJmMjBjMDE3NTc2MzI0MmRjOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyNGZkYzQ5OGY5NzFlOTZmODU0NzE5MWU1YjRjMTE2MzNlYjVhYzQ4NDk2Yjc4N2QyOWNlOWU1ZDVkZDIwZmQifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageKeyTest.kt#L38-L51",
+          "version": "repo-lines-v1:sha256:a700e42106df88460765388120d296190acc0dcc738270c4db79e8c7053d259b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExYWNmNTkwYjY3YmUwNjlkYjVmMjhiNTZlNTMxNjljYWZmMjE3NWYwYTkxMDNhOWIyNTA0YzQzMWFlYzE0NWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwNjY2MDBkZjQ2NjUyNTkzMWYxN2I3YjRlNzIwMmFlYjA2ZjgzYTE4OWJkNzFkNDRlNDQ1MjEzYTg5MGRhNmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b02fa6000cfc4061ba6e716132ea92fe",
+      "statement": "The messages table declares four Room-managed indexes — (threadId, date, providerId) for the conversation window and newest-first paging, (normalizedAddress, date) for per-contact lookups, (date) for incremental-sync dedupe, and (threadId, read, type) for O(unread_count) badge COUNTs — and because the last is declared in Room, fresh installs and the MIGRATION_3_4 upgrade converge to the same schema (an earlier hand-rolled PARTIAL index was silently missing on fresh installs).",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json#L91-L133",
+          "version": "repo-lines-v1:sha256:8623c2ece805c080b7a49ec355ec8a9279ea6e67d9c3749ebce0dd5b5e3b2e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmOWM2MWY0M2Y3MGExOWI5NDZhZmQzMmEwNDFlMTc1OTE5NzY4ZTgxZTMzYTI1MzZiN2Y4ODQ1NGQzOTAxZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RmZGVhYzFjYWFiNGQ3YzJmMzQ4YmQxZmVkMWE2NGRjODg0MmJmNGU4ZjBmMWQ3YjU2NmU1MGYwNTUxYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZTlhNzIyNjlkNTVkNTUxMTkyYjgwZDAzNjFkYzA1ZGVlNTQyZjU3YTczZTg5OTYzNjRjNmUyZWNkMjhjMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2ZDhiNGExOTMyMzA0ZjQ3N2M5ZTEyYjczNjNjNjMxNWU2MTkyYTZmZGRjMjhkNTNjYmRiNDU0OGFmMWE2MTIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L17-L34",
+          "version": "repo-lines-v1:sha256:7c338d8b07f2735c25a1ff096716ba7c08d12f2fdc1bf7dc8582a1c0c556058a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZGI1NzgwZmM3NzNiZDZkNzAyZDhlZTA0OTBmYzkzN2Y5ZGMxNDUyOWM0M2Q1Y2ZjMmE1YmMxMzQ3YjQyZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmOTI3ODg4ZmE1NWMwM2EzMWFjZWQzYWUzYmVhZTY4MzE0N2E1YzcwZjY2NTI3N2E4MDQ0ZTg0MWY1ZDhhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5NmE3NzkxNGNmNjg5MTQ2NGUyNWE5ZDlmN2YyOTllZDkwOGM1Y2RlMWUzNDY4MjJlNmEzYWM4YTEwMzk2YzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_862aa9794278415aa484f289c6939c28",
+      "statement": "conversations is a per-thread projection keyed by threadId (snippet, lastMessageDate, unreadCount, lastMessageType added in v6, and user-owned pinned/archived flags); upsertPreservingFlags is the exact-mutation write path — a true upsert that INSERTs a brand-new thread, on conflict updates ONLY the projected fields so pinned/archived are never clobbered, and guards snippet/lastMessageType/lastMessageDate with newest-wins CASE and MAX so a late-arriving older row cannot overwrite newer projection state.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt#L145-L222",
+          "version": "repo-lines-v1:sha256:26b9e2c79c20ed29a6557977fa6f4d07f9049547c75daccca3fd4e47c45065a6:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNzU2OTZlZDk3ODRlNjMwYTI5ZTc5NjY1MDJjOGIxMTRkMTIzN2RlNjMzZWFjNThhZTE3YzIxMzY0ZGM5NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwOTdkMTI5OTkzOTA4OGU2YjNlOWQyYzExMTU4YzYxYWY2ZmUxYzFjYTY5Y2EzZmJlM2Q4OTc3ODBlMmQ5MDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkOTVmZGY4MDM5MjE4MTg3MWQ4MzRhY2EyMGEzNGIyZWNhZDk5ZmFiNjg3N2IwOWE1MTYwOTM0MTNhMjA3N2YifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L87-L106",
+          "version": "repo-lines-v1:sha256:53b6b885f76d4c8717726bc018200718fa0737a94ddcb4bd06f1929e049a4700:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZmFiODBlYjRhN2JmMWQ4MzNlYmY3YWVmOTQzNjE3NDE4ZDg2ODkzZTA2OWQ4ODY5NzMwMzQ5NDcyNTEwMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiYmQyZmE1OGIwNjJlMTIxZjllNzhmY2MzOTVhNTlmNDJkYzZlMGU4NmM5N2IzYTY4NWVkNGRkNjNlODMyOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMmVhMjBjM2I2MjNjZTM2Y2UwZjI5ZGZlMTk3OWJiNzk4NjA2NWVlMTNjZWFjM2U0ZGJkM2Q5MTE3YzU3NDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6896afbf71014ff681a63deb002468e6",
+      "statement": "Conversation badge counts are maintained by O(1) signed delta (UnreadDelta.compute) instead of recounting the thread: brand-new unread +1, brand-new read 0, unchanged read flag 0, unread→read −1 (badge comes down), read→unread +1; the exact-mutation path applies the delta inside the same Room transaction as the message upsert, keeping the realtime path independent of thread size.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L145-L181",
+          "version": "repo-lines-v1:sha256:8ee87aa19e77eb3dec74c3d109ab8e683b4733d89b63688b4106a1cdc290253b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNGYxMGMzZTkzY2UyMTFkZDBmYTA5YTdiNTE3YWYyYTNiM2IzYzYwMTFiOGY0Y2JhMjNhNTM1MGM2ZWQzMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyOTBiYmZhMzQxNmY5MTBhYWViNGFlZTM1ZGQxNGVhZDY4MDM0MjY3NWQ1YWNlNjk1OTU1OWZjZjY1ODJjYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYTdkYTg4MDkyNjg2Yjk2NzE5YjU3ZjNjOTQ1NzUwYWNhOTM5NjBiNTVlZGQ4NjJiNjgyNTkwNTU4YjViNTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/UnreadDelta.kt#L10-L30",
+          "version": "repo-lines-v1:sha256:4764699a5af32b60bfbb9e08f3a1831b18d925b9fe4c970dc6782f522b582412:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODg5ZTZlNTUxODI1NjUyODBiZGZhYjYxZTEyZDFhMjMzYjM0YzllYjE4YjUwZmQ3ODQwODI1ZGZjMjgwYzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2ZmIwYjVhYWFjMDc0MzQwZTMzNTlkZjliODIxOGYyYTU1NjY2NGQ2NmU2YjViNThlNTQ3ZTk3OTEwZDU1ZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/UnreadDeltaTest.kt#L14-L61",
+          "version": "repo-lines-v1:sha256:5f043c289f5d725d80de3dbab8113e87aeda15651d4b5a9f1c6a398d9e5ea4d3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5ZTA1MTA2YWY2NDZlNWEyNWIyZDE0MTk0NGU1M2E2NjdiMjhiYWIxYTA3MDQ0ZGU5NWI2Mzk1NTMwNzkwNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmZmZlNGFkMTQ2ODYzZjRhMWYyNTAxYTBmZTE2NTEyOGMxOGQzM2UzYjQyY2ZkNmZjYTVhZjI4NGFjZTgwMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNDJlYTc3ZGQ0ZDNmNmJkYTRiMjc4NjM1ZjM4M2ZkYjdkYTY5NDU0ODQzNTM5MWZmZmZhMmNkNGU2N2MxMTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1b2fe0dc946345cfaacdedd349f68c5c",
+      "statement": "newestPerThread() picks the newest message per thread with a deterministic tie-break via a correlated rowid subquery ordered date DESC, source DESC, providerId DESC, replacing the old MAX(date)+GROUP BY form that picked an arbitrary row among equal-date ties (a send and its delivery receipt constantly share a timestamp); the v6 backfill SQL uses the same ordering.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt#L62-L94",
+          "version": "repo-lines-v1:sha256:276a9a51342e0d1654998405ab1a4440c3a8687a48805a2ddb0088351976b5f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiZjg1MjhkODdkOGFjN2M4ZjllNDhhZWYzYjE3MzQ2OGM4NjBmZWNmNjNhNmUzMWFiMWVjZWYxZTc1NjAwOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzNDU3MWFkNGJjZmY4YmY3ZTFkYTYxZjM5M2YzOTg5NmVjYjdmNGYwYjk5ZTNhZjFhZTI0NThiZWMyMTM3NGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMWE2YjMwOWFjOTdhYWQ2MmNmYTRlOTgwYzk1NzEyNzBiODY4NjFjOTgwOTNmZmE1ZTNhNWRhODU0YzI1NzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L204-L214",
+          "version": "repo-lines-v1:sha256:cbc9c5b020e80d7c0e6b234b07ceaed50373b72f22bdfd356b295ec7fdae87fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MmE3Y2M3NDQxZTYzZjU0YTY2ZjQzMGMyZjdlMGMxZTY3MjIxMmZlZDk4OWM1NTFhOTk0NDU5MjMyY2FmYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YzQ4ZjE3OGRlM2E4YmQ1YTcyNWZkMDg2ZTYyNjBhOTIxN2QwNDdlZmIzYWJjYjUyMzUxNWM4ZTVkMDA0ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyNTk3NTA4N2RlOTUxZjNhZmNhZjAwMjIyZmI0YWNiM2ExNTJkM2IwOWU0YTI2YjE2ZmE0Mjg2MjU4YzE0MzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_33764e92e47947e993b3655a796f89f8",
+      "statement": "sync_state holds one row per synced source (PK source, sms/mms) with dual watermarks that move independently and must not interfere — newestDate/newestId for the incoming direction and oldestDate/oldestId for the history-backfill direction (defaulting to Long.MAX_VALUE, the 'oldest watermark untouched' sentinel) — plus the initialWindowReady and historyBackfillComplete flags and lastReconcileAt/schemaVersion repair bookkeeping.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt#L108-L139",
+          "version": "repo-lines-v1:sha256:5396f77b2a15b2463ee0aabf5c53f0a77a0a98856226ae639358b9389317e955:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjM2M3YmU1Y2JjZjQ2ODk5YmNiZDhiYTcxZmZiODcwM2ZiZmNhZmM5MmMzZGYxOGVjZmJlZmEzMGE2ODJiMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8808d2239fa54a909919bf6be5eafca8",
+      "statement": "SyncStateDao enforces monotonic watermark advancement in SQL (advanceNewest updates only when (date, id) is strictly ahead of the stored pair, advanceOldest only when strictly behind) and forbids read-modify-write of the whole entity inside the backfill loop because a stale copy written back would stomp every cursor advanced during the run (the v2.6.2 bug); markInitialWindowReady is set only after the conversations projection has been rebuilt.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt#L224-L262",
+          "version": "repo-lines-v1:sha256:8dc46d1f7dfbb53af5d9666a97960556dcc9e87e18fa4a466e58cad74af56c64:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNzU2OTZlZDk3ODRlNjMwYTI5ZTc5NjY1MDJjOGIxMTRkMTIzN2RlNjMzZWFjNThhZTE3YzIxMzY0ZGM5NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOGJlY2IwYWQ5NzBhZjA0ODBlMGMxMTBlNWJjMzc5NDE1ODQ4MDI0NmM0YzkwNGYyMjAzNWIwMmFmZTAzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljY2UwMzhlOWNmZDFjZTk0ZjUxMDc1MzQ1Mzg3MTBlMWYxMDZlMWNmODQzNGFkM2Y4MDlmOTFiYjZhYzk2NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1ZDcyMGFiYjQ2MmYxNzlkMmRjYjdjNTBkYjg4MzU1MzQwMWU4NzRmOWE2MDIxMjAxZDkxMzM1YmQyZjJjZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_21fa6e38e19a467ea41311576427fb65",
+      "statement": "MessageFts is a Room @Fts4 virtual table (messages_fts) over message bodies with contentEntity = MessageEntity, so each FTS docid equals the content row's rowid (exact, index-free joins) and Room-generated BEFORE/AFTER UPDATE/DELETE/INSERT triggers keep the index in sync; MATCH queries become B-tree lookups — O(matching rows), not O(total messages) — which makes full-text search viable at 360K-row scale instead of loading every row into Kotlin, and FtsQuery.build double-quotes every whitespace-split token (doubling embedded quotes) so FTS4 operators stay literal, returning empty string for blank input which callers must skip.",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json#L278-L310",
+          "version": "repo-lines-v1:sha256:f2970cf47d4ac8da591ae7dd0c25d1f402353dc280f1d16ebf73c2f21e381f28:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2ZDcyMmM5ODVjZmIxMDg0MTZmNGM2NjRkNDJmN2FkNjZiNmRjZmRlZjM2Mjc1ZjhhNGRhNDIxZDczM2QzYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkM2NmYjZhYmQzN2U0ZTg0NDg1NGRhY2Q2ZjRmODE5NGE5YTQzYTFmN2VmM2NmNzY2Zjk2ZDk4MGQ4YjE0OTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiZjMzNWExMTFmZDA4NmYzNGQ0YzA4M2JiNGYzODA4ZjNjODU2YzU2NmFjMjAzOGU4OTJkYmNjZGY2MTVmMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiOGJkMzk1MzE3YWQ1ODAyYWY2YjgyN2E2NWVmNzFmMTFmODhkN2UyZWM2NjU0MTQwNTljOTIzYWNiZjU1NjkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt#L265-L295",
+          "version": "repo-lines-v1:sha256:a90091817063e958726b5ea9c0864fc380fd61ce3af426f3e65531d8625e1c53:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjM2U2OTM2ODE0YWY4YjA5NWU2ODBiMmUyMTNlOTVmNDYyNTc5MjliY2ZhM2Y2NGFhNGYwYTk4OWQwZmYzNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2OWEyNDQyNzIxOGQ4OTFhZjMxMTEzOGFmMzQ3NWE1MzZjZTJlYTEzODAxZTllZTVhNzExNTJmMWNhZTI0ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt#L10-L21",
+          "version": "repo-lines-v1:sha256:0cc5b6ccfe184f81f35b246c81386679149631c532aea579d5d8493c76e192e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMDA5Y2IwYWNjYWEwNTFjNzNmYTlmMDcxNzBlNGE0NWYwZGI4ZTBlNTA3MzFjNGM3NjIwMGQzM2I1NDBhNWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3MTdmMmVlODQ4OGFlNmE1ZDc3ZGM0MzlkYmRmOTNkYTQ5NzY3MzAzNmFiOWRiYzg2YWQ4OWEzYzgzMTMyYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessageFts.kt#L6-L21",
+          "version": "repo-lines-v1:sha256:517a0c3ee282d28a266ba01c81964b7ad7a2ef976d21aa7683d8d51b26bad8ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2YjIyYmE3N2Y0NzkwODRlMGQwNzYwZjNmMGQzNzY2NmJmZGRmNTgyMGE5MGQwODEzZDYxYzdmNjFlNzQ4MWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_625dea1cf0a84d1da6680dc33713f52c",
+      "statement": "send_segments is an app-owned ledger of confirmed outgoing SMS segments (modem callbacks, not send() attempts) keyed by (rowId, partIndex) with OnConflictStrategy.REPLACE so a redelivered callback inserts over the existing row and the count never moves twice; it is kept out of the Telephony sync mirror on purpose because no provider table stores this telemetry, so no reconcile path may ever touch it, and the coordinator bounds it by pruning rows older than 90 days on the periodic full-sync reconcile.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L11-L47",
+          "version": "repo-lines-v1:sha256:f4e271faf714c751b18df4a5ce344ec8155d5c10519d692fb3646da216f6b6fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3ZGRmZjUxZTBmNGFiYzExN2ExNTdiZmVkNGRjYWZjM2Q5ODQ3NzE1MTQzNDdlZmY4NWY3MmQ0ZTczZjg5ZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1YmNhNGY5MGM1MmI1ODM0MTA3M2ZkODg1ZTQyNDExYWE4YTQwZGUyNDlmZWJlY2U2OGY0ZmQyZmI2MWE4OTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L222-L227",
+          "version": "repo-lines-v1:sha256:359c498a3742c3faa6a1fa0a719878761aa5b7ec77c58748650943efe6733e4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjAxNGQ5YmE1NzBhNDFlOTg0NGY3ZTEwYjU0MGE4ZTlmMDdiODBjNGJlOWNiNjI1ZjU5ZDZhN2I0NzAwYjVlNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkyNjE1NTlhZjJiOGY1MmMyMjAzN2Q4ZTlkYTcyODE4OTNmZGQ1NWJmOWYwZDJlMDRlNmE2ZmJlOTc3Y2VjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDVlZWUzZmQzZjkwN2Y3M2FhYzkyMzU4MmU4YmJiMzE2Y2Q4YTViYjAwZDUyZTI4ODhkZDRjYTM1ZGUzMmJjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjA0YzZkOWNlYjI3NTg5OGE0ODQ0Y2JjNTQzMDRhNmZkZDhlODJkZmZkYWY0ZGZlZmU4NzY4MmNlYmUwNWMwMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_908a26f7ac06478c94ff4f4bbdacba7b",
+      "statement": "The send-segment success verdict (v2.6.18) counts RESULT_OK and the AMBIGUOUS_ACCEPTED verdict (RESULT_ERROR_GENERIC_FAILURE, SMSC-accepted on affected RILs) as success while explicit radio errors (NO_SERVICE/RADIO_OFF/NULL_PDU) stay success=false; the Home 'N SMS today' chip counts ledger rows, not logical messages (a 3-part send contributes 3), via observeSuccessSince over a local-midnight window, failed rows are retained for post-mortems, and SmsStatusReceiver writes each row without ever letting a ledger failure break status processing.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L50-L74",
+          "version": "repo-lines-v1:sha256:20a3bc57e800e605bfd3d4b7c69a7afb4584edda81a6daa22546fd3603c01144:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NTU4N2U2ZjgzMzgyY2RjNWU4OTYwMmE2NzM0MWZlNjJjZDQ4MzI5ZmEzODA2Mjc4MTI3N2EzNWM3ZjgxMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0MTBlMzQ1ZTZjZmQzYTdiZTE5MjVlZjEyN2MyZGU2NGViY2E2YjljMzFhZDAzODI5YTJmMzQ3N2Y3NDY1Y2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjNTYxMmExODNhMjQ1NmU3NDA5MjMzNDg1ZWNjNDkzODRjMTRmZGQ3NDZmZDVjN2ZlMTcwMTk3OTM1YTY5M2UifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L100-L133",
+          "version": "repo-lines-v1:sha256:551c5f1693cb0dad39f464bc7154d4700c55f5edac8e95146490e42c70d12c3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZjAwZGE3YTUyODk1Y2RlZWNhOThlNTk4M2QwNTgxNjc2NjAzNzM4YjU2ZTY3MTgzYTk0MTY4YTU0NzM3ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiY2IyOGEwNGY2MDA1YTBjNDMyNzA1Mzg4ZjRlYjJkYjkwOTY3MzQ3YTI2NWY4YmY5YTA4ZDA4OTg5MTQ2ODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlMDZhZGVmMTdlYWVkNzY0MWIxMDFkNzM2MjEzMWJiMDVhYTllNTJlN2RhYmRjZGVmYWU0MjNiNWQwOTU2NWUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L157-L179",
+          "version": "repo-lines-v1:sha256:a6ffde697192e554c28d2cd94e180a993da0ab99c59d85bbf513f79ff27b03e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhODI3NGY1YjYxMzQ5Y2NkNmYwMTRhYzQxY2VmMWFjZTM5MDExMmMxOGMxZWJkOTVlOTdlZWYwMGQxMWYyYjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZmNlZTNkMmZkZGU4NzBiYTc5YjMzZDllMTZmODZlMjI1ZjY1ZDczMTgzNDhiYTc4MmIxOWQ0MmNkNzU4MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzNmE2YzAxYTc1ZDI3MTk5ZjE2YThiMGU0MGU2MjBkMDdhOGEwZjAyOWM5MjIxOWNlMjY1ZjNhMzBhOTA0YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3869f3fb85954381bfd22d62b74b66a0",
+      "statement": "TelephonySyncCoordinator.isShadowReady() is the read-cutover gate: it is true only when BOTH sms and mms sources report initialWindowReady; syncSource deliberately leaves the flag false when the initial window lands, and applyReconcile flips it only after fullRebuildConversations has rebuilt the projection (a crash in between just redoes the idempotent window + rebuild), so the UI can never observe 'ready' against an empty conversation list; HomeViewModel and ConversationViewModel consult the gate with a provider fallback and paint the Room shadow (newestWindowForThread/newestForAddress, 20-row window) only when it allows.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L103-L113",
+          "version": "repo-lines-v1:sha256:3c4fc8c93072403d12a05cc9e4d37a9487ef8003707e4d78ce329c1ed02fcf07:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjRmZTJlZDg3MWE0Nzc1YmY1MmFlMzM4ODdlMzVlNzVhZDc1NDFjMWI1MWFhOTY2YzRiY2QzMzBhZjJkYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1ZWUzZmUwOWNhZjlkZGM1OWFjOTRhNjhhM2FkODdmODE1YTNmMGVlYWYyM2QxNWZkOTQwZWEyZTdlOGI1NWUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L230-L254",
+          "version": "repo-lines-v1:sha256:9fab3ed4fa93d9ee71de5058ffecb01f17af0d22b5aa5d780447dc34dc8e94b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYjRkNTQ0M2Q1MWFjMDliZDg5MDFlNGUzYjc1NDkwZTAwZjVhNTM5ZGZmMzljY2M0YzgwYTc3ZTU0MjJlZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MDE0M2E2NjJjYzk0NzRkYTU3OTM4ZDA1ZGZmNDA5NTRhMGIzOTU4MDE3NWJhODYwODlmZjNjN2UxZGQ4NzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4NjIyZjQ1YmRjZWZiNjFkMzU1NDAwYTU4MWMyOGM4OTE2ZDc2YjBiNDM4MjdiMjkyODBlM2ZmMzQwYzUyMmYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L541-L571",
+          "version": "repo-lines-v1:sha256:349e85d1df8b4098461492c9d6f1ffc6b64608915bec91f6b058e6a78b7787c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MWM1MThkMGU2MzAyYmEwYWU3MTViYzMyMjVhOGVkYWMyMDhlMjIzMmM1MGY2Mjg1YTgwNjgyZTQ1Nzg5MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZWNlOGRlNTgzNThlMWJjZDNjYmI0NWJiODNlYTg4MjBjNjYyNzdhMDBlNjNjNTFiZDVhMmEzYmUyZWU1ZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1ODFiYTI1NDMxNzQ1YmUyY2Y0Mzc5ZmIwNmEyYzBiZTBjMWY3MDEzMmJkNjNlOTQ5ZmJmMzI3M2RlMmIzNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1YmQwZTdiNzljOGJlY2NkY2ZlMjk4MzRiNTRjODQ4NzRmOWVlM2FkYmIxNjk4MGM2YTg0ZTk1Yzc4M2VjOGQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L220-L238",
+          "version": "repo-lines-v1:sha256:0b08157329a8caa794cfee3d646b9b991f1403a6959ed2400547718b4855ff15:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1NWViNWQxMTM4YTUwYjNmZGMwZjBlNmVlOGI4MDUyODgyMjdlZWIxYmE5YWNjNzMyNTI2NDA2NjI4ZDE4NDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwODM4MWE4Zjg5NmZmYWExZjAxNTUyNjRlMDk1OWM1N2U2MWUzYmE1YzA4N2NmNjQ0NDU1YTFiMDBmYjlmYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_07885fca9d5d4c0592bb4d84b0555955",
+      "statement": "The v2→v6 upgrade path registers four real migrations wired into addMigrations: MIGRATION_2_4 (a direct v2→v4 jump so old users never touch the broken historical 2→3 path), MIGRATION_3_4 (fresh v3 DBs already have the exact v4 sync_state and keep every watermark with no rebuild), MIGRATION_4_5 (adds send_segments and its sentAt index, additive only), and MIGRATION_5_6 (adds conversations.lastMessageType, additive only).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L155-L233",
+          "version": "repo-lines-v1:sha256:2b87765bb29a8ef41cdd40d0b0a515ac9e20e932c6127516cf83b169c7f694dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NGJhNmJkZWIyMjFkYTNiZGI0ZTQzYjNhNDhlYmRlNjY3ZWRlZmY0MGRiNmIxOTc5MTlmNzA5YjIyMzA0NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkOTZlODczNmFiZTU0ZjFmZmE4MTkwYmE3YTAwMmMyZDc2YWE4ZWQxMDliMzE5MzY0ZGE5Mzg2MmVlY2RmZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ZDAwM2ExY2M0NTAyMGNjYmExZmZlYzhiMjRkZmFkY2UzMWVlOTY2MjZhYWRiNzcxZWJhMWYwYTY5ZjRkYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d51d4e5933fe42f987a1cf795d191db1",
+      "statement": "The v4 sync_state migration is data-preserving: migrateSyncStateDataPreserving reads the live column set via PRAGMA table_info and syncStateRebuildSql decides by shape — missing table gets a plain v4 CREATE, an exact v4 column set is left untouched, the legacy v2 shape (newestSyncedDate/backfillComplete/lastSyncAt, including DBs the broken shipped 2→3 migration only ALTER-added columns onto) is rebuilt via CREATE sync_state_v4_new + INSERT..SELECT column mapping (newestDate←newestSyncedDate with fallback to an ALTER-added newestDate, initialWindowReady←1, historyBackfillComplete←backfillComplete, lastReconcileAt←lastSyncAt, and oldest watermark←0 when the legacy backfill completed else the Long.MAX_VALUE sentinel) + DROP + RENAME, and any other unknown shape falls back to drop+create — avoiding the historical blanket DROP that erased watermarks and made every upgrade a 360K-message full rescan.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L60-L126",
+          "version": "repo-lines-v1:sha256:382d0f685fb7a0e1fc858f72cdb8da3ef44ec630079e5cf9ad153aee09e9a661:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiYTZlNTFkYzJiMWU3Yjc4YTg4ZjU1YzIyMGNmNDVkNGQ4YTIwODM4ZGY3YmY1MjI2ZGExYzQ2MTNiYThjZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhZWZiZWYyMmNjYjFlMzVmOGI4MjQ5MWFjZGY0YTEzM2I5M2M1MTdiMzcyMTJhYTg0YWNiNTVmN2U5MzM1NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1ZTdlOTFiNjdkOTI2NGY5ZjY5YTZlMDdmMmExYjUxNjcwOGZhMDkxN2JmODdhYmM2Mzg1YTNlYTg0MjRjZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_81829a3c2069468689636078daa724c6",
+      "statement": "UPGRADE_TO_V4_SQL is idempotent for every possible starting shape and never drops sync_state: it drops the two non-managed hand-rolled indexes (idx_messages_thread_unread, idx_messages_thread_date_id), creates the Room-managed (threadId, read, type) unread index, heals the Room-declared messages indexes, and creates the FTS4 virtual table plus the four content-sync triggers using the EXACT text from 4.json, which Room validates verbatim at upgrade time.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L128-L153",
+          "version": "repo-lines-v1:sha256:eb137ddd06d92536387975ff7519cfca9fe4910198f0bb3e5f87978d48e48997:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ5YWQwZjViMjdlM2U4ODRkYWFkM2E3ZDlhNjEzMjY2ZTNmNzU4NTRlMmNkNmZiY2NlMjliNmRkNzA3ZTE5NGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiZDBjYWViMzY1YmQ3MDc3YWZhNWJjZDNjNjRjNTI4YTAyNjIxZTY4NDRjMjQxOGQyY2ZmZDMyOGU1YjVmMDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_de975011b2c4468482f7160cbf830249",
+      "statement": "The v5→v6 migration is additive only: ALTER TABLE conversations ADD COLUMN lastMessageType INTEGER NOT NULL DEFAULT 1, followed by an in-transaction UPDATE backfill that sets the column to the newest message's type using the deterministic tie-break ORDER BY date DESC, source DESC, providerId DESC LIMIT 1, guarded by WHERE EXISTS so threads with no messages keep the incoming (1) default; it exists so Home can render the 'You:' marker without probing messages.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L194-L220",
+          "version": "repo-lines-v1:sha256:061b66609127317e95f1925bef0f088cfcaad5cf7ecef65000af0a73cfe774c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZDczYzY2ZWY1YmE4YWZmN2Y3NGYwYTBiMGQ4M2Q4NGZiNzdiMDU2YmFlMjJkODZmNGQyMjgzNzY1OTE4MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOTQ2MWM4MGE1NGYyOThlMmVhYzBjZjU1NDM1ZmYzZDM1YmNmYWZjNjMxODQ1NjJiZWJkNmFmN2E2MGExMWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c14033911ed46058e0abfc12beec5f4",
+      "statement": "Schema rules: every schema change must bump the version and add a real Migration wired into addMigrations; the exported schema JSONs under app/schemas/com.autonomousone.messages.data.MessagesDatabase/ (2.json…6.json) are committed KSP build artifacts of schema history that must never be hand-edited; and the destructive fallback (fallbackToDestructiveMigration(dropAllTables = true)) is DEBUG-only as of v2.6.10 — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L227-L244",
+          "version": "repo-lines-v1:sha256:63e7297b96dea011ab3449f86d96e19f4a3ee9920d9e5997c285816e17a5395b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+        },
+        {
+          "resource": "repo://docs/room-migration-strategy.md#L25-L36",
+          "version": "repo-lines-v1:sha256:c07f7472a3f2c61692c4fa0ec1212248146c536834dae5ede4bcf981c7ce7c3a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYTQyYmI1NDQ0ZjQwNzk4OGEwN2UxNjBkNjFmYjA4NmMzNmEwM2I2NDIzODAwYjhmY2E1ZDM2MzI5NTk4YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4MTEzNzBlZTJmN2NjMWYzNDk3YWVjYWU4NzlhOTNjNmY2NDE0NGUwYWVlODIxZmM5NzY4MTM4ZThkMTQ3NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyODA3YmUyYWM3MjQ0MjhmNmQzNTJkZTliZmExZWQ4MGY1MjU1YTU0ZjY2NDQ2NjNhN2ZiMzdiNWQ4ZGQyNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20146e3b2de74c34884b0801c848ed1d",
+      "statement": "docs/room-migration-strategy.md is stale: it describes MessagesDatabase as being at version 2 with no real v1→v2 migration (destructive fallback) and an 'intentional for now' destructive policy, whereas the database is at version 6 with a real migration for every step and a debug-only fallback; MessagesDatabase.kt and the committed app/schemas/*.json files are authoritative for the current state.",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json#L1-L6",
+          "version": "repo-lines-v1:sha256:4e77d24878ee934e63b4915fc687e00540549d749b264b919be552e9999f4179:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNlYWU3ZTZhNGQzYzcxYmNjOTYzMjhjNTE5ZmJhMjk0MWVlNDg2OTY4YTZkNjMyMmZiMDhjZWI0NGUzZWZkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjExZDE2OTRmOTg3Y2JlNGNiMzg4YzQ3MDYwNTFjODA2NmYzZmJlMGVjNzllMWI1ZmFiMzYxM2ZjYjUyMGNlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFmZTFjNzY1YTQyM2Y0MzdlNzQ3MmEyNWZlNzkwNzU1MGE2NmUyYTdkYjE3ZWRjNDY5MTA0YjkzOTFiZTVkMSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
+          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+        },
+        {
+          "resource": "repo://docs/room-migration-strategy.md#L3-L11",
+          "version": "repo-lines-v1:sha256:12fb681719d8a853bcc3422f017137f549584f665a12edfefbe3935b54ba7329:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWY1ZmU5Y2JhMDFiZjlkNTkwMjQ0Zjg5MzA5MzkxYmZhMTgxZDJmMmNlODcxOGQ3NDFhNWVhNGI0YTA4OGMzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTVlMzA3NjRiMjNlY2I2YTE1OGJiNmUyZmI4MmFhNmQzMTJiMjFjMmI4YzEyYjJkNmM4OWU4Njg3NzcyYTVhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWU2NjQ5NDlmNGNmMTU3Y2QzMDdlNmEyYzZkYjg5ZTRiNjg4NTZhMmViMzMwMGU3NTkxNTQ5NThiYTM2MDhkZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e78d08182e6945f4a72b69ae1b36a4a0",
+      "statement": "TelephonySyncCoordinator is the single writer into Room, with two channels: exact mutations through an UNLIMITED sequential channel (never dropped, never conflated — a bounded channel could silently drop an event under burst) and reconcile requests through a CONFLATED channel (N nudges collapse into one bounded repair pass); an Upsert mutation runs in one Room transaction — re-read the old row by composite key, upsert the message, apply the unread delta, upsertPreservingFlags — an O(1) realtime write with no full scan and no projection rebuild.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L143-L213",
+          "version": "repo-lines-v1:sha256:ab6dee6440e6049748a8bcb1f7c938e3654a4c7a05c23ecf3347ea2e78825822:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYjVmMTI2NjBjMTU4NjRlODg4NzE4YWI0OGZjNGJiMGZmOThmOTgwYTE5MDZiMjQ4NTE2YWUyNjQ0ZWViMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZGQ3N2VjYzU1ZWMyN2I0MjUwNTQzMjFhOGEzNmNjY2Q3ZTNjZjMzNWJmOTQyMGU5NDQ3MWY2OGQ0ZjBkMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjN2RmOTllYWE1ZWNmZWI1YWJlM2ZmZjUxYTRiY2FlZWI5MjI5N2RjOTQxOTRkNTg4Y2YyYmViNmZkMmIwYzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L19-L98",
+          "version": "repo-lines-v1:sha256:a3e5dbf29dea3e1c649d67d7b11e0d3707f7ff823f8deb5a71c5277a38e56eb1:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MTgzMjhhY2FiYjQwMzVkOWYzN2Y2N2M3ZDdhZTU5MjljZmZkMWNmMTJhMTg2YmZhOWE2MDc1ZGMxNTJmYzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjMjliMDQzMmI3ZDAwNWNkNDNjYmI2OTM4OWE2OWJmOTJlYjM0YWFhZGUyMzg3MWM3N2QzMmUxYjFiYWQxZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2MmNiMDA0MjdmYTc4ZmM0NzNjODJmZWIxZDQxNTJkMTI3MjI1NDgyMGU5ZDE4ZGQyM2UzY2VmNTJiNjJkZDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_68a8cb5eb72a4ca897c8b7ddcc720762",
+      "statement": "JVM unit tests pin the data-model invariants that would otherwise fail on a device at upgrade time: MigrationToV4SqlTest asserts every non-drop UPGRADE_TO_V4_SQL statement matches the compacted generated 4.json text, asserts sync_state is never blanket-dropped, and drives syncStateRebuildSql across exact-v4 (no-op), legacy v2 (rebuild via create/insert-select/drop/rename with the legacy column mapping and initialWindowReady pinned to 1), broken 2→3 hybrid (CASE WHEN newestSyncedDate > 0 … ELSE IFNULL(newestDate, 0)), unknown (drop+create) and missing (plain v4 create) shapes; MigrationToV6SqlTest pins the additive-only v6 SQL against 6.json including column order, INTEGER NOT NULL with DEFAULT 1, the deterministic tie-break ordering and the WHERE EXISTS guard; UnreadDeltaTest, MessageKeyTest (including a 100k mixed-identity scale test) and FtsQueryTest cover the delta rule, the composite-key/negation contract, and MATCH-expression quoting respectively.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/FtsQueryTest.kt#L12-L48",
+          "version": "repo-lines-v1:sha256:4d1920535f9eb0a19791cfad9ca42679d4e8658ee715be8a4d5eb89732e3efad:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkMzg3YjIzMTg0ZTdlYmMyMWQxZmJjZmZmOWEwZDRjOTVlMDk5YjRlMzhiNjlmNTljY2VmMDhhNDg2NGE5MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4OTAyMzI0ODE2YmQ4MTlhOWIwOGExZjQxY2U5MTQ1ZDhkZTJlYTQ3M2M3NjVkZDMwZmM0MmNjMjBhMjE2NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageKeyTest.kt#L69-L79",
+          "version": "repo-lines-v1:sha256:c2f39070e69adb2bb021f9e6d4cc95cbcf676867b9f2498f61e732558a954e02:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyNTMwODdlYjQ3YTg3YWEwM2UyZjhmNzNlZDE4YmFlMjhmNThhYTJlY2U2MjE3NzZmZGNiNTkwYWMwMDY4ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlOWY4YjFiMjFjMjJiMmQ3ODQ5YmE3ZjI3MmNlMDk4NjM0NWE2NGQwMjA1OTQ3M2MwOTgyODI1NjNiOWYwMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV4SqlTest.kt#L10-L176",
+          "version": "repo-lines-v1:sha256:a6bd4fab149f0d0c67aa5745110e727b89ef75f2ed7f6dc3210ab376123d4951:eyJzZWxlY3RlZExpbmVDb3VudCI6MTY3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NWQ1YWJhY2EyMjY4MGFlOTUzMzY3MDBkZjc2NjM2MTk3YTdjYjZjMDA0ZjRjZDc5YWMxYjFmZDJmMGFjNGE1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxMWU2MDQwOWFlZjcwZTZiODI1NjgxOTY4MDllZGViOWQ0OGZkZTI1MGRhNDA2ZWFmODA1MzA1MjRlOWM0NTFhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlMjJmYWE1MzViZDJlYTNkNTJlNzQxZWQ0NTQ0MzViN2ZlNDllODM1ODZlOTQzZDk4ZDgyYmJmYjI0ZDFmNWM1In0"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV6SqlTest.kt#L10-L81",
+          "version": "repo-lines-v1:sha256:cba03cfa5018ca899c3d7206e432c9d060dbfecefbee50acf822b58c8a2d63ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExZTYwNDA5YWVmNzBlNmI4MjU2ODE5NjgwOWVkZWI5ZDQ4ZmRlMjUwZGE0MDZlYWY4MDUzMDUyNGU5YzQ1MWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

@@ -32,3 +32,5 @@ keystore.properties
 graphify-out/
 build_output.txt
 hs_err_pid*.log
+# OpenWiki transient run state (resumable queue; safe to lose, never commit)
+openwiki/.run.json

@@ -1,0 +1,512 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:fde6c17655a0f27050ccb972423013f028978d317cc1eb850d07d079f3532f77",
+  "claims": [
+    {
+      "id": "claim_ed6a3aad5ca64cc9ab22c5cb6c7bc2a9",
+      "statement": "The gateway implements the EVE panel's Custom HTTP SMS provider contract, which docs/api/openapi.yaml documents under the EVE tag with schemas EveSendRequest, EveSendAccepted, EveStatusResponse, EveCancelResponse, and EveCapacityResponse; the panel is pointed at the device with Provider Custom HTTP, Base URL http://<device-ip>:8080, the same gw_ API key, and a 15 s timeout, and all EVE endpoints except /health use the standard Bearer/API-key auth.",
+      "evidence": [
+        {
+          "resource": "repo://docs/api/openapi.yaml#L483-L492",
+          "version": "repo-lines-v1:sha256:4d933d2fbf536328c299edc5a062e9f452a3fc1ab6e3f16e0e2ce1a6d3aafd55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3MjBkMTczMWM4NzRkNTY3NWExM2JiY2FiNjllMTJjZmY2MGViZmI1Y2RkYzJlNTE5YmZiMzNhMjhmYTdjMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNDU4MjgyNWRjMmQwZDUzYzM4OTRlMmJmODExZjIwM2MwYzhhM2IwMDcyODIyZTU2ODQwZTRkNjBhNjUxMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjZmIxYWMxYzNlYzAxYWM0YWE0ZWYyNDUwZmJmYzYzZDQ2NzYxMGY5N2Y4ZDE4MWI4NDIxMTY4MGJlMThiOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiNTlmYThjMzdlZTgxMmQ1ZGYyNmYwZDhiNzY4MzU2OGExY2Y1YzkyODkwYWQ1ZWUyNWYzYWY4ZmRhODgzOTcifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L62-L76",
+          "version": "repo-lines-v1:sha256:99221b0ac7d3c19caa731bb1f3722230d6b82098bd68db4d33ab7832b2c5aa32:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjZDQ5NGQ1YzA1NTI3YTQ4Y2VmNTViYTk4OTYyN2RjYmY1MmFkZTg5N2I0MjdjMjdmM2Y1NjQ5ZjdiYTkzZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyZDhkYjQwMzg4OTc4ODc2N2I3MWJkZTAxN2E4MDE2NTU5ZTdlZmRkNTA1NmI0ZWY3ODI3OWZlMjk0YTBlYmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5OWFlMmJkZWYzNGQ2ZmY0ZDU1YTJmZDAxMjYyNDcwODc1OGMxZTg4ZmIyMGJhZTJmNDFlNTVlYTJjM2FmMmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1ZDVkYjU2YzY3YzNiMzA5ODZkYjg1MTQzMGI4YTlmNTI3YzM5NGU3ZWYxODlkMWIyMmEyMjNmZTgwYWZmYTIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L676-L792",
+          "version": "repo-lines-v1:sha256:17db3b7b1a569ec792f45c19be252e0e7976f34c555df6689d898accb75da042:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3Y2I4YWFlYjBiZDNkYjZhNjRkNGEyYWZhMGVjNjJlZTE0NTZkNmQ4NTU2NmE4MzNmY2VjODA3YTZkZjE3OGFmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyMjM1YjczMGIyODJkYmZlZDdmOTM0ZTExODM5MGM1YzJiOTE5OGY5M2I0ZDYwZjk1YjI4MmE5NTJlMGRlMmIzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwODczOGNjMGVkYmRkOGM0ODcxMTgxMjhkNzQyNmZlZWE3YjRlNWZmOWE5Mzk0NmM4MzRiOGVkOTViZWEzNjAzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI1ODkwY2U2MTk5NWIwM2NkNTJiYWY3NDE4YTNiNDFlMWU4NjIxNDJjODRmOTQ1MDRiMjM2NjAzZGU3NTA2MzM3In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_bc4b24412e5b4de786c97c851fcb7bff",
+      "statement": "GET /health is the only unauthenticated endpoint of the gateway: the spec marks it security: [] and it is answered before authentication with 200 {\"status\":\"ok\"}; every other route requires the gateway API key (X-API-Key or Authorization: Bearer carrying the same gw_ key — equivalent per the spec's ApiKeyAuth/BearerAuth schemes), enforced when the configured key is non-blank.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L228-L258",
+          "version": "repo-lines-v1:sha256:18c2e8b9fa39294ecc2b8f305a54c60c27fd06394a0c7ec3f8bbf1607eb3ecbd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZGFjMjIxNTMxNTA0NmM3NDUzYmU4NzQxNGMwZTNjZDMwY2JmZjVlNzE5NTJhMTFiZTdlYmUwM2NkNWExNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NTczZWFkNTkxNThhYjUzZGE5MzQ3YmFiNWFiM2ZlMjkwYjc3OWI1ZTY1NDA4ZGU4OTFjM2NkMThmZThlZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyMDY5OTI3NzFhZmFkOGMwNDE3ZGY2NGMxNzZmY2U1YTJlNmJjYmQzNzdiNjFhZWU1MmJiYzgxNjIwN2U5NmYifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L48-L50",
+          "version": "repo-lines-v1:sha256:5ab9351ba2941c3112b0635c1300554983583e6df8fd32fa07805f309ebda6e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODFiNmRmODAzZTU5MDEwOGFlY2UzYzYxYjhhNzZlZTczYTQwZjljOTJlMmYzODJhMTExN2M0MDFjMzA3YWNkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODdkNWE3ODdiZGJjNjE1MjEwMTcyMTQ2NjRiNjdmMGY3OWE0Yjc5NTk3ZjY0M2ZjYmI4NWQ0MmIyNWM3YjIwZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWMxNjBhYmMwM2NjNDNmNjkzNTYwOTRhOTY2NGUxZDhlNzUxMDJkMzA0OTlhZTMyNTIwOTg4NDJlMmUyZWIwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmRmOGIzYmRiZDQxOGM3NDEzNmNmZWY1ODhlNmI0OWI0Nzc3Mjc0Y2IwMTc4MTNhODc5MGVkM2MyNzQ3ODM1OCJ9"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L80-L94",
+          "version": "repo-lines-v1:sha256:af9a5829d6ea4884dd7841333b8a51e55b7b40550db64815dc366c9f6d5d5667:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNGQ5NTdmMjQ4MThkNTAwYmVkYjVjNDc1MzdlMTdmY2JjMDZjNzlhNmE1MDg1MGMyNmI4YjFjOGZlMWZiNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkNzQ4NThmYWRiOGNlOGE3ZGMxMTFhM2Q0NzlkMjgwZjIyYzk1NjM1NTFkM2M5YjBiZTk4MzYyNzAxNjFlNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZDVkYjU2YzY3YzNiMzA5ODZkYjg1MTQzMGI4YTlmNTI3YzM5NGU3ZWYxODlkMWIyMmEyMjNmZTgwYWZmYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0ZmY0MjdiZTdlOGY5ODA4ZTYzZjM3N2EzMWRlZGIzNmU4M2QwYjVkMzhlYjE1YTBkNThmODZlNTY0YzE4NjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_68e8c549f3dc4fd980f397fd1231913f",
+      "statement": "The inbound HTTP surface (the OpenAPI paths, matching the routing when-clauses in GatewayServer.kt) is: the unversioned EVE group (/health, /ready, /send, /send/status/{requestId}, /send/cancel/{requestId}, /send/capacity) plus the /api/v1 app API (/api/v1/sms/send, /api/v1/mms/send, /api/v1/sms/inbox, /api/v1/sms, /api/v1/status, and /api/v1/sms/schedule with POST, GET list, GET {scheduleId}, DELETE {scheduleId}); path matching strips the query string and trailing slash, unknown paths return 404, and non-GET/DELETE methods on a schedule-id path return 405.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L260-L496",
+          "version": "repo-lines-v1:sha256:6898bc082c3c3f8e2bda611cc9ea3a14f12213ecb25bc0fe9c6f549a64300834:eyJzZWxlY3RlZExpbmVDb3VudCI6MjM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2ZWVjYTAyZTg1M2RlOWI3Mzg3NTAzYzc3N2IyMzk3NzQwOTM3MTBkMzliMTdiZmM5M2Q5OTM4NmVlZmFmMjA0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1NTIyYzQyY2QxOWM2ZDAzZDgwOGM0NTI3MjA1NTI4MjViN2VhMWM1YjQ5MWIyMTg1MTFjYWM3NDE1Y2Y5ZDliIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxNzYxYmY0YmUxYjFmYzkzOTQxMmQ3YjY4YWNlZGZlMjYzYzFjYmMyMjIzMTIxMmRmMzkwOWM3MjI5Y2QxNmVjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhZjc1ZDY4ZDJkOTM1NWI3ZmYyYTU0OTJjZDFlY2JjN2UzZDk3MDRiYTgyYzBlMDdmNjk5YmViZWQ0NzYwZGVhIn0"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L78-L211",
+          "version": "repo-lines-v1:sha256:f06b34cd3875901fb09daf0c8db03db189457a7a302ebfc69a8162866fe9482c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwZTU4ZGVlODkwM2IwMGM5YjM3MzM0MmFkNzI0YjNmNDhjZTA1Mzc1OWNlYjZjNWZhMWQxZDYyMjAxMjE5MWZjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzOTY5MGY4ZmFjYzhjYzAyY2FlNWFmNGZhYWEwY2QwZDVmMTZmNDM2MzhlYjgxZTAxOGRiM2UxNTM3MjIwZDJlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyZWIwNzQyYWIwNTJmY2RlNjA0YzMyMTk3OTc4Y2RiZDA1MjQwMDNlZWYwNTY1ZDJjMmM0NjM3ZTlkM2QwZmM4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxNTI3YzNkNzllMjUwNjg1MWUyYmUyNmQzOGM1ZTg3NGQ4Zjc2OGQ5ZGI1YjRjMjg5ZTEwNjNkODE3NjczNGY0In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_88be33528cfa4c3bbd8daf7568907fa0",
+      "statement": "GET /ready returns 200 ready only when all three conditions hold — the server is listening, the app holds the default-SMS role, and the EVE send queue is running — otherwise 503 not_ready with the serverRunning, defaultSmsApp, and queueRunning booleans so the panel can show which condition is missing.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L265-L279",
+          "version": "repo-lines-v1:sha256:08ca461c88d98bee32532c20a8745f4266d2f95c0c4a12870e8f8865d92dde80:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNzJmYjdmZDM1YzFhYzlhZDYwZjUxOTQxMmFiMzg2ZDI5NDQwZDgxMDcxOGZmNTU1ODQ4Y2UyM2UxNmMyNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1Y2Q3NGEwOGJjYTljZGI5ZjNlNmI4ODFlZGJlZjZjYmU2YWI2YjkyODIyM2FiNzI2Yjk3ZDY5NjUxYzcwYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiM2Q0ZjdhNWMyZTM0ZTFmOGEzNTlhOTllMmI5Y2UzYmMxMmQ2NzY4YTRiODUyMDIwNjZiNmQ1ZTJiZWU5NDQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L514-L521",
+          "version": "repo-lines-v1:sha256:807fa78516275e020f2cb4d0a0faec674e1559a54d608a604cf392b15ec9109f:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFlNDg5NzdiMmY5YjhiYjFhNWM1ZGRmNWVjYjM2NzQxMjY3MmExNjkxNGU5ZWEzZTE0OTc4MzJiYWZjNzk0NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQzNjI1OWY0MjkyOTU0ZTNkMzAyZTdkZDM0MmU1ZWY5NmQxMzBlY2M5YWZiN2Q1ZmM3YjQyMWJiNjZjYmIwMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2M4MDdjMzI0ZTI5N2U1NmQ2ZTNiNWE1OGEwYThkMTg5NmQ1ZjA5ZTQ3NGE1N2Q4N2I5YmVjN2E3ZGJkY2VjYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2FkZDU2OGVlMWQwZGIxZGUwYzY3MTU3YzhmNjYxY2EyZjA5ZmY2NDZmYWQyNTI5NzViZTc4ZDJmMmRkMzMzOCJ9"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L96-L109",
+          "version": "repo-lines-v1:sha256:7579861788c48d3a96fa31b4970ae72ca0cf5688541172c36d75ae0d8d1db130:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1Y2IwNGRlYTYyMDYwYzczM2I4ZWQwMjQwYTMzZTAxN2EyMzc5ZjI2YWE0ZTBmNmFjZWE3ZGIxZWNlMGUzZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmIyYzI5YzQ5Y2NjZmVhNTIzNTRhNWEyMmQ2MWE5N2QzYTJkNTA2NWM2YTNjNTRlYmNjYjE3YjYzMThlYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5ZjExMGVmMDA3MmRjZjhkMWNiZGM5ZTY3ZWEzOGZjZWI2OTljMDYxMWEwOTkzMGI2NmExM2U4MGQ4YmUzODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzNTVjNDQ5ZDQwMTMzNzc5NmNjMGI3ODljMDM1N2FmODA1NzQ1ZmJiMzYyZjVmY2Q5NjdkNmRjNjdjYjg5OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e8460f160c094c8288a961b200bf934c",
+      "statement": "POST /send accepts {to, text, priority?}: to must normalize to >= 10 digits and text must be non-blank (400 invalid_request); a non-blank priority outside {critical, expired, expiring, announcement} is 400 invalid_priority; a blank priority defaults to announcement; a new request returns 202 with requestId, jobId, statusUrl (/send/status/{requestId}), status queued, priority, priorityLevel, and queuePosition (1-based count of queued jobs dispatched no later than this one); a duplicate Idempotency-Key returns the original record as HTTP 200 (created:false) without creating a second SMS.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L523-L576",
+          "version": "repo-lines-v1:sha256:97bf7636a4958848e5ad705378e5aec12468f05302a455170a657cd3edb0739a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZjZhNTZlNzMzYTQ3ZDg4OWU5ODI0MWRmNmY0MjQ0ZGFjMzhhODM1NGI2ZWVlZWI2M2QwZjNkZTQ5NzdjZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1NjNhZjk5Y2RlZmYwOWU5NmI5MzMwMDQwMjg5MDU2YmY2YjVmZDZjZmE1MjBkMWI1YzAwOTQxZDgzOTkyOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIwMTkzMGRjOTFhZWZjYWI0MzYyMTQwZTY0NWNkNGNhNDk4OWVjZjVhY2VmYTk5YTQ0ZGFkYmJmMWIyNzI5YTgifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L111-L156",
+          "version": "repo-lines-v1:sha256:1e34fc5dc8e0f956592cd73c6594f6377345b7935a9d01abac2018be23f68f98:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlOGM0ZjkzYWUyNDhhMTM3ZDNiYTM4NzViMGFlMTcwMjQyOGMxOThlYmU1OWEwNTQ5N2ZiYjg2OWM0MTMwMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NjkwZjhmYWNjOGNjMDJjYWU1YWY0ZmFhYTBjZDBkNWYxNmY0MzYzOGViODFlMDE4ZGIzZTE1MzcyMjBkMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmMjVjYjQ1NzlkZDliOGU1NGMyZWJjMzQ5YmM4NzE5MGYwNjU2YmEwODc2ODYwODE0ZTllMTVmMzkzZDY1OTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2MjlhMjAzODI2MTc4ZmJlZTAxNjViZmIxNjhlMGY5ZjAyMjhlY2EyMzUwYTRmOTI0MzM4NjQzYWJiOTA4NzIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L676-L721",
+          "version": "repo-lines-v1:sha256:fc83eb7777db09470ebffdd56486790fe7aad6e77fd246f286470e1f48893ebe:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjYjhhYWViMGJkM2RiNmE2NGQ0YTJhZmEwZWM2MmVlMTQ1NmQ2ZDg1NTY2YTgzM2ZjZWM4MDdhNmRmMTc4YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1MTkzODRlMjg0ZjRhMjZlYTU2NDI2MTRhMjg3MzVmMWZmN2E0ZjY0ZTA3MzM1NWM1ZWZlMzBjMmMxYWQwNWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4NzM4Y2MwZWRiZGQ4YzQ4NzExODEyOGQ3NDI2ZmVlYTdiNGU1ZmY5YTkzOTQ2YzgzNGI4ZWQ5NWJlYTM2MDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkMTVkODZhNjkzZGE0NDdmZWQwYjI0ZjY5YzU2NzVmYTYwNzM2YzFmODBmYmMzOTU5MzdlOWVmNzI2Mzk2ZmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b25536e7ef844f1880a56c26938f6874",
+      "statement": "POST /send is guarded by queue capacity before parsing: when EveSmsQueue.totalPending() (QUEUED + ACTIVE, all priorities) has reached ANNOUNCEMENT_LIMIT = 500 the request is refused with 429 rate_limited, carrying both a Retry-After: 30 header and a retryAfterSeconds: 30 body field (RETRY_AFTER_SECONDS = 30).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L26-L38",
+          "version": "repo-lines-v1:sha256:6f187b098e966af806e54600191afc2a39aaa814aaffe453cb13a93c8212cd55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMzY3MzI0NDYzMDU4NGNlMTYwM2EyNDgwN2UzZWZkMjg0ZTRmYTQ3NTcwODY0MmRhZTBkMjFiNDkyZjRlN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjMDJlNTI1NmYxMzk2MGYzMTA2MjBkOTkyNjRkMzUzZjViYjUzOTRhOTYzNThjNDU4MTUxMDQ2ZTEyYTQ1NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0NjljNTY0MTVjNzk2NTU1YmVkOGJkMmNiZDNlNDM0OTg4OGM4ZTY3MzE5ZjQ2ZGUxMDJlMDI4NmNjMjc5YzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L290-L292",
+          "version": "repo-lines-v1:sha256:749eae500999f3176afebf77f2fa22076008c272290a164d1ac75f63a1373b21:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2M3ZmIxOTlmYTIwYzgzYzg5YTRjYzYwNWViY2RkZjEzMTQzZDE5OWVhMjljODc0YTk0MmQ3YzVkYjI2OThmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTRhMWQ0ZTZmZWUzYjZlYzM0ZDJhMTVhOGM5MGIyNTg2MDY0OTE0ZjUzNjEyZmM5ZjUwNTg0ZWUxNjQ1OTc0ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGNlMTE2MTlkZmQxMmNlMTI1ZGUzYWE3YjQ0ZjA5OWVhMjUyYTBmYzVmNzc0NTQ5ZDY1OTU5MzNiNTkyMWExZSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L523-L535",
+          "version": "repo-lines-v1:sha256:192f87abdefddb687c3e78e1b45fd4eeb92d4a8c0d18033c71d55d8dd128a2ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZjZhNTZlNzMzYTQ3ZDg4OWU5ODI0MWRmNmY0MjQ0ZGFjMzhhODM1NGI2ZWVlZWI2M2QwZjNkZTQ5NzdjZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1NjNhZjk5Y2RlZmYwOWU5NmI5MzMwMDQwMjg5MDU2YmY2YjVmZDZjZmE1MjBkMWI1YzAwOTQxZDgzOTkyOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkNjNlYzcyOWViYjk4ODRkNDZkNDg0NGQ4MjM2YzRkMDM2NjUwYzRhZTI0ZWQzNmE5ZDAwOTkxYjQ1YzZmZjgifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L145-L156",
+          "version": "repo-lines-v1:sha256:464dbde369a5685d02769e96eac8dbd0679d87f80f75d1b3104bbd7f427c7df2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjN2MwNTA0MzgwOWZkOWVjZmI5NDU5ZDdlNjE1ZWNkNzYyNGY0NGQ2ZmM4MTBlNjk4NWYxMjRlNmNiZTZhMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NjkwZjhmYWNjOGNjMDJjYWU1YWY0ZmFhYTBjZDBkNWYxNmY0MzYzOGViODFlMDE4ZGIzZTE1MzcyMjBkMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzNTNiMDVmMjY0ZThlOWY5YmVjYmMyMzFkODQxZDlmNTk3Zjg0MzlkOTVlOWFkODIxOWU0ZDUyNmVkOWU4MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2MjlhMjAzODI2MTc4ZmJlZTAxNjViZmIxNjhlMGY5ZjAyMjhlY2EyMzUwYTRmOTI0MzM4NjQzYWJiOTA4NzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b735a0d4bf3f4a47af6a9837b0ff0e56",
+      "statement": "GET /send/status/{requestId} returns 404 not_found for unknown ids, otherwise 200 with the full record per the EveStatusResponse schema: status (queued|active|sent|failed|cancelled), EVE state (queued|running|completed), stage (queue|provider_send|provider_delivery|sending_failed|cancelled), terminal and successful flags, priority fields, submittedOnce (true once handed to the SMS stack or for any terminal record), requestedTo/sentTo, the GMweb-compatible verification fields, sentAt as an ISO-8601 UTC string (null while pending), and failedReason (null unless failed).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L360-L366",
+          "version": "repo-lines-v1:sha256:992ee5dece8c387d5da11944227cf33735de1b6e2d3a2c200857d5221b956e28:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2RmYTIyOTliOThhNGFhYTQ2N2Q2N2JhOGZlNGE1MDE0NzRkN2Q0NWZjZjhjMTQ0YzNlNjY3NTM0YzBmYTg3NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTllNzYzNTVjZjExOTk0ODBjM2Y5OTgzNmIxNDg2Yzg0MWQ4OTFmYWFkOTA0YzYwOGUwOTMwMjJkMzc1N2FlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L653-L683",
+          "version": "repo-lines-v1:sha256:7ae970bfd74346a21771a8110f5458853f5b39fb2faed86f9f223618f06f50cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2ZDczNmRmOGUxYjNmNDE0NTc0NDhiOGQ3NzhkNjY1ZGZmODgyZDRmYjNiYmM0ZGI5ZWY0NTBjZjMyMjk3ZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5OWY4NzkwNjI3MjM1ZTQ4NTM3MjBlMGU3YTU3ZjU1OTlhZWZmMTJmNWU0MThlZGZkMTk5YmEyNjVjYWYyNTkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L725-L748",
+          "version": "repo-lines-v1:sha256:784ed8b344a1bdcaad0ab483081ba0d3e06443047301577b37e0c67c68f7bf5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZWFhMTM1NWY1MzhkNDc4M2ZkNzcwMmRjZmM2ZGRiNTE0MDRhZjdiM2RiNWE5NDhkOGExOWU4YmNkNGMyNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjZWRlMjMwMDhiYTM2YzJjYzRiY2E3NWVhZjg1Y2I2ZThlMmMwOTEyOWQ4NTI2NzBkYTg0NDEwYWEyMWQwMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyOWRkMjQzMjVkODk3M2UzZmY2N2YzZTQxNGNhYzJkNTUyNTQxNTVmNzQzOTA5ZTlhYWM3YTA2NzNkMDc4ZDIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L723-L755",
+          "version": "repo-lines-v1:sha256:fdc6992a7817abe3a8b6f2eb4b116be489ec0f219d38d73e9d7357da6d76ee3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5MDA5NWFmM2U3NWZlOTBlMjJlMDhjNzAzNDI2YjE1ZjMyNmFkNzJkZDQ0YTY5MDllNjNjNDI2YTFhMWEyZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOWM5MmIxZDcxM2JiZTA0ZTExZTE5NjEzZmUwY2RiNWU2NjAwYTA2NTNkYTI1YWZkOWQwNmY3MzcyNTc1YjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiNDJkZWY3NmY5NzQ2NGJmNDFkOWFhYWU1ZjlkOWVlNTM2MTVkNGEwNDNiZjBmNTc1NTE3MzgwOTU0Y2FmYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MDVmZmYwMDA3OGMzNzA0YWIzZDE5ZjQ4ZWQ5ODIwNDZhYzg5YzMyYzRiODRiNmFmYjk1YzkyYjc0MTgwYmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_498622ebfa284dc189743329dae955e1",
+      "statement": "POST /send/cancel/{requestId} returns 404 for unknown ids; 200 ok:true status cancelled when the record was still QUEUED; and 200 ok:false with reason not_cancellable once the record is ACTIVE or terminal — a message already handed to the radio can never be recalled.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L265-L277",
+          "version": "repo-lines-v1:sha256:5b8e3b0bfbc6ffc7e544ac0ff89ff3b87818e9361927a79bc14308c1f30908c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlZWQyZGUzZGQwZmE4MWNjNDVhMmI4MDEwYmU3MjQzZmUyMzgxZWIwNzI0MWZjMTQ3MjNiMDAzYzRhYTA2NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MDk2YjA5NTgxMzI0ZmNlZGU0YWExZDhjODNhMGVmYTc2Yzg2YjRkZTVmMTFkYTgyNGYxNTExY2ZiZGNkYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwN2RlOGI0NGJkYzYxN2EyZDA4MmJhNjc0ZWE3YTNkMTc2NjVkNmNjM2Q4ZDU0YTQwNWUyYjJmNjliY2QwYWIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L685-L709",
+          "version": "repo-lines-v1:sha256:18c2125ade63922ccb4f43412ea5a5786e35e9b23bf6a1bd2fb19f5ff52cab95:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MmI1YjZjMTVjNjhkMWJlMGIwZDM3NzljNTA2N2FkZjJiMTVjZmJiYzkyOGE5MDk3ODA5ZDU3ZDQ1ODY0MjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2MzdkOWE2OWJlOTlhODE0YzRmMmIxOGE0YjVkNDZhOGU3NGRkYTYxOWU5ZWE1MzFlNjU4OTA4ZjUzZDYxZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyYmNkM2I4YmI0OGQ5M2Y4NGExYTM3OWM2MDk1NjNiNWI2NWIzZTY5M2Y5OTBjZTk1MDQ4ZjM3YjBmZjZhZjgifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L179-L198",
+          "version": "repo-lines-v1:sha256:2a65561c9cf945870b02469b01f2eec431f4c01565a5a2d7f1f459e5843109da:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ODk2YzhhMGRhMWE4ZmY4ZTlkNmNhZmVhN2MxZjgwODc5Njg4ZDc4ZTg1OTRjNzQ1M2Q2NjlmMmQzMjIyMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NjkwZjhmYWNjOGNjMDJjYWU1YWY0ZmFhYTBjZDBkNWYxNmY0MzYzOGViODFlMDE4ZGIzZTE1MzcyMjBkMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3Nzc2OGU5Zjc2NTdhZWJlNDQ2MTlkZGU1ZWM2YjkxNTgzODJmZDQ3OGZhNWJhZjc4ODg3NWFlMDdjYzViNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxMmE3MmQwMjNjZmU4YWU5OTk4NTM1YmRlMjAwZmEyNzRmZTg0YjEwZGI1OTIxZTBlMWQ1MWZmYzE1YWNhOWYifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L757-L773",
+          "version": "repo-lines-v1:sha256:a22a71cb85e256e2857002b2579c0985e63ddba20b7ed70122ac577db30da8dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZTg2YjY0NDIxYWMzYjJmYTZmYzllNzczMmI2YWVhNzNiMGZmMDk3NzU1ZWY0NTg2MWQ4OTE0NmNhMWU0M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YWZlNDlhMjE5ZGNlMDljMTVlY2IzNTVjYTkxZDUwMzFlNzE1ODIwNTFhMWZmYTljNzE3ZjM2OTcwYmQ2ZmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmMjcyNTA3ZmMzZmQ4NzU0OWQxYmNlNTRhMTI0MjlkOTc1OGQ3ZGRmMzVjNDA0N2Q1YWI2YTJmNTRjMzE0NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIwY2M1NTY5MDFmMTMxNDRmZWIxNWMxNGMxODBmMjMyMWYzYjA5N2Q5Y2ZhMTYyNzBkMGY3YWE1YzEzMzJiZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0717a6e120c44131b4da7941de140876",
+      "statement": "GET /send/capacity returns 200 with priorities (queued counts per priority name, always all four keys) and the announcement bucket — limit 500, pending, available, and recommendedBatchSize = min(50, available) (RECOMMENDED_BATCH_SIZE = 50) — per the EveCapacityResponse schema, so the EVE panel can batch large sends and back off.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L280-L288",
+          "version": "repo-lines-v1:sha256:26c3a133cd34cc3706f3623ee3c9ad9668f5a9568d938abd576fc4dabc445199:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFkZDA0YmM0M2EwYTEyYjAwYWRjOTk5NjExYTI0NmE3OTEyNzc5NTM3NzZmMWRmZjMzNDkzYzVjNmIzZTY5NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTU1NzkyZjE4NWNmZjU2NzEyMzhkNjNjYjlkNGFjZGM1YTI5NjFhZDg1NzEzZjdiNmIzMDFhZTc1NmMyYjQwZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTA5MjY4NWMxZDdiYzAyMGI1YTI4NTA2ODA2Yzk5NWE4YWU1ODU3ZDkxYWY4OTc2YWRiYWNmZWEyYzI5ZWY5ZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L711-L723",
+          "version": "repo-lines-v1:sha256:bda643f696cbe41ddbc7fc4739d88f82601eb9c76eff9079e5665f297739bdb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZWMwZTA3M2JhYzBlZTk3MThkNTZjYzhhOGVlZjRiZTlmNTBmYmYwZWRiNjZmYTUzNzExMWM5MTk2NWQzYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4ZjNhODUyMjhiNWU2N2JkMDdkYTQ4ZDcyMDE0OWE1YTJhMmFhOTM3YTJmODk1Y2VkNmVhYmJmZGMzMzg1ZWMifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L775-L792",
+          "version": "repo-lines-v1:sha256:32ea9006c659fafe842b7841c730062f969b41b6155dfe84e4e034b05f3170e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0NWZkMDM2MGJmMTQ0MThhYTUyYThlOTIyZDU1ZTc1NTA1NGM0YmE3ZDMyZmFhNDkxZDQ0Yzc4YjM4OTYzY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMzViNzMwYjI4MmRiZmVkN2Y5MzRlMTE4MzkwYzVjMmI5MTk4ZjkzYjRkNjBmOTViMjgyYTk1MmUwZGUyYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzOTcwZTMwZGI5YmI2NDU0MzNmMWQxOWZhOTM0MGFhZjRjN2U5MzYxNzdkZmM4ODc3OTg5OWVlN2NiOGFiOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4OTBjZTYxOTk1YjAzY2Q1MmJhZjc0MThhM2I0MWUxZTg2MjE0MmM4NGY5NDUwNGIyMzY2MDNkZTc1MDYzMzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4364ac5728aa4c7f8ddf29cacf5e5d7a",
+      "statement": "POST /api/v1/sms/send accepts {phone, message, subscription_id?, smsc?}: phone is Persian/Arabic-digit-normalized; blank phone or message, an smsc not matching ^\\+?[0-9]{5,20}$, or subscription_id < -1 are 400; the send goes through SmsSender.sendWithOutcome, which maps Accepted to HTTP 202 (status accepted, row id, echoed fields) and Rejected (modem refused) to HTTP 503 (status failed with reason), so a modem rejection is never reported as a false success; Accepted means handed to telephony, not delivered.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L320-L372",
+          "version": "repo-lines-v1:sha256:4d7c2b63d1af5c6f29df987c4387ac939b540f61ece5b48226bd9aced033d2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzg1YWIyOGIyYjNjMmViZTZkNTI4MjdkM2FjNmQ3ZmE5MGE0ZDg3ZjQ4ZjgzNmY1ZWQ5NDAyYTdkYWVjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZjQ4MDJlY2Y3NmMxMDNhYjYyZmVjMjEzOTkzM2Q1OTZmYzE0ODlhOWRlN2NlZmViMzY0ZTlhZjFmYWUxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1YTc1MjZhNDU1Mjc1Mzk5ZGZiMmI0MWVkMjEwZTNmOTM2ZjFmYTk3YTcxYWE0MGIwNGU2OTJlYWJkMWVmZTQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L89-L117",
+          "version": "repo-lines-v1:sha256:ba3960c176242f61cbaa56c6bad2b8c78d56ef54717fbeb6e05a8257440531b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NTA4NGVkYTVmYWU4MTFkNWI3OTlhZGYzNzUyNDI0M2ZmMmI3ZTM0YmQ5NDY0OGQ3MTQ0Nzk3NjY5ZTA3YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMDYzODM4ZjA0ODA4ZjQxZjgwZDYwMmEwM2Y4NTAwMWExMzAwMzRiZGM2YTkwMjEzZDI0M2QwMmY3Y2UwNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZDJjY2YwNzcwMTZkYzk2YTUwZTBhZDIwOTFlNzNlZmI2YWRjYTQ4YTRhZGE1NWYyNGY5N2NhMWQ1ODhkNmEifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L214-L254",
+          "version": "repo-lines-v1:sha256:d3827776f6a126e40e4644cebe0ccb68e61405d93a2c8cd986262175311825c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjMmJlNzY0YmFiMjk3NzYxMmY5YTI1NDQ1MmIyNTY4ZmNkMGIyMTU1NTBkNGQyMTQ4OTJmYjExZTE3YjNiNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwM2I5YWU3MjdkYjQwMDgyODUyNmM1NGNjYjM0MWUyNTgxODI0YjdlOWQxZGU2NWEzOWEzNmM3OTNmYjVmNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5Y2U0OTcyN2UxMDczZTRhZjcwYzY0N2RkNTI0MmRlNTM5NGJkYTU1ZDcxNzgzOGFkYTlmMTZmZDBiYmNmM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjMzA2M2NhMzhhNDE5MTJmZDYxMjcwODQ0MTJkZTg1NzcxNTA2ZWJlODk3YWNkODM3NTZlODM4NTc5NjIwYTQifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L495-L535",
+          "version": "repo-lines-v1:sha256:dbc30cef685e879ef5f670afb7ff9191324a2cf85c7f53101a641097ac7d6b7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNWE4MjRhNDU1ODdkYTY3YmI5NDlmY2QzMzliMDU3YmE0Y2VjMzA0YmZkNDk4ODM2ZGYyMWQwOGM5NGRiYzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhYzE5MGNhOWM3N2U2YzQ4OTQyNTliYjkyMWI1NWU5MGU1ZGZmZTA0ZWViYzFmOTg4YWU0YTViYWRmN2I5MDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMzVjMTY2MzI3NjVjZmU0MmYwMjlmMjViZDhkMzY2MjlkYjNiMDBmZmI0NzczMDk5Y2E4MzA5Mjc1MDc3MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjMTk3MmNmMWQ0YzJiNjQwZDkwN2RjMjRlYjZhMDYyZDliNDRmN2U3MGYzODE4NGZjMGFhMjUxMjZmZjMwMWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aeec556c88bf45b6b9c7a0ce7f72046c",
+      "statement": "POST /api/v1/mms/send requires phone and imageUrl (400 otherwise); for remote REST callers only https:// URLs are accepted — content:// URIs are no longer honored on this path and plain http:// stays rejected — and the URL must pass the server's SSRF public-host policy, failing with 400 (imageUrl must be an https:// URL on a public host); the image is dispatched via MmsSender.sendImage, returning 200 status success on dispatch and 500 status failed on dispatch failure.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L373-L395",
+          "version": "repo-lines-v1:sha256:305176ee8d8bb6a992d32c30b98577bffc187809139c4bebaf1edeb3af8e8e68:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNTFhZDU3ZDU5ZWZiNDNjZWVjMjEwOWMzOTU4MDkyNTI0OTEwOWZkYWM2ZDBmNmQwYTYxYzFhMzVhMzdhODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2QxYTUxOGQ4YjI2MDI2YWFmOTQ0MjQyOWZhOTQ4ZGQ1YmVkY2Y3MzljYjgwYThmMjFhYWFiNzI1MzY2MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNTNjNGViMzQ5YmU2ODQ3NTRkYzczMzU1YjkxNDdmYTIyN2ZmMWQzMzg1MjE4ZDBjODY1NjFhZDY2MzM4MmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L866-L890",
+          "version": "repo-lines-v1:sha256:d3d8839768606e78a2a67cf491c7ccf9767d47439c8389fe735ff3e938fa6735:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNDJjYmMyMTY5NjNhY2EzMGE0ODNjZTY2MzI1OTI0NDE4ZjI1MDEwZjlkMWExZGQ1NjIxYjI1ZTk4N2RlYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1MjMyZmIzODY2NDNhY2VjODZiZTUzOTBmMmE4NzQ0ZmJkNTM3N2JiNWEwMWFiMjRhNzFiMjhjYmJjNGE4MTQifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L256-L320",
+          "version": "repo-lines-v1:sha256:4d0bb44d5a60da4bbd2da656b23c1572974f13597a62e197783a342b12972796:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1NDUxYWE5Nzc5YmY2ZDIwMjVmYTBlZGE4ZmZlNmMyZTE2MmY4NWMxYzdmODI5YzE3MmY1ODViNzJmN2ZhMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZGI2OTE0NzI1MzNjNDNiMGVlZjI2NjNmZGY3Y2JiZDQ0N2ZlZDI5ZGE5OTE0NjRmZGExMjdkOGQxOWVlNGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzYjU4YzNkNzZlMDRiNDFjNmQ1ZTAyYTdhMGMyOGUyZjNiZmI1MGMzNGM3NGIzYTY4NTc2ZDAxN2UyZjg0YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljODY3NjM0MTNiNzAxYTIwOGU1NTBkMjY4ODUwZmRkY2Y0YzcwM2ZmYTUwNzJkYjUwM2ViNDBlYzA4NmQ0OTIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L537-L548",
+          "version": "repo-lines-v1:sha256:9dcaff026d0d984cd58a6c76f6e9c6d3a1a57112303f614bcbef5e3d87677a86:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNjZkZmZiODU0NGQ1ZTc0OTk2ZGY3ODJlMjEwM2FlMGNiMGQ5ZDVhM2NmZDVjMjhhNzhmNzc5NjM0NDY5MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyOTg3Yjk4OTc2OGZmOWJmYTQ3ZmUyZThhYWZjZDgwZGEyZjVhYTUwOTQ5ZDI3NWQ5OTRhNWEyMGI1MjhkN2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNDE5MGNhZmFlYzcwYTQzM2ZmNWQ5MTNhZDhhZjliYWIyZmVlYmIzYjVhYTkwMmRiNzM5ZDQwZTQ0YWMwNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZGVmNDI4ZGE1Mjc2OTQ0ZjgzYjNiMzg5NjQwYmQwZjdjZTgxMzA1YzM3NDA3MjgzMjhkYWY5Nzk5Yjk3Y2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b16ed1299d0244588dd9c3161e1a4e82",
+      "statement": "GET /api/v1/sms/inbox returns the latest 50 SMS rows as {status, count, messages:[{id, sender, message, date, type}]} per the SmsListResponse schema, with type received for platform type 1 else sent; on query failure it returns 500 with a generic Failed to query SMS database, never leaking internal exception details.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L396-L424",
+          "version": "repo-lines-v1:sha256:2ad790d7125f63717ffff270c0e279b18d5ca081659eab7a1c732319c582a1a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWY5ZTQzZTZjYjQzYjAwMmU0OWQ3NWQ5YTYxNjkxOGJkZjgxNzU3NzdhZjc0YzViM2IzMjgxYTBjMGFiZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2QxYTUxOGQ4YjI2MDI2YWFmOTQ0MjQyOWZhOTQ4ZGQ1YmVkY2Y3MzljYjgwYThmMjFhYWFiNzI1MzY2MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5ZmNjNWE5YWFmZGNhMTI3MmFkZmZmNTgyOWM2NDc1NzVhM2MwMmNiYjZjMWVmMzAzY2FkNjNmZTE1MGYyYjIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L323-L340",
+          "version": "repo-lines-v1:sha256:bc190b48bf97872e5b0b3630804862c6f453d8f849f086100a162f944bdea73c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNTBkMzdhZmNkMTI5MmViNDAzZjJmOWNlMTdiODVhNThlYTQ5ZTViN2FhNmViMzRmM2U3ZWEwMmViMTA1NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwM2I5YWU3MjdkYjQwMDgyODUyNmM1NGNjYjM0MWUyNTgxODI0YjdlOWQxZGU2NWEzOWEzNmM3OTNmYjVmNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmNmRhZTgzNWQyZTAwZTA5MjdmYjY1MzRmYzc4NTU3ODYzNjM3MjQyMmNlMTlmNmQyNGQ4YWNlZjgyNWFlYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzOWZhMDEzMTg1MGNhODc2NjgzNDFhN2NhMjc5M2U2NjY5OTk1NTk3NTMxODA2Y2MzYTYwNTg0Yzc3OTNlY2IifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L570-L611",
+          "version": "repo-lines-v1:sha256:fa71aa5a3374c9a958cc93af1514ad1f0581a4fb40691b2daab338d91f48c0e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMDRiMTY1OGE1ZDg1YTAyOTM4ZTM2YTY4ZmUzNzUwZTRhZjA5Zjk3MTZkYTYzMzZmNjdjYTg1NDQ2ZTY1MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyNDEzZDgwMzU3NjJlOWMxMzFkNmRiY2EyZjU3YWE0Njk3Y2ZmOGY3MzJjYzA3YTA0OTg3ODQwYmZkNmVhNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2ZGFlMTIwYzc3NmNhZTU2NzI4MWM2NDgwNjRjZWM2Njg4MDk1YjY2M2M2MDQxZTBkMTQ5NDkwMWJjYWEzNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3YTEzOWQxNjk1MjY5NmUyYjc3MTUwODc2ZmJmNzM1ZmE3MGIyMjVkNjA0M2Y0NzZkNzhhM2FiYWRjYzhjZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2ae17cdbc5a24b6190165057364c2e44",
+      "statement": "GET /api/v1/sms supports the query filters limit, offset, type (received/sent, other values ignored), phone or from (substring match), and from_date/to_date (Unix epoch milliseconds or yyyy-MM-dd in device-local time) per the spec; each row additionally carries threadId and unread, and query failures return a generic 500.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L425-L477",
+          "version": "repo-lines-v1:sha256:25b92f914ee2856d41f517406cbc4e2906d809c3ec2a97c677626e4f794b3b9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjYWMzZWI4YmExYjVkMzVmZjkyNDVhYWJiMmI3MWU3MTMwODA4ZDM3ZWRmNjU3OWU5YjM1MWQzNjhmMTFjNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNDY2NWEyNzg5MzY0ODVmNWZkNDA3NjkzZDJhZTY4YzVmMjMzNTQxNWZkNjI2MjhiYjI5NGNhOTZhN2IxMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxNWNkZWQ3MTgyNDBhZGE4ZmE5YzNlOTRiNzUwMTI0Nzg3NDkwZTc0MWI4Y2YxNGE0NWFlZWUxYjQzZGFiMTcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L993-L1013",
+          "version": "repo-lines-v1:sha256:e2401ad8d691b7ea5087802b33bfc10a3f4543787a64369c1fcf528927953e54:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyNjQ4NmYwYWVjOGIwYjU3MmY0MjdmMTNhMmQyNThkYTFiMzVhNDUyY2E2M2IyYTNhNGEwY2M2ZWI1YzE2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhZTNiMzNmYjY2NTIxMWRjZDc5NTgwNzdlNTc2MzczMmRmNTBiZmE4MjJmZDI4MDAwNmQwYjNiNDMwNDFmMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxMGIzNmFhNzRhNTliY2Y0YTg4MTg1ODM3ZjY1OGFmYWYzNjQ2ZWZmMmJiMTZjMzkyOGQwZTkzMzVlOTQ1ZDIifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L342-L421",
+          "version": "repo-lines-v1:sha256:a37ffab67e6021f6adb710b6429eb84b675feb4aab944215ef7c56cabb997d16:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYjcwOTIwZWY4ZDJkYmFhNmFjYmM5Y2U4ZTkwY2UzZGUyMmQxNjQ2MjBhZmEzNTAwMDkxMjY4NDEwZDRjNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwM2I5YWU3MjdkYjQwMDgyODUyNmM1NGNjYjM0MWUyNTgxODI0YjdlOWQxZGU2NWEzOWEzNmM3OTNmYjVmNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzYjU4YzNkNzZlMDRiNDFjNmQ1ZTAyYTdhMGMyOGUyZjNiZmI1MGMzNGM3NGIzYTY4NTc2ZDAxN2UyZjg0YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4Zjk3Mjg3NmE1YzUzYzk3NDAxODNhOGRmMjY5Y2UxNWJlNTY5Y2U3MzFlMzMyZWRmNzJkMDcxZGQzOWY1YmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c13105da0244a458490ee8a3eaf0fc9",
+      "statement": "GET /api/v1/status returns 200 per the GatewayStatus schema: status online, version, the LAN ip and port, batteryLevel (percent, -1 when unavailable), isDefaultSmsApp (whether the device can send right now), and the current timestamp in epoch milliseconds.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L478-L492",
+          "version": "repo-lines-v1:sha256:513aedf73e8fa167f4e037cc7736af62c82bfaf9c76fd3851716b05208e78c59:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyMzdhODYxZDBkOGM1YTc4N2Y2N2JiYjM2NjliOGVlYTZlZWU2ZmIyMmVhZGViMmI4NTlkNTY1MzU0Yzc2N2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNDY2NWEyNzg5MzY0ODVmNWZkNDA3NjkzZDJhZTY4YzVmMjMzNTQxNWZkNjI2MjhiYjI5NGNhOTZhN2IxMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhNWEzZGQ5N2YwOTYxMDUwNmFkNDMzODAxNjhmNWQ5ZmQyNWMyZWNiYjc0NTAyMjNhMTcwMWM0ODc5YTNiYmYifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L423-L438",
+          "version": "repo-lines-v1:sha256:c788a41e1a6f23916b82259e458a649061c549c94c248a7a40b9e5aab446b010:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhY2U0YTRmMTIxMGZhMGJjMDE2MjQzMTE3NWIwNzk1YzUxNmZjZjE4ZDJmMTgyZDRiYTQ2NmJjNmY2OGQ0NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxYzgxMjMyMjJmMGM4ZGVhZDQzYmRkN2I3NDQ5MmJmY2IyNjJhNmRmN2NiNjMxM2M1MjA3ZmFiMWU4YjY1MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzYjU4YzNkNzZlMDRiNDFjNmQ1ZTAyYTdhMGMyOGUyZjNiZmI1MGMzNGM3NGIzYTY4NTc2ZDAxN2UyZjg0YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1ZmU1NjhhNzlmMzg1ODljNWJkYWU3MWFmYmZjMDU2MTdiM2RkNDE0ODY4MDlmMTM4Njg0NzdmM2ZmOGUzNDkifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L630-L654",
+          "version": "repo-lines-v1:sha256:06ea7a63eb59a197fcbcbc489b2903e1c8271814609fede1cd3fa34519281bf7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmOWNmZjNjYzkxZDY2OGMyNzAwMzY1N2UzYTQ1ZWRjY2NkNDYwOTUyNmZjMmFmNGE3ODBkNDM1NWJlZTM4ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkMDNhYTVmZjkyMzBiYTUzMGExZTkwNGNiZjZmNDFhMjQzNGY3MjE5ZTE1MjExMGQzODZhMTNkNWM4OWIwMDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzNDI5YWQ1ZjUxZGRkMDRiYzE1ZmUwZjk2NTFhYjMxOWExMzNmYTk4YzRkYmVjNGI5NjlmN2FkM2IzMmQwZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlODVkMzcwNzQ0OWViYmU3N2UzZTIyN2YxZWUxMjU0YjA0MmQ3OWE4YTM2MWVhYmFjZTRjN2I0ODkwNWI0ZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fb39b73c90924133b1df6c07d45c6b1a",
+      "statement": "POST /api/v1/sms/schedule accepts {phone, message, sendAt? (epoch ms) | delaySeconds?}: phone is normalized and must have >= 10 digits with a non-blank message (400); a sendAt more than 5 s in the past is rejected 400 (sendAt must be in the future); an idempotent replay on the exact (phone, message, sendAt) triple while the entry is still scheduled returns 200 with created:false and the existing scheduleId; a new entry returns 202 with a sch_ + 16-hex scheduleId; when pending entries reach MAX_PENDING = 200 the route answers 429 too_many_pending.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L123-L162",
+          "version": "repo-lines-v1:sha256:2f6fd282731772e21db68d83374579fbf308f50e892a89c267081a641a684228:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMTg2Y2JkMGYyZTFlNzJhYzBjYjdiMDBmODJiYzhjMTk0ODdiYjRiZjgxZmFkMzJhMjQxZDQ3MTc2NzBlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5Y2IzZTNlZTQ0Yjk4NGM3YzY4NWNiMTUxNmYwMTBhMjg5MWRmYjI2NzlmMmM0YzE2NDQzMjYzNWRkM2VkZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ZmMwNzk4YmY0M2UwZjIyZmVlMWE3YzBlNjc3MGRjMzU3N2VkYzY1NGVlYzRmNTFiZGNlMjM2ZWVjZjI2ODgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L38-L50",
+          "version": "repo-lines-v1:sha256:d8f5581fea57569dbf20696d05f44abd4f038264911e3c5abf4b75644ce97650:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1NWFkZTQxZGZiN2RlN2JhNjkzZDUzNDQzZjliZThlNTU4MTQ3Nzg0OTkyNjk2NmMwMGU4NGI5MzRjZWJiMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmNjI5MzkxZTUyMmU0OGRjMDE4ZDU4NjJkMmJjYmRkZmM0MjUxYTk1YTBmMzE2ZTgwNTExZjcwZWM1YThmMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyYjdmODVjYjhjZDI0MTI2ZTUxMjI4MGMzNDczYjY3MzA1YWY2ODZjMjc2MTM1NDE4Y2U4MDkwZDViZjY2ZDUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L584-L622",
+          "version": "repo-lines-v1:sha256:c51c2a48ce2a33d53a9f9c9d1951e87242bcdd429c3b4d9268d18b6718f3ee01:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMzhlOGQ5MjBlM2Y5ZDNjOGM1ZGE2NWM2OWQ2ZDgyZGU0YmU5MDM3YWQwYzE2NzIzYzUxZmFkZGY1MzA5YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMmQ2ODE3YjIwZDNmYjllNmYxZjkxNDM1NTNjMGFhODFlNDY0YjJlYjAxMGZmMDcwZjhjMzVkNjM0OWZmYTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3MTFlMzY0MWU3MTY2ODVhMTkwNTM4N2NiYjM2NjM1ZGYwZjAyZDYxZDY3YzgyMWQ3MzBkOTQ5Yjk1MGEyZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3d3bad256b464f0ea705381c5dda4fc8",
+      "statement": "GET /api/v1/sms/schedule lists recent entries (message truncated to 80 chars); GET /api/v1/sms/schedule/{scheduleId} returns the entry (404 not_found when unknown); DELETE cancels only a still-scheduled entry (200 ok:true) and returns 409 not_cancellable_or_unknown otherwise; the exposed entry statuses are scheduled, sent, failed, cancelled.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L101-L114",
+          "version": "repo-lines-v1:sha256:12e55514c95ec5fed89be46bb38a68458fdf0a2e3157114c3b3459722f280dc4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMzY0YTMyMzBjYjgyNDJlYjNmZmZkMWYzZDNkNjkxZjA5ODI1N2ZiYmFjMzM0MDA4YTEyYzZiZDliNzA5ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNWQ0YTdhNjBiMGQ1YmNiM2Q1ZTM5ZWM4YTc2Y2QwYTM4MjNhOTA0N2FkMDI0ZDFmMTljZjBjMzUxYmM3NTQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L41-L50",
+          "version": "repo-lines-v1:sha256:73dbb7b77b4ab31e20161f2f111604ed72ea839aa0162ec99ec464b250dc8596:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5ODYwYTc2NDljZWFkZTQyNjY0ODEyZmFiOGFkY2U0NzRhZTM2MGQ4YmViZWQ5MzY0YzMwMzY2ZTFiNDg0NmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5MDczYmMzODhlNzExZGM5ZGIwZmMyMzA0YWZkNjI4OWU1NzQ2MTdjMGI5ZTA5ZDBkNjNjMDRkNjk0YWE3YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyYjdmODVjYjhjZDI0MTI2ZTUxMjI4MGMzNDczYjY3MzA1YWY2ODZjMjc2MTM1NDE4Y2U4MDkwZDViZjY2ZDUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L297-L318",
+          "version": "repo-lines-v1:sha256:8f90b1acdafed22b94a350849de9dfa332ca7de8cf34034bec08e6ba7179812f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NmVjMmVkMTc3ZmExOWVkZTA3ODYyM2M3ZjUzNTA5ZDc2ZWEwYWNkNTIwNzlhNTBlZTM5OTJlYTdiZWFjM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMjcxZmM1OWU3NjBkOGVmODQxY2ZjNzRiNTAyMWQ4MTgwNGI5MWY5MjQ4NGQ2MmJkYmEyYmM1NDY5Mzk2YTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiNDlhZDJlMTRjN2JmZTg5MGMxODRkMWJiNmRlODIwZmQ3NjJlOTk4OGM1YThlNTI4NWYwYjYyNzM3NmM1YzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L624-L651",
+          "version": "repo-lines-v1:sha256:3812cd8ae32faf37412e4a0df5365e50ab4cfec6af2f53818b41750b19f3a0c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ODlkYmUxZGJkNzU5ZGNlMjYyYjg3MTYwYzllZTIyNWRmZDJkZWM3YjZhZDRjM2Q3YjNkMGExOTYzNjAzM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNjk4MWUxZDA0ZjQ4ZGE1ZDhjYjI0NTMzODFmZGJmYWZiZmE1NTI2OWY2OTk2ZWUyMmRmNjZkYmNmNmI1YjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c931bdd65b9e43ab9a73236c7d131b8e",
+      "statement": "Scheduled delivery survives reboot: the GatewayScheduler index is persisted in the gateway_schedule_prefs SharedPreferences (keeping the 100 most recent entries by createdAt) and each schedule is a WorkManager OneTimeWorkRequest (unique per scheduleId, setInitialDelay until sendAt) whose SendWorker sends via SmsSender.sendForResult — the same pipeline as manual sends so SIM/SMSC prefs and delivery reports behave identically; on a failed hand-off it retries while runAttemptCount < 3, then marks the entry failed with failedReason dispatch_failed.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L146-L211",
+          "version": "repo-lines-v1:sha256:51901d6b00a60cb16f0f02410fc254c80ee30d96871d99dae9a79a16e7a8429d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2MTQ3NmJkYTI3ZTRhN2YyZDI0MTkxNzlkZWM1ZGQ2NzliY2JmZTM1MzEwYmRiMGQ3ZjU0NDk0YjAzZmU3ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhYTFkYmExYjkyZGZlMjU1YWY5ZjhiZDU2YzE1NDExMDM0OTdiNGUwNzkzY2UyMjY1NTIwNTg5NjljNDkxNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L52-L99",
+          "version": "repo-lines-v1:sha256:2640d03b5e191f36143f7752fd107f80983b86f61545473e40f48309d81faf59:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MTE3YmI3MDNkNTZhOTU3MjdiNmRkNmRiMGIyOTRkNDBlOGUwNWM4YTAwNmMyZjE5MGM0YmEyZWYxZGExZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTIzODMxYWQyZjVmNDUyOWM2YWNhM2ZlYzY0M2M1NGMwNGQ0N2U0MDU0Mjk1YjY3NjBhMzMzYTRkNTZlMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3NDhlYTJlMGQ5NDU5ZWU3N2ZjYzkwZDQwYzM1YzFlNTY4M2E5Njk4N2MzMmUxMjMwYmEyMjU0YTQzZGU0ZmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed35dce4b4e14de493f0b241b4dfd784",
+      "statement": "EveSmsQueue's PRIORITY_LEVELS map critical→1, expired→3, expiring→6, announcement→10 (lower level = dispatched sooner); jobs sit in a PriorityQueue ordered by level then insertion sequence (FIFO within a level); an unknown priority passed directly to enqueue falls back to announcement; new records get a stable requestId (sms_ + 20 hex) and jobId (job_ + 12 hex); and the idempotency map from key to requestId is trimmed to MAX_IDEMPOTENCY_KEYS = 500.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L155-L164",
+          "version": "repo-lines-v1:sha256:5e51b0e809eb287964a084c9d496cd1ed82810479947391d606859b0cc5d23c2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzZTg0YjIwYmQ1Y2NjMDEzZGU5OGE0ZWE5OGI3ZDZjODQ2MGRmNjYzNTBkMjg5ZWQyNzYxZTVjNDZkNTE2ZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwYTI1NWU2Yzc0MTI2MDNjNWM1ZThjZmFjNTQ3MzVjMGNmYzAzNDQyODVkNWY1ZDI3YmQzZTE5NGU2MmYyMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyYjIzODJmMmE5MmMwNzIyM2FhZDA0ODllNjdiZGZlMDk1M2Y4NzFkN2ZiNTcwYTAyY2JkMDNiNTkyMmY0MDIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L233-L261",
+          "version": "repo-lines-v1:sha256:d054cc853ebf7ad8ec7b8f54b93d822e9abcbf4b2de0c0adceb21d791ab143b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwY2M1NTQ5YWZhMTc0NzM2YzNkOWUyNjY2MGFhNjM1ZjQyZTg0OTUxMWFkODc3M2U4MjIwYzJjN2I5ODNiNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNjI1ZDViZmVlYmY3NmYyYjU1ZTNlN2ZmYmQ0MTM1ZTdkNWVmOTUxMjdjMmY0NjY1ZDM0NWM0NGMzYjQyNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MDk2YjA5NTgxMzI0ZmNlZGU0YWExZDhjODNhMGVmYTc2Yzg2YjRkZTVmMTFkYTgyNGYxNTExY2ZiZGNkYTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L26-L38",
+          "version": "repo-lines-v1:sha256:6f187b098e966af806e54600191afc2a39aaa814aaffe453cb13a93c8212cd55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMzY3MzI0NDYzMDU4NGNlMTYwM2EyNDgwN2UzZWZkMjg0ZTRmYTQ3NTcwODY0MmRhZTBkMjFiNDkyZjRlN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjMDJlNTI1NmYxMzk2MGYzMTA2MjBkOTkyNjRkMzUzZjViYjUzOTRhOTYzNThjNDU4MTUxMDQ2ZTEyYTQ1NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0NjljNTY0MTVjNzk2NTU1YmVkOGJkMmNiZDNlNDM0OTg4OGM4ZTY3MzE5ZjQ2ZGUxMDJlMDI4NmNjMjc5YzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L333-L347",
+          "version": "repo-lines-v1:sha256:59ffeee6912ec68281fe2aeb18e9d27243882ce25ca551a808f5e8053040152a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2Nzc2YzkxM2RmODhmN2MyNGM1YWYwODJmM2VkOTAyM2I3NmM2YWVjZmY4NTIzNmUyYTY1MGQ0OWVlYmQzM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMGM5ODdiYjljZjYzMmExODE3N2Y5N2FjZmQwOGFiZGM4ZDQ4NWVlNTY5YmMxMDlkNjcyNWZlZTYwM2Q3OWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyNjczN2FlOTVmMjhhYjA2M2E1ZmZlZTlkNzA3NjlhNTNkNDc4NmZjNmE3YWJhZGUyYjk0MWM4ODQ4MDRkMWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YWE0N2FmM2QwZjU2MGNiNmQ4NWIzYTUwYWRhZTcxMzBkMTQwZjc5MWYzOGMyYmM5MmViNTVkMjBjZTQ0YjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e2669297940441bc9768eda310fe1fd6",
+      "statement": "EveSmsQueue idempotency: when enqueue is called with an Idempotency-Key that was already seen, it returns the ORIGINAL record with created=false and does not create or re-offer a job, so a duplicate key can never produce a second SMS; the queue accepts requests without a key but then offers no replay protection.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L229-L261",
+          "version": "repo-lines-v1:sha256:a2f12573a15d8941070b9642642931ddcbd032e562901ebc86ada7ddb92d6b7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5ZDBjZTFkMjc5ZGEyYWE0NjIwZWM0NmIxNzdjNzU3MzBhYmQ3YWRiYjkyYmY3N2RmOTAwZjQzMTc5ZjE1MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MDk2YjA5NTgxMzI0ZmNlZGU0YWExZDhjODNhMGVmYTc2Yzg2YjRkZTVmMTFkYTgyNGYxNTExY2ZiZGNkYTUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt#L38-L52",
+          "version": "repo-lines-v1:sha256:af91e8a7e511d36a6f6fd57ada45cb374b3d719371e56219734dedee90b04267:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMmNlNTNiODY5NzY3MzA5ZDE2ODBlYTNmN2IyNTZhOWJkNWRiODM3NDlmYTRhMmZmZjU5MTc2MjhiMGMxNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4ZWFmM2UxZGIyODRmNmE2ZmQ0ZTA2NmFlMmZiNjU0YWU2OGZkZmNmM2U3ZTRkY2E0YzJkZDIxNGE0OWI5ZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlMTNhODMwNDc3N2MxMDE4MDYzOGNjNTRiMTFkNjUyN2FhMTcyMGIzMTNlZGZlMmVmZWU3Y2I5ZGViMzM4M2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c41fe1d3678d40b0afe855ffb55ccf9e",
+      "statement": "The queue's lifecycle is QUEUED → ACTIVE → SENT | FAILED with an alternate QUEUED → CANCELLED: a single worker thread (eve-sender, 400 ms idle sleep) calls drainOne, which polls the highest-priority job, skips it if the record is no longer QUEUED (cancelled meanwhile), sets the record ACTIVE with submittedOnce=true before invoking the sender lambda exactly once, then transitions to SENT (sentAt stamped, verificationStatus confirmed) or FAILED (failedReason provider_error, verificationStatus manual_review_required) — the worker performs no in-run retry; SENT/FAILED/CANCELLED are terminal and only SENT is successful.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L20-L23",
+          "version": "repo-lines-v1:sha256:611140c92186151f27fdff0357c864e265a4301e7b200256c82342f047a90d03:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTliNjBlYjQ5OGFjZjEwN2QyZjIzNzg5YWVkNTQzZjcwNmUxNGQwN2JlNDhlYTEzN2NiMjM3Mzc0NjM5OGY4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTcyYTQyOTM4MmIyZTE0NzE4ZTBlMzdiMDU3MGE4YTE3MDI5OTFmY2Q4NDk4Y2Q4NDA2MGE4YmY0ZjA1MDE3YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2Q3NzNkODYzZjVkNjZhOTBmNDhiNjliM2ZmNjA4YTcxYjVlMWZhYmIyNGNlNmUwMmRlN2E2OTE1ZDQxNTRkMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjBkNTZhNWVmNjMwZTlhY2FhMzRiZjIyMTNlNTJjYzFkNWQwYTc3Y2NjZWRhNjYyMzA0MDgwMmJmZjlmZTY5YiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L204-L220",
+          "version": "repo-lines-v1:sha256:b54e023888b3cbe746e7d7a23c3ec85f0b080b8653dc431c578216da8741917b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NWNlN2I0MjRjMGViMGI3ODM0OTkzNTIwZDEyNzhmMjg2OTYzZjRmNDljZGI3ZGM0MjNmNmQ3M2RiZWZmMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMzNjhkY2JjYzI3YTc4MTgxMGIzODg3NmQ5ZDMzZmJkN2ZiMmRmMWZmNzAzYjk5YzM0NGNjMTU0NGQ3YzdlNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OGFkZjkwZTE0ZjM0NWZhMDFhMDQ3NWU3YzU1MjE4ZTU2YzJhMGQ3OTZlMjUzNDQyZWQ2ODcxZGUxMTg5MDAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L298-L326",
+          "version": "repo-lines-v1:sha256:01e5870b59dd1b9ebafcdeebecd8cab82ef1968424d09cb50c44ef85c3c76113:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNDhkMjMyMDRjNTllZjQwMzExYWZmOGFiMmJiMTc0MDZiMjhlY2VhYWJjMDY2NjczZGE5MDcwNGUwNjlhOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxNDVkNjRiZmFkNmJiNDNkMzQwYTFiY2E5NmUzODY2ZDI1MGQ1OTc3NDhiZGVjYmM4ZmJmZjcyMzIzZmU5M2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4MTUyMTRhMGQ2NDBiZDRjOWJlYTM1NjZhMjc4NDI2ZTU4YjM0NTVkODBhMWMwMjJlYWM3ODQ1MmIxOTcyOWQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L40-L61",
+          "version": "repo-lines-v1:sha256:e679923715bace58c1d6ace7fdfa255f8643e3c8992783ecaed93243276e87f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2YzllNmQxNTY0YTNjYzA0ZDFmY2VkYTM3YzAzMmRkODUzNzAzN2UyYTI0ODA5MjJmNDRiZWFkM2NkYjYwZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzYzJiM2VjOTBkY2ViMzI1Y2Y5Y2Q2ZGRjNjJkNzNlYTZlYWRhY2E4NDQ5ZGFmNGUwOGFjNzFiOWJjOGYyY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmMWU3MjYyMDg2NTU3MGYzYTYwMDQyYTg3NmRlYWQ4Y2QyMjkyY2RjZGU0OTk0Mjc5NjdkMzI0ODBmMDA0NDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2ff2dbab14be47ad8d3bbb451509f499",
+      "statement": "EveSmsQueue persists records and the idempotency map as JSON in the eve_queue_prefs SharedPreferences (keys records_json and idempotency_json) via a pluggable Store interface (MemoryStore for JVM tests, SharedPrefsStore at runtime), keeping at most the 300 most recent records (MAX_PERSISTED_RECORDS); saves are asynchronous on a single eve-persist executor thread, and load/save failures degrade to empty state with a warning rather than crashing.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L170-L172",
+          "version": "repo-lines-v1:sha256:6d8e60a458be9c530193948b1c3a2b6256798eefa77c8b6491719c92c8ae7731:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjg5NGZmMjI5NDhhZWFhYzk1NGVhYWUwMzVmNzIyNjVkMmUyODhhYTE5ZWEyY2M2Yjg0MDk0ZTdiMThhNjkyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWRkMWQ2ZjIyOTVkNjI1YTZjNGZlMDg1MGU2ZDU3ZDU3OWYwYjAxNzdlMDg5NTcyZTRkODUzNzc5Y2VlOWYwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzQxNTcxNDM4Mzk2MThlNDAyYTlhNzFkZWJiNTgzMmI2NTJiZTg5MzJmZDYxNGJkNWU5OGEyNmU0MjI5MjhhOCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L341-L344",
+          "version": "repo-lines-v1:sha256:99af0d5576bbbd4c233bbd1d4efc555380e63e69e11b00449202ed77b727736c:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmUyZWIwY2MzNGJiN2I5ODFiYzUwODgzN2ZlNjZkMDYzNmRlNmM5ZmE2NmI0MWI3ZDFlMDFmNjkxYjQ0OWI2MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk5YmRlZmVlYWNhNjM0MGUwMjkwZGM4NmU4ODljODlkNWUxODlhYTViYTQ0YjU4NWIzYjcwNzM0ZjRhNjJkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQ1MWE0ZmUxY2Q2MWE3MTg0MWFhOTMwYTg0YTVhOTZmYzc4ZjdiZWJjN2QyMDJkNGM2ZTViMTJiZWEyZWZmNSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L63-L153",
+          "version": "repo-lines-v1:sha256:5aeba9ab0feb7752678fa916585bd07f3a39f926a1036a12ba7c344cc03cf049:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NzViMDEwZDdhMjM5ZjI2ZDE2ZDA0ZjExZjhjYjk5YTlhMGRiMmQyNWFmM2M4MjFkZmU3YzJmMjQwYmUzZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0OWU1MDQxODZlZjBjYmY1MTllNmI0NDFiZjhkNzg1ZjI1MDZhYzdlOGI0OTIxODVlYmI5YTE4MzI1NWYxZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhMTYzNjJjNTk1OGQxOThlMTU0YzUwYjBmMzZiOTI2OWVmYWFmNGU1ZTllOTgwMzAyNmRhNDE0NzliZjc2MjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_26d9a2912f06437ab3963d4742b59d52",
+      "statement": "On start()/bootstrap the queue loads persisted state, re-offers every non-terminal record into the priority queue in createdAt order, and demotes any record found ACTIVE (interrupted mid-send by a process death) back to QUEUED — so queued sends survive app restarts and reboots, and a half-dispatched send is re-dispatched on the next boot while the Idempotency-Key map keeps the panel from double-counting.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L176-L220",
+          "version": "repo-lines-v1:sha256:a1cabce9963d90147de1adedc37d57302429364ae762d66f83fb240cc8334d9d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxODkwOTdiOTk2MjMzMzE1ZGQ1OGE3OTdmN2MxOTliMjU1MDJjNDQ1MThmM2MyNDZmNTQwYTM5YTI1NWM3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0MTU3MTQzODM5NjE4ZTQwMmE5YTcxZGViYjU4MzJiNjUyYmU4OTMyZmQ2MTRiZDVlOThhMjZlNDIyOTI4YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OGFkZjkwZTE0ZjM0NWZhMDFhMDQ3NWU3YzU1MjE4ZTU2YzJhMGQ3OTZlMjUzNDQyZWQ2ODcxZGUxMTg5MDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1a06df8bd1f34e98bdd776dcdf0892b0",
+      "statement": "EVE/GMweb-compatible verification fields: each queue record carries verificationStatus and verificationAttempts, which are persisted and echoed by /send/status together with explicit nulls for recipientEvidence and conversationUrl; the Eve panel poller (panel/jobs/messaging.py) parses these fields uniformly across providers, which is how the Android gateway sits behind GMweb's android-gateway transport without special-casing; a native SIM send is confirmed by the radio (no separate DOM verification pass), so success maps to confirmed and failure to manual_review_required.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L314-L324",
+          "version": "repo-lines-v1:sha256:491095a2504b564a76e1bf62f70ae3549d31d49362daff36d1183855ab7aace5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMDUyNDdkNDA3MWNhZGI0MGM5NTNhMzkxZmU5ZmUyZDY3NTY1MTRmNjgwNWVhZTJmMDYwOTE0MjhmZjkwNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZjlhNGM0MTJjNTMxYTdhYTk5ZTdkMmQyOTMyNGQ0YjFhMjhlYmIxNjlmMmIxNTU0NzRjMDU4MWJhOGM5ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4MDU1NTIyN2IxNGM1ZmEwYTQ0NTA1NjhmM2U0N2RmNzAxMDg1NjFlZDU4NjM3ZTZiODlkZDc5ZmVhOGE3NzgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L42-L61",
+          "version": "repo-lines-v1:sha256:a6898b9df6d634f5c25c62e721a96db10ee86fb7e5bf6bbf2a07c805f717c3d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzZTVjYjc0MTRiOTllMTJjNWU1NjcxMTYyZjE5MmVlNmU0MzAwMDQzODMwYmRjYmNlMWIyNjVjYzg5N2M2YmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0NjljNTY0MTVjNzk2NTU1YmVkOGJkMmNiZDNlNDM0OTg4OGM4ZTY3MzE5ZjQ2ZGUxMDJlMDI4NmNjMjc5YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmMWU3MjYyMDg2NTU3MGYzYTYwMDQyYTg3NmRlYWQ4Y2QyMjkyY2RjZGU0OTk0Mjc5NjdkMzI0ODBmMDA0NDgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L670-L681",
+          "version": "repo-lines-v1:sha256:4aa5e01f2019f56ffef168e876da4a182fe19858a073d831be534c832afb1ad2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4OGFkOGZkYmZiMTk1ZDQ3ZDYwMDdiOGViNzNkMDY4OTY0NDk3N2JmZTZhMTE3NzZkYmI3NTY5NmZhOGRmMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxYjhhZWFkMDkxNDdlMDJjNDZkODdjNjQ5ODk5MTM0MTAxODBlZTZhZWI4OTg5YjBhN2EwZDRlZDBmYTQ5Y2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkZGM5ZTFhY2VhYWUzODQ4YzA1NDFkMmM0YjNlM2YxZmVlNmZiMzExNmRiNGJlMmU5MTI3NmJiZThmYTE2ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2MzdkOWE2OWJlOTlhODE0YzRmMmIxOGE0YjVkNDZhOGU3NGRkYTYxOWU5ZWE1MzFlNjU4OTA4ZjUzZDYxZjkifQ"
+        },
+        {
+          "resource": "repo://docs/release-v1.9.2.md#L1-L27",
+          "version": "repo-lines-v1:sha256:031de141d05f58f61cbead751f0a3814d4aaf6a382c744200f45cc64491057a7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNDIxM2RiOTUwMTZhZDY4MGRkZGIxNWU0ZTZjNGZhMWRhZWY5NTJlMDM0ZmMwZTAwZWQxNzhmOWRkMjRjMTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViZmI5MTc5MzA1MDljMTU0NTVlMzc0NTEwYmIwYWY2ODk0Nzc1MDE2NGUyZWE4YWNmN2RjYjE1NGEwZTcxZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b1b922416e4244fdacf04b1989c67180",
+      "statement": "Phone-number fields are normalized before validation or dispatch: POST /api/v1/sms/send normalizes phone, POST /api/v1/sms/schedule normalizes phone, and POST /send normalizes to, all through DigitNormalizer.toAsciiDigits, which converts Persian (۰–۹) and Arabic-Indic (٠–٩) digits, Persian decimal/thousands separators, common dash variants, and the Arabic comma to ASCII; the digit-count validation (>= 10 digits) runs on the normalized value and the normalized address is what is stored and dispatched.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L320-L335",
+          "version": "repo-lines-v1:sha256:9bf667d19f10724212c6332c9a29021ff816a6549391e380dc4e2acbcaa67a81:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzg1YWIyOGIyYjNjMmViZTZkNTI4MjdkM2FjNmQ3ZmE5MGE0ZDg3ZjQ4ZjgzNmY1ZWQ5NDAyYTdkYWVjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzE1NDU4YTFiNTg2Y2NmYjJkMjYwZWZiNjM3OTBkMGU0M2MyZTNmZDkwNGI2YzViZmU4MzQxMGI2YTIwZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZjQ4MDJlY2Y3NmMxMDNhYjYyZmVjMjEzOTkzM2Q1OTZmYzE0ODlhOWRlN2NlZmViMzY0ZTlhZjFmYWUxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2NWM0MWQyOTQ0YTM3YjM5YTk5NTE4ZDMwOWI5YzVkNDMzNmJlMzhmMmI2MTk1Mjk3M2I4MmYwY2JmYmQ4NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L537-L545",
+          "version": "repo-lines-v1:sha256:0eef615c72dd9bef915cce3a99edf31960c30ba9f9297f2f3cab33ba17d0d727:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWE0NzA0NTRjZTllMDJhMTQwMzQwODgyZmFlZDBhMThjMzAxYjgxMThiMTA3MDhmZWZlYTBjZGEyN2M1ZmI1MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWFhMjdlYzlkNzExYTY4ZjdlNmFjYTgyZTJmMjRlZjcyNjE5MzBkOWY4YWMwNGRkYTQyMTA1NTE3NDgzYjM3ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzI5ODE4YTYzOTQ0YzNiNzdiZmEwZTQwYTA3ZmI1NzlhOTIyNzI1Y2UzMmI2NTA1ZThkZDQwZjQzZmQ3MTk3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDkwMTkwNDhjYzVjNTA4NTA0NjVlNjE2MGU2MzIyYjU4MDMxYmFkZmVmY2ZkMzkyODQ2N2RmMDM3NDk0ZTI4ZSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L584-L600",
+          "version": "repo-lines-v1:sha256:f603e43133aaccf4022a1eaab453ee4433aaf13d9efa816f0fdd6fc07f4cfadf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMzhlOGQ5MjBlM2Y5ZDNjOGM1ZGE2NWM2OWQ2ZDgyZGU0YmU5MDM3YWQwYzE2NzIzYzUxZmFkZGY1MzA5YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViYmY5NTBjZTAzMzRlN2I0ODhiNTU1ZmExNmM5YzMyNTZiZDQxYjBjM2FkOTFhOGMzYTk0OWU1YThkYmM4ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMmQ2ODE3YjIwZDNmYjllNmYxZjkxNDM1NTNjMGFhODFlNDY0YjJlYjAxMGZmMDcwZjhjMzVkNjM0OWZmYTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxZDZkYTM5MDM2Yzg3NzE3ZWIyZjNkMjIyZTFiMWZlMDUzZDczZDFiYTkwNTYxMDU0NzRhMDRiMjlmMmEwOWMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/utils/DigitNormalizer.kt#L11-L38",
+          "version": "repo-lines-v1:sha256:0f7227fe02717e3c5bf020e3668d8d0eb8d7337dcc8cf63e4442a306731ca1e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxZmE2ZmEyYmE3OTkyOTljYTM5Y2M1ZmIyM2MzMmQ0MGIwMTQyY2YzNWJjNTlmZDAwNTUyNmZmM2IyZDJmZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwMzVjNGNhZGU4MDJmZmI5NmVhYzVjMWRhMzNjMTYwNDQ1MDkxN2M4YzVhYjdhOGMzMDA2NGQxMjJmY2M5NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_49c22ba4de154fe6a6a062ff7f8c146b",
+      "statement": "Gateway error responses are JSON {\"error\": ...} (the Error schema) over Content-Type application/json; charset=utf-8 with Connection: close, and exception details are never leaked to clients (unhandled handler exceptions yield a generic 500 Internal server error); the API's code set is 400 (validation, malformed headers, truncated body), 401 (invalid or missing key), 404 (unknown path or id), 405 (schedule method), 409 (schedule cancel), 411 (chunked Transfer-Encoding), 413 (oversized body), 429 (auth lockout; /send at 500 pending with Retry-After 30; schedule at 200 pending), 500, and 503 (/ready not ready; send rejected by telephony).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L493-L508",
+          "version": "repo-lines-v1:sha256:2418bc4de9198ac1e06e2f5e419ffa14a52b6881f4029848c302ec3fecf3e0b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YTcwOTUzZWZjNzdjYmVlYmJjN2E3M2QwNGI3NTk4ODMyMTU0MWM0MWI3OTFhN2RiZjc1YzAwMDkyYWFiMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyMzg5YTg2OTYwYWFiNmI2ZTBkMjI3ZDc4ZjQwYmFlOThjMDQ0NDM4OTlmYjNhNjFiOTY2ZmVlZTUxNWViYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiY2UzZGQ4MTQ2MGJjNmNlYzBiNzA0YTI4M2ExMDA5ZDZmMzZlNTZhNjg5NjFkZmY1ZDUzZTU5ODNhOWRhNTMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L798-L828",
+          "version": "repo-lines-v1:sha256:ecbd8b30c18fefd1180bbb2a0a9316e8f5247c1409b0253eb5939939d7cd3087:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1ZjMyNDc0NTA1MGJhMDQ2M2U0OGY5NjMxYTBlYmNkYTcyMDhmZjI5NjkxOWIyNDUxYzkwZTE5MjdiZjJjYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmZWQ0OTlhZjU4ZGM0ZTQ1ODhmMWQwNDE5NmYwMjBhN2Q0N2U4YTQ5YTNlMjAzOGVmNWQxN2EwZmQ1Y2M2Y2EifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L794-L841",
+          "version": "repo-lines-v1:sha256:8cfa826954f7ed107fa85cf819cfd0ca516ce6b3db4f09846b41de5df610bff0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MTk1MDQwYTdlM2FmNzU4MWM0OWYzYmZiY2Y4M2Y5OTcyOTU3NTU2ZjMzZTI2OWJhYmE3M2ZkOGE4MTM4YmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MWZlMjdiOTRhNWY1NzM5MmEyNzUwNDJjOGQzZmIwMzdiMDA5Y2FlYzgwYjU2ZmVjMmM3YWFmN2Y2MmRkZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyZjczNDcyZGE3YWQ5ODMzOTBjYjVhMTAwNGFjOWQ1YTRlNjZhMWFhMjA0MWMyNGQ1YjZiYzc4OTkxNGQxNWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxM2YxYTg0MzVmN2NjZDI3OGQxYTk3NmE4ZWNjYjMyZmFjNTkxZTM1NTBkY2MwYjg4M2QwMTcwOTg1Y2E1ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5501b32e8ffd4329af5dcdd86dcc2fec",
+      "statement": "docs/api/openapi.yaml (OpenAPI 3.0.3, spec version 1.2.1) is the machine-readable source of truth for the API's request/response shapes; the API is URL-versioned (/api/v1, with breaking changes shipping under /api/v2) while the EVE contract deliberately stays at the unversioned root; the spec is currently behind the code — it does not document the /api/v1/sms/schedule endpoints and still documents POST /api/v1/sms/send as 200 success instead of the 202/503 split the server implements.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L349-L371",
+          "version": "repo-lines-v1:sha256:3ccc4c4f7b3c7f040b3963a3bf7355d81627fb3a79c3d826750da2ae94634550:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZDUzNDBjNDUwNWZiMDBkNWU0YzYxNmRhOTkyYTlkY2Q1ZWY4OTkyZDk4YzYxYmIwMTM4NjAxYzQ2OTllMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkYjMzOWMxN2Q0Y2M1NGU3MGM0ZmNmZWNiNjExYmI5ZTdkMzYzZjI1YjE4ZTA5MjNhMWQzMDZjYzk1OTI0ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkZGUyNDFhNmU2YTQxOTUwNDM3Nzg0MmVjODVlNGU0ZjkwYzEwOTdmMTM2NzcyMjg4MzQzZWUzNzI3NDBkYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2ODRkOWJlNDZhNDAxZDgxMDljNTYzMjNmZjdjNTNlODNkMWE5NWZmY2IyMzBhNmI4ZTc4ZmZhZWI5MTZiYjUifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L1-L50",
+          "version": "repo-lines-v1:sha256:9d0ecf26b094181c8c8bca94f98ab33540b25061ae1e8c01500702ef5bbee901:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhYTQ5ODhlNzZkZGQwZDY2ZTljOTVlM2Q3ZGE2ZmFlY2M0NGJlOTZiZjk4OGFjMzViMjJkZDM5MjEzZmY1MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3ZDVhNzg3YmRiYzYxNTIxMDE3MjE0NjY0YjY3ZjBmNzlhNGI3OTU5N2Y2NDNmY2JiODVkNDJiMjVjN2IyMGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkZjhiM2JkYmQ0MThjNzQxMzZjZmVmNTg4ZTZiNDliNDc3NzI3NGNiMDE3ODEzYTg3OTBlZDNjMjc0NzgzNTgifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L214-L254",
+          "version": "repo-lines-v1:sha256:d3827776f6a126e40e4644cebe0ccb68e61405d93a2c8cd986262175311825c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjMmJlNzY0YmFiMjk3NzYxMmY5YTI1NDQ1MmIyNTY4ZmNkMGIyMTU1NTBkNGQyMTQ4OTJmYjExZTE3YjNiNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwM2I5YWU3MjdkYjQwMDgyODUyNmM1NGNjYjM0MWUyNTgxODI0YjdlOWQxZGU2NWEzOWEzNmM3OTNmYjVmNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5Y2U0OTcyN2UxMDczZTRhZjcwYzY0N2RkNTI0MmRlNTM5NGJkYTU1ZDcxNzgzOGFkYTlmMTZmZDBiYmNmM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjMzA2M2NhMzhhNDE5MTJmZDYxMjcwODQ0MTJkZTg1NzcxNTA2ZWJlODk3YWNkODM3NTZlODM4NTc5NjIwYTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_df07c1d6056a4da08cd37f66c52926f8",
+      "statement": "scripts/test-gateway-api.ps1 is the live smoke-test script for the gateway (reachability via adb forward tcp:8080 tcp:8080 or the LAN IP): it asserts /api/v1/status 200 with ip/port/battery, 401 for a wrong key and for a missing key (the no-key case runs last because it counts toward the per-IP lockout), inbox count <= 50, filtered queries with type and both date-range forms, 400 for blank phone/message, 400 for a http:// MMS imageUrl, and 404 for an unknown route; real SMS/MMS sends are opt-in via -SendTestSms -To (destructive), and that opt-in assertion still expects the pre-v2.6.10 200/success response shape.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/test-gateway-api.ps1#L19-L28",
+          "version": "repo-lines-v1:sha256:db5e6c187505d0e4789c3119cec6b4157f444bd7f49d3aad8d6e7ecd9b027f29:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MGJlMTgwZGE0ZDU4NTQyMzc0NTNmMzU5YzBkZThjMzhkNzQ3OTFlMjk4YTJlZGI2OTNjNjViMDg5YmIyMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiYmM2YmNmMDQ5MTcyZGJkYzkzMDQxOTA2MTg0MzU4NzMzMjE4ZjY1MjBhZTJiZGYzM2NmZmI4YTMxODg2YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZmQzYjk0ZjYwY2E0YTg1OTMyYmY5YzVhN2VjMGFlMDU0ZWY0NjFkOTY4MTExMDhlYzMxMjk5ZmVlNGQyYzAifQ"
+        },
+        {
+          "resource": "repo://scripts/test-gateway-api.ps1#L89-L159",
+          "version": "repo-lines-v1:sha256:19dc9e6f7e4916ef918af5b0766601fe6779b7dd6adad30dadc4fc5baed7c107:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNjBjYTFjYzZkNzBjNTA3MzdlNzMyZDJlOWIwNDMyMTQwZjhjNDE0YjJjNmQzYTA2NDNjZmQwNjdmYzU4M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhZmE1ZWQ1YzVhY2Q0MTRlYWM3YjY3MzYwYjlhZmI1NmE2MTAyZGMxNTdmYmUxMzM0YjlmYjQzNDhiZWJlZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkMTcwNmZiYmU3ZmY2YjZlNmE4MjBlNzNkNTQ4ZjNmNmFlMjE0NmFiYWNiY2ZkZmEyMjUyOTkxZDAxMzQyMWQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

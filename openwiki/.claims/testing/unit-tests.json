@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:46bd293fcb2f97cedc7ad85c06a79a480c159e57001992f2bc22624a0703ed3b",
+  "claims": [
+    {
+      "id": "claim_2c274c51e810460c9789560ca7aaf5a8",
+      "statement": "The app's only real test layer is a headless JUnit 4 unit-test suite under app/src/test (JUnit 4.13.2 via testImplementation(libs.junit)); there is no Robolectric or Android-instrumentation dependency in the unit-test scope, which is why the entire suite can run on the bare JVM with no device or emulator.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L106-L110",
+          "version": "repo-lines-v1:sha256:f7a36521bee2626a130dc5067c91c9e22f906d37e15e14a6ea4cd6836029f683:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI3MWMxMmZjY2MwYzBmOWRlMTVmNzA0OTYyZWQ0ZTMxYmNiNTFiMmMwOWNhMTUzNmY1MTczMmRhZTBhOTg0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDY4NDM1NWIxYmRjYWY2NjE0Yjc1NTRjMDljNmM0YTdhY2VhYjJkMTc3OGNkNTZiZWMwMjNlODIwNGNlYzUxNyJ9"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageEntityMappingTest.kt#L7-L11",
+          "version": "repo-lines-v1:sha256:cd662bfad3e1dd29b670e5fee37678674aa6881c195760a3e0294b27f4e7fe39:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFmMjJjZjA3MzI1OTJjMjQ3MTQxY2JlNjFlZmExMTAxMjYxMmY1YTMxMjJiOWFmOWJiYWY1MmY1NzI0ZDE5NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGY2Njg2MDU3ZjQwMGE4NmQ3YzBiMjczMjVmNTllNmYwMTQwZWY0MGRiZDU3MDg3MmU5MTJhYzU0ZDhmY2RlMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2Y4NDQxZmYyZjZkOWNlODFiYTljMzBjZWJlOTE4MDFkNzNkZjI1Y2UwZDQ5NjAxOGFmY2JjMjQ5MjY0MjRjNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzNiYTViMjU2ODliN2Q5NTZjMTc4YWMyZjA0ZDljODY3ZTNmMWFhYTdlOGU0NDA2ZWZhN2U5Yzg2ZmMwY2IxOSJ9"
+        },
+        {
+          "resource": "repo://gradle/libs.versions.toml#L4-L24",
+          "version": "repo-lines-v1:sha256:712547449758ceb78b8efda48ea4c4bcb52856a1e028f58413a084a430e06491:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5ODliNTExMDhiOTcxNjZmZThkY2E4NmQ1ZWNiZTA2MTQyYzU4NTcxNzcwZDdhNTc5NjRkMTRmMDM1NmQ2MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ZmJmMGJiZWFkMmJkZDMwY2YwNTg4YmNlZDAxMTMwZWU1NTMxOGE0NTdkNjM5NTE0Nzg3NDhhOTVkMzIyNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlZGRlNWNmMTY1N2EwZjVmZjVlMWY3YjY4NjgxY2JjMzdiOWQxYzNhZTVkMmM4N2NiNDQxOTE4MjBlZGZlMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzMjEwZTY4ZWE3NjkzMGI1YmEwODZhNWM0ZjY1MTU0ZDU3YjQwNjhkNWNkMDYyOTE2NzhlNmE3Njc3NTE3ZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b73177dcc25427ca2ac5bb2d4b87ace",
+      "statement": "testOptions.unitTests.isReturnDefaultValues = true makes method-based Android APIs such as android.util.Log harmless no-ops in JVM unit tests, which is what lets the full JUnit suite run headlessly; field-based SDK constants like Telephony.Sms.STATUS_* are compile-time constants inlined at build time, so they also resolve on the JVM (as exercised by SmsStatusPolicyTest).",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L79-L82",
+          "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt#L1-L3",
+          "version": "repo-lines-v1:sha256:ae5138846b4d94a45e10fbc17e9a9cea6cdce6981473ee0396bf6dc220c57d7a:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODc3OTQ2ZWEwODRlMThjZjJhMzgzYTVhZTczMDdkZTMyNzJiMzg2NWIxOGNhMjcyNWMwMjVmNmZmY2E5ODJiMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJkMDcyZjZkZmI5ZGQ5ODBmZDBiMzBlM2M3Mjc0NDVkZThkOTg4MzczMzdlNGVlMGFjNDhmZmFhZTU2Y2Y5ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2Y4NDQxZmYyZjZkOWNlODFiYTljMzBjZWJlOTE4MDFkNzNkZjI1Y2UwZDQ5NjAxOGFmY2JjMjQ5MjY0MjRjNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_cf267d2084824cd8a323138c6b6d4eea",
+      "statement": "The CI workflow build-debug.yml (Build Debug APK) runs on push and pull request to master or main on ubuntu-latest with Temurin JDK 17: it runs ./gradlew assembleDebug, then ./gradlew testDebugUnitTest, then uploads app/build/outputs/apk/debug/app-debug.apk as the debug-apk artifact with 30-day retention. It is the only workflow that runs the unit tests — release.yml (v* tags) only runs ./gradlew assembleRelease, so a release is trusted on the same code that passed the PR pipeline.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build-debug.yml#L1-L38",
+          "version": "repo-lines-v1:sha256:5d440d68b81ada7bea5e39c295e77229298f7aaf6b337bee1a5b6695d7ab90ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MzAzMmYyYjE1ZmVmZjRiNWQ2OTUxNDE3NGRhZWU0MzBiZmZjMWJkMzhiODNlY2YzNjQwNWU3YWMyN2E5NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5OWZlYjI1OWY0MjBlN2UyY2Q1YTdlMzIyMGZhMzU1YjgzMDViNDA3N2FhY2I3MTI1NDI1NmYzZjQ0YTdiYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/release.yml#L1-L37",
+          "version": "repo-lines-v1:sha256:d72297f3e3ca247428800f02df349cf90b7d8e3ae8e600debda240ea87340748:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NWRlNmEyZjc0NTY5ODNhYmE3YTIxYzRiYzUxMzFiMTMxOWRkZTMwOTg2NjgyOWZhZjcwZWFiMTM5ODI3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhYzVlYWM1NTE5N2EyY2QyYjIzYmQzMjY4YmJkMWEzOWFlOWY0OTE0MGU4ZWVmYWFiYzlmMWQxZjE5OTkwMzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZjRlOTBjMjg5MTUxY2Y3OGRjY2IzNmZkMzA3M2Y3ZTgwOWRjMjRiYjZiZDE5MThkNjhmMzQ4NTVjY2IyZjQifQ"
+        },
+        {
+          "resource": "repo://README.md#L148-L153",
+          "version": "repo-lines-v1:sha256:20b078e20e35d0f9af34ae58fe924cb6917eea8edfcd4d30c696ab794efb9ee9:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmJlY2RiZWY2ZGNiYWE4YmU1ZWVhMGFkMWQ5MTZmNjY3MWMxOWQ0MmE3NzQ5MmNiMGE5OWQ1YzdhMDhkMzZjNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2VjNTY4ZWFkZGNjNDg0MDI2ZjFlMzJhZjIyYzc1ZjM4NTM2MmNmMmM1YzFkZDk2OGMwNTkyZjU3MTk1ODMzMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzc4YzMzZWEwNTY0NTRlNzAyMThlMjAzMjExOGJlMWUyNTY1OTgxZjBlMzVjM2UyYzMxODlkOTVhZjFkNWJlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjJmNjhhZWVlYjM5MjRiOGExMTgwOWJhM2Q0ZjY1OTczNzRjNzRlMTAxNmY5OTM2MjdiYTljZmE1YWM1NmIxYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4a5d1c1e25243e99dff9fd75bbeb7d2",
+      "statement": "The JVM-testability pattern is a pure core plus a thin device adapter joined by a small seam. The four named seams: (1) ThreadPager.forTesting(source, threadId, phone) — a companion factory on a private primary constructor (the 'PART AZ' seam) whose single dependency is the internal ThreadMessageSource interface (querySms/queryMms taking selection, selectionArgs, sortOrder, limit); production binds ProviderThreadMessageSource delegating to SmsRepository.querySmsRaw/queryMmsRaw, tests bind an in-memory FakeSource that interprets the real selection strings; keeping exactly one public constructor avoids overload ambiguity at ThreadPager(getApplication(), ...) call sites. (2) EveSmsQueue's pluggable Store interface (load/save) with MemoryStore for tests and SharedPrefsStore for the device, plus resetForTest(store, sender) injecting a fake sender. (3) SQL-level migration tests that compare hand-written migration SQL constants against the KSP-generated app/schemas JSON instead of running a live SQLite DB. (4) FtsQuery.build as a pure string function pinning quoted-MATCH grammar.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt#L10-L20",
+          "version": "repo-lines-v1:sha256:af2fc2589fc37e1951d55e9ffb4ae9eafd49a20859b289378962e06bbb2b15fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMDA5Y2IwYWNjYWEwNTFjNzNmYTlmMDcxNzBlNGE0NWYwZGI4ZTBlNTA3MzFjNGM3NjIwMGQzM2I1NDBhNWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyODFjYTRjODU2ODk2OWNkNjljMzhjM2ZkYjZlN2U5YzYwMWY0OTI0ZGM3MjQ5ZTI2YmEzYmMzZTFmYWQ1ZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3MTdmMmVlODQ4OGFlNmE1ZDc3ZGM0MzlkYmRmOTNkYTQ5NzY3MzAzNmFiOWRiYzg2YWQ4OWEzYzgzMTMyYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L63-L79",
+          "version": "repo-lines-v1:sha256:725aae43e6b3316f96a0df53470d3dc19819facb63ff6e1cc8425f4680853dfe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NzViMDEwZDdhMjM5ZjI2ZDE2ZDA0ZjExZjhjYjk5YTlhMGRiMmQyNWFmM2M4MjFkZmU3YzJmMjQwYmUzZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0OWU1MDQxODZlZjBjYmY1MTllNmI0NDFiZjhkNzg1ZjI1MDZhYzdlOGI0OTIxODVlYmI5YTE4MzI1NWYxZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMjE2YzRhMDQ0OTI2MjVlZjM3MWM2MjBmNzUxNzNiMDQ4YTY5ODkzMTM4ZWQyMDY3OGRlYmNiZTQ1NTg1NmUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L9-L112",
+          "version": "repo-lines-v1:sha256:799c46747bb1a8b6ca351f5d5064128055854d51e196bc1c66678bd25fc697a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NWQ1YWJhY2EyMjY4MGFlOTUzMzY3MDBkZjc2NjM2MTk3YTdjYjZjMDA0ZjRjZDc5YWMxYjFmZDJmMGFjNGE1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjMWRhNGRmODU1MGM5ZTc5MTFjNGVhOGVhM2NlYTFkMGVmZDNmYmQ4MGViYTFlODZmMTY4MzA0MDJjNWNjNjY5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0NjUzMWI0YjQ5M2M0MTFmMDU1MTkzMGM0YzdmODU3NDJkMDEwNTBjNjVmZjBjM2U0NzYwZTZiZTdhMTUyNjMxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhODUyMTA4ZThiNzRlYzIyYjI1OTJhNWRkOThkYmM2NjJlNmQ3MmI1NzEwMmY5ZmEyMTNkM2YzYmNhYzJiZjcwIn0"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV4SqlTest.kt#L21-L54",
+          "version": "repo-lines-v1:sha256:b2781e66280f4798cbb1e8a1b72ebad2f6ca36e7deff02cdb39fe2d51b7df4f3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNDQ0YTRkYTEwMzRlZTk1NjM3NTA0ZmJjYjI1N2Q1ZWIyYzU3YzBjZjdiMTNjOTBiMGE4Y2U0MTY3NTk1ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzMzc3NjU3NWNlYzU4MDhkY2QwMDZiYjgyNTVlMWYwOWM5NWExZjMzNmQ2NTExYmY0YzIwYzIxZGU2OWY4MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1ZWQ0M2I3ODg3YjFmMDJhZTkxNTQzM2U4ZWE3MmU3MDkxODZkZGZiNjk5NTg3NGI4YjhkODQxYzNkYmMzN2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_24924f99e4bf4651b2bf3c869acc9086",
+      "statement": "ThreadPagerTest guards the bidirectional keyset pager by asserting on the five invariants the v2.6.7 conversation-open regression depended on: every public method returns canonical ASC (newest last); loadLatest is a bounded newest window (INITIAL_PER_SOURCE = 12 per source) that never does a full scan and does not arm the newer crawl; older/newer crawls use strictly-ordered keyset predicates and the pager must never issue OFFSET (asserted by scanning recorded selection strings); hasOlder/hasNewer exhaust correctly with SMS and MMS keeping independent cursors that meet in the middle without overlap or gaps; loadOldest arms the newer direction; loadNewerSince returns strictly newer rows; and phone-only threads (threadId == 0) never query the MMS table (asserted via a call counter) while MMS model ids are negative.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L61-L83",
+          "version": "repo-lines-v1:sha256:81d64cd68633ad00e9d9cce9d8156a787319ac562ad26cd01e71259fd6c9e3c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMGRiN2QzMzgwYjM3NTg5Y2M4OWFkNzdlNjhkNzk0MmQ2OTQwMzRkOTE0ZTYwNjQ4ZjgyNzIwZjQ0MTdjMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyNDMxZGM0NjBhOTg5NWU0ZDc0ZmUwNjYwNDgxYTBlOTdkZDExYzJlZGFmNWNmYzc3ZjQ5OWZiNTAyNTMyNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjOTNmZDVlNDE1NWU1N2IzOGY4ZTM5N2UxOWU5NGU3MWY1MWNlN2ZiNWZjNGEzY2YzMjRlZjNkMGIyZWFjZGQifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadPagerTest.kt#L11-L264",
+          "version": "repo-lines-v1:sha256:9b5f5de3bcba1a899a2c413460b18bbdbdb77ed2cd780d7a849abf6c3742bf3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjU0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NWQ1YWJhY2EyMjY4MGFlOTUzMzY3MDBkZjc2NjM2MTk3YTdjYjZjMDA0ZjRjZDc5YWMxYjFmZDJmMGFjNGE1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNjE5OTZiZGJlNjFmN2JlOGU0YjU4NzU4MjE2MWNhYzg4ZjgxOGJlMTY5NTVmMDdiNzU4OGY3ZjM5ZDBjNTkwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlMjJmYWE1MzViZDJlYTNkNTJlNzQxZWQ0NTQ0MzViN2ZlNDllODM1ODZlOTQzZDk4ZDgyYmJmYjI0ZDFmNWM1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_5940d65d65304661ba26a5abad800c59",
+      "statement": "EveSmsQueueTest pins the EVE send-queue contract by injecting MemoryStore and a fake (String,String)->Boolean sender via resetForTest, stopping the worker, and driving drainOne() deterministically. It asserts: PRIORITY_LEVELS match the EVE spec (critical=1, expired=3, expiring=6, announcement=10) with higher priority drained first; the Idempotency-Key returns the original record with created=false and never sends a duplicate; status flows QUEUED to SENT with terminal/successful true and positive sentAt, and a failing sender produces FAILED with failedReason 'provider_error'; GMweb/EVE verification fields round-trip (success 'confirmed', failure 'manual_review_required'); a queued message can be cancelled and then never sends, a sent message is not cancellable (reason 'not_cancellable'), and unknown ids return null; pendingByPriority()/totalPending() reflect live pending counts.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L183-L220",
+          "version": "repo-lines-v1:sha256:4223ab5405236794491587a5397a18ce88a0955553d172911b1bc5df6e51197b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1MzRmM2ViZjE3MTFiNDVlMmU0MDY2MmRiZGY4Yzk3YzZjZmQwM2Q3MTY1NTg1ZDQ3ZmE1MGYzZDAyMjk1MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZTA0ZTRhMTg3OGMxMDUzZTBkY2NiZjBiNzlkODY4NTA3OGNhZTE2ZjE1ZDEzMmIxZGYyODViOTU3OTJmNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OGFkZjkwZTE0ZjM0NWZhMDFhMDQ3NWU3YzU1MjE4ZTU2YzJhMGQ3OTZlMjUzNDQyZWQ2ODcxZGUxMTg5MDAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L22-L38",
+          "version": "repo-lines-v1:sha256:85073698f2189158faa952f766c313dc04643cb95f16e68aa6a64aa260f5d323:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4NGE1YmRhYmU0NmNkZjQzYmY5ZWM2ZTMwN2YxMTM1NTc4ZmVjNmY1N2ExOGJmMDIxMjlhYjkwNGEyMDM0YzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3MTBhZTllMTc1NGYwOWVkOTZiNjQ2ODhhYjEzYWIxYWY1NTViOTQ0ZTc0OGQ4ZjE1MDgyYjUwYmY3NzEzMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0NjljNTY0MTVjNzk2NTU1YmVkOGJkMmNiZDNlNDM0OTg4OGM4ZTY3MzE5ZjQ2ZGUxMDJlMDI4NmNjMjc5YzkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L229-L326",
+          "version": "repo-lines-v1:sha256:9cf1d7235bbcbe9e932288046e64ecfb6dda4341b23ed1f556fbfd32b412a89b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5ZDBjZTFkMjc5ZGEyYWE0NjIwZWM0NmIxNzdjNzU3MzBhYmQ3YWRiYjkyYmY3N2RmOTAwZjQzMTc5ZjE1MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4MTUyMTRhMGQ2NDBiZDRjOWJlYTM1NjZhMjc4NDI2ZTU4YjM0NTVkODBhMWMwMjJlYWM3ODQ1MmIxOTcyOWQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L349-L357",
+          "version": "repo-lines-v1:sha256:4545a571280aa76e3d8400ca0a11c3d9b6ab2240516435a10400ec46a0972a26:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQ5NTJiODZjNzAyYmYwZTYzOTZhNzg1Zjg2MjA1MjI1NDVhZjQzZmZiMDE5YmY5NDg3ZTBlMDI5MzBhODEyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjliZTA4ZmFhYzdkNzQ0MGMxZjk4OGI4YmUxMWFjNjJiY2Q2NDljOGY1NGQ0Y2VmMDM4MzkxMDliZDY3MmM0ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTYzY2U2ZWEyYTkyOGVkODAyMmY5MGU2ZmE1NTI5YzNjMjEwMzExNzU2NGI3ZjI1NmM3MDZkMGMyYzQxYzQwNCJ9"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt#L13-L167",
+          "version": "repo-lines-v1:sha256:f24bf456596951963c9fb41e0f4b7d4295dd2de4e17f766252a9c072be30d4ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMDY4MTAxMjRkMjJjODBjMzE4MWMxNDI0MGM4MjQxYjgwMTM2NmQzYTNkOTk1NjJlNzY5NGQ2MzZmMGUzOGI2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3YzQ1NjUyOWIyMDE3YTY3MjQ2ZjBmYjQ3OTA4ZDNjMDcyNThhMzVjZDNkMGNmMDg0YmMwYWQ4NzE0MmJjZDI5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b55ba28f3a34cd49cbaca0a3a92ce43",
+      "statement": "The Room schema is exported to app/schemas/com.autonomousone.messages.data.MessagesDatabase/ by KSP (room.schemaLocation) and committed; the hand-written migrations (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, registered via addMigrations) are kept as bare-SQL constants (UPGRADE_TO_V4_SQL, UPGRADE_TO_V6_SQL) in lockstep with the generated JSON and pinned by unit tests, so drift is caught on every testDebugUnitTest run instead of throwing on the device at upgrade time.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L91-L95",
+          "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L128-L233",
+          "version": "repo-lines-v1:sha256:af908ce7796358799b7ea535b268360df0cc54d9e19240a60aebf1ea41d4174b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMzc2MGRmNDRiMjliNmEzZjk4YTY2YjYzMjRlZTA3ZDBmZGM2ZTY4MmJhMjFjNzRhZjhhZjQzY2UyNDkzMmY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlOTRiYTZiZGViMjIxZGEzYmRiNGU0M2IzYTQ4ZWJkZTY2N2VkZWZmNDBkYjZiMTk3OTE5ZjcwOWIyMjMwNDRhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0OWFkMGY1YjI3ZTNlODg0ZGFhZDNhN2Q5YTYxMzI2NmUzZjc1ODU0ZTJjZDZmYmNjZTI5YjZkZDcwN2UxOTRlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJkOGQwMDNhMWNjNDUwMjBjY2JhMWZmZWM4YjI0ZGZhZGNlMzFlZTk2NjI2YWFkYjc3MWViYTFmMGE2OWY0ZGM3In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_76312bd9c56b495687e24c061bfca47e",
+      "statement": "MigrationToV4SqlTest guards the hand-written v2->v4 and v3->v4 migrations against the generated 4.json: every non-DROP statement in UPGRADE_TO_V4_SQL must match the compacted generated schema text; the UPGRADE list must never blanket-drop sync_state (a prior blanket DROP erased sync watermarks on every upgrade, forcing a 360K rescan); and syncStateRebuildSql is driven across real-world DB shapes — exact-v4 shape is a no-op, legacy v2 is rebuilt via the Room pattern (create sync_state_v4_new, INSERT..SELECT, drop old, rename) with legacy-column mapping (newestSyncedDate->newestDate, lastSyncAt->lastReconcileAt, backfillComplete->historyBackfillComplete) and initialWindowReady pinned to 1, a broken 2-to-3 hybrid keeps an already-ALTERed newestDate via CASE WHEN newestSyncedDate > 0 ELSE IFNULL(newestDate, 0), an unknown shape falls back to drop and recreate, and a missing table is created as plain v4.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV4SqlTest.kt#L60-L147",
+          "version": "repo-lines-v1:sha256:01ec6e1b4ce8cb45ef317498cbb493e3f6697cac3737a8972883a77d6beded3b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4MDEyNzEyNWFkNzk3YjZmNzEzZGQxMWZhYTRiZGRkYzBjNmY2YWM0ZjFjNzI3NTI0NTZiNTQwMzFkYjk4MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjNDdjZjM3NjYxMzg0ZWI1M2E5Nzg4YWQ3YTFjZWY4OWQ3NmFhNTVkMDEzYjQ4NTNkMjllYTMxNzQxYTNlNWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1253ecb15e85445d9ee6d46b9b16b7d2",
+      "statement": "MigrationToV4SqlTest additionally pins that the v4 migration drops the legacy non-managed indexes (idx_messages_thread_unread, idx_messages_thread_date_id), that both MIGRATION_2_4 and MIGRATION_3_4 target v4, and that the generated 4.json declares the four room_fts_content_sync triggers for messages_fts.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV4SqlTest.kt#L149-L176",
+          "version": "repo-lines-v1:sha256:2c938701650b4f457eb9b6bbb2633b22fc70c8def0518b331e2612da6f4d0abc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxOTdkZTY2Zjg3MzM4MWJjMTZiY2I3ZGVjODM5YTQ1YzZkN2M1YWI5ZmFiYzMxN2JlZWYzNGUwMDAwOTYzMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a3c5de93ddf420ca5fbfc6ea2d68736",
+      "statement": "MigrationToV6SqlTest guards MIGRATION_5_6 (conversations.lastMessageType): the boundary is 5->6; the migration is additive-only (an ALTER TABLE ... ADD COLUMN plus a backfill, no DROP TABLE or CREATE TABLE); the added column matches the generated 6.json (placed before pinned, INTEGER NOT NULL, DEFAULT 1 keeps legacy rows 'incoming'); and the backfill uses a deterministic newest-row tie-break (ORDER BY date DESC, source DESC, providerId DESC, LIMIT 1) with a WHERE EXISTS guard so threads with no messages keep the default.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MigrationToV6SqlTest.kt#L27-L81",
+          "version": "repo-lines-v1:sha256:50200549f11d3446c8677207ad26b26b5c15bc792821ffdffae86299e5a293ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhZTMxN2JmYzE0ZTY2YzdiMjM5YjE3MGFhYTg3ODI5MTY3MGE4NjQwNGViNTUzOGViMzExYTFiYzQxZTg0ZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b7373c911413406db89ada278b1f3c91",
+      "statement": "SmsStatusPolicy is a pure object deliberately separated from SmsStatusReceiver so the delivery-report semantics are unit-testable without Android; the contract is evidence-based: completed SENT callbacks set the floor STATUS_NONE, DELIVERED reports can only upgrade status, and only a parsed permanent TP-Status can produce Failed. SmsStatusPolicyTest pins: 3GPP TP-Status classification (0x00..0x1f DELIVERED, 0x20..0x3f TEMPORARY, 0x40..0x7f FAILED, unknown values never invent a verdict); 3GPP2 2<<16 is DELIVERED and all else UNKNOWN; and nextStatus aggregation — all SENT callbacks received is STATUS_NONE, partial sent parts stay STATUS_PENDING, all delivered parts OK is STATUS_COMPLETE, a temporary network report is STATUS_PENDING, a permanent report is STATUS_FAILED, full delivery outranks older failure evidence, and one permanently failed multipart part fails the whole logical message.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusPolicy.kt#L5-L76",
+          "version": "repo-lines-v1:sha256:3ef591be8f5d81e13e8a7e50a1069c5fab9db3bb9fb9a90dbc10df58ffe3e161:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzNGI5OGY0MmZkOTQwMDJlOWMyNGVjOWZlNDJjODg5YmE4YzQyMGMxNTYyZDVlOWQ5NDRlMjk5YWI2ZjA0OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwNGY4OWZjMGVjOThjOTgyNDE4M2U3OTVkM2VkZDE5ZTkzMGY3YmM0NzFmOTAxMmFhM2Q1MDNiZTJmODk3NGIifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt#L7-L89",
+          "version": "repo-lines-v1:sha256:05d7129d3bfd0479592da97e150ffab9310f61fef674d25721b82e16d518e7d2:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3ZjY2ZGU5MmExZmQwNDE5OTMxNDM4N2YyNDkwMjFkODk3YWRmZTQyYjk5OTY5ODdhZTAyMGQ2NmYxNDk3ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmODQ0MWZmMmY2ZDljZTgxYmE5YzMwY2ViZTkxODAxZDczZGYyNWNlMGQ0OTYwMThhZmNiYzI0OTI2NDI0YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4fd757dae76a41c2a933e76541974467",
+      "statement": "ChangeRouter.route is invoked from the ContentObserver on the main looper and must never block: provider reads are offloaded to a Dispatchers.IO scope and mutations queued to the coordinator. Its pure helper extractRowIdFromPath is pinned by ChangeRouterExtractIdTest: single-row //sms/<id> and //mms/<id> extract the id; table-level //sms, //mms, a non-numeric last segment, and null/blank paths yield null; and thread URIs (//sms/thread/123, //sms/thread) are NOT row ids — reading a thread id as _ID would upsert a random unrelated message, so the router must fall through to reconciliation.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt#L111-L124",
+          "version": "repo-lines-v1:sha256:08c8349dac6d29de70846b4bf7a7803f6b9192333c1a0993f713208d733f6014:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt#L13-L64",
+          "version": "repo-lines-v1:sha256:e6033b08ec6d14595f36bec2ffab6ad6ff33c064dcd4d85dac4aa59429e46da7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMDhhZjU3MGY0YmJjYjZmYzkzZjI4MTZjZjdhOTRkZTVhZDNkZWE1OTVlM2Q3YWQzYWI4MDI2ZDcwYzg1MjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhOWU0ODZjOGU4MDdhZGU1YWRhNjY3OTc2NmNkZGFlYzA5NmVjMTJmMDY5ZDVmNjRkYWE4ODE0ODMwYzAwNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkMTNhZTMyOWI4YjYxNGQ2Njc3OGRmZmU5NzI3ZWE2MDdiZWVhMzY5MjY0NzYwNmE2MTY5OGI3NTViNjNhMmQifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt#L8-L50",
+          "version": "repo-lines-v1:sha256:0d94dabd8969c0fdc66a4a2ad2541f5efa19207d34a0f6fc585f05c4d3363cf3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2NDgxNTU5ODRlOWVlNGY0OTg0ZjQ0MmU4Mzc0NmUwMjBkNjc5ZjAzYTE3OWQ2MTE1NmM1NDA0M2IyZDk2ZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_22ccfd92ba4f4b6b829b4c87eb73bcde",
+      "statement": "FtsQuery.build must never let user input break out of the quoted FTS4 MATCH token: every token is double-quoted (making operators like OR, *, : literal), embedded double quotes are escaped by doubling, multi-word queries AND the tokens, extra whitespace is collapsed, and empty/whitespace-only input yields \"\" so callers can skip execution. FtsQueryTest pins all of this, including Persian and ASCII tokens.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt#L3-L20",
+          "version": "repo-lines-v1:sha256:39dbe7273c97212173ede7c5b8000ed7719e30dbd63a3f74394a2d7619ef5e64:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyODFjYTRjODU2ODk2OWNkNjljMzhjM2ZkYjZlN2U5YzYwMWY0OTI0ZGM3MjQ5ZTI2YmEzYmMzZTFmYWQ1ZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1M2Q5ZDQ4NmE2Y2JhZDkwNmZmNTRiMDZiOTJlYmVkMjdhMDgyZDY0NDc5MzgwYjM4OGFkMmQ2NTg1YzNlZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/FtsQueryTest.kt#L7-L48",
+          "version": "repo-lines-v1:sha256:4adb6eeef5d923065be9a3f0fbf782a1873fe172eba5a24486a6b1d3505d7113:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmZTA0YzU4YTQ5YTgwOTdiNDA1ZjFkN2EzM2M5OGE0MGUwNjM1NmIwYjQ0MDMyOTA2MGE1NjI1MjMwOGFjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3203f90c29c548499781f1917d578458",
+      "statement": "SmsCounterAndDigitsTest pins two pure utilities for the Persian/Arabic user base. SmsSegmentCounter: GSM-7 is 160 chars single / 153 per concatenated part; ANY character outside GSM-7 (Persian/Arabic/emoji) flips the message to UCS-2 at 70 single / 67 per part; extended-GSM-7 characters (e.g. '[' ']') count double. DigitNormalizer: Persian (۰-۹) and Arabic-Indic (٠-٩) digits plus separator/dash variants normalize to plain ASCII digits, mixed Persian/ASCII input works, plain ASCII passes through unchanged, and hasNonAsciiDigits detects non-ASCII digits.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/utils/DigitNormalizer.kt#L4-L11",
+          "version": "repo-lines-v1:sha256:0bb0ec023547ce7f01332642e9473cb4171f3d55be1532de31e910d36c24c244:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjI0MmE3OTFjYThmYmMwZDBiYzc3OTM4Zjc1NjlkYzE5YjZlOWE0NmYwN2FiM2M1ZjZmYmY0MDgzZmZmOGI4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFmYTZmYTJiYTc5OTI5OWNhMzljYzVmYjIzYzMyZDQwYjAxNDJjZjM1YmM1OWZkMDA1NTI2ZmYzYjJkMmZlOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjRlZDM4ODg1ZmU3ZGQ5YTVjMjY4YmFlYTE0Y2NhMjVmNmY3YzIwM2QzOTYxYWUxMjg2ZDYyZGNmMGFhZmI1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjI3ZjM1ZWNiNWY3ZjYzNDQ5MWViOTE5ODAyYTQyMDcwNGZmMDcwOTUxNDJhM2RlZWI1YmVmYjZjZGI5NTg0YSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/utils/SmsSegmentCounter.kt#L4-L28",
+          "version": "repo-lines-v1:sha256:98f2300ed836f69c14273c1359a78377305ed219c7718719b9ffb8e78dc281be:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxZjZkYmQzZDcxZmQwN2I5NDdmMTRkNjJhN2NiNGJiZTY5NDJmZmVlYjllOWU4NGNhNjVjNGY1YTFiMzNjZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmNDI2ODBhYzgyZDVlNmIwZDE1ZGVkMWI3MzQyZTIyODg5NmZiMDE3YTFlNmNmZWIyNmQ5MjM1NDIxYjM4ZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ZWQzODg4NWZlN2RkOWE1YzI2OGJhZWExNGNjYTI1ZjZmN2MyMDNkMzk2MWFlMTI4NmQ2MmRjZjBhYWZiNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyYTNjNWNhZGQ0MTcyNTJiNDhkNmU3NDM4ZWQ3YjRhMmJjYjhlZTczZTVlNzg5ZDg5MTBmM2EzYTAxM2UwZWYifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/SmsCounterAndDigitsTest.kt#L12-L98",
+          "version": "repo-lines-v1:sha256:88100c182955d449e31b10dbee7f3bb1c55c5b0c4263ef25aee8fe084a8416e5:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0YmIyYzUwYmFkNzA2YWViOWMwYzYyMDRkOGU1ZGJiODEyNzkyZWY1MTViNTFmZGJlNGM0ZmQ3MzM1NTFhNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYmVhMzU0NWNkYjcwNDc2ODk1ODNjOGMyNTU2ZDc4ODA5ZTU3NGUxOTA0ZjVkMzUyNTZmNjI1MWNhNGU3YTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2417405adbea4b2593eedfa74bd9244b",
+      "statement": "UnreadDelta.compute is a pure object that maintains the conversation projection's unreadCount by a signed O(1) delta rather than recounting the thread, so a very large thread costs nothing per incoming message. UnreadDeltaTest covers every transition: brand-new unread +1; brand-new read 0 (outgoing lands already-read, never -1); unchanged flag 0 (re-upsert flat); unread->read flip -1 (the badge must actually come down when read — the old rule returned 0 here and badges never cleared on the Room path); read->unread provider correction +1; and proves repeated upserts never accumulate (1000 re-upserts of one unread row add exactly +1) and a full unread lifecycle sums to zero.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/UnreadDelta.kt#L10-L29",
+          "version": "repo-lines-v1:sha256:1d6c644c8734d1fe84214c3e66037276c286d2a6b1ebb1f3c43ae44519aaf060:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODg5ZTZlNTUxODI1NjUyODBiZGZhYjYxZTEyZDFhMjMzYjM0YzllYjE4YjUwZmQ3ODQwODI1ZGZjMjgwYzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2ZmIwYjVhYWFjMDc0MzQwZTMzNTlkZjliODIxOGYyYTU1NjY2NGQ2NmU2YjViNThlNTQ3ZTk3OTEwZDU1ZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/UnreadDeltaTest.kt#L7-L71",
+          "version": "repo-lines-v1:sha256:50c37b5e871bab890386f4fbf9d2061e4fff7e530b168e80ec0e74703cbb3ba7:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmZTA0YzU4YTQ5YTgwOTdiNDA1ZjFkN2EzM2M5OGE0MGUwNjM1NmIwYjQ0MDMyOTA2MGE1NjI1MjMwOGFjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_22abd7185ad2400c9912af7e92d7e19f",
+      "statement": "The instrumented test suite (app/src/androidTest) contains only ExampleInstrumentedTest, a template that merely asserts the app package name, so it is effectively a placeholder. Behavior that requires the Android runtime — the vendored Fossify MMS receive stack (com.android.mms.transaction.PushReceiver and TransactionService), the hand-rolled ServerSocket-based GatewayServer with its network clients (Keystore, ConnectivityManager, HTTP), EveSmsQueue's real SharedPrefsStore round-trip and background worker drain loop, and the ContentObserver's main-looper trailing dispatch / ChangeRouter's Dispatchers.IO provider reads — is therefore verified on a device or emulator, not by the JVM suite; only the pure logic (GatewayAccessPolicy truth tables, the queue core, the leading-edge dispatch decision) is covered in-repo.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L122-L131",
+          "version": "repo-lines-v1:sha256:da5e32bd697eaa0ccea8dcd1ee0116f665686d9d920bc082eb910eddda8bac23:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMzhjNDdkZWI2ZWZiN2JkYTk5NTI2YjAyNmI4N2M3NzA2NjYwNGEwZDRiNGZmN2FiMTdlZGUyMDI3NWFhNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMTEwZDgwYTJkYTY4YjRlZjE2ZmI5NTgyNTVlM2I3ODdmNzc0NzIyYjcwOTYwZThhOGM0MzBlYmYwMjgzZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhMGJmOGU5ODkwZWM5OWYzYmFkYjg2ZmU3ZWNjZDc5MTdiMDk2YWM0NTc5NzNiYTdhZjA0YTk1MmE2YTY4NzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkNDdkZDY4MzU4ZmY0NjE3ZTFjNDdhZjY2MTljYThlODA2Y2Q5MGFjOGY1M2M3MjlkNDAzMDMyMTlhMDE0MmIifQ"
+        },
+        {
+          "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt#L11-L23",
+          "version": "repo-lines-v1:sha256:1ecbe41d467dbd5f411eaa752cc7815473487f250dc385badb55437693d037a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2NjczNDNmYjFmZmY5ODg3ZmY3NmNlZjExZDBkYjE5YTlhNDY0MzQ3NzZhOTljNDFkZGI1YzhkOTc1OGZmZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxMGIzNmFhNzRhNTliY2Y0YTg4MTg1ODM3ZjY1OGFmYWYzNjQ2ZWZmMmJiMTZjMzkyOGQwZTkzMzVlOTQ1ZDIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt#L12-L26",
+          "version": "repo-lines-v1:sha256:177a96c33b6b5048747d0c0ee1dd0c776c0524879498bc50bae2f79a1349f79a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjhhNmYxZDEzOTg4MjE0NWE0ZmY0Y2ViYTc5N2M1NWE2NDJmYWFhZmI2YTVhN2ZiOWRmNTZiNGI4NzhmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiYWI1NzRlYTM0ZmNjYWUzZmNiOTZlYWJjY2QzMjcxNzcwN2E3NTc5NTkxNWEyNTdiOTU3MjhmZDYyMjZmZjMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/observer/SmsContentObserver.kt#L13-L60",
+          "version": "repo-lines-v1:sha256:a5013c8b0140e47e60971e090d3685b383f999fe65e7e76631d276d8a9335b9b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMGJlYTgzY2I1YTdlYmQ4MDYzMmYzYTBkYjE0MTIxNDNkYzgwZjllMTcyMDFlNmE2ODNlM2Y4NTg4NjFlM2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzNGYzMjRjNzExNTE2YmE4ZDdkZjU4M2U4MDJlOTRjZjMxNDc0OTlhNWZmNGQ1YTJjYzYyNTgzNTQzMmFiODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhMmJlYTIxMjY1ZWQ4YmVjNWY3Y2I5YTQ4YzA3YzE2ZWRiYWU4ZjcyNmJkNGFkY2FhYTEzNjI4ZTEzZmM1ZjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d529eb13bfea41649aff5bd8325fe581",
+      "statement": "MessageKeyTest, MessageEntityTest, and MessageEntityMappingTest pin message identity at scale and the lossless entity mapping: composite MessageKey(source, providerId) keeps overlapping SMS/MMS provider ids distinct; toSms() negates MMS ids (SMS positive, MMS negative) so distinctBy/Compose keys never collide, with a 100k mixed-identity scale smoke test and a round-trip through the entity key; toSms maps provider id/thread/body/date/type losslessly, inverts read into unread, falls back to the normalized address when raw is blank, and carries status/dateSent for outgoing rows; and the SOURCE_SMS='sms'/SOURCE_MMS='mms' wire constants are stable (changing them is a migration).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageEntityMappingTest.kt#L13-L27",
+          "version": "repo-lines-v1:sha256:488027034ea84998c46c01ce1e3d5771f0d48585dd3dd423de89c25bfad9994d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZjA5ZWIwYzU3NDRmYjk3MzMxYjk4ZmYzZmJmMDVhNjAyYmEzZjdmNjdlNWRhNWJlOTA5NTAzM2Y2MjU4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkZmI2YjUwMzlhYmNkMDZlM2M0NzFmYWEwZWFmNDFiYTViNzI1ZTI0YmIxYTVhNWIzM2U2ODBkZWNlZDQ5YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzOTM4NmUyYzQ5Y2UwMTEzMGNhZWEwMjUyNTgyMGNmYjQ2ZmIzODAzZWYwYjRjMDU5YmJmYWY4MzI2ZmJjMzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageEntityTest.kt#L8-L70",
+          "version": "repo-lines-v1:sha256:d6e26a46a6c46ddcff6cdc9a2f0c4847c58a894877677155c3a6f9ea877d355e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNzA4MTNlZDE1MjNhOGM4NWVhYWE3ZjU3NTVmMTE3MWFlODRiODc1MGZlN2EzNTVjY2M5ZjI4Yzk5MDAyYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NjAyNjIzMzIzNWUzZjVjMjgwNDRlNGE2NjEwZTNjNzY3ZTZiM2JiMjc2OTE4ODcxZjJjYjQ0YWIzMDZmYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageKeyTest.kt#L10-L79",
+          "version": "repo-lines-v1:sha256:dcdb465079b69b04a25decf4d27f74d1dbbf82741c2d52c4715a4de8af06ae31:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2MTk5NmJkYmU2MWY3YmU4ZTRiNTg3NTgyMTYxY2FjODhmODE4YmUxNjk1NWYwN2I3NTg4ZjdmMzlkMGM1OTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1821f7b5f0dc49c3a4f3df3565311a2e",
+      "statement": "ThreadMergeTest, ThreadSnippetTest, and SmsObserverTimingTest pin live-consistency invariants: mergeTail appends unseen newer rows sorted by date, is idempotent under re-delivery, keeps optimistic synthetic-id rows visible, refreshes status when the provider id and date are unchanged, and keeps self-SMS outgoing/incoming copies distinct; ThreadSnippet.reconcile lets a newer outgoing message replace a stale incoming snippet and clear the badge, an incoming message never silently marks the thread read, and an older or equal row never overwrites the row (reconcileAll touches only threads with newer data); and the SMS observer fires the FIRST provider change synchronously on the leading edge with no debounce delay, collapsing a burst into one trailing Handler-scheduled call (the trailing Looper path itself is not exercised on the JVM).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/SmsObserverTimingTest.kt#L7-L37",
+          "version": "repo-lines-v1:sha256:3d677a139379ab80e100e1f7038e20e8bc23641191c58e5b6f59d3414ac8917e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYTE0Y2Y5MTMwMTI0MWYwNDRlMjc0NDVjNWQyMTRjYzY3OTk4ZTA4NTQzODc2YWM1Njk0NjQ3ZWNiYzcyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadMergeTest.kt#L8-L56",
+          "version": "repo-lines-v1:sha256:49803012de3b4b5bf7f91602cb2e740bf5ca570048bc9621e2742f7a7c38646d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmZTA0YzU4YTQ5YTgwOTdiNDA1ZjFkN2EzM2M5OGE0MGUwNjM1NmIwYjQ0MDMyOTA2MGE1NjI1MjMwOGFjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2YjE5M2NiNWE0OGMzOTg5ODczYjBkMWM5OTlhNWRjMWFkNzY3MjQ5MjE2YzlkNzAzMzJhNjI0ZmViZmEyMzQifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ThreadSnippetTest.kt#L10-L73",
+          "version": "repo-lines-v1:sha256:64b6b167b4632c8d28cf2b8a55444ec5fd81c4c40777489e5efae8de33350dbd:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmNDkwYjE2YTdkZTgyZTczNzgyMWEyMjY2MjQxODRkZjIxZTg4NGM0ZWY4YTFjY2ZiZTYzMDMxYzcxYzMxNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_398ef6524ad843b39c95eef7bb4f319b",
+      "statement": "Routing and policy tests pin: ContactRepository.sameConversation (identical numbers match; formatted vs raw digits normalize; national vs international match by suffix; a blank side never matches; different numbers never match; short fragments never suffix-match but full short codes compare exactly); GatewayAccessPolicy.canStart (consent required) and canTransmit (both current consent AND runtime-enabled required); OnboardingPolicy step ordering (disclosure always first, default role precedes permissions, optional permissions skippable, loss of the default role returns to the role step); and the LocalProviderWrites mark-read registry (an entry is claimed exactly once and then consumed, non-positive thread ids are never noted, unclaimed entries expire after WINDOW_MS=2000ms, and the fixed-size ring evicts the oldest when flooded).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/LocalProviderWrites.kt#L22-L60",
+          "version": "repo-lines-v1:sha256:13ee04a38a753b4b9fdfb6a3ab0b4ba19221d17b8788a7401eee2dfd6c4d5b7b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZGVhY2ZjODMwNTBjNWM3NzNkOWYyZmM2NTAwMTZmZWI4NmExYmVlYWI3OGE2NTcyYmU1NmZlODAxZmU2NzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4M2Y5ZGZhYWI1M2FjMDc5NzgzMGNkOWE3NWNlODZjNWFiZmJlMDlhYmI2OTM5ZDI2YzAzMmQ4ZDFlZWI2Y2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhNjJkZWIzNDk4MDQ3ZWE2MzM2MGZlZjM4OTZkNDE4OGI1MDlmOGRiMzVkOGJkNGIwNWYwNTc2ZDU0NmMwZTYifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt#L8-L19",
+          "version": "repo-lines-v1:sha256:87b02a8105a4eda9020b96c5a9d8bcbee46d02095669a1ffddb77d0b6e20ae37:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NGFlMmVlZWQwYWMwZjY3NzVkMTA2MjkzZjNjMTZmZWVhMjNkM2JkYmUxNTNhMWFkY2RmOTM5MDIwNmU0ZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYTE0Y2Y5MTMwMTI0MWYwNDRlMjc0NDVjNWQyMTRjYzY3OTk4ZTA4NTQzODc2YWM1Njk0NjQ3ZWNiYzcyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/LocalProviderWritesTest.kt#L9-L61",
+          "version": "repo-lines-v1:sha256:c3683ea82178114f469b6c5a1f76d6003472cecaed107df8d3410c38e7659a55:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1MDkyNmZhNDU4MjA4MmFmYmUwMWU0YmFlNjIzNzJiNzI4N2EyZjlhNDQyYThkOTkwM2U0OGY3MGY3NjU1YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/OnboardingPolicyTest.kt#L8-L25",
+          "version": "repo-lines-v1:sha256:11889e7ab75a094204a5564f985bc8b4fbe2c7e6a93bf764e6fc2e8bc095aa58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MTc4NmJmZDU2YWNkNjg5MzZiNDkyNDk2NGM1YTIzNTdjMmIzMjk4MTVhYmJkNjVkOTc5YWI0MWY2ZTIwMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmODQ0MWZmMmY2ZDljZTgxYmE5YzMwY2ViZTkxODAxZDczZGYyNWNlMGQ0OTYwMThhZmNiYzI0OTI2NDI0YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/SameConversationRoutingTest.kt#L8-L55",
+          "version": "repo-lines-v1:sha256:6d9df93532b8928a39ebeddcf76758368630bb2d3e191f43df293e73da541a8e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYTE0Y2Y5MTMwMTI0MWYwNDRlMjc0NDVjNWQyMTRjYzY3OTk4ZTA4NTQzODc2YWM1Njk0NjQ3ZWNiYzcyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9426d993cc0e4005bf5d510c4ba36cb8",
+      "statement": "Parser and formatting tests pin user-facing pure logic: IphoneReactionParser (verb-to-emoji mapping for Loved/Liked/Disliked/Laughed at/Emphasized/Questioned, straight and curly quotes, unquoted media nouns, and a full rejection table for ordinary sentences, unknown objects, and unmatched/oversized text); IncomingShareParser (ACTION_SENDTO parsing with %2B and literal-plus decoding, sms_body extra taking precedence over the query, and EXTRA_TEXT fallback); PersianCalendar (Nowruz and month boundaries, Persian month names, time tokens); NavigationRouteEncoding (route args percent-encode space as %20 not '+', a phone '+' prefix survives round-trip, Persian names round-trip, and '&' is escaped as %26 so it cannot split query args); and DiagnosticLog.phoneToken (the token is stable, 10 chars, and never contains the original number).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/DiagnosticLogTest.kt#L10-L19",
+          "version": "repo-lines-v1:sha256:c4e2c522cf7a65db0403991bcfd0a25b338badee14d667a5def12c76889592ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZjA5ZWIwYzU3NDRmYjk3MzMxYjk4ZmYzZmJmMDVhNjAyYmEzZjdmNjdlNWRhNWJlOTA5NTAzM2Y2MjU4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5YTgxMTFhYTgxMTliYWMyMDQyNTcyZjYwZjg1NGE0NDYxN2E4N2JiZjE3Y2YxZjgwY2ZmMjczYjFiNzI2NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/IncomingShareParserTest.kt#L7-L51",
+          "version": "repo-lines-v1:sha256:01a15198705b7c286eb9cc5541c1ecf3ded746200ab291fad6c6a344fd702474:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzOWZlZDAxMDEwZjY5MGZmYTdhMTA5ZGIwMzlhNGVlNWM1YmI5ZWI3MTcyNTYyYmNkNDIzMzRmYTNiOWUyODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmODQ0MWZmMmY2ZDljZTgxYmE5YzMwY2ViZTkxODAxZDczZGYyNWNlMGQ0OTYwMThhZmNiYzI0OTI2NDI0YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/IphoneReactionParserTest.kt#L10-L131",
+          "version": "repo-lines-v1:sha256:6f69bfe68782be9bf503ef0b96c7952fb180397bf9d79e4d179a7786bc7d14b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1NWQxYmEyNTI5OGIxNTBkYzQyMzQ0MzZlOTY1YjZjMDg1NWU5OWE0NGFkN2YxNDU4NWMwMTk2MjcwNTk4ZWE0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1YjIyMGVmOGNkZWNlZTY1NWM2N2Q3YzEyZWExYmM0ZTFjZjcwOTY2OWE3MDE1YzU2NmZiOGZiNDU1N2QwMmU1IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3MmExNGNmOTEzMDEyNDFmMDQ0ZTI3NDQ1YzVkMjE0Y2M2Nzk5OGUwODU0Mzg3NmFjNTY5NDY0N2VjYmM3MjU2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxNTFmY2I0MTExNzk0YWUzMzZkOWE0ZTgyYmIwMjBjOGQzZjA2Mjk3MDIzNmFhODQ5YThhOTEwNmI3NDJhZjQ1In0"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/PersianCalendarTest.kt#L16-L42",
+          "version": "repo-lines-v1:sha256:712e0f52eec656fa8bd1b63db6226da9ce45ae0b1a525b95203c416f6fad8826:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYjNhYTVhNmU2OTRlMDM1ZTU1MjJmMWU3OGMxN2Q5NzE3OGFjOTJhOWNkNmE5ZDgwZjFiZDRjNzg3MTM1ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNGZhYTM4YmVhOThlMmE0ZDVhMmMyNTYzMGY4ZDY0N2VhNzFmMmMyZjA5OTIzNWYwNDc2YWNmN2MxOTM1MjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/navigation/NavigationRouteEncodingTest.kt#L9-L59",
+          "version": "repo-lines-v1:sha256:03243a3da26a7506e33fcd9cc675f39f57b1734e8824f03d84184eacfb391742:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjOTQ0YzU3MmZmNjBmNDI2ODU2OGY0M2Y5MGY4ZjIyYmY5OGQyNGZhNDVjMjQ3ODA1NDlhMzUzOTYyYTJjYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjYTdmMmVjMDZlOWMwNDgzM2E0ZTgwODVkNzZjMWUyOTAwYmRkNWRhZjJjYjAyZjkzZjY3MmY2YjBiYmE5N2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c3726801ded6422eaf92d49d0f4292b2",
+      "statement": "AGENTS.md states the validation convention for this repo: treat source code and tests as authoritative, prefer the narrowest quiet validation that proves the changed behavior, and preserve complete failure output. This drives the add-a-test workflow — isolate the logic in a pure seam (a pure object function or a pluggable interface with a forTesting/resetForTest factory), add a JUnit 4 test under app/src/test mirroring the existing convention of one class per invariant with backticked names asserting exact invariants, and gate changes on ./gradlew testDebugUnitTest (optionally narrowed via --tests).",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L1-L10",
+          "version": "repo-lines-v1:sha256:a319ed9ec4cad54b0f94f84000c54d8088f8865b051f43dee476fcff15e7b5ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmMTgwZjljMTI2OTAzYmNjMzMxYWE5NTQ1NmU0OTQ0NGE3ZDRkMDExZThhMmE4M2Y1ZGM4NzAyMzkxODEyZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiNTM5NTNiZmI3MmMxMjYyYmJhZTJlYWNhNzJjYWJmMWFmNDk5MjdhMGJiYTExNTdiMmQ1YmRiMjg1YzRiZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwODlkZjkzZjhiYTU3YTRkZGJmZDhmMDEzOTYyYzM5NzhjZTRkYjY4MTk5YzRkYTY2NjY0OWIwOTk2Y2VkYTkifQ"
+        },
+        {
+          "resource": "repo://app/build.gradle.kts#L79-L82",
+          "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}

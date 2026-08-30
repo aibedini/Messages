@@ -1,0 +1,484 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:57684c1ace7dbb3bdb01907708a7b0ced369213b12256eaeda1b3824b48ef75c",
+  "claims": [
+    {
+      "id": "claim_93a40df8f3984a529beb9f0e0f746451",
+      "statement": "Every outgoing SMS entry point (chat UI, notification quick-reply, UI scheduled, REST /api/v1/sms/send, EVE /send queue, GMweb pull, REST scheduled) converges on the SmsSender class, whose three public methods send(...), sendWithOutcome(...), and sendForResult(...) differ only by whether the user's send-rate limiter/toast applies and whether the caller learns the modem hand-off outcome.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L178-L211",
+          "version": "repo-lines-v1:sha256:f2e8d34959b4acf47ced0a983888040ce1128cc87899ed5cbb4c91cff990122b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkMTM3MzJjNmQ1MWNkM2FlNTMzZWQ0NTQwZTdiODlmMmE3Mzk4Mjg3MGMxZDgwYzRhNTExMDM3M2M0MGIwMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyZWY3MzA2NGQ4MTU4ZDdkMTZkMDNjNmQ0Yjc3NTZhYmU4ODliNTcxNGUzN2FjNWRmNjAwMmU2YjE0MjYzY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/NotificationActionReceiver.kt#L53-L96",
+          "version": "repo-lines-v1:sha256:621e27fbf220e244ad25bdfe3eda7c07705de1e5325936ff8cfc1a556db9d85e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYzUwY2JmZDRmZWIxNjUyYzU0ZGY4NjJhZjhjYmI1NzE0N2VkMjlkOGRjNzRhZmJlMTlmYzc4YzRmNWEyYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNTYyNGUzMjZkZmVjYzA1YzdiODNkZGIxMmUwMGM0NTY3YzdlM2IzNDMzYmYzZDJhZThjNmNkN2ZiYmMwZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlOGY4MmFjYjE0NWZmMzdhMGM1MmE2NzQxOGVlYzEzMjZjMGNjYTUwMzg5ZDVhYjI3ODNmZjA2ZTI4NWUwNjIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L41-L134",
+          "version": "repo-lines-v1:sha256:c04bb11c6be4cda558174a71d6f25eb8eafb4ace226505fb88d344bae7111215:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjYTU4ODY1MmVjOTE1MTliNDkzMTkzOTA4N2U1ZDcwM2Q1ODg5MmFlYWUxZTdlMDkwZTYwY2FiOTU0OGQ1ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmMTIzNzBiMDk3NTcwYWUyMzNhYTZjYmE2N2EwODVjOTY3MDJjNmUxM2I1Y2QwYzVhOTYyOTk5MWQzNmI5MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMzAyOWRkMmU4N2I3NDc1YTdkNDk2MmUzZDU3NmIxOGQ2ZWRmN2I4NTM5YmQzMmFiZjQyZmQzMDVkODc2NTAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L897-L966",
+          "version": "repo-lines-v1:sha256:ee6356ec6a05c1a9c90e6aaa8e16824e76bafb781a19355ec6f467244376e89f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwMjBlY2MyY2NhYWM2OWFmNDU5NGVkNDg0NDJlODdlMTQ1Yzk5MjRhNzgyZWMwZWUxMzc0NTU0ZTAxOTZmNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0ZmZiMzhmZDRlYTdkY2YxNzcyYTgwYzlkNmE1YzUxMDVjZTcxZjg4ZDA2NTkzNzUzM2RkMjAzMDdkYjRjNGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZTVlMjk2MzdmYjM3MzFjYjAxOGU1MmNkNzFkNDk3NjVkZDU2OGI5NjcyN2Q3YWNkZTY1ZmZmYjBlZTNkN2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_16c2a4a46bc7494584d62236a1dfd21e",
+      "statement": "Only SmsSender.send(...) applies the user's SendRateLimiter and shows a toast; the machine variants sendWithOutcome and sendForResult are silent and unthrottled, so gateway/EVE/GMweb/gateway-scheduled traffic is bounded instead by queue capacity (ANNOUNCEMENT_LIMIT=500) and schedule caps (MAX_PENDING=200) rather than the user's rate-limit setting.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/messaging/MessagingPreferences.kt#L93-L106",
+          "version": "repo-lines-v1:sha256:a801d7147fc927e64afe8066818f8266fac38400ad6a7f76ba723d5f5ca83a88:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmZTQ1ZjAzZWUwNzU2MmY0ZThkNTBlMzJkZDY1ZTNlZDBiNWQ4OTU0ODQ0MDg5NWU4MzJmM2JmOTYyY2I2MjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMDZjODMxNWQzOGZmODE4YTUwYTdkMTM3ZDQ2ZWIzY2QyNmEzNjlhYzNjNDg4YWE2MjRkM2RmMWVmMjUyMzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0OTMxZjI0YjFjMjg2MDRlYjI0M2FkNzA0NjAwMTgxMzBjOTI0NDFmMTQ3MWM4YzI4ZjgxNmU1YjNhMmI1OGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SendRateLimiter.kt#L16-L60",
+          "version": "repo-lines-v1:sha256:012f4b9219bc7e8db74d8259ee5c1ac82f8e281e8935d1da0c4f0cf0816e85f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhYzRhYmRmMWZlNzQ4NDliZDVjZDRjZWE2ZDFlNzZjZDFkOWE1NDU2MTQ3OGI5NDhmNDM0YWEyNTE2ZDE4NjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5MDc3MDRjOGM0ZjM1NWIwMTQ0N2NkOTNlYjc2MDM3OTQ3NTQ0Y2RjYTJjNTNlOTczNGVmMzljYWRiMzUwMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlYjA5MGUwNjdmNWRhYjkxMzJiN2EzYzRkMmMxMDlkODdmZDg5M2JiOGZlM2UyYWE0OWQ5YWEzOTZmNzZmYmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L50-L75",
+          "version": "repo-lines-v1:sha256:2d278ebdd8b9544fc45275205fbe80c4ea26e7076b495d929502e6dd28a003c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3ZTllNzllODFmODg5MWRkYmI2Yzk2ZGU2NGFiMTdhZTE4NTFkN2VkZjU1OWU5YzNlY2NhZTYyMmJmZWJhM2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlM2Q3Mzg0YjFhOTFjMGQ0ZGNjMjJmNjdhNmJmNTU0MWViMmFkN2Q1ZTQ2ZmQ0ZWYzNTUwMWNlY2MzNGFjZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmZTZhOTEyM2NhZWQ5ZWY0ZGVmYmZmNjIwOGFjYThmZDMyYWRmYTIzMDA5OTdmOWE3YjBiNjgzMGYxOTUwNDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_42d475e8ef76447793a24d3372ebd0d0",
+      "statement": "SmsSender.persistToSent inserts the Sent row into Telephony.Sms.Sent BEFORE dispatch with STATUS_PENDING, READ/SEEN=1, and a THREAD_ID resolved from Telephony.Threads.getOrCreateThreadId (so the Home Threads projection and the address-keyed chat screen stay consistent); if the provider insert fails it falls back to a timestamp row id so the send still proceeds.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L298-L344",
+          "version": "repo-lines-v1:sha256:b2c90c9841879f1fbe41bc78e983352679c2a1274804947849ffc602567f91cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMmYyYmNjNGY5OGFhMTVjM2JlNjM2MjgzMzg5M2I2NzliMWQxNWY5ZTBmNGQ2NTJkNDNmNTg1Mzg0OTU0NTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1YWM0OTNhZmUxZTljMDIxNTc3Y2QxYmM5OTQzYmJjOTYxNjUyMTZhMzU2NTc4ZTdmMDg1NGUxNDNlNjFmYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiZTJhYmMzZTJhNDU5OGY5MzhjZWFkYTE5OWFjNWJjMmJjZWQxMTAyYjk0MWU1MmE5ZmU1ZDYzODVkM2NhM2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c119ef31c2e4864b8e71eb7c0ee081b",
+      "statement": "SmsSender.dispatch resolves the effective SmsManager via per-call subscriptionIdOverride else the saved sendSubscriptionId, applying createForSubscriptionId only on API 31+ (pre-12 falls back to the platform default), splits the body with divideMessage, and builds one PendingIntent per part for ACTION_SMS_SENT (always) plus one per part for ACTION_SMS_DELIVERED only when delivery reports are enabled, then calls sendMultipartTextMessage or sendTextMessage and returns the hand-off boolean.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L137-L242",
+          "version": "repo-lines-v1:sha256:ad0a2fbeb73e5973acfd438e8318cac684d11501e3af8a1fb1d25297cd79bfea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyZjlkYzVkODRiYzA4NmE2MWUyZTMxOTE5YWMxMTM4OTBhOTcyMTgxODI2Y2Y1MjFlZjFhMzIyMDYxMzFmZDRkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmNTVkODJhZWJjZjQ3MWI2Mzg2YTc3NjE3NGMzYzJlZTgwNmJjOWQwMzc4MmMxNjMxMmRlOGRjZDNhMDMyZWE3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MWU4NmUxOGEzMDU5ZjcyMTc4YmQxZTIxNzNhNmQ3MGNjNTkwNzcyZmJhNWI4YzA3MmIyN2Y1OThhMjk5ZDk5In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_bc41e63e12bf42a1a9ac2ee7a2f4cf21",
+      "statement": "The effective SMSC in SmsSender.dispatch is resolved in a strict order: per-request smscOverride, then this SIM's manual override, then the global smscAddress, then null (use the SMSC programmed on the (U)SIM, Android's documented default); an address the user never chose must not override the SIM's own SMSC.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L144-L158",
+          "version": "repo-lines-v1:sha256:f2c76a4e33eb0eb855c7d0312852b3828bca59396d76ad7f336df061c2f8bbba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0YmNhMjg2MWNhZTkwMmE2MWNmZmViZmE5ZjVjMGRiYWU1MDA0YzMxOTk4ODNmOGNjZjgzMjFlNmIxMDYyMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0OWMwM2RiYjJmZmNmZDc2NzM2NDJkMzE1Nzg5MzM2MjYwMDQxOWI1OGU2MGNjNWQ5MDk3Y2FhNzM5MmNlMDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNGQyMjMyM2VmOTIyMmE0OTc2NWRmOGY1YTk3MDFlMWM1Y2YwMzQxZWVmMTI4NTU2NzdlNWNmMDEwM2FhMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjNTZmNzQ4ODJhOTlhZTNmZmYzNGVjNjY2MWE5ZDhiZDU3NWQ5NDUzMWY5Nzc0YjNmZWJlNjY3N2Y5MjQ2MmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0f0c90d10fd343f6a5ab8a614bbbf8ff",
+      "statement": "SmsSender.buildStatusPendingIntent builds each status PendingIntent as FLAG_MUTABLE (so SmsManager can fill the delivery 'pdu' and SENT 'errorCode' extras, which FLAG_IMMUTABLE would discard) and deliberately not one-shot (so a temporary TP-Status may later advance to delivered), with a stable requestCode derived from (action, rowId, partIndex) so each part's broadcast is distinct.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L244-L277",
+          "version": "repo-lines-v1:sha256:29e4b9a3dd8dcf649229e9fc82643665cff9803782b7aba874188c7f3a90e79c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5OGY0ZWM1OGRlMGM5M2ZiYmYzNmE1M2RkOWM0NmJkYTJjZTdmOGVkODg5ZGIxYWE5NTg0MWI1YzY1NWQ4ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNmRjMmQ3NjAyNDhhN2QwNzJhYzM3MWJiZTdlMzY4MTliYzQwY2I4ODE4MGYyOGMyYWQ0MzBiYTBiYjYyMDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc96a1c565af4db8b4340604be90d554",
+      "statement": "On a dispatch exception SmsSender.dispatch writes STATUS_FAILED to the row, shows a toast only when showToast is true (interactive paths), and returns false; this synchronous exception path is the only place STATUS_FAILED is written before any modem callback exists.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L200-L222",
+          "version": "repo-lines-v1:sha256:c626b575bf93dc85f82433ca4d2ab91234f19a17f55c309adea6540f382438a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwOGY1ZjUzNGNlN2Y0Y2VjNTZjODA2OTQ3NWVlZmYwOWE5MDYwMTk1MDI5NTU5Yjc0NmVlNTJhYzVjODllMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2Y2MyZDQ4YWY3OTk3ZWQwMWIyOTNmNDE2NTI2MGRkMTY2NDliN2VhMDRhYmM3MWUyZTY0OTQ1NWQyYzYyZWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_64c91c29b01548eea3b85c3caa73e0a1",
+      "statement": "SmsSender.sendWithOutcome returns a sealed SendOutcome — Accepted(rowId) on a successful hand-off or Rejected(rowId, reason) on refusal — and its contract states explicitly that Accepted means 'handed to telephony', not 'delivered', because SENT/DELIVERED arrive later via the status receiver.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L77-L117",
+          "version": "repo-lines-v1:sha256:812dff441ad4bd438d9d83e0dc711d42f981f09616a62e1c916132732a3482d5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2ZTcxMTIzYzVhOWY2MTU3ZjFjMzFjN2FmZGZhOGNjNjA0YTQxZDA0YTVmZTA3YzU3MTk0YjdkNjk0YzI1NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZDJjY2YwNzcwMTZkYzk2YTUwZTBhZDIwOTFlNzNlZmI2YWRjYTQ4YTRhZGE1NWYyNGY5N2NhMWQ1ODhkNmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1d62e4bd6b154c11b749de0da588386e",
+      "statement": "SmsSender.sendForResult returns the persisted row id on a successful hand-off to telephony and null when dispatch failed; this null-returning shape is what lets EveSmsQueue's sender lambda (wired in GatewayServer.start as sendForResult(to,text) != null) remain a plain Boolean.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L96-L120",
+          "version": "repo-lines-v1:sha256:813ec2f37578d2638e8b379739752f917f7f5af8a695326b0cd2626195935fe0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMDFjMGY3NjI1YTQyYjMyNDcxNWU1MWI3MmZhNDY3Y2I1ZjAxZDFkYzU3MjgwNDVkODIyYjc5ZTZkOWY1YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyYjhlNTgxZWY0ZTA5NDZlMzlhMDdkOWVjODVjNGZiZGQyZGYyNjQ5OGZjMjk4ZDk5OGQxZWVkNjNkMWViMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDg3MTBiMmRlZDlhYjRjNmY5YjliNWQ3NzM1YjAwMzhjNDllNTA4MjUyYmQ3NGY5NWUzOTMzOGFkMjY1YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxOGZmYjE4NWZlMzgzN2Y5YWY1MTgxZmQwYjU4YTQzZTUyMzBkYTBjODAwYmI2ZTI4ZWFjNmQ1MzE4YTVhMzcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L119-L134",
+          "version": "repo-lines-v1:sha256:6f06f63350bba7f8bcbde21788ab54712d0dafc41456d9b794999dd904a32799:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2M5ZTkzMGE5Y2NjNDNhZDAyNjgyMjQ1ZTAyMzZjZTZkNjA0N2Q4ZmZmMmNmNTE5ZjdiNThhZTRkYmUxMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMzAyOWRkMmU4N2I3NDc1YTdkNDk2MmUzZDU3NmIxOGQ2ZWRmN2I4NTM5YmQzMmFiZjQyZmQzMDVkODc2NTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_88c33fa841e74fd98c9e9ceb3d1aa519",
+      "statement": "ConversationViewModel.sendMessage performs an optimistic UI write (a temporary Sms row with synthetic id=now and STATUS_PENDING added to messages, optimisticMessages, and ThreadMessageCache) before any telephony work, then branches on Dispatchers.IO: multiple recipients with groupMessagingEnabled on -> one group MMS via MmsSender.sendGroupText; group toggle off -> one SmsSender.send per recipient; single recipient -> SmsSender.send, with the optional in-chat SIM-switcher subscriptionOverride (selectedSubId) and the UI always passing null for the SMSC override.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L555-L559",
+          "version": "repo-lines-v1:sha256:77be8fee5ff4e288cd59f6c8aa7a9441cc264dc4eb6372e0dabd56c9f13051c8:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU5NDdlOGIyNjZiMzdmM2VlZDBjMjk1MThlNjEzNTcyMzViNDgyOGRhZjI5ODBhYjdkMTMwZGUzZDMwYmQxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQwZTM1MDBhNmQ0Yjg5ZTcyODhjMTM3NmE2YjIyYjIxZmQ1MmE2ODY5ODkwNDk5ZjUyOTczMmZkM2ZjNjcwYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGU3MGI1MjMzMGRlNjdkYjU4ZDM4ZjA3YmFjNmFhOGViNmFjZTRhYTAwN2ZkNmY0OTIwYWE5OGYxODY4YTZjMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjNlYjNiMzc5OTdjYjBmOGRiYzgxOTk2MDNmNzBiOTQyODdlMDNlNmExMzMyZmY5NDg3M2RmMjYzMDMxZWZlZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L897-L966",
+          "version": "repo-lines-v1:sha256:ee6356ec6a05c1a9c90e6aaa8e16824e76bafb781a19355ec6f467244376e89f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwMjBlY2MyY2NhYWM2OWFmNDU5NGVkNDg0NDJlODdlMTQ1Yzk5MjRhNzgyZWMwZWUxMzc0NTU0ZTAxOTZmNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0ZmZiMzhmZDRlYTdkY2YxNzcyYTgwYzlkNmE1YzUxMDVjZTcxZjg4ZDA2NTkzNzUzM2RkMjAzMDdkYjRjNGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZTVlMjk2MzdmYjM3MzFjYjAxOGU1MmNkNzFkNDk3NjVkZDU2OGI5NjcyN2Q3YWNkZTY1ZmZmYjBlZTNkN2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a6af667a6e2486c8948ec675b3565c3",
+      "statement": "NotificationActionReceiver handles ACTION_REPLY by reading the RemoteInput text and calling SmsSender.send(phone, replyText) under goAsync() on Dispatchers.IO (so the rate limiter's Thread.sleep cannot ANR the broadcast), relying on SmsSender to persist the row and emit its own OutgoingSent event rather than emitting a duplicate.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/NotificationActionReceiver.kt#L53-L96",
+          "version": "repo-lines-v1:sha256:621e27fbf220e244ad25bdfe3eda7c07705de1e5325936ff8cfc1a556db9d85e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYzUwY2JmZDRmZWIxNjUyYzU0ZGY4NjJhZjhjYmI1NzE0N2VkMjlkOGRjNzRhZmJlMTlmYzc4YzRmNWEyYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNTYyNGUzMjZkZmVjYzA1YzdiODNkZGIxMmUwMGM0NTY3YzdlM2IzNDMzYmYzZDJhZThjNmNkN2ZiYmMwZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlOGY4MmFjYjE0NWZmMzdhMGM1MmE2NzQxOGVlYzEzMjZjMGNjYTUwMzg5ZDVhYjI3ODNmZjA2ZTI4NWUwNjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_62044f42a6f14da482e15a52a70d59aa",
+      "statement": "Long-pressing the chat send button opens ScheduleSendDialog; confirming calls ScheduledSms.schedule, which enqueues a WorkManager OneTimeWorkRequest with unique name scheduled_sms_<triggerAt>, ExistingWorkPolicy.REPLACE, and tag scheduled_sms (delayed until triggerAt), and emits an optimistic bubble directly into the event bus (SmsEventBus.emitSms with type=2, status=32 pending, date=triggerAtMillis) while clearing the draft.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt#L39-L76",
+          "version": "repo-lines-v1:sha256:ce85b36bfbea71d544e75e8acdd24a685cc46b597349c16420585245673f6bf4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMGMxYjllNzRmYjAwYTU4ZGFhYjQ2MDE2ZDZkMGRiYjY2NDU4YWU3YWUzMWVkZDIzZjdkODYxMDEwN2U0YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyZTY2Y2EzM2I2NDE2MDRkMWZmZTQ4NDZkMTJiOGNkYzU5ODU2YTliYmFlZmM4MDU0YTc4MDliYWNjNTI3YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzMDk5NWMzYTY4Yjc3ZjVhNDE2NGM0YWEzYTY2MTBkZGM4Yzk4ODU4MDM0NmJmM2NkZTM1ZmE2MDQ2MDNkZTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L1088-L1112",
+          "version": "repo-lines-v1:sha256:e710b569ccc187322ca6061974e20bcd3f72e45161d21b64df57eb72ec288aef:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNTk4MDNiMDM1MjA3N2RhYjUwN2E1YTFlMzljNTU4NGViZWYwN2QzY2YyYTRhMTFiY2FkNTgyNTdjZjk3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkYjMzOWMxN2Q0Y2M1NGU3MGM0ZmNmZWNiNjExYmI5ZTdkMzYzZjI1YjE4ZTA5MjNhMWQzMDZjYzk1OTI0ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2Y2Q0ZmU5OGY5ZDM1NTRkMGY5ZGMxOTFjNGM4M2MzNzM5YjFlM2I2Yzc2YzVhOTg4MDM5MDhjYTY3NmQ4NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MThkNWZlMWM2MjZlZDEzY2YyMDU3YzQ0NWU2NTg1ZTdjNTM0NThmYjZjZDVjNjMxZDIzMGNjMDNmYTEzZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_424bb3d303b349bea05e8d5108a93225",
+      "statement": "ScheduledSms.SendWorker, when the delay elapses, sends through the normal SmsSender.send(phone, body) so SIM/SMSC preferences, delivery reports, and the rate limiter all apply, then calls SmsEventBus.notifyResume(); on an exception it returns Result.retry() while runAttemptCount < 3 then Result.failure(), and cancellation is by exact trigger time via ScheduledSms.cancel.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt#L84-L103",
+          "version": "repo-lines-v1:sha256:39700651c5c7525feff0663b52a3a81fbf1416341faec7f98199c0cdcdc7793f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkMTM3MzJjNmQ1MWNkM2FlNTMzZWQ0NTQwZTdiODlmMmE3Mzk4Mjg3MGMxZDgwYzRhNTExMDM3M2M0MGIwMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyYjIyY2JkZTFhZmQ0OTAxYTBkMTVmODU5ZTU4ZmExNTcyYzQ5NzU1ODFmZmY2ZGFiOTZmMzUxZTk1MTVmYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5df1fe727c754caeb128b49897909942",
+      "statement": "GatewayServer authenticates every request except GET /health by constant-time comparison of the gateway API key (X-API-Key or Authorization: Bearer) with per-client-IP lockout: 8 failures within a 10-minute window trigger a 5-minute lockout (429), otherwise a bad key is 401.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L228-L258",
+          "version": "repo-lines-v1:sha256:18c2e8b9fa39294ecc2b8f305a54c60c27fd06394a0c7ec3f8bbf1607eb3ecbd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZGFjMjIxNTMxNTA0NmM3NDUzYmU4NzQxNGMwZTNjZDMwY2JmZjVlNzE5NTJhMTFiZTdlYmUwM2NkNWExNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NTczZWFkNTkxNThhYjUzZGE5MzQ3YmFiNWFiM2ZlMjkwYjc3OWI1ZTY1NDA4ZGU4OTFjM2NkMThmZThlZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyMDY5OTI3NzFhZmFkOGMwNDE3ZGY2NGMxNzZmY2U1YTJlNmJjYmQzNzdiNjFhZWU1MmJiYzgxNjIwN2U5NmYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L762-L796",
+          "version": "repo-lines-v1:sha256:843b5cb393c7422d6b66c0ae9c7dc8d5b87eb1e0968d255a904b5a5ac54dbea6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ODk5NDM3NWQxNGVmYWMyMmQ4ZGYxMDc5MmU3YjBmNDBiNDlkODFlMWQ2MjgwODgzNzU1NjE1NTVlMjIxOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxYmE1ZmZiMDBkYTc4YzUxNmIwYjMzZjYwNDgwYjAzZGM4YmQ5YjZlYzM5MTQxOThjNWE1YzIzNTY5OTI4YzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxZWUxOWFlMDllOGQ5NmI3YTdlZGZlYjRhN2ViOWU0MzMyYTc1MmFmMTMwOWZmMzZmODRlN2E2NDgwYmIzZWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cada0a24352d43d2b044751878a2610b",
+      "statement": "POST /api/v1/sms/send digit-normalizes the phone, validates smsc against ^\\+?[0-9]{5,20}$ and subscription_id >= -1 (400 otherwise), then calls smsSender.sendWithOutcome; Accepted maps to 202 {status:accepted, id} and Rejected maps to 503 {status:failed, error}, making this the 503-vs-200 machine-outcome decision point so a modem refusal can no longer be reported as a lying 200 success.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L320-L372",
+          "version": "repo-lines-v1:sha256:4d7c2b63d1af5c6f29df987c4387ac939b540f61ece5b48226bd9aced033d2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzg1YWIyOGIyYjNjMmViZTZkNTI4MjdkM2FjNmQ3ZmE5MGE0ZDg3ZjQ4ZjgzNmY1ZWQ5NDAyYTdkYWVjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZjQ4MDJlY2Y3NmMxMDNhYjYyZmVjMjEzOTkzM2Q1OTZmYzE0ODlhOWRlN2NlZmViMzY0ZTlhZjFmYWUxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1YTc1MjZhNDU1Mjc1Mzk5ZGZiMmI0MWVkMjEwZTNmOTM2ZjFmYTk3YTcxYWE0MGIwNGU2OTJlYWJkMWVmZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8c4c8a0f2de4ce2a33b48f92095dd36",
+      "statement": "EVE POST /send first applies a capacity guard (if EveSmsQueue.totalPending() >= ANNOUNCEMENT_LIMIT=500 it answers 429 rate_limited with Retry-After:30 before parsing), then enqueues into EveSmsQueue: a repeat Idempotency-Key returns the original record with created=false and HTTP 200, a new request is 202 with requestId, jobId, statusUrl, and queuePosition; the send itself is asynchronous, drained later by the queue worker through sendForResult.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L233-L261",
+          "version": "repo-lines-v1:sha256:d054cc853ebf7ad8ec7b8f54b93d822e9abcbf4b2de0c0adceb21d791ab143b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwY2M1NTQ5YWZhMTc0NzM2YzNkOWUyNjY2MGFhNjM1ZjQyZTg0OTUxMWFkODc3M2U4MjIwYzJjN2I5ODNiNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNjI1ZDViZmVlYmY3NmYyYjU1ZTNlN2ZmYmQ0MTM1ZTdkNWVmOTUxMjdjMmY0NjY1ZDM0NWM0NGMzYjQyNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MDk2YjA5NTgxMzI0ZmNlZGU0YWExZDhjODNhMGVmYTc2Yzg2YjRkZTVmMTFkYTgyNGYxNTExY2ZiZGNkYTUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L523-L576",
+          "version": "repo-lines-v1:sha256:97bf7636a4958848e5ad705378e5aec12468f05302a455170a657cd3edb0739a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZjZhNTZlNzMzYTQ3ZDg4OWU5ODI0MWRmNmY0MjQ0ZGFjMzhhODM1NGI2ZWVlZWI2M2QwZjNkZTQ5NzdjZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1NjNhZjk5Y2RlZmYwOWU5NmI5MzMwMDQwMjg5MDU2YmY2YjVmZDZjZmE1MjBkMWI1YzAwOTQxZDgzOTkyOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIwMTkzMGRjOTFhZWZjYWI0MzYyMTQwZTY0NWNkNGNhNDk4OWVjZjVhY2VmYTk5YTQ0ZGFkYmJmMWIyNzI5YTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a85b8f4b3df4c74ae719ee506e58d72",
+      "statement": "EveSmsQueue is a persistent priority send-queue with PRIORITY_LEVELS critical=1, expired=3, expiring=6, announcement=10 (FIFO within a level), a single worker thread (eve-sender, 400 ms idle sleep), and status flow QUEUED->ACTIVE->SENT|FAILED (QUEUED->CANCELLED); it persists the last 300 records plus an idempotency map (capped at 500 keys) in SharedPreferences (eve_queue_prefs) across reboots, re-queues a record left ACTIVE on boot, and marks SENT records verificationStatus=confirmed and FAILED records manual_review_required.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L184-L220",
+          "version": "repo-lines-v1:sha256:de21a109a9536f19406175364d03aec875cf92208420885968e361789e201d0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhZDM5ZmY2MGJiMjhmYTQyZjY3YWUwNWQ4NWQ5NzhkODNkMjE0NzNjMWE2YzU0NzhlMDc5MzFiMWViYjEwNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkZDdiYjVkNGUyMGIzMzhkOTA0MDEyOTVmZjg0N2VkMmRmYzlkZGY5Yzc5Zjg4OWVlMmU2ZmViNTcyODRlYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OGFkZjkwZTE0ZjM0NWZhMDFhMDQ3NWU3YzU1MjE4ZTU2YzJhMGQ3OTZlMjUzNDQyZWQ2ODcxZGUxMTg5MDAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L24-L61",
+          "version": "repo-lines-v1:sha256:891a722b00a596e807328ade0236428b89d1863a09a0cac5b75538b92f9b755f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlYjM5ZjQ1ODEzMTNjZDAwYTAwOTMyMzg0YTU0ZDAxZmM3ZjhlNWEzMTZhYzJjMDJjMzVhZGI1YWYzNTc5OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1YzZkNWUwYTc4ZDA2ODVmNDkyZDcyNWNhYTQ1MDFiNDJiZjM4YTIxMjBiYzYxZTNjMWE0YjE3OGE1OGRmZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmMWU3MjYyMDg2NTU3MGYzYTYwMDQyYTg3NmRlYWQ4Y2QyMjkyY2RjZGU0OTk0Mjc5NjdkMzI0ODBmMDA0NDgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L298-L326",
+          "version": "repo-lines-v1:sha256:01e5870b59dd1b9ebafcdeebecd8cab82ef1968424d09cb50c44ef85c3c76113:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNDhkMjMyMDRjNTllZjQwMzExYWZmOGFiMmJiMTc0MDZiMjhlY2VhYWJjMDY2NjczZGE5MDcwNGUwNjlhOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxNDVkNjRiZmFkNmJiNDNkMzQwYTFiY2E5NmUzODY2ZDI1MGQ1OTc3NDhiZGVjYmM4ZmJmZjcyMzIzZmU5M2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4MTUyMTRhMGQ2NDBiZDRjOWJlYTM1NjZhMjc4NDI2ZTU4YjM0NTVkODBhMWMwMjJlYWM3ODQ1MmIxOTcyOWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d169767c85c54cd0babe95e7a4f38a3a",
+      "statement": "The GMweb pull bridge (OutboxPoller) delivers pulled tasks through the same local EveSmsQueue used by POST /send (enqueue, then drive to a terminal status via drainUntilTerminal) and acks the server's ledger with the radio-level result, so a cloud-originated send gets identical persistence, ordering, and failure semantics as a LAN one.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L141-L188",
+          "version": "repo-lines-v1:sha256:69efaaa4f888874abec99a45129373aa6a7e233ec9034edc24c945b3fa03c62b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlMjQyOTFlNDFiMGQwMDNjZDI0ZmFmYTIwOGYzYmEzOTg0MDZmZDdhZDc0M2ZmNTM4MGQ0OTAzM2U4ZDZlNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2OGJlZWRlM2Q3OTE5ZmFlYjkxMDc2NjYzNjA4Y2JmYmM4NjZiZTE2Nzg2YjFkYzljNjg5ZWNiYTJlMGYwYTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3aa7eb14cee54dfeb83d7a25e88d982d",
+      "statement": "There are two independent send-later systems that both survive reboot because the delivery job lives in WorkManager's persistent store: ScheduledSms (UI) keeps no registry of its own (WorkManager's SQLite store is the registry), whereas GatewayScheduler (REST) additionally keeps a SharedPreferences index (gateway_schedule_prefs, the 100 most recent entries) so REST clients can poll each schedule's fate and idempotent replay works.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L14-L51",
+          "version": "repo-lines-v1:sha256:43d33735caf686bf89180fb2b86f5e19437924f169a2a4df2804e886e1472b42:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkOTBlMWQ2NTVhYTQ1NzI2NmQ1NWIyYmQ0MWRhNDk1MWE3YzYzZTU1ZmViOTU4ZjFkNzViZTczZjNhYzk2NjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3Mjc5Njc0MTg4NWFlNGRlMmNkMjRkYjFlM2MwM2M5ZDA0ZDVhNDJiOGRkNDdiYjE0ODEzNzJhNmJjZjA5ZWMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L52-L114",
+          "version": "repo-lines-v1:sha256:7824f46666b53cc3659221ce426d073c0fcf60ee249e9cff35ed35db92edfd96:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MTE3YmI3MDNkNTZhOTU3MjdiNmRkNmRiMGIyOTRkNDBlOGUwNWM4YTAwNmMyZjE5MGM0YmEyZWYxZGExZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTIzODMxYWQyZjVmNDUyOWM2YWNhM2ZlYzY0M2M1NGMwNGQ0N2U0MDU0Mjk1YjY3NjBhMzMzYTRkNTZlMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNWQ0YTdhNjBiMGQ1YmNiM2Q1ZTM5ZWM4YTc2Y2QwYTM4MjNhOTA0N2FkMDI0ZDFmMTljZjBjMzUxYmM3NTQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt#L18-L32",
+          "version": "repo-lines-v1:sha256:b3b68f8566168a89d61b76b71a40a789d252753c2cad9ece3f42da843dfc6545:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwYWM3MjgzYWUyMGU0MzhlOGVhNGE3NmJiNDM4OGQ3MTdiYmUxZWE3MzkwN2NkZTMyYjhjYTIzZGM1NWNkODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMDg2ZGM3NWFlOWNhYTQzZGQ3MjM1YmQ0MGVlODZhZWM0ZGZiM2NkOWE0OTdlZjljZDRmNGU4ZTA5MDU4MTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmOWM4Yjg0YTBhYmNkNGFkZDgyZjYzMDgwYTYzYzg0YzM3NTA4NzVjNTAzMjYwMTgxZmJjZDJkNDM5NjgzNDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0cd0503e645c41b5a093ad6b8f430f84",
+      "statement": "GatewayScheduler.schedule is idempotent on the exact (phone, message, sendAt) triple while an entry is still 'scheduled' (returns the existing entry), throws when pending entries reach MAX_PENDING=200 (surfaced as 429 too_many_pending), and its SendWorker re-checks the entry's status before sending (a cancelled entry becomes a no-op success), sends via SmsSender.sendForResult (silent, no rate limit), retries while runAttemptCount < 3, then marks the entry failed with failedReason=dispatch_failed.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt#L118-L211",
+          "version": "repo-lines-v1:sha256:978abf8d320a0d385638ec94825db50c14e6bc253684194beb152e2476b70798:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhNWQ0YTdhNjBiMGQ1YmNiM2Q1ZTM5ZWM4YTc2Y2QwYTM4MjNhOTA0N2FkMDI0ZDFmMTljZjBjMzUxYmM3NTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8f1138e6edc45659c0ad35b7e62af64",
+      "statement": "SmsStatusReceiver is declared in the manifest with exported=false and no intent filter, reached only by the explicit PendingIntents SmsSender built, so SENT/DELIVERED results arrive after the initiating screen or app process is gone; in onReceive it goAsync()s, captures resultCode before leaving the broadcast thread, runs processStatusIntent on a companion Dispatchers.IO coroutine, and finishes the pending result in a finally so the provider and ledger writes complete.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L144-L148",
+          "version": "repo-lines-v1:sha256:8ab185b94054f2424d6b30bc64bae1fd0f2b0ade5225d4cb018323d43625626c:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI3ZjkyYjYwZGUyYjQ5NzVlOTZhNTc1ZmQ5ZjFlNzUxZWQ0ZDhiNGVjOTJjMmRlNzg1ZjE5MDlkODY0ZTUyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQ1MWVhMjRkZDY3NTk5OTA4NTdhOWRkOGYwZDMzYmU1NGE2ODFmMWVkMjFmODk1OTVmODE1NGZkOWY4YTIzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmQ4NGZlY2IxMDBiZDM0OTM3NjExZGZmMjM4YmYzZDBjNTcwMzU4ZDMwNTkxZThkYTgwZWE4Mjk4OWE2ODA3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU4NGM1M2JlMjJlZDA2MDZiZTc1YzExZjYxOTdkYjAxYjFmNDAzMTc4NWRkYzdkZjZmNTZhMTIwMjk5YTQwYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L37-L49",
+          "version": "repo-lines-v1:sha256:5edbbc27ff6b1cbcf4da3c9be35d70ebee2de7bd58206e44f997a807efea8cb3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYjJhZmIwMmU2YzNiOTVhNjgwYTQzYzIxOWZiMDlhNDkzODg2NzRkZjVhN2JlOTgyMzUyMDdiNjFhNmRlODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzNjBhNTliZGQ4MmVkNTEwZjQzZjZjMzliMGE4MGZlOTUxMzY1ZjQ2MWQ2MTY1YWU2NTUzZTNhZmY0YmIyY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNDZjYzBmMzJlMDYyN2QxNjQ3NTE2NzdmODI0YmU2ZTEwODI2YzBkMTZmOWUwNzg2MDAwZDM5ZGM1NDRmYzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9f9293964c1a4e2aa82ff34db8889ad0",
+      "statement": "Vendor non-OK SENT result codes are never written to the shared provider as STATUS_FAILED (affected RIL combinations return non-OK codes after the SMSC has accepted and delivered); a SENT callback, OK or not, only records progress into the row's sentDone set, and a non-OK DELIVERED callback is only a reporting gap that leaves the message Sent — delivery is established only from positive evidence and never downgraded by a missing or failed report.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L135-L196",
+          "version": "repo-lines-v1:sha256:af76b89577ebd1f139dd447da9c19341236ce838b029e567ce00c8f26d7597e4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNGMwMGE5M2I1ZjBiNmMzNDJmMzVkYjk2Zjg2MmMyMjdlZjVjZjM3M2RjZmE0NjFiZDY0NTc3YjY1ZTcyOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhOWY4NmQyOGU3ODRmOWZkMzFmYjcyZDE1ZjYwY2JjZWFhZmRkNjY5Y2JkNWI2ZGE3ODg4YTAyMzMyMWViYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxOWEyNmMzYmZhMjRhZmI5MGYzZTRiYjNjYWI3ZDVhMjg3MTZlYzA1YTFhYTMxNTcyM2M5NTVkYzRmNzcwYjUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L60-L99",
+          "version": "repo-lines-v1:sha256:4991c71f3b515cf25b1f463dd06a9d037b6542dc4b76c8a680c3cac646026896:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxMDQ2Nzg2MDNmMGNjMWM2MmEwNjM4MzBlMTEyMGNjZjBhYzZiN2UxZDIxMDUzNjFmNDJjODU4M2I3MDljYzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0ZjZiOTcyMTM1YzA5NTRjNDEyYmEwZGQ5NTkwNWQ2YmExMTVhMTBlN2JiMGNhMDc5YjI3NzlhNGRlZWJjZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYzgyMWZkYmYwYjA2ZmU2ZDc4NzYzNWEwMDIzZmMxNTg2YzczN2U5MTA0N2U2MzdjZGVhMzVkZjFlMWE4MjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f7686c735e974040be7f0caca96203d2",
+      "statement": "SmsStatusReceiver.parseDeliveryEvidence reads the raw SMS-STATUS-REPORT PDU from the delivery intent and parses it trying the declared format, then FORMAT_3GPP, then FORMAT_3GPP2, falling back to the callback-success only when a vendor omits or mangles the PDU; SmsStatusPolicy.classify3gppTpStatus maps TP-Status 0x00..0x1f->DELIVERED, 0x20..0x3f->TEMPORARY, 0x40..0x7f->FAILED, else UNKNOWN, and classify3gpp2Status maps only 2<<16->DELIVERED, else UNKNOWN.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusPolicy.kt#L35-L45",
+          "version": "repo-lines-v1:sha256:bd533f323099fb2cdd95b2d2060cdc77f858b5c559d70b10893beeea54347b55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjYzZhMDMyOWQ5Nzg1ODA0YWNhZDZiZTRlN2VjMjM2YjI2MWY1NmUwMDQyNzY0MmUwNjBiOWQ5OGMwZDdmNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYmIyMzU0MzEwZmEyMDgwMDQ1YzlhZmUxNjVjNDFhMzY0YTA5OGUwMzhmZGYwNzliMTMzNjRiOWE3OTI4YmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3MTMyZDAyNjM3MzY5MTExZGVmNThmODdlZmYwNTEwNDU2ODdlNjc3NTI4MGY3ZWIwY2EzZGVlYzBiZDQyMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOGE1ZGRhY2JlYjk2ZjE4NGY3ZjE4YWNhNjE3YmEzN2FmZGNhZmQyNmNkMmRiOTZhNGE5MTdhMmU0YzI1M2YifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L227-L257",
+          "version": "repo-lines-v1:sha256:32be605760541c235b37fb0f740ec1b528e5c8104a99fe48ec16c425e642add4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiYzVlMzJjYzBkYTIyYWQzNTE3ZjVmN2JjZjNkZDgyMjFhMDkzOTg4MGIzYzYzYjNiYjIxMDE2YTY1YTNiNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwOTllOWY0ODY0MGFjNDlhYzE3MmVkYzkzNjFjN2Y2NzRkMjRlY2FkYTQzNDRhN2VmYzUwMDc0MGMyMDVhNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkZWU1ODFjODBjMjhiM2YwZjcxZGE4MmY2MmM3MzJhOTg1ZjkxNWM4YTY4Y2FhZTk1M2JhNWJlNWM2NjBjOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e283cb7f216641309c64b50b2d53095b",
+      "statement": "Per-part delivery evidence is stored in versioned SharedPreferences sets (sms_status_callbacks, v2617_<rowId>_... keys) and is monotonic: a DELIVERED verdict is strongest and can never be downgraded by a duplicate/stale report, TEMPORARY may later advance to FAILED or DELIVERED, and UNKNOWN leaves prior evidence untouched; the whole update is guarded by a process-wide lock.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L139-L196",
+          "version": "repo-lines-v1:sha256:7006534d9e082dff1397d7ef9c48f9420d66e9856ac893017e6b9f44a2e1ffd6:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzMDdiNDYxNjkxZGJhYzA4ODE3YTE3ZmRiY2UyNDU2MzY2MjZmYzNiM2RjMGE5NzA4ZGFhNWY3NGUxZjk4ZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ZWEzNGY1Njc4MTI3NzY0NmYwM2Y4MmYzZGQ2ZTY2ZTdmMDVmNGUwODQwMTcwNzM3ZjU2OTQ1YjA4Zjk5YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxOWEyNmMzYmZhMjRhZmI5MGYzZTRiYjNjYWI3ZDVhMjg3MTZlYzA1YTFhYTMxNTcyM2M5NTVkYzRmNzcwYjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_78b706944b4e445f8ca7a62207af3da2",
+      "statement": "SmsStatusPolicy.nextStatus decides the row status from the per-part counts: all parts delivered -> STATUS_COMPLETE (receiver also stamps DATE_SENT); any permanently-failed part -> STATUS_FAILED (one failed multipart part fails the whole logical message); any temporary report -> STATUS_PENDING; some but not all delivered -> STATUS_NONE (the single-tick sent floor); still collecting SENT callbacks -> STATUS_PENDING; otherwise -> STATUS_NONE.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusPolicy.kt#L52-L76",
+          "version": "repo-lines-v1:sha256:6e4f5a48c68d9b50bc303adbc9757d9b9f42b1a3ec012adda573f429ae722813:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhMzMxMTA1NjgwZWRjNDhhZTMzNWFlNGI5OGMwYWRlYzFmNDgwOGM4YjJiYjE4MGRmNGVhODY2M2ZiODUzZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljYjEzNzc3OTJhYjhhMDdlN2U3NWJjZTFmYmFjMmFhNTY4ZmU2Nzk0NzIwMTdkODk1ODI1ODJiMTU3NmMyNTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwNGY4OWZjMGVjOThjOTgyNDE4M2U3OTVkM2VkZDE5ZTkzMGY3YmM0NzFmOTAxMmFhM2Q1MDNiZTJmODk3NGIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L199-L208",
+          "version": "repo-lines-v1:sha256:24d1f26efd10ac9514c197148682ceb7677c5de5691d4b4896c74d6460d80d70:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0ZDVmN2U0MDI1OGE0MjhlNmU4MTZiZThkMjE3OGJmMDU1ZTA0OTY4NWRhMjNlNGY1NDEzMmJiZTUzZjQ5OWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmOGNmNmU2MjBjMDg2ZDAzMTIyYzIxNThkMTY2ODZkMmIzYzBkZGE3YjY1ZDdkMjc4YjVkNWFlOGE2MDMxMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4NzFmZTVkMTlhMWM5ODRlMTRhMzBkMzAzY2M1YmM4MzJmODQ3OWUxYzgwYmZlNjY0MzkxN2YzNWU4YjI4NTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f947eb2c36e411cb031d74c3d8ec339",
+      "statement": "After writing STATUS to the provider, SmsStatusReceiver emits MessageMutation.RefreshStatus through TelephonySyncCoordinator, which performs a targeted O(1) re-read + upsert of that one message into the Room shadow without touching the conversation projection, replacing the earlier full-provider-scan path.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L192-L201",
+          "version": "repo-lines-v1:sha256:b5e34d64c70f5572ea74edc83649b68671825e252be3d80c00918a33a1e564c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ZTg0YzM0N2QwYWE2OGZmMjc5MzhiNDZiYTNjNGU4NmI1OWVlMTMyY2QxYWFkOWYxNDhmMDM4YWRkNTYwY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiODM2NDg5ZThiNDllZWNjM2U4YzRiNTkyMDg1YTQ1MDk4Y2I1MjMxNGIyZjQ2YzFmYjNkOWYyZGExNDg4YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyYjAzNjcyOGM3YjgwNjYxYWIwMzVjNmIxYTQyNjhjNmZhZjk0ZGE1YmMwNWYwMzIwYmI2YzE1Yjc0MGYxM2IifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L202-L208",
+          "version": "repo-lines-v1:sha256:abc18320980474911c0f61c05b10437f77d7defa65f35cd3e3a118b493a0df80:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDRiYjhiZDQ1NmQ1OGYwOTdjZWNlNTZjNWY1NTUyNTYzNDkxOGFkNzNhNGI1YWViOWUwZjg2MWQ1YmU2NjZlMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjRiMmIzMDkzODhlMGQ3NjA0ZTFiMDZlODE4MDVjMDJmMjZhNzUwMTM2ZTJkMzc3ZjAxMDNkZDhkOGQ2NmI4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzg3MWZlNWQxOWExYzk4NGUxNGEzMGQzMDNjYzViYzgzMmY4NDc5ZTFjODBiZmU2NjQzOTE3ZjM1ZThiMjg1OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_25f177ba1d7c4971a33dfae015567ae0",
+      "statement": "On every SENT callback (delivered callbacks do not write the ledger) SmsStatusReceiver records one SendSegmentEntity row per carrier-billable segment in the send_segments table via SendSegmentDao.record, capturing rowId, partIndex, partCount, sentAt, the subscriptionId that carried the part, and the success verdict.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L29-L54",
+          "version": "repo-lines-v1:sha256:0f53e16559d2c70b476385860f838f5c0a59980a6f658b24a3786d1843da075a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZGI1NzgwZmM3NzNiZDZkNzAyZDhlZTA0OTBmYzkzN2Y5ZGMxNDUyOWM0M2Q1Y2ZjMmE1YmMxMzQ3YjQyZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlOGQ1ZTFmMzgwZjljNzJkZjNmMGUxZGJlYjQyMWYzZjNlNDI2MDc0NzM4ZTM2MGU0OTBlYjNhZTRmNmY4NWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwNGMxN2NiOTQxZDA2YTVlMDFjYmIyZDc0OTI2ZTUxNTg0NWNlZDUzMzM4YmViNThlMjA0NGJlYzZiMWRhMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MTVlYWE2NjM4MTQ3MzUzZjNkZjdmOWIxMTFkOTI2NzdhOTA0M2ZhYzgyZTIwNWNiYjE0YTViNmY2MTJmMmYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L100-L133",
+          "version": "repo-lines-v1:sha256:551c5f1693cb0dad39f464bc7154d4700c55f5edac8e95146490e42c70d12c3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZjAwZGE3YTUyODk1Y2RlZWNhOThlNTk4M2QwNTgxNjc2NjAzNzM4YjU2ZTY3MTgzYTk0MTY4YTU0NzM3ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiY2IyOGEwNGY2MDA1YTBjNDMyNzA1Mzg4ZjRlYjJkYjkwOTY3MzQ3YTI2NWY4YmY5YTA4ZDA4OTg5MTQ2ODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlMDZhZGVmMTdlYWVkNzY0MWIxMDFkNzM2MjEzMWJiMDVhYTllNTJlN2RhYmRjZGVmYWU0MjNiNWQwOTU2NWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c6fa04b81934a0aa1e7ae0ac46828f8",
+      "statement": "The send_segments success verdict follows the AMBIGUOUS_ACCEPTED policy rather than raw RESULT_OK: success = ok || resultCode == RESULT_ERROR_GENERIC_FAILURE, because on the affected RIL combinations the radio returns GENERIC_FAILURE for submits the SMSC actually accepted; explicit radio-level failures (NO_SERVICE, RADIO_OFF, NULL_PDU) are not billable and stay success=false.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L11-L28",
+          "version": "repo-lines-v1:sha256:80936a2af830787a7b87e77e3c48581e968d5120c19cfa34ef2e97bb47c126fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjU0NGE1ODg2MzQzNTBjMTkxNjlhODI0M2I1MzFiZjMwOTVlYjU3YzhmYjAzZTQ0ODM2OTQzZjA4MTY4ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3ZGRmZjUxZTBmNGFiYzExN2ExNTdiZmVkNGRjYWZjM2Q5ODQ3NzE1MTQzNDdlZmY4NWY3MmQ0ZTczZjg5ZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4MWYzODRjYWIwYjYxYjViMjQ5MTFlNTU5OGJhMGFiMmMwYjM2OGUxMjViNjdjM2VjYjZlYmYzNjYxNDk5YjEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L100-L133",
+          "version": "repo-lines-v1:sha256:551c5f1693cb0dad39f464bc7154d4700c55f5edac8e95146490e42c70d12c3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZjAwZGE3YTUyODk1Y2RlZWNhOThlNTk4M2QwNTgxNjc2NjAzNzM4YjU2ZTY3MTgzYTk0MTY4YTU0NzM3ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiY2IyOGEwNGY2MDA1YTBjNDMyNzA1Mzg4ZjRlYjJkYjkwOTY3MzQ3YTI2NWY4YmY5YTA4ZDA4OTg5MTQ2ODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlMDZhZGVmMTdlYWVkNzY0MWIxMDFkNzM2MjEzMWJiMDVhYTllNTJlN2RhYmRjZGVmYWU0MjNiNWQwOTU2NWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad4610af800a4e8aba1ab4e298e8e2ac",
+      "statement": "The Home 'N SMS today' counter counts ledger ROWS, not logical messages (a 3-part send contributes 3, matching what the carrier bills), fed by SendSegmentDao.observeSuccessSince over a local-midnight window that HomeViewModel re-opens at midnight to drive the SentTodayChip, with successBySubscription providing the per-SIM breakdown.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L56-L69",
+          "version": "repo-lines-v1:sha256:454002a4ff68397143841108a9edbc75f1637566fca5008f7462fc4767502ab8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNzA3MzdlZmZiZTg5MDJhZWM3ZDhkNWM3ZjE3OWM2NWNlNzY5NjcxNmRiNGNhMzljNDk5NzY5ZWRjNzk0Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OWM0ODU3ZGFlOThiMDI4ZTg2Yzk4ZGQzMzk3OTBkMmM4ODkyYWM2NmIyOTNhMWVlYzMxN2Y3MTdiOWFkZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNmZhNmZlZTc0OWY1NTQzNjU4Y2Q2NmM1YjIyMTAyMjNmZjljMWU2M2UxNDY0NDhiNDNjZWNlOTUyNWZlM2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMmIzNTdlYjIzMzcxMmQ5YmNiMzMwMmE3NWYzN2IyMDVhZjExMDQzNWM3OGUyMzQxOWRkMDI3OTUxYTI0MzgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/HomeScreen.kt#L183-L190",
+          "version": "repo-lines-v1:sha256:9ef753025d9bcd2b893cff03b6db08232fdbcc482af673254f4d84fcf4ba9de9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDNlOGM1Yjk0NjJmMzM5M2FkYjE2ZDQ0NmRmMjQzZTBkNmM4MzViM2Y2MzhiYmM2NjZlZThlNDhhZmNiZDQ4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJmNTA4YTVhN2UzNDNiM2ZhNmNhN2NmZDhhNDZhMTcwZmE0MTcyZjU4Y2IzOGUyMmE1M2FjZDBiMzA0Y2I4NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODBjMTBmNDc3MTgxYzIzMjUxZGZjZmM3NDk2NDljMDg3ZGRiMTA3MmJiZTA2NjllYzViYTVmN2YxMmNkNTM2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGRkZDkwMGQyZjI2OTc2YjI2YTE3YmIyODE3YTFjMTg5NWU1NjJjZDZmOTAyNmI0ZTBmMzhmYzBjYmVhNGY3OSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L157-L179",
+          "version": "repo-lines-v1:sha256:a6ffde697192e554c28d2cd94e180a993da0ab99c59d85bbf513f79ff27b03e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhODI3NGY1YjYxMzQ5Y2NkNmYwMTRhYzQxY2VmMWFjZTM5MDExMmMxOGMxZWJkOTVlOTdlZWYwMGQxMWYyYjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZmNlZTNkMmZkZGU4NzBiYTc5YjMzZDllMTZmODZlMjI1ZjY1ZDczMTgzNDhiYTc4MmIxOWQ0MmNkNzU4MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzNmE2YzAxYTc1ZDI3MTk5ZjE2YThiMGU0MGU2MjBkMDdhOGEwZjAyOWM5MjIxOWNlMjY1ZjNhMzBhOTA0YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e777b3ad383b409fa091e4e2cbad82fd",
+      "statement": "The send_segments ledger is idempotent for redelivered callbacks because its composite primary key (rowId, partIndex) with OnConflictStrategy.REPLACE inserts over the existing row, so the today count never moves twice for the same part.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L29-L54",
+          "version": "repo-lines-v1:sha256:0f53e16559d2c70b476385860f838f5c0a59980a6f658b24a3786d1843da075a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZGI1NzgwZmM3NzNiZDZkNzAyZDhlZTA0OTBmYzkzN2Y5ZGMxNDUyOWM0M2Q1Y2ZjMmE1YmMxMzQ3YjQyZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlOGQ1ZTFmMzgwZjljNzJkZjNmMGUxZGJlYjQyMWYzZjNlNDI2MDc0NzM4ZTM2MGU0OTBlYjNhZTRmNmY4NWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwNGMxN2NiOTQxZDA2YTVlMDFjYmIyZDc0OTI2ZTUxNTg0NWNlZDUzMzM4YmViNThlMjA0NGJlYzZiMWRhMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MTVlYWE2NjM4MTQ3MzUzZjNkZjdmOWIxMTFkOTI2NzdhOTA0M2ZhYzgyZTIwNWNiYjE0YTViNmY2MTJmMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_37d959fe26364c1abcbcd175aaaa4a5f",
+      "statement": "The send_segments ledger is deliberately kept out of the sync mirror (app-owned telemetry no Telephony table stores), failed success=false rows are retained for post-mortems but never counted, the table is bounded by pruneBefore with a 90-day horizon piggybacked on the periodic full-sync reconcile, and a ledger write failure is caught and logged so it never breaks status processing.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L24-L27",
+          "version": "repo-lines-v1:sha256:ee97055c8fe63f63a63fe4e163c03a63fcf96115a6fe7a43097eff79a56cd473:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ5MTE0ZjA3YjRmYTJkZTMyZGY1YjI2MDliYTZkNjdlNjE4ZGJkY2U2NzFkNjliOGYwMTk3MGRkM2Y5OTQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTEzODJhZDJkMDE5YTIwZGQ2MmVjMTQyY2Y3OTBlMjFiOTg3OTQ4NTc4MTU2MjNlNGE4NWMyYjdiYzZkZDcyMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjJlODcyODg2ZWU3ZWZlNmZkZGFlYWI0MmEyMzY0NWRmZTY2ZDkzYTA2MTIxNDNjY2RmMWE1Mjg0YTYwOWQyOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDIyNDg4MTAwOGRlYWVhYTRhMjk0ZTY5ZjJlZGU2MDkzM2M0MDc3OWRlZTljYTY5Y2VjOWRiY2Q5YzlkOTYyYSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L222-L229",
+          "version": "repo-lines-v1:sha256:bdbe5e9e2400d1e77e746dbb54f26a530f0a50526b81b5e4d77b9436b928a201:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjAxNGQ5YmE1NzBhNDFlOTg0NGY3ZTEwYjU0MGE4ZTlmMDdiODBjNGJlOWNiNjI1ZjU5ZDZhN2I0NzAwYjVlNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU0OTY5MjMzNTEzMWU2N2E5YmY3ZWE4ZDczNjFlMmJmZWVjYTRjMjgxNDEwZTU2OGI4YjY1MjM0MTg0OTJjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDVlZWUzZmQzZjkwN2Y3M2FhYzkyMzU4MmU4YmJiMzE2Y2Q4YTViYjAwZDUyZTI4ODhkZDRjYTM1ZGUzMmJjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzEyOWJjMjkwMWIwMTE5MzUwYTZhN2Y1Y2Q5OWE4YTNkMTg0MDg2YzY4OWFkM2M4MWNlM2JiZWYyYmU3ZTA2YyJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L124-L132",
+          "version": "repo-lines-v1:sha256:a8d2968cbfdbc0a68db098e48b670cb272f38e4f13de5c73d97d8fc98796de5a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzUzNTI4ZDE1MzA4MWE5MGRjNDExNDhlYmE1NDdlODM1M2VhMDUzMWQxNGJkNjBhY2U0NjY1NjUwNjY5YTliOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUyMmM0MmNkMTljNmQwM2Q4MDhjNDUyNzIwNTUyODI1YjdlYTFjNWI0OTFiMjE4NTExY2FjNzQxNWNmOWQ5YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzQzMGQzMjY4Zjc1YjY0Y2IxNDE4MjYzZWNlNTU1NzJlMGM4NWRjZTZhZmVmNmYyNTM1OGNkMzM0ZjVjZjQ4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWQ3NjZmNjQ1NGEyZjY0MTFlMGMxMDlkMmJmYzc4ZWRkYTk3MGIxNWUwNGU1YmVlODc4NjM4NTQ3ZWVmYjcyOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c3bf71520eb64e2ba1d3c1cafd2bc533",
+      "statement": "A send's effect on the UI is two-channel: instant via SmsEventBus OutgoingSent (HomeViewModel lifts the thread to the top with the new snippet and an open ConversationViewModel appends the row via appendLiveMessage, so a send produced outside the screen still appears live) and durable via the provider-to-Room mirror where the status receiver's RefreshStatus mutation moves a row from PENDING to sent/delivered/failed in the Room shadow without a full rescan.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L192-L201",
+          "version": "repo-lines-v1:sha256:b5e34d64c70f5572ea74edc83649b68671825e252be3d80c00918a33a1e564c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ZTg0YzM0N2QwYWE2OGZmMjc5MzhiNDZiYTNjNGU4NmI1OWVlMTMyY2QxYWFkOWYxNDhmMDM4YWRkNTYwY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiODM2NDg5ZThiNDllZWNjM2U4YzRiNTkyMDg1YTQ1MDk4Y2I1MjMxNGIyZjQ2YzFmYjNkOWYyZGExNDg4YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyYjAzNjcyOGM3YjgwNjYxYWIwMzVjNmIxYTQyNjhjNmZhZjk0ZGE1YmMwNWYwMzIwYmI2YzE1Yjc0MGYxM2IifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/event/SmsEventBus.kt#L42-L81",
+          "version": "repo-lines-v1:sha256:b667ac503c8a80cd56fc62c9f38b71deee30749883ea35130b915df119948f3b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlOWFmNWU4MGM0MzE3NWY4NGQ1OGU0ZTJlZTBmMTVhMGI5NTY3YmE0YmE0MWM0NGFlYzgzYmQ5NDRmNjVhYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0MzA4ZDA2NDAzMmMzOTI5OTgyZDJkOWU3Mzc1MjFiZGY2ZjI2NDYxZWVhMGJlN2I4M2YxZTA3MTJiNzU2MmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L861-L876",
+          "version": "repo-lines-v1:sha256:fcd4647cf42b8b39100cced9202d9aea7412881ef094ba9832b5fa6f07201d5a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMTk4Y2I0NjJmMDg0YzcxMTI3ZWQ5NzE0ZjMxZjEwNzU1YzU1YWIwMGQ3MTM0ZTQ2NmM3NDllOWRjMDZlMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhZjRiMDJjMmZkNmFjNzdhYjFiOGVmZGY0ZjI0MTQ2NzA3Y2VhOTIzODA3M2VjMmVmMTVmYzFmOGI2ZjViYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlYTZmMTg5YWMwOGUwNjBiZDNlMDkyYjM5MGMwYTllZmY5ZDU5MDM1YjRiN2RhZDg2ZGRlZGYxYmMxMGY0NDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_441fbb3845dd46dca83205b9ec47c4c3",
+      "statement": "Failure and durability semantics: a dispatch failure marks STATUS_FAILED and surfaces as Rejected/null (503 at REST, FAILED in the queue) plus a toast for interactive paths; a non-OK modem callback never becomes FAILED (the row stays on the sent floor); after reboot WorkManager re-fires both scheduling paths and BootGatewayReceiver re-arms the gateway (re-checking consent); and a process death mid-EVE-send re-queues a record left ACTIVE back to QUEUED so it is retried rather than lost.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L187-L202",
+          "version": "repo-lines-v1:sha256:d65b798a99fcd4d864ce20ddf695f3b0b01732130e94082c3b27610bf21940d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMDUyNDdkNDA3MWNhZGI0MGM5NTNhMzkxZmU5ZmUyZDY3NTY1MTRmNjgwNWVhZTJmMDYwOTE0MjhmZjkwNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2MjM2ZGQ2NWRkZjJiZDY3NjViNjRkNWNlZDQ4ZDQ5Y2Y2YmZkMzMzYjk3MjUyMTkyNzM4ZTk2MTdlY2MxYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0OWE2ODMxMjM4ZDRmNzcxZTMxODBjYWNiMzUwYzU2NzkzMjY5YjgwNTQ1YWM4MDhjNzcyYmYyZDE1NzJlZWMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt#L19-L29",
+          "version": "repo-lines-v1:sha256:26ef485ef5e20bcb370562f0a13baeae43c4cfc5f82199568a7d537358300611:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNWY1MjEyZTEwNzkyMjE0OTczOGIyODNmZWFiMjg1ZGFkYzlkYzc2M2M1NzJhMGM3NzQxNjk1M2YxZjdkOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjNDJhMmE4Y2FjYjQzMmE5YjI0OGY5MjU1NmJhMzRjOWFjY2UwZjVhZWM0MDllMzViNGIzYmRmYzViMjg2NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyOWE2N2MwODQ2NmY5NWMyZTA1NGNmOWU2NTNmNDA5NjM5ZjIyYzJjNTE5ZjJhNDljMGNlNjQ2ZmRiNzVhMzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L200-L222",
+          "version": "repo-lines-v1:sha256:c626b575bf93dc85f82433ca4d2ab91234f19a17f55c309adea6540f382438a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwOGY1ZjUzNGNlN2Y0Y2VjNTZjODA2OTQ3NWVlZmYwOWE5MDYwMTk1MDI5NTU5Yjc0NmVlNTJhYzVjODllMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2Y2MyZDQ4YWY3OTk3ZWQwMWIyOTNmNDE2NTI2MGRkMTY2NDliN2VhMDRhYmM3MWUyZTY0OTQ1NWQyYzYyZWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb49edef8e924b0aa56aa6fc9096f55c",
+      "statement": "MessagingPreferences drives the funnel with conservative defaults: deliveryReportsEnabled default ON (off means no DELIVERED PendingIntents so the row can never leave the sent floor), sendSubscriptionId default UNSET (system default SIM), smscAddress and per-SIM manual SMSC honoring strict user-intent, and the rate-limit trio rateLimitEnabled (default OFF), rateLimitCount (default 10), rateLimitWindowMin (default 1); SendRateLimiter is in-memory per-app-lifetime because operators count short bursts, not historical totals.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/messaging/MessagingPreferences.kt#L60-L106",
+          "version": "repo-lines-v1:sha256:5f3222a6bce906c55a6e3bfb43fbddba4ec4836a25ffa6d03f2c5083963d9222:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYmE4ZWFhZWZmZDc2MzA1Yzg4M2Q1MzcwOTcyNWIyMGM0OTdlZDgwMDc1ODBiYWMxNWNjZjIyOWM5YzQxMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMDZjODMxNWQzOGZmODE4YTUwYTdkMTM3ZDQ2ZWIzY2QyNmEzNjlhYzNjNDg4YWE2MjRkM2RmMWVmMjUyMzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3Y2Y2OThjM2VlNDM3YTY2MzdhODc0MzRhODZiYzFkZWJjMDNlNjM3MmE2YjJiNzllYmY3ZmE5ZGE2YTEyM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SendRateLimiter.kt#L6-L27",
+          "version": "repo-lines-v1:sha256:2e192c06958bc4721d572b09f6df0566ef11d3e4ac2302ffe5130513149d10a7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljNWRlNjVlN2MxMDc4MTRmMDNlY2RhMjFjM2JhMDNmMmJjMzRhYTU0NmIwMGZhZDNkODljYTc4MzQ3YjYzMzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhM2IyMzY1ZDA0ZDZlYzBiMDBhMDdiMjM2OWU1ZDNmMjc5OWYyYTYxODk4ZDAzYjJmZDIzMzI3ZDkyYjdhYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YTdmMjI1MGM5OGJiMGViZTIyNjhkM2EzYzc3N2E5ZjMzOTBkNzg3YWZhNGQzNDhiZjNlYmM2YTU3MmM1N2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4d43ce9eff514b0fae97e5c89af4a9ac",
+      "statement": "The status semantics are pinned by pure JVM tests: SmsStatusPolicyTest asserts the 3GPP completed/temporary/permanent TP-Status ranges, that unknown values never invent a verdict, the documented 3GPP2 received status, and the aggregation rules (all sent callbacks -> sent floor, partial sent parts stay pending, all delivered -> STATUS_COMPLETE, one permanently-failed multipart part fails the whole message, temporary report -> PENDING, full delivery outranks older failure evidence); EveSmsQueueTest covers idempotency, priority ordering, the QUEUED->ACTIVE->SENT/FAILED transitions, cancel semantics, unknown-id handling, and capacity counts.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt#L29-L167",
+          "version": "repo-lines-v1:sha256:737387ed812fee9f3e4d0310a88a0a79dac94f0dbd1953930fb641d20d29b0ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Y2YwOWViMGM1NzQ0ZmI5NzMzMWI5OGZmM2ZiZjA1YTYwMmJhM2Y3ZjY3ZTVkYTViZTkwOTUwMzNmNjI1ODI1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNzIwZGJmZGM2NmU3ODE0YzhjYTk1ZDc2NTY4Nzk4YTQxZjViMjM2MTQ5MWVmMmU4NmM5NzQzMDEwZDc4Yzc3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt#L8-L88",
+          "version": "repo-lines-v1:sha256:5ac610a0710d730bdeee2f441ae028546df88ef973ec1d113eefae093a34d1c0:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MDEwZjU4ZTYzYzgxNjgzZjYyYTdhYTg1OWY5MTllOTQ5NDQxNjgwYjQ4NDllODhkNDk3YjJlZDk1NjEwNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMzU2ZWM3MzI3ZDhhMWRlYWUwMzMzYzQ0OTgxYjI3N2M1NmY4NmQ1ZDExZTZkYzM4OWE3MGJmZTJmNDRhODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-08-30T16:24:36.837Z"
+  }
+}
