@@ -1,165 +1,76 @@
 package com.autonomousone.messages.sms
 
+import android.provider.Telephony
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * v2.6.13: delivery-report semantics for multipart SMS.
- *
- * Field report: a multi-part Persian (UCS-2) message sent on a network with
- * delivery reports enabled came back with the red FAILED mark even though the
- * recipient received it. Root cause: one part's DELIVERED broadcast returned
- * an error and the failure "poisoned" the whole message — a SENT-failure and
- * a DELIVERY-failure were conflated into the same sticky STATUS_FAILED.
- *
- * The contract (Google Messages behaviour):
- *  - SENT part failed        → FAILED. The message never left the modem.
- *  - all SENT parts OK       → floor = SENT. Delivery can only UPGRADE.
- *  - DELIVERED part failed   → stays SENT (carrier-level report gap; the
- *                              message was already accepted AND sent).
- *  - all DELIVERED parts OK  → Delivered.
+ * v2.6.14 semantics: SENT failure is provisional (radios lie about UCS-2
+ * submits); ANY successful DELIVERED report refutes it; delivery failures
+ * never downgrade a fully-sent message.
  */
 class SmsStatusPolicyTest {
 
-    private fun status(
-        sentOk: Boolean,
-        delivered: Boolean,
-        deliveredOk: Boolean,
-        sentFailSticky: Boolean = false,
-        dlvFailSticky: Boolean = false,
-        sentPartsDone: Int = 1,
-        partCount: Int = 1
-    ): Int = SmsStatusPolicy.nextStatus(
-        phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT,
-        partOk = if (delivered) deliveredOk else sentOk,
-        sentFailSticky = sentFailSticky,
-        dlvFailSticky = dlvFailSticky,
-        sentPartsDone = sentPartsDone,
-        dlvPartsDone = if (delivered) 1 else 0,
-        partCount = partCount
+    private fun s(
+        phase: SmsStatusPolicy.Phase,
+        ok: Boolean,
+        sentFail: Boolean = false,
+        sentDone: Int = 1,
+        dlvDone: Int = 0,
+        parts: Int = 1
+    ) = SmsStatusPolicy.nextStatus(
+        phase = phase,
+        partOk = ok,
+        sentFailSticky = sentFail,
+        dlvFailSticky = false,
+        sentPartsDone = sentDone,
+        dlvPartsDone = dlvDone,
+        partCount = parts
     )
 
-    @Test
-    fun `sent part failed is FAILED`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_FAILED,
-            status(sentOk = false, delivered = false, deliveredOk = false)
-        )
+    private val SENT = SmsStatusPolicy.Phase.SENT
+    private val DLV = SmsStatusPolicy.Phase.DELIVERED
+
+    @Test fun sentPartFailedIsFailed() {
+        assertEquals(Telephony.Sms.STATUS_FAILED, s(SENT, ok = false))
     }
 
-    @Test
-    fun `sent sticky failure wins over later delivery success`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_FAILED,
-            status(sentOk = true, delivered = true, deliveredOk = true, sentFailSticky = true)
-        )
+    @Test fun sentFailStickyKeepsFailedWithoutDeliveryEvidence() {
+        assertEquals(Telephony.Sms.STATUS_FAILED, s(SENT, ok = true, sentFail = true, sentDone = 1))
     }
 
-    @Test
-    fun `all sent parts ok is SENT`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_NONE,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.SENT,
-                partOk = true,
-                sentFailSticky = false,
-                dlvFailSticky = false,
-                sentPartsDone = 3,
-                dlvPartsDone = 0,
-                partCount = 3
-            )
-        )
+    @Test fun allSentPartsOkIsSent() {
+        assertEquals(Telephony.Sms.STATUS_NONE, s(SENT, ok = true, sentDone = 3, parts = 3))
     }
 
-    @Test
-    fun `partial sent parts stay PENDING`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_PENDING,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.SENT,
-                partOk = true,
-                sentFailSticky = false,
-                dlvFailSticky = false,
-                sentPartsDone = 2,
-                dlvPartsDone = 0,
-                partCount = 3
-            )
-        )
+    @Test fun partialSentPartsStayPending() {
+        assertEquals(Telephony.Sms.STATUS_PENDING, s(SENT, ok = true, sentDone = 2, parts = 3))
     }
 
-    @Test
-    fun `delivered part failure does NOT fail a fully-sent message`() {
-        // THE regression: 3-part Persian SMS, SENT 3/3 OK, one DELIVERED report
-        // errored. Message reached the recipient; the mark must stay SENT.
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_NONE,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.DELIVERED,
-                partOk = false,
-                sentFailSticky = false,
-                dlvFailSticky = false,
-                sentPartsDone = 3,
-                dlvPartsDone = 1,
-                partCount = 3
-            )
-        )
+    @Test fun deliveredPartFailureDoesNotFailSentMessage() {
+        assertEquals(Telephony.Sms.STATUS_NONE, s(DLV, ok = false, sentDone = 3, dlvDone = 1, parts = 3))
     }
 
-    @Test
-    fun `all delivered parts ok is Delivered`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_COMPLETE,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.DELIVERED,
-                partOk = true,
-                sentFailSticky = false,
-                dlvFailSticky = false,
-                sentPartsDone = 3,
-                dlvPartsDone = 3,
-                partCount = 3
-            )
-        )
+    @Test fun allDeliveredPartsOkIsDelivered() {
+        assertEquals(Telephony.Sms.STATUS_COMPLETE, s(DLV, ok = true, sentDone = 3, dlvDone = 3, parts = 3))
     }
 
-    @Test
-    fun `partial delivered parts stay SENT until complete`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_NONE,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.DELIVERED,
-                partOk = true,
-                sentFailSticky = false,
-                dlvFailSticky = false,
-                sentPartsDone = 3,
-                dlvPartsDone = 1,
-                partCount = 3
-            )
-        )
+    @Test fun partialDeliveredStaySent() {
+        assertEquals(Telephony.Sms.STATUS_NONE, s(DLV, ok = true, sentDone = 3, dlvDone = 1, parts = 3))
     }
 
-    @Test
-    fun `single part delivered ok is Delivered`() {
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_COMPLETE,
-            status(sentOk = true, delivered = true, deliveredOk = true)
-        )
+    @Test fun deliveredSuccessREFUTESEarlierSentFailure() {
+        // THE v2.6.13 bug: radio lied about GENERIC_FAILURE, delivery proves
+        // the message reached the handset → FAILED must lift to Delivered.
+        assertEquals(Telephony.Sms.STATUS_COMPLETE, s(DLV, ok = true, sentFail = true, sentDone = 1, dlvDone = 1, parts = 1))
     }
 
-    @Test
-    fun `dlv failure sticky still cannot fail a sent message`() {
-        // Even after a delivery failure was observed for one part, a later
-        // delivered part must not flip the message to FAILED.
-        assertEquals(
-            android.provider.Telephony.Sms.STATUS_NONE,
-            SmsStatusPolicy.nextStatus(
-                phase = SmsStatusPolicy.Phase.DELIVERED,
-                partOk = true,
-                sentFailSticky = false,
-                dlvFailSticky = true,
-                sentPartsDone = 3,
-                dlvPartsDone = 2,
-                partCount = 3
-            )
-        )
+    @Test fun singleDeliveredOnMultipartLiftsFailedToSend() {
+        // One part delivered refutes FAILED; rest still pending reports → SENT.
+        assertEquals(Telephony.Sms.STATUS_NONE, s(DLV, ok = true, sentFail = true, sentDone = 3, dlvDone = 1, parts = 3))
+    }
+
+    @Test fun deliveredAfterFailedSinglePartStaysCompleteWhenAllOk() {
+        assertEquals(Telephony.Sms.STATUS_COMPLETE, s(DLV, ok = true, sentFail = true, sentDone = 2, dlvDone = 2, parts = 2))
     }
 }

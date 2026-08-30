@@ -12,7 +12,6 @@ import android.widget.Toast
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
-import com.autonomousone.messages.messaging.SmscDirectory
 
 /**
  * Sends SMS honouring the user's Messaging preferences:
@@ -144,13 +143,17 @@ class SmsSender(
     ): Boolean {
         val manager = resolveSmsManager(subscriptionIdOverride)
 
-        // Effective SMSC: per-request override → user preference → per-SIM
-        // carrier directory (v2.6.13: known Iranian SMSCs, seeded per-SIM on
-        // first send) → network default.
+        // v2.6.14 — Effective SMSC, strictly user intent:
+        //   per-request override → this SIM's manual override → global manual
+        //   override → null (= "use the SMSC saved on the SIM", Android's
+        //   documented default). v2.6.13's hidden carrier-directory seeding is
+        //   GONE: an address the user never chose must not override what the
+        //   (U)SIM itself carries — a mismatch with the SIM's real SMSC can
+        //   itself cause radio-side GENERIC_FAILURE.
         val effectiveSubId = subscriptionIdOverride ?: prefs.sendSubscriptionId
         val scAddress = smscOverride?.trim()?.takeIf { it.isNotBlank() }
+            ?: prefs.smscForSim(effectiveSubId)
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
-            ?: seedPerSimSmsc(effectiveSubId)
         val wantReports = prefs.deliveryReportsEnabled
 
         try {
@@ -203,35 +206,6 @@ class SmsSender(
             }
             return false
         }
-    }
-
-    /**
-     * v2.6.13: resolve + persist the per-SIM SMSC for [subscriptionId] from
-     * the carrier directory. Returns the address on first use (and saves it
-     * under the per-SIM key), or null when the carrier is unknown. The user's
-     * manual global preference always wins over this seeding.
-     */
-    private fun seedPerSimSmsc(subscriptionId: Int?): String? {
-        if (subscriptionId == null || subscriptionId == MessagingPreferences.SUBSCRIPTION_UNSET) {
-            return null
-        }
-        val prefsKey = "smsc_sim_$subscriptionId"
-        val saved = prefs.rawPrefs().getString(prefsKey, null)
-        if (!saved.isNullOrBlank()) return saved
-
-        val sim = SimManager(context).getActiveSims()
-            .firstOrNull { it.subscriptionId == subscriptionId }
-            ?: return null
-        val address = SmscDirectory.forCarrier(sim.carrierName)
-            ?: SmscDirectory.forCarrier(sim.displayName)
-            ?: return null
-
-        prefs.rawPrefs().edit().putString(prefsKey, address).apply()
-        Log.i(
-            TAG,
-            "SMSC seeded for subId=$subscriptionId carrier=${sim.carrierName} -> $address"
-        )
-        return address
     }
 
     /**

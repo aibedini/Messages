@@ -99,12 +99,13 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
         val nextStatus = synchronized(LOCK) {
-            // v2.6.13: SENT-failure vs DELIVERED-failure are different events.
-            // A delivery-report error on one part of a multipart message is a
-            // carrier reporting gap — the submit was already accepted and
-            // sent — and must never downgrade the row to FAILED (the field
-            // bug: red ! on delivered Persian SMS). Only a SENT-phase failure
-            // is authoritative and sticky.
+            // v2.6.14: SENT failure is PROVISIONAL, delivery is evidence.
+            // IR-MCI/UCS-2 radio returns GENERIC_FAILURE on messages the SMSC
+            // actually accepted; a successful DELIVERED report for ANY part
+            // refutes that (the network reached the handset) and lifts the row
+            // out of FAILED. A delivery-report error on one part of a
+            // multipart message is a carrier reporting gap and never
+            // downgrades a fully-sent message (the v2.6.13 fix, kept).
             val sentFailKey = "${rowId}_sent_failed"
             val dlvFailKey = "${rowId}_dlv_failed"
             val sentDoneKey = "${rowId}_sent_parts"

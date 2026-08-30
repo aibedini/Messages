@@ -22,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,10 @@ fun MessagingSettingsScreen(navController: NavController) {
     LaunchedEffect(hasPhonePermission) {
         if (hasPhonePermission) viewModel.refreshSims()
     }
+    // v2.6.14: once the SIM list is known, read each SIM's programmed SMSC.
+    LaunchedEffect(viewModel.sims.size) {
+        if (viewModel.sims.isNotEmpty()) viewModel.refreshSimSmsc()
+    }
 
     Scaffold(
         topBar = {
@@ -112,11 +117,98 @@ fun MessagingSettingsScreen(navController: NavController) {
             }
 
             SettingsCard(title = "SMSC") {
+                Text(
+                    "Each SIM stores its own service-centre address on the card. " +
+                        "By default messages go out through the address programmed on the SIM " +
+                        "that sends them. Only change this if you have to.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (!hasPhonePermission) {
+                    Text(
+                        "Grant phone permission on the SIM card above to read each SIM's SMSC.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (viewModel.sims.isEmpty()) {
+                    Text(
+                        "No active SIM detected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    viewModel.sims.forEach { sim ->
+                        val subId = sim.subscriptionId
+                        val manual = viewModel.smscManual[subId]
+                        val read = viewModel.simSmscRead[subId]
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Column {
+                            Text(
+                                viewModel.labelFor(sim),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                when {
+                                    manual != null -> "Manual override: $manual"
+                                    read != null -> "On SIM card: $read"
+                                    else -> "Reading… / not available on this device"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            if (viewModel.smscEditingSubId == subId) {
+                                var temp by remember(subId) { mutableStateOf(manual ?: read ?: "") }
+                                OutlinedTextField(
+                                    value = temp,
+                                    onValueChange = { temp = it },
+                                    placeholder = { Text("+98…") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                TextButton(onClick = { viewModel.saveSmscForSim(subId, temp) }) {
+                                    Text("Save")
+                                }
+                            } else {
+                                TextButton(
+                                    onClick = { viewModel.editSmscForSim(subId) }
+                                ) {
+                                    Text(if (manual == null) "Set manual override" else "Edit override")
+                                }
+                                if (manual != null) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    TextButton(
+                                        onClick = { viewModel.clearSmscForSim(subId) }
+                                    ) { Text("Use SIM default") }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Global override (applies to every SIM without its own)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(
                     value = tempSmsc,
                     onValueChange = { tempSmsc = it },
                     label = { Text("Service center address") },
-                    placeholder = { Text("+98… (empty = network default)") },
+                    placeholder = { Text("+98… (empty = SIM's own address)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -125,7 +217,7 @@ fun MessagingSettingsScreen(navController: NavController) {
                     TextButton(onClick = {
                         tempSmsc = ""
                         viewModel.saveSmsc("")
-                    }) { Text("Use network default") }
+                    }) { Text("Clear global") }
                     Spacer(modifier = Modifier.weight(1f))
                     Button(onClick = { viewModel.saveSmsc(tempSmsc) }) { Text("Save SMSC") }
                 }

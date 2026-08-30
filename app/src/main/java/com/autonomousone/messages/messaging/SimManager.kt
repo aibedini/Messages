@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.telephony.SmsManager
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import androidx.core.content.ContextCompat
@@ -76,5 +77,31 @@ class SimManager(private val context: Context) {
     fun labelFor(sim: SimInfo): String {
         val carrier = sim.carrierName.ifBlank { sim.displayName.ifBlank { "SIM" } }
         return "SIM ${sim.slotIndex + 1} · $carrier"
+    }
+
+    /**
+     * v2.6.14: read the SMSC actually programmed on the (U)SIM for this
+     * subscription via SmsManager.getSmscAddress() (API 30+). The API is
+     * only callable by the default SMS app; everything else — permission,
+     * older OS, RIL refusing — returns null (UI shows "network default").
+     */
+    fun readSmsc(subscriptionId: Int): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return try {
+            val sm = context.getSystemService(SubscriptionManager::class.java) ?: return null
+            val subInfo = sm.activeSubscriptionInfoList?.firstOrNull {
+                it.subscriptionId == subscriptionId
+            } ?: return null
+            val mgr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+                    .createForSubscriptionId(subInfo.subscriptionId)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getSmsManagerForSubscriptionId(subInfo.subscriptionId)
+            }
+            mgr.smscAddress?.trim()?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

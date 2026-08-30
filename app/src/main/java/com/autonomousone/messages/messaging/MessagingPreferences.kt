@@ -18,6 +18,25 @@ class MessagingPreferences(context: Context) {
      */
     fun rawPrefs() = prefs
 
+    /**
+     * v2.6.14: per-SIM MANUAL SMSC override. The key is deliberately
+     * "...manual..." — v2.6.13 briefly auto-seeded plain "smsc_sim_<id>"
+     * keys from a hidden carrier directory; those stale values must never
+     * masquerade as user intent. Only user saves write this key.
+     */
+    fun smscForSim(subscriptionId: Int): String? =
+        prefs.getString("smsc_sim_manual_$subscriptionId", null)?.trim()?.takeIf { it.isNotEmpty() }
+
+    fun setSmscForSim(subscriptionId: Int, value: String?) {
+        val v = value?.trim().orEmpty()
+        val key = "smsc_sim_manual_$subscriptionId"
+        if (v.isEmpty()) prefs.edit().remove(key).apply()
+        else prefs.edit().putString(key, v).apply()
+        // Purge the v2.6.13 hidden-directory seed for the same SIM so it can
+        // never resurface as an implicit override.
+        prefs.edit().remove("smsc_sim_$subscriptionId").apply()
+    }
+
     companion object {
         private const val PREF_NAME = "messaging_prefs"
 
