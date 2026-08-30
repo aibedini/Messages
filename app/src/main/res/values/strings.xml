@@ -63,6 +63,9 @@
     <string name="home_snackbar_archived">Conversation archived</string>
     <string name="home_snackbar_unarchived">Conversation unarchived</string>
     <string name="home_snackbar_deleted">Conversation deleted</string>
+    <string name="home_confirm_archive_title">Archive this conversation?</string>
+    <string name="home_confirm_unarchive_title">Move back to inbox?</string>
+    <string name="home_confirm_delete_title">Delete this conversation?</string>
     <string name="home_snackbar_blocked">Number blocked</string>
     <string name="home_sent_today_chip">%1$d SMS today</string>
     <string name="home_mark_all_read">Mark all as read</string>

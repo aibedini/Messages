@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sms
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +47,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -75,6 +77,7 @@ import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
 import com.autonomousone.messages.ui.components.SmsItem
+import com.autonomousone.messages.ui.theme.StatusError
 import com.autonomousone.messages.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -100,6 +103,12 @@ fun HomeScreen(
 
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }
+
+    // v2.6.19: swipe no longer mutates anything on its own. It parks the
+    // row here and Home asks for confirmation first — a thumb grazing
+    // the edge while scrolling must never archive or delete.
+    var pendingArchive by remember { mutableStateOf<com.autonomousone.messages.model.Sms?>(null) }
+    var pendingDelete by remember { mutableStateOf<com.autonomousone.messages.model.Sms?>(null) }
 
     // Global (all-messages) search: debounce 400 ms after typing stops.
     LaunchedEffect(search) {
@@ -452,12 +461,7 @@ fun HomeScreen(
                     ) { sms ->
                         val draftKey = com.autonomousone.messages.repository.DraftRepository
                             .keyFor(sms.threadId, sms.sender)
-                        // Pre-resolve strings for callbacks (lambdas aren't composable).
                         val blockedMsg = stringResource(R.string.home_snackbar_blocked)
-                        val archivedMsg = stringResource(R.string.home_snackbar_archived)
-                        val unarchivedMsg = stringResource(R.string.home_snackbar_unarchived)
-                        val deletedMsg = stringResource(R.string.home_snackbar_deleted)
-                        val undoLabel = stringResource(R.string.action_undo)
                         SmsItem(
                             sms = sms,
                             modifier = Modifier.animateItem(
@@ -512,52 +516,104 @@ fun HomeScreen(
                                     )
                                 }
                             },
-                            onArchive = {
-                                if (isInArchivedView) {
-                                    // Unarchive (Undo → re-archive)
-                                    viewModel.unarchiveConversation(sms)
-                                    scope.launch {
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = unarchivedMsg,
-                                            actionLabel = undoLabel,
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            viewModel.archiveConversation(sms)
-                                        }
-                                    }
-                                } else {
-                                    // Archive (Undo → unarchive)
-                                    viewModel.archiveConversation(sms)
-                                    scope.launch {
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = archivedMsg,
-                                            actionLabel = undoLabel,
-                                            duration = SnackbarDuration.Long
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            viewModel.unarchiveConversation(sms)
-                                        }
-                                    }
-                                }
-                            },
-                            onDelete = {
-                                viewModel.deleteConversation(sms)
-                                scope.launch {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = deletedMsg,
-                                        actionLabel = undoLabel,
-                                        duration = SnackbarDuration.Long   // ~4 s
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        viewModel.undoDelete(sms)
-                                    }
-                                }
-                            }
+                            onArchive = { pendingArchive = sms },
+                            onDelete = { pendingDelete = sms },
                         )
                     }
                 }
                 } // PullToRefreshBox
+
+                // v2.6.19: swipe parks the row here; nothing changes until
+                // the user confirms. This is the anti-fat-finger gate —
+                // archive and delete are now two deliberate taps.
+                pendingArchive?.let { target ->
+                    val confirmArchiveMsg = stringResource(R.string.home_snackbar_archived)
+                    val confirmUnarchiveMsg = stringResource(R.string.home_snackbar_unarchived)
+                    val confirmUndo = stringResource(R.string.action_undo)
+                    val contactLabel = viewModel.contactNames[
+                        com.autonomousone.messages.repository.ContactRepository
+                            .normalizePhone(target.sender)
+                    ] ?: target.sender
+                    AlertDialog(
+                        onDismissRequest = { pendingArchive = null },
+                        title = {
+                            Text(stringResource(
+                                if (isInArchivedView) R.string.home_confirm_unarchive_title
+                                else R.string.home_confirm_archive_title))
+                        },
+                        text = { Text(contactLabel) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                pendingArchive = null
+                                if (isInArchivedView) {
+                                    viewModel.unarchiveConversation(target)
+                                    scope.launch {
+                                        val r = snackbarHostState.showSnackbar(
+                                            message = confirmUnarchiveMsg,
+                                            actionLabel = confirmUndo,
+                                            duration = SnackbarDuration.Short)
+                                        if (r == SnackbarResult.ActionPerformed)
+                                            viewModel.archiveConversation(target)
+                                    }
+                                } else {
+                                    viewModel.archiveConversation(target)
+                                    scope.launch {
+                                        val r = snackbarHostState.showSnackbar(
+                                            message = confirmArchiveMsg,
+                                            actionLabel = confirmUndo,
+                                            duration = SnackbarDuration.Long)
+                                        if (r == SnackbarResult.ActionPerformed)
+                                            viewModel.unarchiveConversation(target)
+                                    }
+                                }
+                            }) {
+                                Text(stringResource(
+                                    if (isInArchivedView) R.string.list_unarchive
+                                    else R.string.list_archive))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingArchive = null }) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        }
+                    )
+                }
+
+                pendingDelete?.let { target ->
+                    val confirmDeletedMsg = stringResource(R.string.home_snackbar_deleted)
+                    val confirmUndo = stringResource(R.string.action_undo)
+                    val contactLabel = viewModel.contactNames[
+                        com.autonomousone.messages.repository.ContactRepository
+                            .normalizePhone(target.sender)
+                    ] ?: target.sender
+                    AlertDialog(
+                        onDismissRequest = { pendingDelete = null },
+                        title = { Text(stringResource(R.string.home_confirm_delete_title)) },
+                        text = { Text(contactLabel) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                pendingDelete = null
+                                viewModel.deleteConversation(target)
+                                scope.launch {
+                                    val r = snackbarHostState.showSnackbar(
+                                        message = confirmDeletedMsg,
+                                        actionLabel = confirmUndo,
+                                        duration = SnackbarDuration.Long)
+                                    if (r == SnackbarResult.ActionPerformed)
+                                        viewModel.undoDelete(target)
+                                }
+                            }) {
+                                Text(stringResource(R.string.action_delete), color = StatusError)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingDelete = null }) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        }
+                    )
+                }
             }
         }
     }

@@ -63,6 +63,9 @@
     <string name="home_snackbar_archived">مکالمه بایگانی شد</string>
     <string name="home_snackbar_unarchived">مکالمه از بایگانی خارج شد</string>
     <string name="home_snackbar_deleted">مکالمه حذف شد</string>
+    <string name="home_confirm_archive_title">این مکالمه بایگانی شود؟</string>
+    <string name="home_confirm_unarchive_title">به صندوق بازگردد؟</string>
+    <string name="home_confirm_delete_title">این مکالمه حذف شود؟</string>
     <string name="home_snackbar_blocked">شماره مسدود شد</string>
     <string name="home_sent_today_chip">%1$d پیامک امروز</string>
     <string name="home_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>

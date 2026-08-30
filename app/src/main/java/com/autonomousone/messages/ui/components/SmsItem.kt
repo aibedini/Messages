@@ -91,15 +91,21 @@ fun SmsItem(
     var menuOpen by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
+        // v2.6.19: accidental side-drags while scrolling vertically used
+        // to fire archive/delete at the default 50% threshold. A swipe
+        // action is now a TWO-STAGE gesture: bold "release" feedback at
+        // ~72% and commit only past 85% of the row width — a fast fling
+        // that doesn't carry the row that far bounces back harmlessly.
+        positionalThreshold = { distance -> distance * 0.85f },
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
                     onArchive?.invoke()
-                    false   // keep the item in the list — ViewModel manages removal
+                    false   // keep the item in the list — Home shows a confirm sheet
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
                     onDelete?.invoke()
-                    false
+                    false   // confirm before anything moves
                 }
                 SwipeToDismissBoxValue.Settled -> false
             }
@@ -111,9 +117,11 @@ fun SmsItem(
     val isEndToStart = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
 
     // How far past the trigger threshold the drag currently is (0f..1f) —
-    // drives the "release to archive" confirmation state.
+    // drives the "release to archive" confirmation state. Commit happens at
+    // 85% of the row (see positionalThreshold), so the bold copy appears a
+    // beat before the gesture actually fires.
     val progress = dismissState.progress
-    val pastThreshold = progress >= 0.85f
+    val pastThreshold = progress >= 0.72f
 
     // Background colour for each direction
     val archiveColor = MaterialTheme.colorScheme.secondary
@@ -353,10 +361,20 @@ fun SmsItem(
                                 }
                             )
                         }
-                        if (!isArchived && onArchive != null) {
+                        // v2.6.19: in the Archived view the same callback means
+                        // "unarchive" (Home's confirm dialog branches on the
+                        // current tab) — previously the long-press menu hid ALL
+                        // archive actions in that view, leaving swipe as the
+                        // only way out.
+                        if (onArchive != null) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.list_archive)) },
-                                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                                text = { Text(stringResource(
+                                    if (isArchived) R.string.list_unarchive else R.string.list_archive)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                                        contentDescription = null)
+                                },
                                 onClick = {
                                     menuOpen = false
                                     onArchive()
