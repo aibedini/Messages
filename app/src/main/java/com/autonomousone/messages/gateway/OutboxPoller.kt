@@ -1,6 +1,7 @@
 package com.autonomousone.messages.gateway
 
 import android.content.Context
+import android.os.PowerManager
 import android.util.Log
 import com.autonomousone.messages.eve.EveSmsQueue
 import kotlinx.coroutines.CoroutineScope
@@ -51,8 +52,37 @@ class OutboxPoller(
     private val _stateFlow = MutableStateFlow(State.IDLE)
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
 
+    /**
+     * v2.6.11 Doze resilience: a partial wake lock held ONLY while a pull
+     * cycle is actually in flight (the 25s long-poll + delivery + ack). In
+     * Doze the CPU sleeps between maintenance windows and an in-flight
+     * long-poll socket dies silently — the server then reports
+     * "no device polling" and every Eve send 503s. Holding the lock through
+     * the active part of each cycle keeps the radio+CPU alive exactly when
+     * we promised the server we are reachable; the device sleeps normally
+     * in the idle gap between cycles (lock released, ~5s), so battery cost
+     * stays proportional to actual bridge duty, not to wall-clock time.
+     */
+    private val wakeLock = context.getSystemService(PowerManager::class.java)
+        ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Messages:OutboxPoller")
+
     private var pollJob: Job? = null
     @Volatile private var running = false
+
+    private fun acquireCycleWakeLock() {
+        try {
+            // 90s > longest legal cycle (40s pull timeout + 120s drain is the
+            // extreme; re-acquired per cycle anyway). Timeout is the safety
+            // net against a leaked lock; normal release happens in finally.
+            wakeLock?.acquire(90 * 1000L)
+        } catch (_: Exception) { /* never block the bridge on a lock failure */ }
+    }
+
+    private fun releaseCycleWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock.release()
+        } catch (_: Exception) { }
+    }
 
     fun start() {
         if (running) return
@@ -78,8 +108,13 @@ class OutboxPoller(
                     onLog("🌐 Network back — resuming outbox poll immediately")
                 }
                 try {
-                    cycle()
-                    _stateFlow.value = State.POLLING
+                    acquireCycleWakeLock()
+                    try {
+                        cycle()
+                        _stateFlow.value = State.POLLING
+                    } finally {
+                        releaseCycleWakeLock()
+                    }
                 } catch (e: Exception) {
                     _stateFlow.value = State.ERROR
                     onLog("⚠️ Pull failed: ${e.message ?: "network error"} — retry in ${ERROR_RETRY_MS / 1000}s")

@@ -3,6 +3,7 @@ package com.autonomousone.messages.gateway
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -10,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonomousone.messages.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +37,7 @@ class GatewayService : Service() {
     companion object {
         private const val CHANNEL_ID = "gateway_service_channel"
         private const val NOTIFICATION_ID = 2001
+        private const val WATCHDOG_DELAY_MS = 15_000L
 
         const val ACTION_START = "com.autonomousone.messages.ACTION_START_GATEWAY"
         const val ACTION_STOP = "com.autonomousone.messages.ACTION_STOP_GATEWAY"
@@ -174,6 +177,27 @@ class GatewayService : Service() {
                 updateNotification(state)
             }
         }
+        // v2.6.11: mirror poller state into the persistent notification so
+        // "GMweb bridge dark" (the 503 android_gateway_unreachable cause) is
+        // visible on the lock screen, not only inside the gateway screen.
+        serviceScope.launch {
+            outboxPoller.stateFlow.collect { pollState ->
+                val bridgeLine = when (pollState) {
+                    OutboxPoller.State.POLLING -> " • GMweb bridge: live"
+                    OutboxPoller.State.DELIVERING -> " • GMweb bridge: delivering"
+                    OutboxPoller.State.ERROR -> " • GMweb bridge: retrying…"
+                    OutboxPoller.State.IDLE -> if (prefs.gmwebUrl.isNotBlank()) {
+                        " • GMweb bridge: idle"
+                    } else {
+                        ""
+                    }
+                }
+                val state = supervisorState
+                if (state == ConnectionSupervisor.State.CONNECTED) {
+                    updateNotification(state, bridgeLine)
+                }
+            }
+        }
         createNotificationChannel()
     }
 
@@ -207,6 +231,41 @@ class GatewayService : Service() {
         return START_STICKY
     }
 
+    /**
+     * v2.6.11 watchdog: START_STICKY revival is delayed and unreliable under
+     * Doze — and while the service is dead, the GMweb pull bridge is dark, so
+     * every Eve send fails with 503 android_gateway_unreachable. If the
+     * gateway is still desired-enabled, schedule an exact alarm that revives
+     * the service even from Doze (setExactAndAllowWhileIdle). This runs in
+     * onDestroy, including force-stop-adjacent kills where onDestroy fires.
+     */
+    private fun scheduleRestartWatchdog() {
+        if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) return
+        if (!prefs.isEnabled) return // user turned the gateway OFF — stay dead
+        try {
+            val alarmManager = getSystemService(AlarmManager::class.java) ?: return
+            val restart = Intent(this, GatewayService::class.java).apply {
+                action = ACTION_START
+            }
+            val pi = PendingIntent.getForegroundService(
+                this, 2002, restart,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val triggerAt = System.currentTimeMillis() + WATCHDOG_DELAY_MS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                // Inexact fallback still revives us within Doze-compatible windows.
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+            } else {
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+            }
+            _logFlow.tryEmit("⏱️ Watchdog scheduled: gateway restart in ${WATCHDOG_DELAY_MS / 1000}s if it stays down")
+        } catch (e: Exception) {
+            Log.e("GatewayService", "watchdog schedule failed", e)
+        }
+    }
+
     private fun stopForegroundLike() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -232,15 +291,18 @@ class GatewayService : Service() {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // v2.6.11: dataSync is the honest type for the pull bridge
+                // (a long-running network sync to GMweb) and gives the OS a
+                // correct policy signal, while specialUse stays for the LAN
+                // server aspect. On API 34+ both are declared; dataSync is
+                // what keeps Doze from freezing our sockets mid-long-poll.
+                val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                    } else {
-                        0
-                    }
-                )
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                }
+                startForeground(NOTIFICATION_ID, notification, type)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
@@ -251,8 +313,12 @@ class GatewayService : Service() {
     }
 
     /** Notification text mirrors the supervisor state — the user sees
-     *  "waiting for network", not a silent dead gateway. */
-    private fun updateNotification(state: ConnectionSupervisor.State) {
+     *  "waiting for network", not a silent dead gateway. [extraSuffix]
+     *  appends live bridge telemetry (v2.6.11) without changing the title. */
+    private fun updateNotification(
+        state: ConnectionSupervisor.State,
+        extraSuffix: String = ""
+    ) {
         val mgr = getSystemService(NotificationManager::class.java) ?: return
         val port = prefs.port
         val (title, text) = when (state) {
@@ -263,7 +329,7 @@ class GatewayService : Service() {
             ConnectionSupervisor.State.CONNECTING ->
                 "SMS Gateway" to "Starting gateway…"
             ConnectionSupervisor.State.CONNECTED ->
-                "SMS Gateway Active" to "LAN: http://${GatewayServer.getLocalIpAddress()}:$port • Cloud: ${prefs.backendUrl}"
+                "SMS Gateway Active" to "LAN: http://${GatewayServer.getLocalIpAddress()}:$port • Cloud: ${prefs.backendUrl}$extraSuffix"
             ConnectionSupervisor.State.RECONNECTING ->
                 "SMS Gateway" to "🔁 Reconnecting…"
             ConnectionSupervisor.State.ERROR ->
@@ -277,6 +343,10 @@ class GatewayService : Service() {
     }
 
     override fun onDestroy() {
+        // v2.6.11: if this death was NOT user-initiated (ACTION_STOP already
+        // cleared the desired state), arm the alarm watchdog so the pull
+        // bridge comes back even under Doze — this is the 503-killer.
+        scheduleRestartWatchdog()
         supervisor.stop()
         shutdownComponents()
         super.onDestroy()
