@@ -1,6 +1,6 @@
 # 📱 Messages — Android SMS/MMS App + Self-Hosted SMS Gateway
 
-[Privacy Policy](PRIVACY.md) · [Releases](https://github.com/aibedini/Messages/releases)
+[Privacy Policy](PRIVACY.md) · [Releases](https://github.com/aibedini/Messages/releases) · [Wiki 📖](openwiki/)
 
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF.svg?style=flat&logo=kotlin)](https://kotlinlang.org/)
 [![Android](https://img.shields.io/badge/Platform-Android%208.0%2B%20%28API%2026%2B--36%29-3DDC84.svg?style=flat&logo=android)](https://developer.android.com)
@@ -154,6 +154,18 @@ cd Messages
 
 Optionally override the cloud backend at build time:
 `./gradlew assembleDebug -PGATEWAY_BACKEND_URL=https://your-relay.example.com`
+
+## 📖 Documentation Wiki (`openwiki/`)
+
+The repo carries an agent-maintained wiki: [openwiki/index.md](openwiki/index.md).
+
+- **Entry point:** [openwiki/quickstart.md](openwiki/quickstart.md) — layout, build/test commands, task-routing map
+- **Architecture** (data model, gateway service, send/receive pipelines, sync coordinator, UI, paging),
+  **Integrations** (EVE REST, GMweb pull, cloud relay, webhooks), **Operations** (release, device setup),
+  **Testing**, and **Workflow traces** — every claim cites the source file and is re-verified against code.
+- **How it stays fresh:** `openwiki code --update` locally, or the daily
+  [.github/workflows/openwiki-update.yml](.github/workflows/openwiki-update.yml) which opens a docs PR
+  whenever code drifts from the wiki. Regenerate anytime: `openwiki code` (CLI is on npm).
 
 ## 🗺️ Roadmap
 
