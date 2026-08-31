@@ -3,9 +3,6 @@ type: architecture-component
 title: Incoming SMS/MMS Reception
 description: "Broadcast-to-fan-out reception of inbound messages: SmsReceiver's SMS_DELIVER vs SMS_RECEIVED dedupe, the vendored mmslib MMS download path, and IncomingMessageDispatcher's single fan-out (Room shadow mutation, blocklist silence, event bus, gateway webhook, notification)."
 tags: [sms, mms, broadcast-receiver, telephony, incoming-message, dispatcher, blocklist, notification, webhook, android]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
@@ -25,10 +22,14 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-deeb7f22dbb08abc85208b19
     resource: repo://app/src/main/java/com/autonomousone/messages/event/SmsEventBus.kt
+  - id: openwiki-source-1188ef94bbd10bf1710668b7
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
   - id: openwiki-source-a0c585f933881808bc5040e8
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
+  - id: openwiki-source-4ad02c444ebadf27339b8cbb
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-f624f17c409bc74370fff0b7
@@ -43,6 +44,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/SmsReceiver.kt
   - id: openwiki-source-43a076a66e5ae070cd7e78f5
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/BlocklistRepository.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
   - id: openwiki-source-311ed32a68df077c7ffde611
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
   - id: openwiki-source-133b4174f0a9fbf729268733
@@ -69,7 +72,10 @@ sources:
     resource: repo://docs/release-v2.6.20.md
   - id: openwiki-source-094aa25fa68df926781236d7
     resource: repo://docs/release-v2.6.6.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T16:56:27.725Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-08-31T16:56:27.725Z
 ---
 
 Every inbound SMS and MMS converges through one small broadcast layer before it may touch the rest of the app. The platform delivers SMS as PDUs in `SMS_DELIVER`/`SMS_RECEIVED` broadcasts and MMS as a WAP push that a receiver stack has to fetch; `SmsReceiver` and the vendored mmslib MMS stack each land the message in the system Telephony providers (`Telephony.Sms` / `Telephony.Mms`) and then hand a model built from **provider state** — never from raw broadcast extras alone — to one shared fan-out point, `IncomingMessageDispatcher.dispatch`. The receivers never talk to the UI, the gateway, or the notification manager directly; the dispatcher imposes a fixed order: mirror into the Room shadow first, apply the blocklist as a *notification* policy (the row stays persisted either way), then event bus, gateway webhook, and finally the notification — which is suppressed while the user is actively viewing that conversation.
@@ -141,11 +147,11 @@ At runtime the library does the heavy lifting: its manifest-declared `PushReceiv
 
 `dispatch` is the one funnel for all inbound traffic (SMS and MMS alike), and its contract is that `sms.id`/`sms.threadId` **must** come from the provider row that was just written or read back, so the UI, webhooks and notifications react to provider state rather than optimistic local state. It runs on a caller-supplied background context and does network/DB work freely. The steps, in order:
 
-1. **Room shadow mirror, always first.** `TelephonySyncCoordinator.get(context).mutate(MessageMutation.Upsert(source, sms))`. Blocking is a notification policy, not a sync policy — the row stays persisted in the provider and the shadow even for blocked senders. The coordinator is the single Room writer; its mutation channel is `UNLIMITED` and never conflates, so a burst (100 SMS in a second) cannot silently drop an event. `applyMutation` runs one Room transaction that upserts the message **and** the conversation projection (`upsertPreservingFlags` — a brand-new thread is INSERTed there, so Home never depends on a later rebuild), computing the unread delta in O(1). The committed transaction invalidates the Room Flows, which is what repaints Home with the authoritative row.
+1. **Room shadow mirror, always first.** `TelephonySyncCoordinator.get(context).mutate(MessageMutation.Upsert(source, sms))`. Blocking is a notification policy, not a sync policy — the row stays persisted in the provider and the shadow even for blocked senders. The coordinator is the single Room writer; its mutation channel is `UNLIMITED` and never conflates, so a burst (100 SMS in a second) cannot silently drop an event. `applyMutation` runs one Room transaction that upserts the message **and** the conversation projection (`upsertPreservingFlags` — a brand-new thread is INSERTed there, so Home never depends on a later rebuild), computing the unread delta in O(1); for a **new** row the transaction also commits the matching `MESSAGE_CREATED` cloud event to the durable outbox (below). The committed transaction invalidates the Room Flows, which is what repaints Home with the authoritative row.
 2. **Blocklist gate.** If `BlocklistRepository.isBlocked(context, sms.sender)` is true, dispatch **returns immediately** — no bus event, no webhook, no notification. Silent handling; the message remains persisted.
 3. **Address-cache invalidation.** `SmsRepository(context).invalidateAddressCaches()` drops the process-wide thread→address caches so a brand-new sender re-resolves its contact name instead of rendering "Unknown" on the next list refresh.
 4. **Event bus.** `SmsEventBus.emitSms(sms)` — a fire-and-forget nudge (no replay; `extraBufferCapacity = 64` absorbs bursts). `HomeViewModel` uses it to optimistically prepend the new conversation; `ConversationViewModel` appends the message to the open thread when the sender matches (`sameConversation`) and marks that thread read in the provider.
-5. **Gateway webhook.** `WebhookEngine.sendIncomingSmsWebhook(context, sms)` — fire-and-forget and consent-gated inside: `GatewayAccessPolicy.canTransmit` requires gateway consent **and** an enabled gateway, otherwise nothing is dispatched. When open it runs two legs on an IO scope: a local webhook POST to the user-configured HTTPS URL (non-HTTPS URLs are rejected and logged) with optional HMAC-SHA256 `X-Signature`/`X-Timestamp` headers, and a cloud event to the backend (`/api/gateways/events/sms`) whose `eventId` is a **deterministic** UUID derived from sender + date + body prefix, checked against a local "already sent" cache for idempotency. Failures are logged, never thrown into the receiver.
+5. **Gateway webhook (LOCAL-ONLY since PR-02).** `WebhookEngine.sendLocalWebhook(context, sms)` — fire-and-forget and consent-gated: `GatewayAccessPolicy.canTransmit` requires gateway consent **and** an enabled gateway, otherwise nothing is dispatched. When open it POSTs the user-configured HTTPS URL on an IO scope (non-HTTPS URLs are rejected and logged) with an `event`/`sender`/`message`/`timestamp`/`threadId` JSON body and optional HMAC-SHA256 `X-Signature`/`X-Timestamp` headers over `<timestamp>.<body>`. The **cloud** event is no longer fired here at all — since PR-02 it is committed to the durable `gateway_event_outbox` inside the step-1 Room transaction and transmitted later by `EventUploader` (below). Local-webhook failures are logged, never thrown into the receiver.
 6. **Notification, suppressed while viewing.** `NotificationHelper.showSmsNotification(context, sms)` is skipped only when `ContactRepository.sameConversation(sms.sender, SmsEventBus.activeConversationPhone) && SmsEventBus.isAppInForeground` — i.e. the user is actively watching this very conversation.
 
 ### The blocklist
@@ -158,6 +164,25 @@ At runtime the library does the heavy lifting: its manifest-declared `PushReceiv
 
 `NotificationActionReceiver` is the companion endpoint for those actions. Since v2.6.10 its `MARK_READ` and `REPLY` work runs on `Dispatchers.IO` under `goAsync()` — provider writes and rate-limited sends must never run on the main thread of a `BroadcastReceiver` (a guaranteed ANR path before the fix). Quick reply goes through `SmsSender`, which persists the message and emits its own `OutgoingSent` event; the receiver deliberately does **not** emit a second SMS event (a duplicate once forced downstream dedupe heuristics). It is still not a durable queue: a process death mid-send loses the reply (the Room-backed outbox queue is the planned Pass-2 refactor).
 
+## The durable cloud outbox (PR-02) and EventUploader
+
+The old cloud leg of the webhook (a fire-and-forget POST whose failure meant the event was lost forever) is **deleted**. Its replacement is a durability contract: cloud events are *committed first, transmitted later*.
+
+**Commit side — transactional pairing with the message.** Inside `TelephonySyncCoordinator.applyMutation`, the incoming `Upsert` Room transaction additionally builds a `MESSAGE_CREATED` event via `GatewayEventFactory` and enqueues it with `INSERT OR IGNORE` — **only when the row is new** (`old == null`; a re-mirror of an existing row never re-emits). The message row and its cloud event live or die together: a process death in the transaction leaves both absent, so the next provider reconcile re-mirrors the row and re-enqueues the event. `enqueueCloudEvent` swallows a failed enqueue (logged, never thrown) — a cloud-row problem can never kill the local mutation. (The same pattern is applied to `Delete` → `MESSAGE_DELETED`, `RefreshStatus` → `MESSAGE_STATUS_CHANGED`, and `MarkThreadRead` → `THREAD_READ`.)
+
+**Identity (TechSpec §13).** `GatewayEventFactory` gives every event deterministic, never-body-derived identity: `eventUuid = UUID("evt:<kind>:<source>:<providerId>:<dateMs>")` — per event *kind*, so created/status/deleted for the same row coexist, and outbox rebuilds of the same event dedupe for free through the unique `eventUuid` index. The payload's `messageId = UUID("source:providerId:createdAtMs")` is the stable message identity shared by all events of one provider row. Every outbox row stores only the crypto-friendly envelope (`ciphertext` + `encoding` + `schemaVersion` + `cryptoVersion`); `cryptoVersion=0` means JSON plaintext in PR-02, and Phase 7 (ADR-002) swaps in AEAD bytes at `cryptoVersion>=1` with zero schema change. Sender and body live inside the payload bytes, never as envelope columns.
+
+**Transmit side — `EventUploader`, the sole cloud transmitter.** `GatewayService` constructs one `EventUploader` (over `GatewayPreferences`, `BackendClient`, its service scope, and the service log flow) and hands it to `ConnectionSupervisor` as a managed component: the supervisor's `reconcile()` starts it when the gateway is enabled, online, and consented, and stops it on disable/offline/`shutdown()` — so its lifecycle is owned by the same gate as the heartbeat and pollers. Inside its loop, `start()` first runs `recoverSending()` to requeue rows left `SENDING` by a crash between claim and upload, then repeats:
+
+1. **Runtime gate**: while the gateway is not enabled or `gmwebUrl` is blank, the loop just sleeps (5 s) and does **zero** HTTP.
+2. **Transactional claim**: `claimBatch` selects due rows (`PENDING`/`SENDING`, `nextAttemptAt <= now`) and marks exactly the selected batch `SENDING` in the same transaction it returns — up to 100 rows within a 512 KiB payload budget (LOCK 13 `Policy`) — which is the process-death guarantee behind `recoverSending()`.
+3. **Upload**: `POST /api/v1/agent/events/batch` with one JSON object per row (`eventId`, `type`, `conversationId`, the envelope columns, and `payload` as a **base64 string** of the opaque envelope bytes — the server never parses message content, Rule 6 / ADR-002). Before the POST, each row passes an envelope *integrity gate* (`GatewayEventFactory.decodePayloadEnvelope`): an undecodable payload dead-letters **that row only** (visible health surface) and the rest of the batch ships.
+4. **Partial ACK (LOCK 13)**: the response's `accepted[]` lists the `eventId`s the server stored; each accepted eventUuid moves to `ACKED` on its own while every un-accepted row goes back to `PENDING` with its own attempt-counted backoff. (The server-reported `serverSequence` is currently discarded — `onAcked` is always called with `0` — the per-row `ACKED` state is the only thing the client uses.)
+5. **Failure classes**: a transport failure (network error, HTTP 429, or 5xx) requeues the batch to `PENDING` with full-jitter exponential backoff (uniform in `[0, min(5 min, 2 s·2^attempt))`, attempt capped at 20); an **HTTP 4xx except 429** (permanent schema/auth reject) or an undecodable payload moves rows to `DEAD_LETTER` — the whole claimed batch on a reject — never a silent drop.
+6. **Cadence**: an empty claim sleeps 2 s (durability, not latency); an all-acked batch resets the backoff counter.
+
+Because the outbox row is the message's shadow-twin in Room, "was the cloud event sent?" is a durable, queryable fact (`pendingDepth`/`pendingBytes` feed the health surface) — no critical state lives in RAM.
+
 ## Lifecycle, invariants, and failure semantics
 
 - **SSOT ordering is an invariant**: every consumer of an inbound message (UI, webhook, notification, shadow) must see provider-confirmed state. Receivers persist first, read the row back, and dispatch from that; a read-back failure degrades to broadcast data with a logged warning rather than aborting delivery.
@@ -169,3 +194,5 @@ At runtime the library does the heavy lifting: its manifest-declared `PushReceiv
 ## Tests
 
 The boundary logic has focused JVM tests: `SameConversationRoutingTest` pins the `sameConversation` routing predicate used by the dispatcher's viewing-suppression check (normalization, suffix matching for country-code variants, and the ≥7-digit guard so short fragments never join two conversations); `SmsObserverTimingTest` asserts the observer's leading-edge/burst-coalescing contract that backs the non-default path; `ChangeRouterExtractIdTest` pins URI parsing (row-id vs table-level vs thread URIs) for the observer→mutation routing; and `MessageEntityMappingTest` pins the source constants and key namespacing the MMS/SMS boundary depends on.
+
+The outbox side is pinned the same way: `GatewayEventFactoryTest` asserts the deterministic per-provider-row and per-event-kind event/message UUIDs (stable, never body-derived, mms vs sms namespaces distinct), the envelope round-trip (cryptoVersion=0 accepted, an unknown crypto version rejected as the explicit Phase 7 extension point), and the LOCK 13 batch-policy boundaries (100 events / 512 KiB caps, lone-oversized-event escape, full-jitter backoff bounds); `GatewaySyncSchemaTest` pins the Room v7 migration to create `gateway_event_outbox` with its unique `eventUuid` index — the exactly-once contract — and asserts no other v7 table reuses a unique index.

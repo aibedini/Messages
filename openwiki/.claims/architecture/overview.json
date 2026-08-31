@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:6d96f7d16f347520ebfa17219bb50cc44fe8fdfbb493d05bd4ce6cae447aa46a",
+  "pageVersion": "sha256:d1e1a0a3eb5887b6121a18c1dcfd003c028f4bc655f08ec168f98559606adc0b",
   "claims": [
     {
       "id": "claim_b964b5579d184f6394a8369e01f591d4",
@@ -50,7 +50,7 @@
     },
     {
       "id": "claim_b58d67c89a0b49c591981aa3e2f27a83",
-      "statement": "MessagesDatabase is the app's local read-SSOT shadow of the providers (v7, eleven entities — the five original plus the five PR-01 durability tables remote_conversation_map, gateway_event_outbox, remote_commands, remote_command_executions, and sync_cursors added purely additively by MIGRATION_6_7); HomeViewModel drives the conversation list from conversationDao().observeAll() Room invalidation only after a read-cutover gate, and a failed shadow (migration/corruption) downgrades to the provider read path instead of killing the app because the shadow is not the source of truth.",
+      "statement": "MessagesDatabase is the app's local read-SSOT shadow of the providers (v7, ten entities — the five original plus the five PR-01 durability tables remote_conversation_map, gateway_event_outbox, remote_commands, remote_command_executions, and sync_cursors added purely additively by MIGRATION_6_7); HomeViewModel drives the conversation list from conversationDao().observeAll() Room invalidation only after a read-cutover gate, and a failed shadow (migration/corruption) downgrades to the provider read path instead of killing the app because the shadow is not the source of truth.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L11-L60",
@@ -164,26 +164,26 @@
     },
     {
       "id": "claim_248d48ed80d14b91904fdeefab09cb0f",
-      "statement": "GatewayService is the exported=false foreground service (foregroundServiceType dataSync|specialUse) handling ACTION_START/ACTION_STOP/ACTION_RETRY_NOW with START_STICKY, and its ConnectionSupervisor reconcile loop owns the component lifecycles including the LAN GatewayServer, the cloud HeartbeatManager/RegistrationManager, the durable EventUploader that transmits the gateway_event_outbox, the OutboxPoller GMweb pull bridge (started only when gmwebUrl is non-blank), and the data layer's TelephonySyncCoordinator.ensureLoopRunning() so the Room shadow keeps syncing while the gateway is online.",
+      "statement": "GatewayService is the exported=false foreground service (foregroundServiceType dataSync|specialUse) handling ACTION_START/ACTION_STOP/ACTION_RETRY_NOW with START_STICKY, and its ConnectionSupervisor reconcile loop owns the component lifecycles including the LAN GatewayServer, the cloud HeartbeatManager/RegistrationManager, the durable EventUploader that transmits the gateway_event_outbox, the PR-10 SecureCommandPoller strategic /api/v1 command transport, the OutboxPoller GMweb pull bridge (started only when gmwebUrl is non-blank), and the data layer's TelephonySyncCoordinator.ensureLoopRunning() so the Room shadow keeps syncing while the gateway is online.",
       "evidence": [
         {
           "resource": "repo://app/src/main/AndroidManifest.xml#L175-L184",
           "version": "repo-lines-v1:sha256:fa82598634279596cda1debc00f419d9184d7c8f61db7723954fcfd16b3ba3c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzYmJmNmE5N2FlYWY2MGI1ZjAxNTY4MzBkOGM2YTcyNTk4NjRmMzQ4MjAyMzY5ZDA5ZjE5ZTllNjdhZWI2ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjM2YwN2I5NjEzZWYzOWRiNGMwZWI3MWQwZTQwMTgzMDk1MWYwYWMxZTgwYmI1ZTMxODMyYTY1NWU2N2I1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjMDY3MGQ2OTBlM2RkYTI3ZjljY2NmZTRkZDNiNzdiMzI1OTU5ZDUyYzhlMDQ1ZTI3ZWVjOGJkMmE2NWNkNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MDU4MTFkY2YxOWYwMWY0NzdlZjVhMjcxNmEyOTRlNTQyNGQ4MmNkNWJiNjgwZDkxMWM2ODI4ZDkwMzg0ZjIifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L259-L269",
-          "version": "repo-lines-v1:sha256:6bf8750224bba52e3e7b2b09927dd449066a7080ec588887f05cda3c9047c455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzY2JkNjY4NWQ0NTY1MjQ0MjZhNTE0NjEwZmJlNTA0OWM4YWU3NDExY2I2M2YwYTc1MDcxNDFiZDJmNmFiNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwNzQ1OTYxOWE5Zjc5ZDkxYWNiZmU5NDM5ZTQ0NTIwNjgwNDQ0MTQ1NWFkZmU4MWEzNDg3MmIwN2YwMTY2ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L265-L270",
+          "version": "repo-lines-v1:sha256:3f5e53a78945f7ff43b0831427a02d90d5c10d07b99525fe1ca41ba9bfb381fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L80-L95",
-          "version": "repo-lines-v1:sha256:4655df30cc7438bea6d572687b3a0daf5f8043040dca2c150229f7e68a90d79f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMmRhMWE3MDU5N2MzYTYyYWM4YWY2Y2FhZjBmNzE1NzQ1MDMwMDkzZDg3MDUwYmI4NjljNTczOWQwYzBhNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYmNmN2Q5NGVkZjMyMmRiZTZlYzZjNGRmMTAzOGM4YWE1ZGEzMTg2NTJlOWQwMmZjNDk0MjBmNzU0NTdmMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhY2MzNTQ4ZGQ5Y2E5NjNhOTA2NjM4MTc4OTMyNzUyN2JiZmExNDk5MTYyNDg3ZGYyYTE5MTQ0MzhlYjRiYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViODI3OTMyNzc2MWZhM2UyZTg0YmMwZmRlMDBhMmM5YmFkMDRhMTk0ZTY0ZTg2OGJlYmJkZTg0N2RiNzZjYmIifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L80-L94",
+          "version": "repo-lines-v1:sha256:8fa5f88a71be581a703e7d0fa6f0a5359f56f981fd9e38e25bc25dd599542998:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMmRhMWE3MDU5N2MzYTYyYWM4YWY2Y2FhZjBmNzE1NzQ1MDMwMDkzZDg3MDUwYmI4NjljNTczOWQwYzBhNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MjIwNGM2NWY1MDJkYzE2NDU0YjYyNDA4NTZhOWFiN2FkZTAwM2E4ZTlmODYzMzNlYzBiN2M5ZTQwOTQ5MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhY2MzNTQ4ZGQ5Y2E5NjNhOTA2NjM4MTc4OTMyNzUyN2JiZmExNDk5MTYyNDg3ZGYyYTE5MTQ0MzhlYjRiYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2YzA3ODYyNTgyYWY4YjM0YjQ5Y2M0YWMwYTMyNDc3OGZhMTBmZjYwMDU4MzUyMjM5MmE4NzM5N2M0MDY4YjYifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L144-L183",
-          "version": "repo-lines-v1:sha256:a191986a46969fd866211699680130536527fd8fe933c4f2f78c8d97c615c04d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MmJmNWJhMTM3YWYyY2JmOWUyYTVkMWMxNjdiMWI5NjBmY2MxZGZhN2NkNjY4ZmUyNzg5MjAzMzdmNmFmMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MTczN2E0MmNlMTJiMDJmY2RjMTljMjUwZmQzZWVmZDJkMTM5ZDg2YjZiZmM4YjY2YmY4OTkyNWEzYjEzMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZDViZjczODQ3ZTU3NjgyZGI2Zjc3YmIwNjBlZmY3OTVhZDE5NTMzNzJmOTU4MmE3MWQzZmRlZGJhMWVhZDIifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L144-L194",
+          "version": "repo-lines-v1:sha256:a4ed0250909c23c0ce7ecdf54184ea3b38f7d8bf4a728ba6e5dd2aa20fe1680a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMDQ0MGRlOWU0YzBiMzUwNDBmZmQxYmQwZTMwYzEzNzRlMjc3ZDJkMzYzOTkyMmVhMzA5NGZlZGVhMjk3NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZDViZjczODQ3ZTU3NjgyZGI2Zjc3YmIwNjBlZmY3OTVhZDE5NTMzNzJmOTU4MmE3MWQzZmRlZGJhMWVhZDIifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L215-L243",
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L226-L254",
           "version": "repo-lines-v1:sha256:2fbbeae9e0a3084613f3845f7f6f36919b5737f646b26b1d597fbb881bb40b5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyZTdmYmFjYjFmYjgyNzM1NDY3OTFhMzkxNTQ5ZDA0NWI3YzA3YmMzNDY3ODgxZDg3ZGU3YTRmZGY5NmVhZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5MTI3NDUzMjQ4MmVkNjVhODFjODk0MTU4N2MxZDljZmY2MDNlMDBkNDc2NGQ3MjQ2NmQyZGI2YzFhOWQ5NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmMmNiZTMzZGQ0OTJmODA3OWM4ZWNjMmViODk5MjNkMDhkYmExYmFjZjVkY2IwNjA2NjczMDhmMWIxZjc1NWYifQ"
         }
       ]
@@ -247,8 +247,8 @@
       "statement": "The ConnectionSupervisor's reconcile loop is itself the gateway's backoff mechanism: a failed reconcile (e.g. a port bind failure) sets State.ERROR and retries after an exponential delay that doubles from 5 s up to a 300 s cap, so the supervisor's start() stays non-blocking and non-throwing while the loop self-heals components in the background.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L195-L205",
-          "version": "repo-lines-v1:sha256:a78430802aa33d94fe9c26c9551251baf69af17264442ff18c948ed8ad7fa9b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NjM1ZTI4Njg1OWVkNGNhNjBlOTQyYThjOWRmYTVlMTM2ZGJiNWMyNGFhZjczMzg3YWY5ZGI2MGMyNjI4ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1OWNkOTYyOGY1YzVjOTQxYTk2NmEzYmNiMWRjZWI4N2U5MjVhNTc2ZDNmNTFjNmMyZmI5OTVjYzZkNDllZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L190-L212",
+          "version": "repo-lines-v1:sha256:1f340e297b51a4e8b15eef9c842d23cd8ff30e056b855275ae15ae6278472271:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ODIzNDFhZWRkYTZkOWNiNzY4MjdjOTVmMmVkMTFhMzEzMzIzMWUwZjYxYjNmNzQ0YWQ0ZGNkZjExYmZjYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZTY5YTVhNjVhMDVjODcxZTNiYjZjZmRiYmZkZTM1ZmYzYjlhNzIyY2Q2YmY2Yzg3OTkzOTkyMjNiMjc2ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMTdhNTA1YzFmMDg1Mjc5N2I5NTRiZmI0NmYyMTU4Nzk3NTYzMWUwODA4NzJjYjMzOGM5ZDliZWNjZWVjNTAifQ"
         }
       ]
     },
@@ -265,12 +265,12 @@
           "version": "repo-lines-v1:sha256:f99b9153fd031c9c1f94e61f3c362b7bc0952b928d825ad6fc0bdb249ab1a751:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZmJkMmQ3ZDk2YmI5Y2YwZjMzZmY5YWZjZDMzYzQyNDE5MWY1ZWQwZDNkMDU1ZTVlYmE3OTU1ZDIxZTkwMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmYjVlMzNhZDZlMTgwODBiMDhkYmU4MDIzOWQxNTc3MDI3MjU5ODhkZTZlMzliYzI1NDkwMTA2ODEzYzg4NTUifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L259-L269",
-          "version": "repo-lines-v1:sha256:6bf8750224bba52e3e7b2b09927dd449066a7080ec588887f05cda3c9047c455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzY2JkNjY4NWQ0NTY1MjQ0MjZhNTE0NjEwZmJlNTA0OWM4YWU3NDExY2I2M2YwYTc1MDcxNDFiZDJmNmFiNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwNzQ1OTYxOWE5Zjc5ZDkxYWNiZmU5NDM5ZTQ0NTIwNjgwNDQ0MTQ1NWFkZmU4MWEzNDg3MmIwN2YwMTY2ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L267-L267",
+          "version": "repo-lines-v1:sha256:62c37e2ceca964209c6eef554586db3797dfc2fc3230cd60b560be1ca03ea528:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJjMzdlMmNlY2E5NjQyMDljNmVlZjU1NDU4NmRiMzc5N2RmYzJmYzMyMzBjZDYwYjU2MGJlMWNhMDNlYTUyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJjMzdlMmNlY2E5NjQyMDljNmVlZjU1NDU4NmRiMzc5N2RmYzJmYzMyMzBjZDYwYjU2MGJlMWNhMDNlYTUyOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjZlNTU5ZjVmNjcwOTQ4Y2E4NTZmNmQwZmE2YTQ5NDU5NDNlMTI1YzdkYmQzYTRlYmViNTA0ZTJjMTE0MzhjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTFkYzEyNDk3NWM5MTg4N2JmYTRkNTYxMGVkZDc0YjYxZDU4N2U1ZDlmYzQ0Mjg2NDMwMzUxYzdkMzJkOWVkZiJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L80-L95",
-          "version": "repo-lines-v1:sha256:4655df30cc7438bea6d572687b3a0daf5f8043040dca2c150229f7e68a90d79f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMmRhMWE3MDU5N2MzYTYyYWM4YWY2Y2FhZjBmNzE1NzQ1MDMwMDkzZDg3MDUwYmI4NjljNTczOWQwYzBhNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYmNmN2Q5NGVkZjMyMmRiZTZlYzZjNGRmMTAzOGM4YWE1ZGEzMTg2NTJlOWQwMmZjNDk0MjBmNzU0NTdmMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhY2MzNTQ4ZGQ5Y2E5NjNhOTA2NjM4MTc4OTMyNzUyN2JiZmExNDk5MTYyNDg3ZGYyYTE5MTQ0MzhlYjRiYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViODI3OTMyNzc2MWZhM2UyZTg0YmMwZmRlMDBhMmM5YmFkMDRhMTk0ZTY0ZTg2OGJlYmJkZTg0N2RiNzZjYmIifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L88-L89",
+          "version": "repo-lines-v1:sha256:0988f5787a01de291b1a9c83010c5681e4a330491b0b4f76c88b40672f7b73a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmYwOWFiZTk1YzgyMjJiMjE4M2ZhNDYyOTI4YWI4NzgyYWJkMGExZDk5N2VlZDFhZDgyNTlmNDRkYzc2MjZjNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDZiY2JmMjkxZmRiYmNhMjFjNWExYjYzNzkwMWY1MWM3YTA4ZDMzYTdhODU2ZWVlMDgwN2IxMTdjZjAwNjA5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzUxMTU0MWVkYzE5NzA2MGMzOWYwYTg2YTg5ZWJlMzliYWI1NTFjYjJhNjNlY2YyOWM5ZWEyNTExMmQ5ODNiMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmQxMjI0NmM3YzM5OTE3M2E4MTUwYzQxZmE1OWQwZWEwMmU1ZGY1ZDFlYmU5YjIwNzM2NjJmMzhjYTRlMjIyNCJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L19-L90",
@@ -287,11 +287,11 @@
       "statement": "GatewayService arms a Doze-safe restart watchdog: on onDestroy it schedules an exact alarm (setExactAndAllowWhileIdle, 15 s out) to replay ACTION_START if the gateway is still runtime-enabled, so the GMweb pull bridge re-arms even when START_STICKY revival is delayed or suppressed by Doze and would otherwise surface to Eve as 503 android_gateway_unreachable.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L245-L278",
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L256-L289",
           "version": "repo-lines-v1:sha256:22b557fe35bc4807fef5f3b1c6fd4cd5f4c0b3dbfc90432aad011948596b9999:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyMTRmMjkyYTUxNzNiYzNjZWMwZDk3Mjc1MTBlMDA3N2NjOTM5YWU5ZTkzYTFiYjJlYjhiMDJlMDgwYTJhMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2YWZjOGVjZGZhOGJjYWYxZWYwZDViMGM1ZWY1ZGUzZGIwNzBkZTY1YTQwMTM1NjgxNWEwMGU3OTkyNzYwOWUifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L356-L364",
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L367-L375",
           "version": "repo-lines-v1:sha256:eaefc68da26179f99a7034e3a0e82c66fa5efa68f2c032d455241dce11d452ee:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTdhNTA5ZjNjMDg2ZTI0NWI1ZGQzYmQyNmM5NzAyMTA4YzdkNjg0MmZhOWJlZjk5ZDk0ZTUwYjMyZTFkM2ZjNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzc1NGViYmZkOGVmZWE0ZDQ5ZWM1YzdhMzhiODcxNjA1Y2U0ZjMwYzk1Njc2ZDZlNTkxMGZjNDhmNTAzNDUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTFlZDg1ZjJhMjY1MWUyZTJlNjk2OWU4YTU0MDBhMzkzMzFmMTljNDIxZDA1ZmFlOWUwYTU5MWFhZTE2NDRkNiJ9"
         }
       ]
@@ -301,26 +301,48 @@
       "statement": "ConnectionSupervisor owns the gateway's runtime transmission gate: reconcile() clears GatewayPreferences.isEnabled first when tearing down (desired-off or offline) so components stop transmitting, and sets it only after everything desired is up; consumers such as GatewayService.isServiceRunning and the WebhookEngine transmission check read supervisor-derived state rather than a hand-set boolean.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L209-L223",
-          "version": "repo-lines-v1:sha256:056004d8a385b9fd46782c9cc03c2aa93628bde873366a4509d00dc68ab600ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzOTNlOTU5YzBhYTM2OWJmZDE0MDA2OWVlNzUyZDY3OTdjZmMzMDdmYzg1NWQ4MTYxNDhiNTE3YjY5MjY1MzUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L214-L241",
+          "version": "repo-lines-v1:sha256:d1d1dcbd39d1454e11d41fb9c5f4c2c0aeeba86f4a0ed3e9f4801d34293d1706:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4MzJhOTYzYmVjZjk1YjE1ZGQ4NGY2NWFhOGY0ZjM3NzlmNzY5MWI3MDVkMzViYzZkNzU3MjBhODkxYjc0YmMifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L265-L269",
-          "version": "repo-lines-v1:sha256:65c8fcc4e8f913fde9a4559356ce3b1a1b9dffe38d119e54eb7c5dd325993f70:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjM0NWE5MDRlMGQ2NTBiM2Q4MDg2MGUyMWM1ZGQ3OGJmYmRmOWVjNGViMmI2MGYzMGJlYTBmNDU1N2RlMmIyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjM2ZWE3ZjYxODA5ZWVkZmQ0NTYyNDJiNzM0ZTZiOTk1YWFhNGQzZTg3NmFiODk3NTE5NDEwOTRlZDZhYTRlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L272-L275",
+          "version": "repo-lines-v1:sha256:c54db2700e337fc7e0bd4e577070e5bc94d04431aef1a04cb78106055349adab:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjM0NWE5MDRlMGQ2NTBiM2Q4MDg2MGUyMWM1ZGQ3OGJmYmRmOWVjNGViMmI2MGYzMGJlYTBmNDU1N2RlMmIyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDExMTgwOGZiZjk3Y2I1MTEzOTgxZTcyMDQ0MmEwYmI5ZGM0MWIxNjExNjRhODc2MzVkNTNiMWM1Y2MyYzk3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjM2ZWE3ZjYxODA5ZWVkZmQ0NTYyNDJiNzM0ZTZiOTk1YWFhNGQzZTg3NmFiODk3NTE5NDEwOTRlZDZhYTRlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2ZiY2NiOTJlMjYzOTFlOTJmY2UwZjMyYzkzMTIwNzFjYmJhYWVhODcxMDZjMTA2YjhhMTY2ZTZhMGNjMDA4MiJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L48-L68",
-          "version": "repo-lines-v1:sha256:7898b2457e3ce85eab4eea104dc6e0b54a1ff1fdaf9522479b2cc66ac2da083c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzMmQyNGFjNmFhZjY0YjI4NGI4MzAxMDFlYmUzNmI2Zjg3Y2VmMzM0M2U3ODEwMjNhZjJiZDQ5NDMzNTExOTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmMDRhZDBhYjQwYTY3Y2NkYzI0MWU2ZTU1MjAyOTVhMzQ3MzM4NTM0ZDQyNjAwNDAzMTIyMDBiYTM5MGNmNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4ZGM5ZjQ1MzZmM2Q3ZjMwOGJhODFiOTM2MmZkMjI0MjI1NjFiOWFkMTAxMmU1YzY5MzExMTE2ZWNiMzYzNzcifQ"
+          "version": "repo-lines-v1:sha256:6c51d824d4328213b06d1ed0d0ac561ec61269208c27dca946138aa1b59e3f25:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYzU3MmVkM2EzZmQ4ZjBkNmI3ZTRlNTdkN2RiZDFkM2E2MGVlOWJmN2NmMWFlN2JkNmUwNTIyMGNlMGI3NzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2NThhY2ZhNTNhNzQ5NmIwMzk0ZDQyZjJlNzlkZDdiNWI3MzQzYWY5ZTY4NWU4NzNkM2E2NThlNzE0Nzc4YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1OWI1YjIxYmQxYWI5NTEwMjY3NDhkYWQyY2I4OTgyZDcyZmRkNTljNDU5ODE3MDg5NjRiODIwNjQ3YzM3OTEifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L28-L33",
           "version": "repo-lines-v1:sha256:0e3ec251a096b41a87ec15d347fe6b3e7265182d0d253f8756643dacc6bc9588:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzUyMmQzODhmYzRkY2ExMTBhNGNlZGE4ZDJhOGNhZDU4OGQ0NWI0NzZlZmYzNzg0ZmIyN2VjYTk0NmQyMmVhNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MWJmYWJjZmI2ZDg5ZmQ5ZjRlM2I3YmM0YTE3NGZkOTBjOTk4MTg2ZTRmZGUyYzhmYTM0ZTZkNWMyOTNhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQ4MmFhZDBhYmZjNWViMmY5YzUwN2M5MTRjYWIzNmYwYTkyZDMzMWZhY2RjOWFmYzg4N2E0YWRmNzBmODM2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWNhNWQzNzZlZWZiNmIwYTA5NjViNTRmNGUxOTk4ODQ4MzJjZmY3N2M0NzcwODRlYTkzOTE0ZWI3YWVjMzkyYyJ9"
         }
       ]
+    },
+    {
+      "id": "claim_2725035ce29f41c196beaff86624f026",
+      "statement": "The PR-10 SecureCommandPoller is the strategic command transport: a supervisor-managed, outbound-only HTTPS long-poll against GMweb's /api/v1/agent/commands/claim that runs under the same supervisor-owned transmission gate (zero HTTP while prefs.isEnabled is false or gmwebUrl is blank), ingests claimed encrypted command envelopes into the durable remote_commands queue with exactly-once semantics (INSERT OR IGNORE keyed on idempotencyKey, so redelivery surfaces the existing row and is dropped), ACKs the guarded ACCEPTED/EXECUTING/COMPLETED/FAILED lifecycle to GMweb, and hands SEND_SMS rows to the single outbound funnel via GatewayOutgoingPipeline.executeIngested → SmsSender — while the legacy OutboxPoller remains as the compatibility transport.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L155-L160",
+          "version": "repo-lines-v1:sha256:0762d3c3323fae5ea59d9d4a431e528157d07e4262a7c4b8c53d8763e00a53c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGRlOWUxYTNhMTIzNjEyNmQzMWI4MDJhN2RhZTBlN2E2YjUxZjJjOWUyMjk0N2M2YzRiNzczMjgwNmIxZDg3ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE5ZjhjMmJjN2ExNDFhMDIyYWYzZmViOGFiNTAwOGVjMjU3NTdlZjI0YWNkMDQ5ZjUwODlhNzRiN2M5YWU4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjQyZWU5OTUwMDQ3MmZhMTlmZTQzNTk5Zjk0YzYyYjAyNTUwNTFlODE0ODVhM2M5MjI2OTAxZWFjOGYwYzY0NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjc5MjcxZGQxZTFmOGI2MTViZWM4NDJmMTY2NmQwYTk2NjYwYTQ2NDUxZDNjNGU1OWM1YjRkYzI5YjQwODhkOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L183-L211",
+          "version": "repo-lines-v1:sha256:1aa3994aba979f9790bd318ebc01557f8b3d72a50d09753f089369115f576586:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYjdmYmQ5NzVhMGNjMGIxZjJhNjFiODViMTNmOTg3NzY2MzZlYmZiZjQxY2MxNTY3MmJkZjViZGU5YzE1ZDIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L24-L116",
+          "version": "repo-lines-v1:sha256:6e96e1d0654a257acad1d0a233dfef961cbdb0d9a132eaa85d24a26ec6513b75:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0N2QwODY5ODA5MTM1MzU3NjY0Nzc1OTg3ZmExYjAxZjZmZTFlMzU1OGUxYThlMjk2YTBiNWRlNDdmNDVkZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjNDFlZmYyZWNiNDlhYjA4MWQzNzA3ZWNiY2MyYmMxNjc1ZDA3NGZiNTljZWU2MDFiMTgwYzFlOTY2MzNlMTYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L111-L156",
+          "version": "repo-lines-v1:sha256:ddf7183ef118aea6098cf22df4deff6d5f8b0273fff620895e54494fee4668e8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNWQxNDJjNzMwYWZkMDJlMmJkZGU5YTVjZjIwZTQzMWZjN2ZlZmNiMmM2ODgzNTQ5YTJjMzE4YTIzNGRmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzOTcwZWUyMTgwODJkMzYxZWMzMzE5YWY5YjJiY2E0YTk3YWIxZTc0ZWZiMGE0NjJjMjU3OWIxYzJlODc5ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T09:09:40.113Z"
+    "at": "2026-08-31T16:56:27.725Z"
   }
 }

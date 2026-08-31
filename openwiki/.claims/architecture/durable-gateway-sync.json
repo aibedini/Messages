@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:4f48b93a55ab9f8c0ab978a6c3c7ae8201d43a51cab4ddc5ec2e851fd225e0c9",
+  "pageVersion": "sha256:e038f2b2debc598dd8615b04ea84ccbf2439a91758adad299cf3b8921b355dcb",
   "claims": [
     {
       "id": "claim_087597432a894e6b947885e0422363db",
@@ -252,7 +252,7 @@
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L105-L173",
-          "version": "repo-lines-v1:sha256:d8a0409fb31c9aa00d623fa85c9073e35867bb75992144b6d11b42dc01dfc521:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZGI1MDE3NTZhMmVmZmEzZGQ2NjI5ZGQ5ZmQ4YzM1ZWNlZDUyMWE5YTFmNWY2OTI5NGVkOGM2ZWE2MDQxZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2MTQ4NWVhNjg3ZmYzM2ViMTk5ZDNiMzY4YmMwMmI0MDU5YjExOTFmM2U2NTI1MGRiZTMwMDg0ZTBlZDFmNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+          "version": "repo-lines-v1:sha256:64c4c1c9dfeb56e6954e1196ff61fa5195c73ff46e1bdf2f7e7282a7c1401df0:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZGI1MDE3NTZhMmVmZmEzZGQ2NjI5ZGQ5ZmQ4YzM1ZWNlZDUyMWE5YTFmNWY2OTI5NGVkOGM2ZWE2MDQxZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2MTQ4NWVhNjg3ZmYzM2ViMTk5ZDNiMzY4YmMwMmI0MDU5YjExOTFmM2U2NTI1MGRiZTMwMDg0ZTBlZDFmNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L35-L96",
@@ -308,7 +308,7 @@
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L144-L176",
-          "version": "repo-lines-v1:sha256:10ca3063c81b07d8dbc8ec5b2cc7d621a5c6ea2d6af16b0f6ae627b3459501c8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MmJmNWJhMTM3YWYyY2JmOWUyYTVkMWMxNjdiMWI5NjBmY2MxZGZhN2NkNjY4ZmUyNzg5MjAzMzdmNmFmMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxM2JjYmE5YzMzZWI3MGJkMGI0ZmU2YzgzYzMxZWZmNDNjMDQ3MTI3MTNmNjY0MzBhNTNkMzU2ZmVhYWQ2NTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MTczN2E0MmNlMTJiMDJmY2RjMTljMjUwZmQzZWVmZDJkMTM5ZDg2YjZiZmM4YjY2YmY4OTkyNWEzYjEzMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1NjIwY2I1OTZkODVmZjIxZjljY2FjMjVjNzQ2N2ZlYWM0MjRjYzI0MTU1MDA4Y2ViZmIwOWExMzUxYjQwYmMifQ"
+          "version": "repo-lines-v1:sha256:bffe00acd3241b0c8a98963836fcbb3db3d0d5494df55874969cd952b3e4b68a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MmJmNWJhMTM3YWYyY2JmOWUyYTVkMWMxNjdiMWI5NjBmY2MxZGZhN2NkNjY4ZmUyNzg5MjAzMzdmNmFmMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZDU4NWNjMjI1MDJiZmUyYzNhODU0M2QxOWQyNDk2ZGVjNmVkOTc5MzllNjYzMWRhOGJhNjIzNDg0NjI1MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MTczN2E0MmNlMTJiMDJmY2RjMTljMjUwZmQzZWVmZDJkMTM5ZDg2YjZiZmM4YjY2YmY4OTkyNWEzYjEzMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1NjIwY2I1OTZkODVmZjIxZjljY2FjMjVjNzQ2N2ZlYWM0MjRjYzI0MTU1MDA4Y2ViZmIwOWExMzUxYjQwYmMifQ"
         }
       ]
     },
@@ -328,11 +328,15 @@
     },
     {
       "id": "claim_9655892af8ee4e4f8b85a8b36a179d8e",
-      "statement": "Gaps vs ADR targets, verified from source: the SmsSender.sendOrEnqueue shim referenced in the pipeline KDoc does not exist (the funnel is sendWithOutcome); there is no drain executor (commands execute inline, nothing polls remote_commands for RECEIVED rows); no production caller inserts remote_command_executions rows; and expireStale and the sync_cursors accessors have no production callers yet.",
+      "statement": "Gaps vs ADR targets, verified from source: the SmsSender.sendOrEnqueue shim referenced in the pipeline KDoc does not exist (the local funnel is sendWithOutcome); no production caller inserts remote_command_executions rows; and expireStale and the sync_cursors accessors have no production callers yet. (The former 'no drain executor' gap is closed: SecureCommandPoller now polls remote_commands and drains SEND_SMS rows.)",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L55-L59",
           "version": "repo-lines-v1:sha256:4897dede6cb274ec07b81db606997e240aa5bd173e777cf65ee36f966bd5407f:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2EzYzFjMGZlMDQ4NDBlNmNhMjU3MjIxODdmNjU1NjQyYzVjNjNkZDc3NzU0NDM0MDYzMmUzMzdmYzExOWM0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZkOTcyOGZiNDQyZWM3ODFkYzYwYzY4NzhjNTQ2ODQ0NTIwMTA4Y2EyYjFhZjRkYmIyMjUwOTEzMGE5MzZiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWJiOGIxNjJlOTM1ZTE2N2YzZGViOGMzYmI3NGM5OTJkMjIwMjZkYjUzM2Y5YzIzMzg0ZGI3MTFlN2M4N2QxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWJkOGRmY2IzYzk0OTYxNmIzNjBmNTNlMzFlZjZlMWU5MzRiMzA4YjdmNjE3MWU5ODc5YjhmZDcxMTlhNTgyYSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L190-L211",
+          "version": "repo-lines-v1:sha256:3a83d370197f0aa810abf2c933b189f4bbc04c8eedc71834d8b6b2d3d3f454ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0YzlkYTc5ZGIyY2ZlMjI1MjdkYzc5NGUxZmYwNDNkNWUzNzI1ZGE2NTE1NzIwZDVhNTIyNzNjNTQzNmMwZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0YmNlZGI0MjNlM2JkNGI1ODkxMjg4N2RjZmE4Njk2ZDkzZTVhNmVmYmU2ZmMwM2UzOTFlZjg5YTZjOWJhYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYjdmYmQ5NzVhMGNjMGIxZjJhNjFiODViMTNmOTg3NzY2MzZlYmZiZjQxY2MxNTY3MmJkZjViZGU5YzE1ZDIifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L114-L165",
@@ -375,10 +379,60 @@
           "version": "repo-lines-v1:sha256:e1f395e658e8018027a67148845f3ba104ebe1dad356dee34f436dfc88aaea1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyNTc1MDBjMzVlM2YyM2I1MTZmYzI2YzNjNmNhMjhkZThmOTUwYWNjMjA1NTgwYWQyMWFhMmRiZjRmNWRiNTM0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhMTljODg0N2RiNjA4OWYyZjgwMDhiZjcxOWU4YmU3OWE2YmZmYzQzMmFjNTgyNTUwZjJmY2JmYjY4MzJlNGM1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
         }
       ]
+    },
+    {
+      "id": "claim_6cf218979f8c4393892693bb45c37fa9",
+      "statement": "SecureCommandPoller (PR-10) is the strategic inbound command transport: each cycle claims up to 25 commands from POST /api/v1/agent/commands/claim as agentId 'android-agent' with per-device AgentAuth signing (X-API-Key legacy fallback), ingests them exactly-once via INSERT OR IGNORE on the unique idempotencyKey (redeliveries are never re-executed), and reports command status to /api/v1/agent/commands/{id}/status — fresh rows ACKed ACCEPTED, redeliveries re-ACKed honestly from the durable row (COMPLETED/FAILED when terminal); a lost ACK is logged and never fatal because it cannot re-trigger execution; it runs while ConnectionSupervisor declares the gateway CONNECTED under the same prefs.isEnabled + gmwebUrl gate as EventUploader.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L213-L253",
+          "version": "repo-lines-v1:sha256:28a22ea4470add44e7d10376ea5ccba0bc140056742cb32afcab06a3cc5a9ae0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4Yjg1ODVhNTM5ZGRjZWM3MzgxMWI4OTczMDA2YzVjMDYyZDU4Yzk4NDA0NmRlNWU4MDQ2OTQyY2U5MGVmMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L24-L59",
+          "version": "repo-lines-v1:sha256:fa3284e855a966d25195244decfa848e8afc03a0efe9e3f3083f6981eccb5448:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0N2QwODY5ODA5MTM1MzU3NjY0Nzc1OTg3ZmExYjAxZjZmZTFlMzU1OGUxYThlMjk2YTBiNWRlNDdmNDVkZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlNTI5ZDI4YTEwMjVkMjY4YWQ5NzMyMmExNTVmYWIwNGY0NzVhNDE0MjM2MzUwMjBhMjhmMzk0NDQzZjU0ZDUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L75-L188",
+          "version": "repo-lines-v1:sha256:de246b95da775b1147ca5ea5a826559c730d3b1515872857fcb4f7bfb8cad32e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4YzAxYzBmNzYyNWE0MmIzMjQ3MTVlNTFiNzJmYTQ2N2NiNWYwMWQxZGM1NzI4MDQ1ZDgyMmI3OWU2ZDlmNWIyIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyOTNmMWEwZjU0ZTRkOGYwOTgxODNjMjE5NjczNmQ5Y2JjOGU3YmZkYTkxNmQzZTMxNzg3NjMxYzgxZTkyYWZkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlMmE2YTg1YTIyNWFiODFlODE0OGFhZTg5N2MzNGIyZmZhM2VhOTdiYTQ4OTgxYmI4MGU0M2VjMTgyM2YwZGM4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmYzU4ZWVkYzVkYTFiMjczODgyYzRkYTA1MzFiNGExYzJjZmEwMjQ0ZGYzY2I1MmI0MmMwOGQwMjkxNDExZDZkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_95cbe808d3b8466db60f5bfe4d121aa6",
+      "statement": "Inbound SEND_SMS execution flows through GatewayOutgoingPipeline.executeIngested, which performs the single-owner RECEIVED→ACCEPTED claim and guarded ACCEPTED→EXECUTING→COMPLETED/FAILED transitions (via SmsSender.sendWithOutcome) — this poller path runs regardless of the ENQUEUE_ALL_SENDS flag, which gates only the local send funnel; the guarded command state machine is what prevents double execution even on duplicate claims.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L190-L211",
+          "version": "repo-lines-v1:sha256:3a83d370197f0aa810abf2c933b189f4bbc04c8eedc71834d8b6b2d3d3f454ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0YzlkYTc5ZGIyY2ZlMjI1MjdkYzc5NGUxZmYwNDNkNWUzNzI1ZGE2NTE1NzIwZDVhNTIyNzNjNTQzNmMwZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0YmNlZGI0MjNlM2JkNGI1ODkxMjg4N2RjZmE4Njk2ZDkzZTVhNmVmYmU2ZmMwM2UzOTFlZjg5YTZjOWJhYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYjdmYmQ5NzVhMGNjMGIxZjJhNjFiODViMTNmOTg3NzY2MzZlYmZiZjQxY2MxNTY3MmJkZjViZGU5YzE1ZDIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L111-L156",
+          "version": "repo-lines-v1:sha256:ddf7183ef118aea6098cf22df4deff6d5f8b0273fff620895e54494fee4668e8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNWQxNDJjNzMwYWZkMDJlMmJkZGU5YTVjZjIwZTQzMWZjN2ZlZmNiMmM2ODgzNTQ5YTJjMzE4YTIzNGRmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzOTcwZWUyMTgwODJkMzYxZWMzMzE5YWY5YjJiY2E0YTk3YWIxZTc0ZWZiMGE0NjJjMjU3OWIxYzJlODc5ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_01aa4b8f8ed84d16a74b91ad65e056f9",
+      "statement": "The remote_commands lifecycle is RECEIVED→ACCEPTED→EXECUTING→COMPLETED/FAILED with RECEIVED→EXPIRED as a visible terminal sweep: SecureCommandPoller ACKs fresh commands ACCEPTED, then executeIngested (PR-10) or the local funnel (PR-03) moves them through markState with fromStates {ACCEPTED}→EXECUTING and {EXECUTING, ACCEPTED}→COMPLETED/FAILED, while expireStale (no production caller yet) flips stale RECEIVED rows to EXPIRED.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L196-L204",
+          "version": "repo-lines-v1:sha256:3d5ff6fba1e52ed5c4eeb77c65cb3432f9e7d4ccc471f29f254877104a49d75f:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2YxNjNmNzc4NmM0MmNhODg5MjcwZjc1M2E3ODA2MjY0MjZjMDNmOTczYTA1YWRlYWVkZDRmYTRkMjcwZjBkNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjA5MjBmZGZjYWFjMDEzYTE0ODA0ODdkMmYzYThjZTc3ZWJkYjgwMzU1YWZhMWQzODY3MzgxODNjMDMwYjZlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDdiOTBkMGQ1MDdiZTQ5NTA0YWVkOGUyNzVhOGYzZDUzOWZlZTk0NzZiM2ZhMTkyN2E2MTg2MzNhMzMwZGJmOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L93-L116",
+          "version": "repo-lines-v1:sha256:7cb99e8722f54fe6dc5c2fe0a6586b52b309597c188d1640c6e3e84db279d0c0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1MDY5NzFhMWE2ZmQ3YmYzYmFhNDY3YTAzZmRjZWRmOWNkNTQwNTM1MGE3YjY5NzNhNWY1MWZkZGI3YjQxMjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3ZGRiNThhN2UwOWYyMjYyNzMzZjRjNDAwM2ZjZGEzYzRiOTY1ZjYyMmVhNmQzMzE3OTA1NTA4YWUyZWRjNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjNDFlZmYyZWNiNDlhYjA4MWQzNzA3ZWNiY2MyYmMxNjc1ZDA3NGZiNTljZWU2MDFiMTgwYzFlOTY2MzNlMTYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L114-L156",
+          "version": "repo-lines-v1:sha256:5ea76735ac55e5f6491d7096efdebe11ccbb6c43234e4ce12de40a36fdbbdf3b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNTJhN2ViNDNhNzk5ZjExY2FlM2RlMWM0MzlhZjYyNWEwMTY1MWQwNWY2ZTgyY2VlZTk5MDBjNDBhYzVkMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4NmFjYTg2ZmE3NmIwOGE0ZDBhYzNkNTUyODUzOGFiMDBmMjBkYjAxZWFjMDNkNmFiN2M5ODYyMTkzYzU5ODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T09:09:40.113Z"
+    "at": "2026-08-31T16:56:27.725Z"
   }
 }

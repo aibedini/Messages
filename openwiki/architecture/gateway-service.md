@@ -1,21 +1,24 @@
 ---
 type: "Reference"
 title: "Gateway service"
+description: "Android foreground service running the self-hosted SMS gateway: the ConnectionSupervisor reconcile loop that supervises the LAN GatewayServer, HeartbeatManager, OutboxPoller, EventUploader (PR-02) and SecureCommandPoller (PR-10), plus boot/crash recovery and the three-flag (desired/runtime/consent) invariant."
+tags: ["gateway", "connection-supervisor", "foreground-service", "android", "state-machine", "gmweb", "durable-outbox"]
 openwiki_generated: true
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
   - id: openwiki-source-ea11aef3cbe7111f27dd9955
     resource: repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt
+  - id: openwiki-source-5e530513d26a924a8f4f6416
+    resource: repo://app/src/androidTest/java/com/autonomousone/messages/GatewayDurabilityDeviceTest.kt
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
   - id: openwiki-source-cfb1c00ed26591167aaf9c37
     resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
   - id: openwiki-source-51189b7b42ba492b233ef785
     resource: repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt
+  - id: openwiki-source-56cf232bc574ee29a261521c
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/AgentAuth.kt
   - id: openwiki-source-1188ef94bbd10bf1710668b7
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
   - id: openwiki-source-a0c585f933881808bc5040e8
@@ -34,6 +37,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/NetworkMonitor.kt
   - id: openwiki-source-754f516c2fdb40e657ff023b
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-f47a2668cd817415f8991735
@@ -54,7 +59,10 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt
   - id: openwiki-source-4483a04ddf11761c916ba4e0
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T16:56:27.725Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-08-31T16:56:27.725Z
 ---
 
 
@@ -63,9 +71,11 @@ The self-hosted gateway is an Android foreground service that exposes a local RE
 Key components:
 
 - `GatewayService` — the exported=false foreground service; owns the notification, the component wiring, and intent actions (`ACTION_START`, `ACTION_STOP`, `ACTION_RETRY_NOW`).
-- `ConnectionSupervisor` — process-wide singleton; the one reconcile loop that starts/stops the LAN server, heartbeat, and outbox poller, and publishes `State`.
+- `ConnectionSupervisor` — process-wide singleton; the one reconcile loop that starts/stops the five supervised components (the `GatewayServer` LAN server, `HeartbeatManager`, `OutboxPoller`, `EventUploader` PR-02, and `SecureCommandPoller` PR-10) plus the shadow-sync loop, and publishes `State`.
 - `GatewayServer` — hand-rolled `ServerSocket` HTTP server (no `com.sun.net.httpserver`, which is absent from the Android runtime) with DoS and brute-force hardening.
 - `GatewayPreferences` — the `sms_gateway_prefs` SharedPreferences owner: user intent, runtime mirror, consent, and Keystore-encrypted secrets.
+- `EventUploader` — PR-02: the durable `gateway_event_outbox` worker; the only transmitter of cloud events (claim → batch POST → partial ACK, never silently dropped).
+- `SecureCommandPoller` — PR-10: the strategic command transport; outbound HTTPS long-poll of GMweb's `/api/v1/agent/commands/claim` feeding the durable `remote_commands` queue.
 - `NetworkMonitor` — the single source of truth for "validated internet" (transition-only `Flow`, no polling).
 - `GatewayAccessPolicy` — the two-line consent gate used at every start and transmission boundary.
 - `BootGatewayReceiver` — replays `ACTION_START` after `BOOT_COMPLETED`/`LOCKED_BOOT_COMPLETED` when the user's intent was persisted.
@@ -73,7 +83,7 @@ Key components:
 
 ## GatewayService: foreground lifecycle
 
-`GatewayService` is declared in the manifest as `android:exported="false"` with `android:foregroundServiceType="dataSync|specialUse"` (API 34+ also ORs in `SPECIAL_USE` at `startForeground` time; `dataSync` keeps Doze from freezing the sockets mid-long-poll). `onCreate` wires `BackendClient`, `RegistrationManager`, `HeartbeatManager`, `OutboxPoller`, the `NetworkMonitor` singleton, and finally `ConnectionSupervisor.get(...)` with a `newServer` factory that constructs `GatewayServer(context, prefs.port, prefs.apiKey, bindAllInterfaces = prefs.bindAllInterfaces)` and a `ManagedComponents` adapter over `heartbeatManager`, `outboxPoller`, and `TelephonySyncCoordinator.ensureLoopRunning()`.
+`GatewayService` is declared in the manifest as `android:exported="false"` with `android:foregroundServiceType="dataSync|specialUse"` (API 34+ also ORs in `SPECIAL_USE` at `startForeground` time; `dataSync` keeps Doze from freezing the sockets mid-long-poll). `onCreate` wires `BackendClient`, `RegistrationManager`, `HeartbeatManager`, `OutboxPoller`, `EventUploader` (PR-02 durable cloud-event transmitter) and `SecureCommandPoller` (PR-10 strategic command transport — the legacy `OutboxPoller` stays as the compatibility transport), the `NetworkMonitor` singleton, and finally `ConnectionSupervisor.get(...)` with a `newServer` factory that constructs `GatewayServer(context, prefs.port, prefs.apiKey, bindAllInterfaces = prefs.bindAllInterfaces)` and a `ManagedComponents` adapter that drives heartbeat start/stop/retryNow, outbox poller start/stop, `eventUploader` start/stop, `commandPoller` start/stop, and `TelephonySyncCoordinator.ensureLoopRunning()`.
 
 `onStartCommand` handles four shapes:
 
@@ -109,9 +119,9 @@ The loop (`ensureLoop()`, idempotent) spawns three coroutines in the service sco
 
 `reconcile()` transitions:
 
-- **no desired or no consent** → stop poller/heartbeat/server, set the runtime flag `prefs.isEnabled = false` *first* (components stop transmitting before teardown), then `DISABLED`.
-- **offline** → stop poller and heartbeat (zero HTTP requests while offline) and set `WAITING_FOR_NETWORK` — offline is an expected condition and is deliberately *not* `ERROR`. The LAN server is intentionally left running: local clients do not need the internet.
-- **online + desired**, coming from a degraded state (`RECONNECTING`/`ERROR`/`WAITING_FOR_NETWORK`) → `RECONNECTING`, then: rebind the LAN server if needed, idempotently start heartbeat, start the outbox poller (only when `gmwebUrl` is non-blank), start shadow sync, reset backoff, set `prefs.isEnabled = true` (only after a fully successful reconcile), then `CONNECTED`.
+- **no desired or no consent** → set the runtime flag `prefs.isEnabled = false` *first* (components stop transmitting before teardown), then stop the poller, heartbeat, `EventUploader` and `SecureCommandPoller`, then stop and drop the LAN server, then `DISABLED`.
+- **offline** → set `prefs.isEnabled = false` and stop the poller and heartbeat (zero HTTP requests from them while offline), then `WAITING_FOR_NETWORK` — offline is an expected condition and is deliberately *not* `ERROR`. The LAN server is intentionally left running: local clients do not need the internet. `EventUploader` and `SecureCommandPoller` are *not* stopped on this path — they self-gate on `prefs.isEnabled` (plus a non-blank `gmwebUrl`) directly and idle with zero HTTP until the supervisor flips `isEnabled` back on.
+- **online + desired**, coming from a degraded state (`RECONNECTING`/`ERROR`/`WAITING_FOR_NETWORK`) → `RECONNECTING`, then: rebind the LAN server if needed, idempotently start heartbeat, `EventUploader`, `SecureCommandPoller`, the outbox poller (only when `gmwebUrl` is non-blank), and shadow sync, reset backoff, set `prefs.isEnabled = true` (only after a fully successful reconcile), then `CONNECTED`.
 
 ```mermaid
 stateDiagram-v2
@@ -142,7 +152,9 @@ Note the asymmetry: a fresh start transitions `DISABLED → CONNECTED` directly 
 
 **retryNow().** Called when the network flips online (validated) or from the UI's manual reconnect. It guards on desired + consent + online, resets the loop backoff to 5 s, calls `ensureLoop()` (revives a dead loop, e.g. after a service rebuilt without `ACTION_START`), and calls `components.retryHeartbeat()` — `HeartbeatManager.retryNow()` resets the 1 s base backoff ladder *and* wakes the pending backoff sleep via its conflated wake channel (a plain `start()` would no-op while the job is alive, silently keeping the old backoff in force) — then nudges a reconcile. Net effect: a 5-second WiFi re-association retries immediately instead of waiting out the 5-minute ladder.
 
-**Public API.** `start()` sets `desiredEnabled = true` and persists `gatewayDesiredEnabled = true` (called from every `ACTION_START` entry: user toggle, boot receiver, `START_STICKY` revival). `stop()` flips both off and reconciles but deliberately does *not* stop the service — `ACTION_STOP`'s own path handles that. `shutdown()` (service `onDestroy`/`ACTION_STOP`) cancels the loop, stops the server and components, sets `DISABLED`, and clears the process singleton.
+**Public API.** `start()` sets `desiredEnabled = true` and persists `gatewayDesiredEnabled = true` (called from every `ACTION_START` entry: user toggle, boot receiver, `START_STICKY` revival). `stop()` flips both off and reconciles but deliberately does *not* stop the service — `ACTION_STOP`'s own path handles that. `shutdown()` (service `onDestroy`/`ACTION_STOP`) cancels the loop, stops the server and all five components, sets `DISABLED`, and clears the process singleton.
+
+**The PR-10 command transport.** The fifth supervised component, `SecureCommandPoller`, is the strategic command transport — an outbound-only HTTPS long-poll of GMweb's `POST /api/v1/agent/commands/claim` (body `{agentId: "android-agent", limit: 25}`, per-device signed by `AgentAuth`; `X-API-Key` is kept as a legacy fallback for older GMweb builds). Each claimed row lands in the durable `remote_commands` queue exactly-once via `INSERT OR IGNORE` on the unique `idempotencyKey` index; a redelivered command is never double-executed — the poller merely reports the durable local state honestly via `POST /api/v1/agent/commands/{id}/status` (guarded lifecycle `ACCEPTED→EXECUTING→COMPLETED/FAILED`). `SEND_SMS` rows execute immediately through the single `GatewayOutgoingPipeline` funnel, while the legacy `OutboxPoller` remains untouched as the compatibility transport. Like `EventUploader`, the loop self-gates on `prefs.isEnabled` plus a non-blank `gmwebUrl` (zero HTTP until the supervisor declares `CONNECTED`), retries a failed cycle after 5 s, and holds a 2 s quiet cadence on empty claims.
 
 ## Boot and crash recovery
 
@@ -159,7 +171,7 @@ The preference split below is what makes all three possible: the user's intent s
 This is the most important invariant in the subsystem:
 
 - **`gatewayDesiredEnabled`** (`gateway_desired_enabled`) — the **user's intent** that the gateway runs. Persisted, survives reboot, and is *never* touched by runtime teardown (network loss, `stopServer`, service death). Written only by supervisor `start()`/`stop()`. This is what boot recovery replays.
-- **`isEnabled`** (`gateway_enabled`) — the **runtime mirror**: true while the components are actually up. Derived by `ConnectionSupervisor` — written `false` *before* stopping components on the disabled/offline paths, and `true` only at the very end of a fully successful reconcile — plus reset to `false` when consent is revoked. Components do not write it. Transmission gates (`HeartbeatManager`, `OutboxPoller`, `WebhookEngine`) all check `GatewayAccessPolicy.canTransmit(hasConsent, isEnabled)`, so a supervisor-stopped gateway stops sending even if the service process still lives.
+- **`isEnabled`** (`gateway_enabled`) — the **runtime mirror**: true while the components are actually up. Derived by `ConnectionSupervisor` — written `false` *before* stopping components on the disabled/offline paths, and `true` only at the very end of a fully successful reconcile — plus reset to `false` when consent is revoked. Components do not write it. Transmission gates (`HeartbeatManager`, `OutboxPoller`, `WebhookEngine`) all check `GatewayAccessPolicy.canTransmit(hasConsent, isEnabled)`, so a supervisor-stopped gateway stops sending even if the service process still lives. `EventUploader` (PR-02) and `SecureCommandPoller` (PR-10) are the two exceptions to *how* the gate is expressed: instead of calling `canTransmit`, each loop gates directly on `prefs.isEnabled && prefs.gmwebUrl.isNotBlank()` and idles with zero HTTP otherwise — so the same runtime flag (plus a configured `gmwebUrl`) still stops them even though they never consult `GatewayAccessPolicy`.
 - **`hasGatewayConsent`** — versioned consent: `storedVersion >= CURRENT_CONSENT_VERSION` (currently 1), so material data-use changes can force a fresh opt-in. `acceptGatewayConsent()` records the version and a timestamp; `revokeGatewayConsent()` clears consent, resets desired/enabled/auto-start, and clears cloud credentials. `GatewayAccessPolicy.canStart(consent)` gates every service start path, and the supervisor's reconcile treats missing consent identically to "not desired".
 
 Consequently the runtime truth consumers (UI, notification, `isServiceRunning`) read is always *derived from supervisor state*, never a hand-set flag.
@@ -195,13 +207,21 @@ URL configuration is HTTPS-only by construction: the `backendUrl` setter `requir
 - One reconcile loop, conflated nudges, idempotent actions — never add per-component retry logic that bypasses it.
 - `GatewayServer` instances are single-use: stop() makes them unrestartable; always replace via the `newServer` factory.
 - Only the supervisor writes the runtime `isEnabled` (plus the consent-revocation reset); only `start()`/`stop()` write `gatewayDesiredEnabled`; consent gates both starts and transmissions.
-- Offline is `WAITING_FOR_NETWORK`, never `ERROR`; the LAN server stays up while the poller/heartbeat are gated to zero traffic.
+- Offline is `WAITING_FOR_NETWORK`, never `ERROR`; the LAN server stays up while the poller/heartbeat are stopped and `EventUploader`/`SecureCommandPoller` self-gate to zero traffic on `isEnabled`.
 - Byte-based parsing with the 1 MB body / 100 header / 32 KB header-block caps and constant-time auth are the DoS/brute-force contract of the LAN surface.
 - Secrets never persist in plaintext; if encryption is impossible, the secret is dropped, not demoted.
 
 ## Tests
 
-The gateway runtime has exactly two JVM unit tests in this repository. `GatewayAccessPolicyTest` covers the full truth tables of `canStart` (consent required) and `canTransmit` (consent **and** runtime enabled required). `EveSmsQueueTest` is a pure-JVM suite (no `@RunWith`/Robolectric) over `EveSmsQueue.MemoryStore` that covers the queue the LAN surface depends on: priority ordering, idempotency keys, the queued→active→sent/failed status flow, cancellation rules, per-priority capacity, and GMweb-compatible verification fields. `ConnectionSupervisor` and `GatewayServer` themselves are Android-dependent (ServerSocket binding, Keystore, ConnectivityManager) and have no JVM unit tests; their behavior is exercised on-device through the gateway screen and the log flow. The `androidTest` source set contains only the stock `ExampleInstrumentedTest`.
+The gateway subsystem has five focused pure-JVM unit tests (no `@RunWith`/Robolectric):
+
+- `GatewayAccessPolicyTest` — the full truth tables of `canStart` (consent required) and `canTransmit` (consent **and** runtime enabled required).
+- `EveSmsQueueTest` — over `EveSmsQueue.MemoryStore`: priority ordering, idempotency keys, the queued→active→sent/failed status flow, cancellation rules, per-priority capacity, and GMweb-compatible verification fields.
+- `GatewayEventFactoryTest` — deterministic message/event UUIDs (TechSpec §13), the `envelope.v1` round-trip at cryptoVersion 0, and rejection of unknown crypto versions.
+- `GatewaySyncPolicyTest` — the LOCK 13 batch caps (100 events / 512 KiB), the lone-oversized-event rule, and full-jitter backoff bounds capped at 5 minutes.
+- `GatewaySyncSchemaTest` — pins the additive `MIGRATION_6_7` CREATE TABLE/INDEX statements against the KSP-generated `7.json`, including the exactly-once UNIQUE indexes.
+
+Beyond the JVM, `androidTest` holds a device-only `GatewayDurabilityDeviceTest` (PR-01..04 process-death contract, run via `./gradlew :app:connectedDebugAndroidTest`): real-Keystore identity enrollment, command-redelivery dedupe by the unique `idempotencyKey` index, guarded `markCommandState` transitions that reject illegal state jumps, and `recoverSending()` requeue of crash-window `SENDING` rows. `ConnectionSupervisor`, `GatewayServer` and `EventUploader` themselves are Android-dependent (ServerSocket binding, Keystore, ConnectivityManager, Room) and have no direct JVM unit tests; their behavior is exercised on-device through the gateway screen and the log flow.
 
 ## Related pages
 

@@ -1,11 +1,11 @@
 ---
 type: architecture-component
 title: Durable Gateway Sync (PR-01..PR-03)
-description: "The Messaging Platform durability layer: the five v7 Room tables, the GatewaySyncRepository boundary, the event outbox state machine, the command inbox exactly-once model, GatewayEventFactory envelope identity, EventUploader as the sole durable cloud transmitter, the durable SEND_SMS pipeline — and an honest current-wiring status vs the ADR targets."
-tags: [gateway, durability, outbox, command-inbox, exactly-once, room, retry, backoff, dead-letter, sms, android, adr]
+description: "The Messaging Platform durability layer: the five v7 Room tables, the GatewaySyncRepository boundary, the event outbox state machine, the command inbox exactly-once model, GatewayEventFactory envelope identity, EventUploader as the sole durable event transmitter, the PR-10 SecureCommandPoller inbound command transport, the durable SEND_SMS pipeline — and an honest current-wiring status vs the ADR targets."
+tags: [gateway, durability, outbox, command-inbox, command-poller, exactly-once, room, retry, backoff, dead-letter, sms, android, adr]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T09:09:40.113Z
+    at: 2026-08-31T16:56:27.725Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
@@ -25,6 +25,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-4ad02c444ebadf27339b8cbb
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-48c016677ac392f8822f01d6
@@ -45,10 +47,10 @@ sources:
     resource: repo://docs/adr/ADR-002-command-encryption-and-cke.md
   - id: openwiki-source-254c6cdac74af5417488b613
     resource: repo://docs/adr/ADR-003-android-availability-doze-slo.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-31T09:09:40.113Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T16:56:27.725Z" }
 ---
 
-# Durable Gateway Sync (PR-01..PR-03)
+# Durable Gateway Sync (PR-01..PR-03 + PR-10)
 
 PR-01..PR-03 build the durability foundation that lets the Messaging Platform satisfy
 **ADR-001** (Android is the trust root), **ADR-002** (point-to-point command encryption,
@@ -57,10 +59,12 @@ eventual pickup + no duplicate execution*, with the `<3s` pickup SLO measured **
 the agent is `AGENT_AVAILABLE`). The unifying principle, taken from the ADRs, is that
 **correctness lives in the queue, not on the wire**: every critical event or command is
 committed to durable storage before it is transmitted or executed, so a dead radio, a crash,
-or a dropped ACK can never lose it. This page documents the five v7 tables, the repository
-boundary, both state machines, the event factory, the uploader, and the outgoing SMS
-pipeline — and states, verified against source, where the wiring is live today and where the
-ADR targets are still ahead.
+or a dropped ACK can never lose it. PR-10 has since landed the remaining transport half —
+`SecureCommandPoller` pulls claimed commands from GMweb into the PR-01 `remote_commands`
+table and drains `SEND_SMS` rows inline. This page documents the five v7 tables, the
+repository boundary, both state machines, the event factory, the uploader, the command
+poller, and the outgoing SMS pipeline — and states, verified against source, where the
+wiring is live today and where the ADR targets are still ahead.
 
 ## The five v7 tables
 
@@ -89,8 +93,9 @@ gateway code may assume the payload is readable text.
 ## `GatewaySyncRepository` boundary
 
 `GatewaySyncRepository` (PR-01) is the **deliberately dumb** boundary over the five tables:
-**no crypto, no networking**. Upload and poll workers (PR-02/PR-09/PR-10) call its suspend
-functions; the repository owns the transactional semantics that make the outbox safe.
+**no crypto, no networking**. The transport workers that use it — `EventUploader` (PR-02,
+events out) and `SecureCommandPoller` (PR-10, commands in) — call its suspend functions; the
+repository owns the transactional semantics that make the outbox and inbox safe.
 
 - `claimBatch(now)` is the **transactional claim**. It runs inside
   `db.withTransaction { … }`: select the claimable rows, then `markSending(ids)` flips
@@ -175,6 +180,7 @@ to GMweb and **before** execution. Exactly-once is a two-part construction:
 2. **One `remote_command_executions` row per attempt** — `RemoteCommandExecutionEntity`
    (`commandId`, `attempt`, `startedAt`, `finishedAt`, `result`) is the audit trail that makes
    exactly-once *provable*: a command has never executed twice without two rows existing.
+   (Schema target only today — see *Current wiring status*.)
 
 The command state machine is guarded so illegal transitions cannot occur:
 
@@ -183,15 +189,35 @@ The command state machine is guarded so illegal transitions cannot occur:
   only for the winner. Only one executor can move a command `RECEIVED → ACCEPTED`.
 - `markState(commandId, state, fromStates)` is the general **guarded transition** —
   `UPDATE … SET state = … WHERE commandId = … AND state IN (fromStates)`, where the `WHERE`
-  clause enforces the legal-from set. The send executor (PR-03) uses it to move
-  `ACCEPTED/EXECUTING → COMPLETED/FAILED`.
+  clause enforces the legal-from set. The send path (PR-03 local funnel and the PR-10 poller)
+  uses it to move `ACCEPTED → EXECUTING → COMPLETED/FAILED`.
 
 Command states: `RECEIVED`, `ACCEPTED`, `EXECUTING`, `COMPLETED`, `FAILED`, `EXPIRED`.
 
+```mermaid
+stateDiagram-v2
+    [*] --> RECEIVED : ingest (INSERT OR IGNORE on idempotencyKey)
+    RECEIVED --> ACCEPTED : markAcceptedIfReceived (single-owner claim)
+    ACCEPTED --> EXECUTING : markState from ACCEPTED
+    EXECUTING --> COMPLETED : markState from EXECUTING
+    EXECUTING --> FAILED : markState from EXECUTING
+    ACCEPTED --> COMPLETED : markState fallback from ACCEPTED
+    ACCEPTED --> FAILED : markState fallback from ACCEPTED
+    RECEIVED --> EXPIRED : expireStale past expiresAt (not yet scheduled)
+    COMPLETED --> [*]
+    FAILED --> [*]
+    EXPIRED --> [*]
+```
+
+*Caption: the `remote_commands` lifecycle — guarded transitions only; the WHERE-clause
+legal-from sets are the invariant.*
+
 **24 h expiry floor** (TechSpec §93): a queued command must never be deleted by a short
-timeout. `GatewayOutgoingPipeline` sets `expiresAt = now + 24h`, and `RemoteCommandDao`
-provides `expireStale(now)` to flip `RECEIVED` rows past their `expiresAt` to `EXPIRED` (a
-visible terminal state, matched by the GMweb command expiry when it lands).
+timeout. `GatewayOutgoingPipeline` sets `expiresAt = now + 24h` on local enqueue, and
+`RemoteCommandDao` provides `expireStale(now)` to flip `RECEIVED` rows past their `expiresAt`
+to `EXPIRED` (a visible terminal state, matched by the GMweb command expiry). Commands
+claimed from GMweb carry the server-provided `expiresAt`. Note `expireStale` has no
+production caller yet — the floor is set, but nothing schedules the sweep.
 
 ### `remote_conversation_map` — the only threadId ↔ UUID home
 
@@ -230,10 +256,11 @@ message lifecycle facts into outbox rows. Its identity rules (TechSpec §13) mak
 
 Builders: `messageCreated`, `messageStatusChanged`, `messageDeleted`, `threadRead`.
 
-## `EventUploader` — the sole durable cloud transmitter
+## `EventUploader` — the sole durable event transmitter
 
-`EventUploader` (PR-02) is the **only** durable cloud transmitter. It is a supervisor-managed
-coroutine that owns no RAM-only state: the queue is the source of truth. Its loop:
+`EventUploader` (PR-02) is the **only** durable *event* transmitter (its counterpart for the
+command direction is `SecureCommandPoller`, below). It is a supervisor-managed coroutine that
+owns no RAM-only state: the queue is the source of truth. Its loop:
 
 1. **Recover first** — on `start()`, the very first act is `repo.recoverSending()`, requeueing
    any `SENDING` rows left by a crash between claim and ACK.
@@ -241,9 +268,10 @@ coroutine that owns no RAM-only state: the queue is the source of truth. Its loo
    gated it sleeps (5 s) and makes **zero HTTP**.
 3. **Claim** — `repo.claimBatch(now)` (transactional → `SENDING`).
 4. **Upload** — `uploadBatch` decodes each payload via
-   `GatewayEventFactory.decodePayloadEnvelope`, builds the `{"events":[…]}` body, and POSTs to
-   **`POST /api/v1/agent/events/batch`** through `BackendClient`. An undecodable payload
-   dead-letters *that one row only* and keeps the rest of the batch.
+   `GatewayEventFactory.decodePayloadEnvelope` (an integrity gate only — the envelope bytes
+   go on the wire verbatim, base64), builds the `{"events":[…]}` body, and POSTs to
+   **`POST /api/v1/agent/events/batch`** through `BackendClient` (target `prefs.backendUrl`).
+   An undecodable payload dead-letters *that one row only* and keeps the rest of the batch.
 5. **Partial ACK** — on `Success`, it parses `accepted[]` (`{eventId, serverSequence}`); each
    reported `eventId` → `onAcked` (`ACKED`), each missing one → `onRetry` (`PENDING` +
    attempt-counted backoff). `acked == batch.size` → `ALL_ACKED`, else `PARTIAL`.
@@ -281,6 +309,36 @@ sequenceDiagram
 
 *Caption: enqueue → claim → upload → per-eventUuid partial ACK for the durable cloud outbox.*
 
+## `SecureCommandPoller` — inbound command transport (PR-10)
+
+`SecureCommandPoller` closes the other direction: it is the strategic command transport that
+fills the PR-01 `remote_commands` inbox from GMweb. Like `EventUploader` it is a
+supervisor-managed coroutine with no RAM-only truth — the durable row is the truth, and the
+same runtime gate applies (`prefs.isEnabled` + non-blank `gmwebUrl`; zero HTTP while gated).
+
+Each cycle:
+
+1. **Claim** — POST **`/api/v1/agent/commands/claim`** with `{agentId: "android-agent",
+   limit: 25}`, signed per-device by `AgentAuth` over the canonical request (ADR-001) with
+   `X-API-Key` as a legacy fallback. The server flips claimed rows
+   `QUEUED → DELIVERED_TO_AGENT` atomically.
+2. **Ingest** — `repo.ingestCommand` (`INSERT OR IGNORE` on the unique `idempotencyKey`):
+   fresh commands return `true`; redeliveries return `false` and are **never executed again**.
+3. **ACK** — a fresh command is ACKed `ACCEPTED` via POST
+   `/api/v1/agent/commands/{id}/status`; a redelivery is re-ACKed *honestly* from the durable
+   row — `COMPLETED` ("already executed") or `FAILED` when terminal, and left alone while
+   in-flight (its own executor will report). A lost or failed ACK is logged, never fatal: it
+   cannot cause re-execution because execution is gated on the local row's state.
+4. **Drain** — fresh `SEND_SMS` rows execute inline through
+   `GatewayOutgoingPipeline.executeIngested`: the single-owner `RECEIVED → ACCEPTED` claim,
+   then guarded `ACCEPTED → EXECUTING → COMPLETED/FAILED` via `SmsSender.sendWithOutcome`.
+   This path runs **regardless of the `ENQUEUE_ALL_SENDS` rollout flag** (that flag gates the
+   *local* send funnel only). Other command types are ingested and reported but not executed
+   yet.
+
+Cycle failures back off 5 s; an empty claim sleeps 2 s. The legacy `OutboxPoller`
+(`/gateway/pull`) remains untouched as the compatibility transport.
+
 ## `GatewayOutgoingPipeline` — durable SEND_SMS enqueue
 
 `GatewayOutgoingPipeline` (PR-03) is intended to be the **single durable queue** for outgoing
@@ -289,6 +347,11 @@ SMS. `enqueueSendSms(phone, body, threadId, …)` resolves the conversation UUID
 JSON payload (`cryptoVersion = 0`), sets the 24 h `expiresAt` floor, and ingests the row
 through `ingestCommand`. Redelivery with the same `idempotencyKey` returns the **existing**
 command id (exactly-once). It returns a `Plan` record (a pure decision record, JVM-testable).
+Its PR-10 companion, `executeIngested(cmd, repo)`, drains a REMOTE-ingested `SEND_SMS` row
+through the same guarded lifecycle and is the execution path the `SecureCommandPoller` hands
+rows to. (The pipeline KDoc still describes a `SmsSender.sendOrEnqueue` compatibility shim
+and an order-draining executor — neither exists in source; the real local funnel is
+`sendWithOutcome` and the real inbound drain is the poller.)
 
 ## Current wiring status (verified from source)
 
@@ -306,31 +369,43 @@ The ADRs describe the target; the code is mid-rollout. Status, checked against t
     reconcile). Its loop gates on `prefs.isEnabled && prefs.gmwebUrl.isNotBlank()` (while gated
     it makes zero HTTP), then POSTs the batch to `prefs.backendUrl` (build-time default
     `https://gaitway.autonomousone.in`) at `/api/v1/agent/events/batch`.
+- **Inbound command transport is LIVE for SEND_SMS (PR-10).** `SecureCommandPoller` is
+  instantiated in `GatewayService.onCreate` and started/stopped by the **same**
+  `ConnectionSupervisor` reconcile as `EventUploader` (`startCommandPoller`/
+  `stopCommandPoller`; both stop when the gateway is disabled or consent is lost; while
+  offline the supervisor flips `prefs.isEnabled` off and stops only the legacy
+  `OutboxPoller`/heartbeat, and the uploader and command poller hold themselves at zero HTTP
+  via their own runtime gate). A fresh `SEND_SMS` claimed from
+  GMweb executes inline via `GatewayOutgoingPipeline.executeIngested` and its terminal state
+  is reported back to GMweb; redeliveries are never re-executed.
 - **The old fire-and-forget cloud leg is gone.** `WebhookEngine`'s KDoc still carries PR-02
   language, but its *cloud* path has been deleted — what remains is the user-configured
   **local** webhook only (best-effort, consent-gated via
   `GatewayAccessPolicy.canTransmit`, HTTPS-only, optional HMAC `X-Signature`). The durable
   outbox, not the webhook, is now the event path.
-- **Outgoing pipeline is present but not the live default.** `enqueueSendSms` exists and is
-  called by `SmsSender.sendWithOutcome`, but only when the `ENQUEUE_ALL_SENDS` rollout flag is
-  `true` — it **defaults to `false`**, so production sends still take the direct
+- **Outgoing local send path is present but not the live default.** `enqueueSendSms` exists
+  and is called by `SmsSender.sendWithOutcome`, but only when the `ENQUEUE_ALL_SENDS` rollout
+  flag is `true` — it **defaults to `false`**, so production local sends still take the direct
   `SmsManager` path. The durable branch, when on, claims the command with
-  `markCommandAcceptedIfReceived` and transitions it to `COMPLETED`/`FAILED`.
+  `markCommandAcceptedIfReceived` and transitions it to `COMPLETED`/`FAILED`. The
+  `ENQUEUE_ALL_SENDS` flag does **not** gate the inbound poller path, which executes
+  `SEND_SMS` rows directly through `executeIngested`.
 - **Not yet implemented (gap vs ADR targets):**
   - The `SmsSender.sendOrEnqueue` compatibility shim referenced by the pipeline KDoc does
-    **not** exist in source (the funnel is `sendWithOutcome`, not `sendOrEnqueue`).
-  - There is **no drain executor**: when the flag is on, the command executes inline in the
-    send thread; nothing asynchronously polls `remote_commands` for `RECEIVED` rows.
+    **not** exist in source (the local funnel is `sendWithOutcome`, not `sendOrEnqueue`).
   - **Execution rows are not yet written** — no production caller inserts into
     `remote_command_executions`, so the "one row per attempt" audit trail is the PR-01 schema
     target, not yet recorded.
-  - `expireStale` (command expiry) and the `sync_cursors` accessors have no production
-    callers yet; the cursor watermarking is the PR-01 schema for reconnect resume.
+  - `expireStale` (command expiry) has no production caller yet — the 24 h floor is set on
+    enqueue, but nothing sweeps `RECEIVED` rows past `expiresAt` into `EXPIRED`.
+  - The `sync_cursors` accessors have no production callers yet; the cursor watermarking is
+    the PR-01 schema for reconnect resume.
 
-In short: the **outbound event** path (coordinator → outbox → uploader → GMweb) is the
-durable path in production today; the **inbound command** path (GMweb → `remote_commands` →
-exactly-once execution with execution rows and drain) is the PR-01/PR-03 target that is
-landed at the schema level but not yet fully wired.
+In short: the **outbound event** path (coordinator → outbox → uploader → GMweb) and the
+**inbound command** path (GMweb claim → `remote_commands` → guarded exactly-once execution
+and honest state ACK) are both durable and live in production today for `SEND_SMS`; what is
+still ahead are the ADR audit and hygiene pieces — execution-attempt rows, expiry sweeps,
+and cursor watermarking — plus flipping the local send funnel onto the durable queue.
 
 ## Focused tests
 
@@ -345,7 +420,7 @@ landed at the schema level but not yet fully wired.
 ## Related pages
 
 - [Room Data Model](/openwiki/architecture/data-model.md) — the full v7 schema and migration strategy.
-- [Gateway service](/openwiki/architecture/gateway-service.md) — the `ConnectionSupervisor` reconcile loop that starts/stops `EventUploader` and derives the runtime `isEnabled` gate.
+- [Gateway service](/openwiki/architecture/gateway-service.md) — the `ConnectionSupervisor` reconcile loop that starts/stops `EventUploader` and `SecureCommandPoller` and derives the runtime `isEnabled` gate.
 - [Cloud relay](/openwiki/integrations/cloud-relay.md) — the `BackendClient` HTTPS chain and relay components.
 - [GMweb pull](/openwiki/integrations/gmweb-pull.md) — the outbound-only `OutboxPoller` bridge.
 - [Send pipeline](/openwiki/workflows/send-pipeline.md) — the outgoing send flow the durable pipeline funnels.

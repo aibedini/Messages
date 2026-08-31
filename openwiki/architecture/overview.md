@@ -1,11 +1,8 @@
 ---
 type: architecture-overview
 title: System Overview
-description: "Whole-system map of the Messages Android app: the default-SMS-app UI, the Telephony-provider-backed data layer with its Room read-shadow, the incoming/outgoing SMS/MMS pipelines, and the gateway foreground service — and where each owned system lives."
+description: "Whole-system map of the Messages Android app: the default-SMS-app UI, the Telephony-provider-backed data layer with its Room read-shadow, the incoming/outgoing SMS/MMS pipelines, and the gateway foreground service (LAN REST, GMweb pull, /api/v1 command poller) — and where each owned system lives."
 tags: [architecture, overview, sms, mms, default-sms-app, room, telephony, gateway, android, sync]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -35,6 +32,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
   - id: openwiki-source-754f516c2fdb40e657ff023b
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-8f0b87397d9aa4ca05c1f774
@@ -49,6 +48,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/SmsReceiver.kt
   - id: openwiki-source-311ed32a68df077c7ffde611
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
   - id: openwiki-source-56dbdbad24cf2312e2a997db
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt
   - id: openwiki-source-6f2ff92700e23d56741d36a1
@@ -59,7 +60,10 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt
   - id: openwiki-source-f96fdb136763ec99fbc9c7e5
     resource: repo://docs/architecture-v2-sync.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T16:56:27.725Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-08-31T16:56:27.725Z
 ---
 
 # System Overview
@@ -117,6 +121,7 @@ flowchart TD
         GS["GatewayServer: LAN REST"]
         OP["OutboxPoller: GMweb pull"]
         HB["Heartbeat and Registration: cloud"]
+        CP["SecureCommandPoller: /api/v1 commands"]
         EVE["EveSmsQueue"]
     end
 
@@ -148,6 +153,7 @@ flowchart TD
     SUP --> GS
     SUP --> OP
     SUP --> HB
+    SUP --> CP
     SUP -->|ensureLoopRunning| SRC
     GS --> SND
     GS --> EVE
@@ -160,7 +166,7 @@ flowchart TD
     HS -.RESPOND_VIA_MESSAGE stub.-> SM
 ```
 
-Caption: the whole system — the manifest receivers/services on the outside, the Room shadow with its single-writer coordinator in the middle, and the gateway foreground service fanning out to the LAN REST server, the GMweb pull bridge, and the cloud components, all terminating in the outbound `SmsSender`/`MmsSender` bridges that drive the radio.
+Caption: the whole system — the manifest receivers/services on the outside, the Room shadow with its single-writer coordinator in the middle, and the gateway foreground service fanning out to the LAN REST server, the GMweb pull bridge, the durable event uploader, the `/api/v1` command poller, and the cloud components, all terminating in the outbound `SmsSender`/`MmsSender` bridges that drive the radio.
 
 ## The three storage tiers
 
@@ -197,6 +203,7 @@ Most of what the app can do is *gated* by being the default SMS app, and that st
 
 **Outgoing pipeline.** `SmsSender`/`MmsSender` persist the Sent row, hand the message to `SmsManager`/the MMS APN, and register explicit `PendingIntent`s. Delivery reports arrive at the manifest-declared `SmsStatusReceiver` (manifest lifetime is required so SENT/DELIVERED survive the initiating process going away) and are applied as a targeted `mutate(RefreshStatus)`.
 
-**Gateway foreground service.** `GatewayService` is the exported-false foreground service that owns the persistent notification and the `ACTION_START`/`ACTION_STOP`/`ACTION_RETRY_NOW` intents (returning `START_STICKY`). Its real brain is the process-wide `ConnectionSupervisor`, one conflated reconcile loop over a declarative desired state (`state = f(desiredEnabled, hasConsent, online, serverIsUp, boundIp == nowIp)`). The supervisor starts/stops the **LAN `GatewayServer`** (a hand-rolled `ServerSocket` REST server), the **cloud `HeartbeatManager`/`RegistrationManager`**, the **`OutboxPoller`** GMweb pull bridge, and — importantly — the data layer's `TelephonySyncCoordinator.ensureLoopRunning()`, so the shadow keeps syncing while the gateway is online. The reconcile loop is itself the backoff: a bind failure (port taken) or a dropped component is retried on the loop with exponential backoff, which is what keeps `start()` non-blocking and non-throwing. The outbound bridges all funnel into `SmsSender`/`MmsSender`: the LAN REST send endpoints call them directly, and both the LAN `/send` (EVE) endpoint and the GMweb pull enqueue through the persistent priority **`EveSmsQueue`** and drain through the same sender.
+**Gateway foreground service.** `GatewayService` is the exported-false foreground service that owns the persistent notification and the `ACTION_START`/`ACTION_STOP`/`ACTION_RETRY_NOW` intents (returning `START_STICKY`). Its real brain is the process-wide `ConnectionSupervisor`, one conflated reconcile loop over a declarative desired state (`state = f(desiredEnabled, hasConsent, online, serverIsUp, boundIp == nowIp)`). The supervisor starts/stops the **LAN `GatewayServer`** (a hand-rolled `ServerSocket` REST server), the **cloud `HeartbeatManager`/`RegistrationManager`**, the durable **`EventUploader`** (transmitter for the `gateway_event_outbox`), the **`SecureCommandPoller`** strategic `/api/v1` command bridge, the **`OutboxPoller`** GMweb pull bridge (started only when `gmwebUrl` is non-blank), and — importantly — the data layer's `TelephonySyncCoordinator.ensureLoopRunning()`, so the shadow keeps syncing while the gateway is online. The reconcile loop is itself the backoff: a bind failure (port taken) or a dropped component is retried on the loop with exponential backoff, which is what keeps `start()` non-blocking and non-throwing. The outbound bridges all funnel into `SmsSender`/`MmsSender`: the LAN REST send endpoints call them directly, and both the LAN `/send` (EVE) endpoint and the GMweb pull enqueue through the persistent priority **`EveSmsQueue`** and drain through the same sender.
 
 **Reboot / recovery.** `gatewayDesiredEnabled` is the user's *intent*, persisted and never touched by runtime teardown; `BootGatewayReceiver` (or a `START_STICKY` null-intent revival) reads it plus consent and replays `ACTION_START`. Every gateway start is re-gated by `GatewayAccessPolicy.canStart`/`canTransmit` against the stored consent, so a revoked consent silently drops a start.
+tart.
