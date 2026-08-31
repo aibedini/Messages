@@ -50,6 +50,26 @@ class RegistrationManager(
             put("appVersion", BuildConfig.APP_VERSION)
             put("androidVersion", Build.VERSION.RELEASE)
             put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
+            // PR-05 (ADR-001): register the device's PUBLIC keys alongside the
+            // legacy registration. Keystore enrollment is idempotent; the raw
+            // uncompressed EC points (0x04||X||Y) are Base64 for the wire.
+            // Private material NEVER leaves the Keystore (§16/§17/§24).
+            val identity = DeviceIdentity.ensureEnrolled()
+            put("protocolVersion", 1)
+            put("publicKeys", JSONObject().apply {
+                put(
+                    "trustRoot",
+                    android.util.Base64.encodeToString(identity.trustRootPublicPoint, android.util.Base64.NO_WRAP)
+                )
+                put(
+                    "signing",
+                    android.util.Base64.encodeToString(identity.signingPublicPoint, android.util.Base64.NO_WRAP)
+                )
+                put(
+                    "encryption",
+                    android.util.Base64.encodeToString(identity.encryptionPublicPoint, android.util.Base64.NO_WRAP)
+                )
+            })
         }
     }
 
