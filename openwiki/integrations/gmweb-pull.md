@@ -5,7 +5,7 @@ description: "The outbound-only pull transport to a GMweb-API server: long-poll 
 tags: [gmweb, outbox-poller, pull-bridge, eve-sms-queue, long-poll, wake-lock, doze, gateway]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -25,6 +25,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/NetworkMonitor.kt
   - id: openwiki-source-754f516c2fdb40e657ff023b
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-56dbdbad24cf2312e2a997db
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt
   - id: openwiki-source-5d9105beecd437514587cd99

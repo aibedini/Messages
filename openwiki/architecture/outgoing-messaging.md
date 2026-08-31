@@ -5,10 +5,12 @@ description: "Everything from user/API intent to a sent SMS/MMS: SmsSender's per
 tags: [sms, mms, outgoing-message, status-callback, telephony, rate-limiting, workmanager, scheduled-sends, gateway, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
   - id: openwiki-source-2ff4a932611e5b19d7ec58bf
     resource: repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt
   - id: openwiki-source-b394c571401a67cd53a9d162
@@ -31,8 +33,12 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt
   - id: openwiki-source-b7eef8979c4295ba4471257d
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/NotificationActionReceiver.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
   - id: openwiki-source-2f3686d083412d1a0dd64000
     resource: repo://app/src/main/java/com/autonomousone/messages/service/HeadlessSmsSendService.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
   - id: openwiki-source-c637ca2a4f8a914d1089d78e
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt
   - id: openwiki-source-41a91a72c73191276b041c43
@@ -55,6 +61,8 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt
   - id: openwiki-source-abab24512635508d1d46bebd
     resource: repo://docs/release-v2.6.10.md
+  - id: openwiki-source-a522bf9941fe7fe97c5cb9fc
+    resource: repo://docs/release-v2.6.20.md
 generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 

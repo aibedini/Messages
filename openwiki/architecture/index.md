@@ -2,6 +2,7 @@
 
 - [Conversation Window and Keyset Pagination](conversation-paging.md)
 - [Room Data Model (Read Shadow)](data-model.md) - The MessagesDatabase Room schema (v6, messages.db) that backs the app's local read shadow of the Telephony provider: messages/conversations/sync_state entities, the FTS4 index, the app-owned send_segments ledger, dual sync-state watermarks, and the v2→v6 migration strategy.
+- [Durable Gateway Sync (PR-01..PR-03)](durable-gateway-sync.md) - The Messaging Platform durability layer: the five v7 Room tables, the GatewaySyncRepository boundary, the event outbox state machine, the command inbox exactly-once model, GatewayEventFactory envelope identity, EventUploader as the sole durable cloud transmitter, the durable SEND_SMS pipeline — and an honest current-wiring status vs the ADR targets.
 - [Gateway service](gateway-service.md)
 - [Incoming SMS/MMS Reception](incoming-messaging.md) - Broadcast-to-fan-out reception of inbound messages: SmsReceiver's SMS_DELIVER vs SMS_RECEIVED dedupe, the vendored mmslib MMS download path, and IncomingMessageDispatcher's single fan-out (Room shadow mutation, blocklist silence, event bus, gateway webhook, notification).
 - [Outgoing Send Pipeline](outgoing-messaging.md) - Everything from user/API intent to a sent SMS/MMS: SmsSender's persist-before-send dispatch with SIM/SMSC/delivery-report/rate-limit preferences, the durable manifest-declared SENT/DELIVERED callbacks and SmsStatusPolicy evidence model, the send_segments ledger, MmsSender, the two scheduling mechanisms, and RESPOND_VIA_MESSAGE.

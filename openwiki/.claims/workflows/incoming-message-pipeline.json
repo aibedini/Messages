@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:22f43375a5fe87ba6c78d5de0d405a9e83f788cd81514da631fc5b97a794eb9e",
+  "pageVersion": "sha256:df39dbd702d050a858c7a148cb5e8d80e937ca43d0f739a2f9b9044c505aaada",
   "claims": [
     {
       "id": "claim_f60d229a22284f50a2fa3d50dcb7a4de",
@@ -68,21 +68,21 @@
     },
     {
       "id": "claim_04adb057cbe942a996dce67073038a53",
-      "statement": "IncomingMessageDispatcher.dispatch is the single fan-out point for all inbound SMS and MMS and applies a fixed order: (1) mirror into Room via TelephonySyncCoordinator.mutate(Upsert), (2) blocklist gate, (3) address-cache invalidation, (4) SmsEventBus.emitSms, (5) WebhookEngine.sendIncomingSmsWebhook, (6) notification; its contract is that sms.id and sms.threadId must come from the provider row just written or read back, so every consumer reacts to provider state, not optimistic local state.",
+      "statement": "IncomingMessageDispatcher.dispatch is the single fan-out point for all inbound SMS and MMS and applies a fixed order: (1) mirror into Room via TelephonySyncCoordinator.mutate(Upsert), (2) blocklist gate, (3) address-cache invalidation, (4) SmsEventBus.emitSms, (5) WebhookEngine.sendLocalWebhook, (6) notification; its contract is that sms.id and sms.threadId must come from the provider row just written or read back, so every consumer reacts to provider state, not optimistic local state.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L43-L79",
-          "version": "repo-lines-v1:sha256:9fd276bd82d81fde37942d1488f79047a148ca56b714c60325b5f8513e0b36b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZGU0MzFjNjA3N2MzMzE1N2M2ZDQzZmY1NTIwZDE4NDVmYzk5ODUxNjU3MTA0MzljMGM4YWMzNmMzZmFmYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDNmOGIwNjFhMGVkOGFiZWI3M2Q3YjMwYTRhMDhiMGI1OWQ1MjllMzYxYmUwMjI0ODhjYjQyMzk3ZDRjNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjYjUxNDlkNDM3ZGJjYjQzNThmMzIwODVjYTI3ZDgyMGM2MjA3NTBlMTg2MDMzYmRjMjgxZGI3NDY3NmU5NTMifQ"
+          "version": "repo-lines-v1:sha256:7184bf0bfedd194d030e1d117cef113d1c7dcd35ff9f020d95a53c2181331fc9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZGU0MzFjNjA3N2MzMzE1N2M2ZDQzZmY1NTIwZDE4NDVmYzk5ODUxNjU3MTA0MzljMGM4YWMzNmMzZmFmYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDNmOGIwNjFhMGVkOGFiZWI3M2Q3YjMwYTRhMDhiMGI1OWQ1MjllMzYxYmUwMjI0ODhjYjQyMzk3ZDRjNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjYjUxNDlkNDM3ZGJjYjQzNThmMzIwODVjYTI3ZDgyMGM2MjA3NTBlMTg2MDMzYmRjMjgxZGI3NDY3NmU5NTMifQ"
         }
       ]
     },
     {
       "id": "claim_ea490bc33cf248328aca5df6d4ed530b",
-      "statement": "Messages from blocked senders short-circuit after the unconditional Room mirror: dispatch returns immediately with no bus event, no webhook, and no notification while the row stays persisted in both the provider and the Room shadow — blocking is a notification policy, not a sync policy; the static BlocklistRepository.isBlocked shortcut exists so broadcast receivers can check without instance state.",
+      "statement": "Messages from blocked senders short-circuit after the unconditional Room mirror: dispatch returns immediately with no bus event, no local webhook, and no notification while the row stays persisted in both the provider and the Room shadow — blocking is a notification policy, not a sync policy; the static BlocklistRepository.isBlocked shortcut exists so broadcast receivers can check without instance state.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L48-L58",
-          "version": "repo-lines-v1:sha256:d5509a28730d7980687a4827df3df47ce6d1e9619f715ececa9b54047fdfc535:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1YjkyNzJhNTJlYmRhYTdhNjhlZGY5M2ViZmVmMDRhOWVhNzdmMzIxNGEzN2RiNDE2NDY3YWM1MGJkOTQ1NzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiYWY2ZmFhMmVkMDRhYWJkZjEzYmMxNjcyNTNjMTRhZjZkNjlhNDg2ZDM1ZmZjMjRjNGQ0NmMyMWM2MmI3MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwM2M0MzdhZjYyZTZlNGQwOWVhMDgyMThjNzY0MmE0NzNkOTNhNjJmNjYwZjcwYjhmMThlNTc2OTY0MmFiZjQifQ"
+          "version": "repo-lines-v1:sha256:dce2ebf06d600c3fb3ff10e0c0498a7d86dcb316ffc6a7039f3802689d84be8b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1YjkyNzJhNTJlYmRhYTdhNjhlZGY5M2ViZmVmMDRhOWVhNzdmMzIxNGEzN2RiNDE2NDY3YWM1MGJkOTQ1NzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiYWY2ZmFhMmVkMDRhYWJkZjEzYmMxNjcyNTNjMTRhZjZkNjlhNDg2ZDM1ZmZjMjRjNGQ0NmMyMWM2MmI3MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwM2M0MzdhZjYyZTZlNGQwOWVhMDgyMThjNzY0MmE0NzNkOTNhNjJmNjYwZjcwYjhmMThlNTc2OTY0MmFiZjQifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/BlocklistRepository.kt#L98-L100",
@@ -128,7 +128,7 @@
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L143-L181",
-          "version": "repo-lines-v1:sha256:8952dd5f4101983508b6d9df3e13ac770ff723cd940a5e25c6a58ae8e445f81a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYjVmMTI2NjBjMTU4NjRlODg4NzE4YWI0OGZjNGJiMGZmOThmOTgwYTE5MDZiMjQ4NTE2YWUyNjQ0ZWViMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZGQ3N2VjYzU1ZWMyN2I0MjUwNTQzMjFhOGEzNmNjY2Q3ZTNjZjMzNWJmOTQyMGU5NDQ3MWY2OGQ0ZjBkMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYTdkYTg4MDkyNjg2Yjk2NzE5YjU3ZjNjOTQ1NzUwYWNhOTM5NjBiNTVlZGQ4NjJiNjgyNTkwNTU4YjViNTUifQ"
+          "version": "repo-lines-v1:sha256:de7e16d1bf9ab7c814d25784ae544337eff5ddc143368873d6cf262dd03795f5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYjVmMTI2NjBjMTU4NjRlODg4NzE4YWI0OGZjNGJiMGZmOThmOTgwYTE5MDZiMjQ4NTE2YWUyNjQ0ZWViMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZGQ3N2VjYzU1ZWMyN2I0MjUwNTQzMjFhOGEzNmNjY2Q3ZTNjZjMzNWJmOTQyMGU5NDQ3MWY2OGQ0ZjBkMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYTdkYTg4MDkyNjg2Yjk2NzE5YjU3ZjNjOTQ1NzUwYWNhOTM5NjBiNTVlZGQ4NjJiNjgyNTkwNTU4YjViNTUifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L44-L58",
@@ -200,19 +200,19 @@
     },
     {
       "id": "claim_700f5a5e459c444188e5acb776818d66",
-      "statement": "WebhookEngine.sendIncomingSmsWebhook gates both legs on GatewayAccessPolicy.canTransmit (versioned gateway consent AND the supervisor-derived runtime isEnabled flag), skipping everything when it fails; when open it fires two fire-and-forget IO coroutines — an HTTPS-only local webhook POST (non-HTTPS rejected; optional HMAC-SHA256 X-Signature over '<timestamp>.<body>' with X-Timestamp; 8 s timeouts) and a cloud event to /api/gateways/events/sms (only when registered with a token) whose deterministic name-based eventId is checked against a local sent-event cache and marked sent only on Success; failures are logged and never thrown into the receiver.",
+      "statement": "WebhookEngine.sendLocalWebhook (the only webhook dispatch the incoming pipeline fires; the old fire-and-forget cloud leg was deleted in PR-02) gates the user-configured local leg on GatewayAccessPolicy.canTransmit (versioned gateway consent AND the supervisor-derived runtime isEnabled flag), no-ops when no webhookUrl is configured, and otherwise fires one fire-and-forget IO coroutine — an HTTPS-only webhook POST (non-HTTPS rejected and logged; optional HMAC-SHA256 X-Signature over '<timestamp>.<body>' with X-Timestamp; 8 s timeouts); failures are logged and never thrown into the receiver.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt#L3-L5",
           "version": "repo-lines-v1:sha256:ea34dca493ef493c5d5bcd18344a917398d65a88f5cde5e8fc83bdb59bc4f6b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDZmZjVlOTg2NDI3MmFkNGY3MmM3ZTg5OGEyOWM3NDk4MWU3MjY4ZmUyZTJhYzI0OTYwMTg1NTgyMGFjZjZiOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDgzOTcyYTUxMzBkMGJlY2FlZjI5ZDIwOGZhY2RjZWIxODIzNjdiMjI0YTBmMGU4NmM4NGI3MjBlNGUyMzU3NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjE2ZjlhOGQ2ZjYwYTI2MjI0YjNjYTY4YzdkMTZkMTQ4MjgyNGM1OWE4M2I5MjJjOGUzNTRlOGU1MDY1ZmQ2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L103-L154",
-          "version": "repo-lines-v1:sha256:2733334b477fc3e2e81f0f8f3b59427958c55cfaeb5128b79abbd6533da3fd31:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3M2QzODI2NTUwMDliNDA0ZTJkNDlmYzI3YjllYmYyMzA5ZjIyNTcwYWYxODdlYTYxYTM5NmU5NjAzZGM2MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5YjVmMmI1MzE0OWUwOWRmOTIzYzQ4NjlkZWExMmIwNWIyNTMxYTYxNjQxMWU0Y2E1YTNmN2M3ZTYyMGYzYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L28-L47",
+          "version": "repo-lines-v1:sha256:5ef894745dc8e1daca99c34339b7e73d702ed883a320886b72d604952a512c75:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1MjJkMzg4ZmM0ZGNhMTEwYTRjZWRhOGQyYThjYWQ1ODhkNDViNDc2ZWZmMzc4NGZiMjdlY2E5NDZkMjJlYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlNjg5NzhiY2RlM2VlY2M3MDE3NTM0MzNhN2E4ODM3MTJjMGRmNjY2MWFlMTRiNWZmMzg4ZjJmZjBkMjJhMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkODJhYWQwYWJmYzVlYjJmOWM1MDdjOTE0Y2FiMzZmMGE5MmQzMzFmYWNkYzlhZmM4ODdhNGFkZjcwZjgzNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzM2Y3OGYzMjhjZDVjMmQxOTFkOWRkYmI1YjFhOGNmN2I1ZWJlNDg1ZWUyMDFmZGFlMTI4ZDE2NTIyNGU3ZTUifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L28-L47",
-          "version": "repo-lines-v1:sha256:5b75d836afc09da54954eff8c940e92f1f2307df5ed7e2e0e74320edb82f7678:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkYmYxMGQ3M2M0MjkxOTU3ZGZkZjdlODBhNDY3ZDFhNzYxY2YzNDU3YmVmYzhiYjJiMzA2MmNhYWZkMDM1YzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYzc5MDRkNzBiNmJjNDIxY2RlZWFlMjc2OTkzNWM1ZWZjMmExN2RmOTMzMDg1NDQ3MzEzOGUyYjVjZWQ3MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5M2I0Mjc4MGVhNmZhODc0NzZmNzg1NzA3N2UwOTlmYThmOWQwNTdiMWQ2NDg1OGQyMTRmOWI1YjdlZmZiYzYifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L43-L84",
+          "version": "repo-lines-v1:sha256:3ca55b3182d442498a8c84fd4c58399faf5fb03e6696b25e58bb92064a9b1816:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NTcxYTJhOGEzMzljODgwMDVmNTg1NzlhNzc5YWQ5OGY1NTZlZGFiMjExYmRlZmMxNzdiNDZlYzk3MmY2ZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlNTkxMDI3YjYxMjhkOTU3YTRlYTQ2ZTAyZjVhYTk1NmY4M2M0ZGQ0MzBiNGUyNWE5MzA2NjFkM2FmZjFmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
         }
       ]
     },
@@ -268,11 +268,15 @@
     },
     {
       "id": "claim_1ed89cf11f6a43e286070dd2af3b8060",
-      "statement": "The pipeline's boundary logic is pinned by JVM tests: ChangeRouterExtractIdTest (row-id vs table-level vs thread-URI extraction, i.e. the mutate-vs-reconcile decision), SmsObserverTimingTest (leading-edge fires synchronously under 50 ms and a burst collapses to one trailing call), UnreadDeltaTest (every transition of the O(1) signed unread-delta rule), and SameConversationRoutingTest (normalization, country-code suffix matching, and the >=7-digit guard behind both viewing suppression and blocklist matching).",
+      "statement": "The pipeline's boundary logic is pinned by JVM tests: ChangeRouterExtractIdTest (row-id vs table-level vs thread-URI extraction, i.e. the mutate-vs-reconcile decision), SmsObserverTimingTest (leading-edge fires synchronously under 50 ms and a burst collapses to one trailing call), UnreadDeltaTest (every transition of the O(1) signed unread-delta rule), SameConversationRoutingTest (normalization, country-code suffix matching, and the >=7-digit guard behind both viewing suppression and blocklist matching), and GatewayEventFactoryTest (deterministic message/event UUIDs and the cryptoVersion=0 envelope round-trip that the in-transaction outbox commit relies on).",
       "evidence": [
         {
           "resource": "repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt#L14-L50",
           "version": "repo-lines-v1:sha256:70b3a95654a8ede30cf3705884cb5a5a9dfbf1e2b806dd669b555fdd8f7cbd41:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjYzUzZjAxYjYzOGZmZjQ0NDRiMGIxZmVmOTEzNGM5NjE1NGMxNjkyZDdhY2YxYmJmMmI5OGFmNGYwOWE2MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZjk1NDFmYzQyMzE2OWJkMTJkODJlM2NmN2Q5M2RkOTk3MzZmNmViMzI4YzFkMGMxMjYwNWJhYmEwYTVmZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt#L19-L74",
+          "version": "repo-lines-v1:sha256:56bce1f1ad24b47b410045c69dcc0b199afe155b31723a5f363b068167b7bdac:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZjA5ZWIwYzU3NDRmYjk3MzMxYjk4ZmYzZmJmMDVhNjAyYmEzZjdmNjdlNWRhNWJlOTA5NTAzM2Y2MjU4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2M2UxYjNjYzI0NTBjMjhlZDg1Yzc1ZWM5NTFkYTljZTk1MDg1MmZlMGQyMjg4OTE2NWIxZjc2MjU0ZTQ5YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkMTcwNTExNGMxODkwMzJhYmUxN2IzNTM3YzI3NTIxZTk3YmJmMzI4NzhjMDE0NTQzMGQxYzZjZGRmMjdkZmYifQ"
         },
         {
           "resource": "repo://app/src/test/java/com/autonomousone/messages/SameConversationRoutingTest.kt#L12-L40",
@@ -291,6 +295,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

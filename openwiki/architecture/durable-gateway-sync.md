@@ -6,6 +6,46 @@ tags: [gateway, durability, outbox, command-inbox, exactly-once, room, retry, ba
 verified:
   - by: openwiki/0.4.3
     at: 2026-08-31T09:09:40.113Z
+sources:
+  - id: openwiki-source-3bfcb28142050978edf94754
+    resource: repo://app/build.gradle.kts
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
+  - id: openwiki-source-51189b7b42ba492b233ef785
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt
+  - id: openwiki-source-b394c571401a67cd53a9d162
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
+  - id: openwiki-source-df3820a8f6419586aaa828f3
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
+  - id: openwiki-source-5b64d9fe16083515732d7fa1
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
+  - id: openwiki-source-4ad02c444ebadf27339b8cbb
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
+  - id: openwiki-source-8234b1c40928ccc75e3a6a70
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
+  - id: openwiki-source-56dbdbad24cf2312e2a997db
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-c971d5d0d445dd3ffeebfc88
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
+  - id: openwiki-source-7928ae97a7f6fb49133a303e
+    resource: repo://docs/adr/ADR-001-device-trust-root-and-signed-trust-registry.md
+  - id: openwiki-source-fca25ee662b9b7ec95221b08
+    resource: repo://docs/adr/ADR-002-command-encryption-and-cke.md
+  - id: openwiki-source-254c6cdac74af5417488b613
+    resource: repo://docs/adr/ADR-003-android-availability-doze-slo.md
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T09:09:40.113Z" }
 ---
 
 # Durable Gateway Sync (PR-01..PR-03)

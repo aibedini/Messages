@@ -5,7 +5,7 @@ description: "How Telephony provider changes become Room rows: SmsContentObserve
 tags: [telephony, sync, room, content-observer, content-provider, dual-channel, backfill, cutover, shadow-read-model, watermark, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-c4ec49afa1d2ec40206e27c3
     resource: repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt
@@ -21,6 +21,10 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-ce0009a1275103aa86ecc82a
     resource: repo://app/src/main/java/com/autonomousone/messages/data/UnreadDelta.kt
+  - id: openwiki-source-1188ef94bbd10bf1710668b7
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-4ad02c444ebadf27339b8cbb
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
   - id: openwiki-source-f624f17c409bc74370fff0b7

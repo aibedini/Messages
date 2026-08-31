@@ -5,16 +5,22 @@ description: "The MessagesDatabase Room schema (v6, messages.db) that backs the 
 tags: [room, database, data-model, sync, full-text-search, migration, sms, mms, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-e622d3f293f5b27df77aca9e
     resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json
+  - id: openwiki-source-ccfee0846cdddf90c6adc571
+    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json
   - id: openwiki-source-6bd690faeb48b8a379dfdcda
     resource: repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt
   - id: openwiki-source-5d01d9b3022a75be71ff583f
     resource: repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt
   - id: openwiki-source-4a70e57f63fcd7dff3299bb5
     resource: repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
   - id: openwiki-source-605c7ba5ae7cc0e54ab24bf6
     resource: repo://app/src/main/java/com/autonomousone/messages/data/MessageFts.kt
   - id: openwiki-source-3f8e84191f47b4682f2515be
@@ -27,8 +33,14 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-ce0009a1275103aa86ecc82a
     resource: repo://app/src/main/java/com/autonomousone/messages/data/UnreadDelta.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
   - id: openwiki-source-311ed32a68df077c7ffde611
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
   - id: openwiki-source-6f2ff92700e23d56741d36a1
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt
   - id: openwiki-source-23938f5029c2373f94d20806
@@ -37,6 +49,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt
   - id: openwiki-source-bbde3ac917c57ebee1eefc7b
     resource: repo://app/src/test/java/com/autonomousone/messages/FtsQueryTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
   - id: openwiki-source-576ae48f99c2d34befc19b59
     resource: repo://app/src/test/java/com/autonomousone/messages/MessageKeyTest.kt
   - id: openwiki-source-ae512d69cd7dcbe0843fc3c7
@@ -45,6 +59,8 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/MigrationToV6SqlTest.kt
   - id: openwiki-source-7abea9ce6f657aff34d4e142
     resource: repo://app/src/test/java/com/autonomousone/messages/UnreadDeltaTest.kt
+  - id: openwiki-source-fca25ee662b9b7ec95221b08
+    resource: repo://docs/adr/ADR-002-command-encryption-and-cke.md
   - id: openwiki-source-da88124d798582f4006a15d9
     resource: repo://docs/room-migration-strategy.md
 generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }

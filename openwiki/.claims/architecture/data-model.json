@@ -1,14 +1,22 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:f1341ccfbd31016619c6860afe2f0a5ad7e31f8bab12aef105c083d814d017f6",
+  "pageVersion": "sha256:498f51b2ea9310ffa7fa3ec6a97709e4dddf60d09e67d268d3297f6045bb0b6d",
   "claims": [
     {
       "id": "claim_7b3b67a00c2b4f3cb0614f61e0948b7a",
-      "statement": "MessagesDatabase (app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt) is the app's local read-SSOT Room database, built lazily as a process-wide singleton named messages.db, at version 6 with exportSchema enabled, registering five entities (MessageEntity, ConversationEntity, SyncStateEntity, MessageFts, SendSegmentEntity) and exposing one DAO accessor each (messageDao, conversationDao, syncStateDao, messageFtsDao, sendSegmentDao); TelephonySyncCoordinator is responsible for keeping it in step with the system Telephony provider.",
+      "statement": "MessagesDatabase (app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt) is the app's local read-SSOT Room database, built lazily as a process-wide singleton named messages.db, at version 7 with exportSchema enabled, registering ten entities — the five read-shadow entities (MessageEntity, ConversationEntity, SyncStateEntity, MessageFts, SendSegmentEntity) plus the five PR-01 durable gateway entities (RemoteConversationMapEntity, GatewayEventOutboxEntity, RemoteCommandEntity, RemoteCommandExecutionEntity, SyncCursorEntity) — and exposing one DAO accessor each (messageDao, conversationDao, syncStateDao, messageFtsDao, sendSegmentDao, remoteConversationMapDao, gatewayEventOutboxDao, remoteCommandDao, remoteCommandExecutionDao, syncCursorDao); TelephonySyncCoordinator is responsible for keeping it in step with the system Telephony provider, and because both the read shadow and the durable gateway plane share the one file, a DB wipe or destructive migration destroys state that no provider can rebuild.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L11-L48",
-          "version": "repo-lines-v1:sha256:e030c86e30c5f1d0af23df66a67699504b6df00c75739703321c7b2ddc1b61d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiYzVjODY1MzBhMGE2OGNmYmJkNDMxMGU1ZTE0YjY1NjlhOTYxZWE4YzQ1ZTlmOTM0OGZhMGY3ZmZkNWRjYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZjllOTdiZDAxZDU1MWVmMmQ0YTNhNmExYTZiNTc3ZDgzYzdhMWEyZDhmNGYwMzcxODM2ZGEyZjEyNGQyNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0YzExYmJlNmQ1ZTQ4ZTE5YzFkNWRjZWUyZDI2ODg4NTZlOTliNzA0Yzc5MmM4YjQ3ZDEyZDZlZDAxNmM5ZTcifQ"
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json#L1-L6",
+          "version": "repo-lines-v1:sha256:da253e7924b722192c6fbfb93fd23722328fbc163f8720e354fd544f2b92031b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZmYjA4ZmRhMWFjYjk1N2I2MTE2YmQzNzgxMWExZmU0MWEwMTYxMWMwNjMxZWRiZjc4NmQ2ODg5YTI3YTU1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ2YWRjMmZmYjA2NTZiZWZmMDQwZTE4NmQyZWJhYjE0OTM1ZWVhMGY2NDZhNDE5Nzk4YWM1NDAxMGRjY2U4OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjFlOTVmMjczNzZkZTZlMTY3ZGJiNWNiZjAxMWM4YzMwM2M1YTU0YWJkOWY2ZDgyY2IwZmM5YzhkNzRmYjIyYSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L264-L286",
+          "version": "repo-lines-v1:sha256:09fdff1aad8fb504602a71ab70fe98c11d46c253be4dffefe7c4dd218553b236:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlYTI2Y2YwZGFjZTdjMzM1YjUyMWYzZDVmMjk5Y2YzYjMwY2Y2MDc1ZTg0ZDNmZDUxNWZjZmRkOWIxMTQxOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZDczYzY2ZWY1YmE4YWZmN2Y3NGYwYTBiMGQ4M2Q4NGZiNzdiMDU2YmFlMjJkODZmNGQyMjgzNzY1OTE4MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L32-L60",
+          "version": "repo-lines-v1:sha256:a9dc43b8308d42e781299473ea6fc7c5ede322c138d43c08d1e77a965b3c7175:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MzI0MThhZmM5ZWJkMTYxMjhmMTMxYzNmMDJkNGEzMTIyNDZkYjExZmUyNjdkYjYwMWE5ODc5OGIwOWVmOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3ZTczNTVmNWVmYTVjZGE1MWE0NzdhZmE3NWVlNzAxODVjMjAxZjFiNzhjYjg3MTNmYWY1NzI3ODRlMjE2OGMifQ"
         }
       ]
     },
@@ -96,7 +104,7 @@
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L145-L181",
-          "version": "repo-lines-v1:sha256:8ee87aa19e77eb3dec74c3d109ab8e683b4733d89b63688b4106a1cdc290253b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNGYxMGMzZTkzY2UyMTFkZDBmYTA5YTdiNTE3YWYyYTNiM2IzYzYwMTFiOGY0Y2JhMjNhNTM1MGM2ZWQzMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyOTBiYmZhMzQxNmY5MTBhYWViNGFlZTM1ZGQxNGVhZDY4MDM0MjY3NWQ1YWNlNjk1OTU1OWZjZjY1ODJjYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYTdkYTg4MDkyNjg2Yjk2NzE5YjU3ZjNjOTQ1NzUwYWNhOTM5NjBiNTVlZGQ4NjJiNjgyNTkwNTU4YjViNTUifQ"
+          "version": "repo-lines-v1:sha256:b28f3531858265a3008289a76534a6684e5d522fe2f9e154f1c547a7229d8022:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNGYxMGMzZTkzY2UyMTFkZDBmYTA5YTdiNTE3YWYyYTNiM2IzYzYwMTFiOGY0Y2JhMjNhNTM1MGM2ZWQzMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyOTBiYmZhMzQxNmY5MTBhYWViNGFlZTM1ZGQxNGVhZDY4MDM0MjY3NWQ1YWNlNjk1OTU1OWZjZjY1ODJjYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYTdkYTg4MDkyNjg2Yjk2NzE5YjU3ZjNjOTQ1NzUwYWNhOTM5NjBiNTVlZGQ4NjJiNjgyNTkwNTU4YjViNTUifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/UnreadDelta.kt#L10-L30",
@@ -220,11 +228,11 @@
     },
     {
       "id": "claim_07885fca9d5d4c0592bb4d84b0555955",
-      "statement": "The v2→v6 upgrade path registers four real migrations wired into addMigrations: MIGRATION_2_4 (a direct v2→v4 jump so old users never touch the broken historical 2→3 path), MIGRATION_3_4 (fresh v3 DBs already have the exact v4 sync_state and keep every watermark with no rebuild), MIGRATION_4_5 (adds send_segments and its sentAt index, additive only), and MIGRATION_5_6 (adds conversations.lastMessageType, additive only).",
+      "statement": "The v2→v7 upgrade path registers five real migrations wired into addMigrations: MIGRATION_2_4 (a direct v2→v4 jump so old users never touch the broken historical 2→3 path), MIGRATION_3_4 (fresh v3 DBs already have the exact v4 sync_state and keep every watermark with no rebuild), MIGRATION_4_5 (adds send_segments and its sentAt index, additive only), MIGRATION_5_6 (adds conversations.lastMessageType, additive only), and MIGRATION_6_7 (creates the five PR-01 durable gateway tables, additive only).",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L155-L233",
-          "version": "repo-lines-v1:sha256:2b87765bb29a8ef41cdd40d0b0a515ac9e20e932c6127516cf83b169c7f694dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NGJhNmJkZWIyMjFkYTNiZGI0ZTQzYjNhNDhlYmRlNjY3ZWRlZmY0MGRiNmIxOTc5MTlmNzA5YjIyMzA0NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkOTZlODczNmFiZTU0ZjFmZmE4MTkwYmE3YTAwMmMyZDc2YWE4ZWQxMDliMzE5MzY0ZGE5Mzg2MmVlY2RmZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ZDAwM2ExY2M0NTAyMGNjYmExZmZlYzhiMjRkZmFkY2UzMWVlOTY2MjZhYWRiNzcxZWJhMWYwYTY5ZjRkYzcifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L243-L275",
+          "version": "repo-lines-v1:sha256:3c5980c8701fc21d6b815a7fcfac8d51b323b5891370651114d549617bde7bc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNTI4NjRmYTI2YWZmYmM1MmI0NzMxNmE5ODRmMjI0N2Y4MWY1ZWU5NmMyNDgzYzZlYzY5ZTAxZjRhYTM5ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjMTI4NDliMDIxZjRjM2E2OTg5NDMxNjE0ODI2MjcyMGNjYjllZTZlNGQyNTkyY2U2NTM4ZDZiZmVjNDgxMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxMDZmMjY0YWQ3ZjUzNWI4NTRmMGE5MDI5NGU3ZTQ5Y2M3OTJjNzc5NTJlOTExYzc4NzMzZTcxNjUxOTY3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ZDAwM2ExY2M0NTAyMGNjYmExZmZlYzhiMjRkZmFkY2UzMWVlOTY2MjZhYWRiNzcxZWJhMWYwYTY5ZjRkYzcifQ"
         }
       ]
     },
@@ -260,11 +268,15 @@
     },
     {
       "id": "claim_8c14033911ed46058e0abfc12beec5f4",
-      "statement": "Schema rules: every schema change must bump the version and add a real Migration wired into addMigrations; the exported schema JSONs under app/schemas/com.autonomousone.messages.data.MessagesDatabase/ (2.json…6.json) are committed KSP build artifacts of schema history that must never be hand-edited; and the destructive fallback (fallbackToDestructiveMigration(dropAllTables = true)) is DEBUG-only as of v2.6.10 — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl.",
+      "statement": "Schema rules: every schema change must bump the version and add a real Migration wired into addMigrations; the exported schema JSONs under app/schemas/com.autonomousone.messages.data.MessagesDatabase/ (2.json…7.json) are committed KSP build artifacts of schema history that must never be hand-edited; and the destructive fallback (fallbackToDestructiveMigration(dropAllTables = true)) is DEBUG-only as of v2.6.10 — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl; since v7 a wipe additionally destroys the durable gateway outbox/inbox/cursor state that has no provider to rebuild it from.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L227-L244",
-          "version": "repo-lines-v1:sha256:63e7297b96dea011ab3449f86d96e19f4a3ee9920d9e5997c285816e17a5395b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+          "version": "repo-lines-v1:sha256:2ed6e3e631847ab523c8b230712c42e303a6fa35bb4c1242b1b63aa9e2334ce9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMjFkOGY4ZTRlYjRjNGNkMzA5MjQyMGE5N2IxNWUyODRhMTM3NGMzZDllZjJlZGQzN2ViMGQ0ZDgzZjkwYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzZmNiMWQ5NDgzNTAyYjc0NGU2ODUyMzA5ZWZkYzg3MWU5NGQzZTFmYzU5NTM0YjA4YmQ5NzNlN2E2YTc0ZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxOWI4NGM1ZDQ3NDYyNzc1ZDc5NmMyNTM5ZWVkMWJmNmVlMjgyOTdkMGQyNjdkMzhiNjhlMWJjNjU5ZjMxNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyNDFlNjE3YjdjYTllMDY4OTI5MzFmZGRmYmE3OTg0MTY3MzljNTk1MzMyODYzYTI3ZTc1ODc1YmIyM2YzYjMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L269-L286",
+          "version": "repo-lines-v1:sha256:e736d2384ffbe309cc895a2819400b48d9a0f5e772aa057055e1921bd6a95561:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
         },
         {
           "resource": "repo://docs/room-migration-strategy.md#L25-L36",
@@ -274,15 +286,15 @@
     },
     {
       "id": "claim_20146e3b2de74c34884b0801c848ed1d",
-      "statement": "docs/room-migration-strategy.md is stale: it describes MessagesDatabase as being at version 2 with no real v1→v2 migration (destructive fallback) and an 'intentional for now' destructive policy, whereas the database is at version 6 with a real migration for every step and a debug-only fallback; MessagesDatabase.kt and the committed app/schemas/*.json files are authoritative for the current state.",
+      "statement": "docs/room-migration-strategy.md is stale: it describes MessagesDatabase as being at version 2 with no real v1→v2 migration (destructive fallback) and an 'intentional for now' destructive policy, whereas the database is at version 7 with a real migration for every step and a debug-only fallback; MessagesDatabase.kt and the committed app/schemas/*.json files are authoritative for the current state.",
       "evidence": [
         {
-          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json#L1-L6",
-          "version": "repo-lines-v1:sha256:4e77d24878ee934e63b4915fc687e00540549d749b264b919be552e9999f4179:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNlYWU3ZTZhNGQzYzcxYmNjOTYzMjhjNTE5ZmJhMjk0MWVlNDg2OTY4YTZkNjMyMmZiMDhjZWI0NGUzZWZkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjExZDE2OTRmOTg3Y2JlNGNiMzg4YzQ3MDYwNTFjODA2NmYzZmJlMGVjNzllMWI1ZmFiMzYxM2ZjYjUyMGNlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFmZTFjNzY1YTQyM2Y0MzdlNzQ3MmEyNWZlNzkwNzU1MGE2NmUyYTdkYjE3ZWRjNDY5MTA0YjkzOTFiZTVkMSJ9"
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json#L1-L6",
+          "version": "repo-lines-v1:sha256:da253e7924b722192c6fbfb93fd23722328fbc163f8720e354fd544f2b92031b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZmYjA4ZmRhMWFjYjk1N2I2MTE2YmQzNzgxMWExZmU0MWEwMTYxMWMwNjMxZWRiZjc4NmQ2ODg5YTI3YTU1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ2YWRjMmZmYjA2NTZiZWZmMDQwZTE4NmQyZWJhYjE0OTM1ZWVhMGY2NDZhNDE5Nzk4YWM1NDAxMGRjY2U4OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjFlOTVmMjczNzZkZTZlMTY3ZGJiNWNiZjAxMWM4YzMwM2M1YTU0YWJkOWY2ZDgyY2IwZmM5YzhkNzRmYjIyYSJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
-          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+          "version": "repo-lines-v1:sha256:97772cb6f6fd0ae14a18dcd375c1946884f135db6d56eb7f230a17f45dce0b0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMWUwMGY1ZTBmZTVhNjY1YWQ2N2E1MzY1YTVjYTgxNThkMWFhMWEzZjljMzVlNWJhZjdiY2IzM2JhMzlhNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MjkwMGY2MTc4ZWUxYzM1YTY0YmIzZWFjOGQzZTNiNDk4NTE0Nzk2NjI4NGY5MGVhNDlkYzczMDc0MDNmNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlODY0NmQ0MWJkOGY5N2YxNTcxMTAzZTNkOWU2Mjc2YTk2NjIxODI3NWYwYWU3MjgwYjM0Y2MxZTExMjYwNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1NTAwZDQ1ODdiZDRhNjgwMzRjZmQzZjZhMGM4NDRkMTIxZjFhOGU5ZWQyZjRiYjJiMTZmN2MxZTExOTEzOWYifQ"
         },
         {
           "resource": "repo://docs/room-migration-strategy.md#L3-L11",
@@ -292,11 +304,11 @@
     },
     {
       "id": "claim_e78d08182e6945f4a72b69ae1b36a4a0",
-      "statement": "TelephonySyncCoordinator is the single writer into Room, with two channels: exact mutations through an UNLIMITED sequential channel (never dropped, never conflated — a bounded channel could silently drop an event under burst) and reconcile requests through a CONFLATED channel (N nudges collapse into one bounded repair pass); an Upsert mutation runs in one Room transaction — re-read the old row by composite key, upsert the message, apply the unread delta, upsertPreservingFlags — an O(1) realtime write with no full scan and no projection rebuild.",
+      "statement": "TelephonySyncCoordinator is the single writer into Room's read-shadow tables, with two channels: exact mutations through an UNLIMITED sequential channel (never dropped, never conflated — a bounded channel could silently drop an event under burst) and reconcile requests through a CONFLATED channel (N nudges collapse into one bounded repair pass); an Upsert mutation runs in one Room transaction — re-read the old row by composite key, upsert the message, apply the unread delta, upsertPreservingFlags — and since PR-02 the cloud outbox event for the new message is committed in that SAME transaction (enqueueCloudEvent, INSERT OR IGNORE on eventUuid, cloud-row failures logged and never killing the local mutation); Delete and RefreshStatus mutations commit their messageDeleted/messageStatusChanged events the same way — an O(1) realtime write with no full scan and no projection rebuild.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L143-L213",
-          "version": "repo-lines-v1:sha256:ab6dee6440e6049748a8bcb1f7c938e3654a4c7a05c23ecf3347ea2e78825822:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYjVmMTI2NjBjMTU4NjRlODg4NzE4YWI0OGZjNGJiMGZmOThmOTgwYTE5MDZiMjQ4NTE2YWUyNjQ0ZWViMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZGQ3N2VjYzU1ZWMyN2I0MjUwNTQzMjFhOGEzNmNjY2Q3ZTNjZjMzNWJmOTQyMGU5NDQ3MWY2OGQ0ZjBkMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjN2RmOTllYWE1ZWNmZWI1YWJlM2ZmZjUxYTRiY2FlZWI5MjI5N2RjOTQxOTRkNTg4Y2YyYmViNmZkMmIwYzUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L143-L299",
+          "version": "repo-lines-v1:sha256:08ba2a726ded6143a984fad14fff798596828e9702982ad215e218667544e864:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyZWI1ZjEyNjYwYzE1ODY0ZTg4ODcxOGFiNDhmYzRiYjBmZjk4Zjk4MGExOTA2YjI0ODUxNmFlMjY0NGVlYjFmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkMWU5NDFlYTk3ODgxN2NmYjI0MzBiNjBhYzdlMTQ3ZmUyODU5MDgzZGJhNzQyMWE4YjZmMjI2NDM2YmE5N2EzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0MmRkNzdlY2M1NWVjMjdiNDI1MDU0MzIxYThhMzZjY2NkN2UzY2YzMzViZjk0MjBlOTQ0NzFmNjhkNGYwZDMwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhNjljMTg3ZjVlYzFhODA2N2U1NGY4YWI5OTAyM2JhNjU2MWU0N2FhYmJkNTNjM2M3NTY4Y2U1NzA1NWQ4NWZlIn0"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L19-L98",
@@ -325,10 +337,124 @@
           "version": "repo-lines-v1:sha256:cba03cfa5018ca899c3d7206e432c9d060dbfecefbee50acf822b58c8a2d63ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExZTYwNDA5YWVmNzBlNmI4MjU2ODE5NjgwOWVkZWI5ZDQ4ZmRlMjUwZGE0MDZlYWY4MDUzMDUyNGU5YzQ1MWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_a310463867e64b4faca1d429f4d91e01",
+      "statement": "The durable gateway tables follow a crypto-friendly payload contract: the payload columns on gateway_event_outbox and remote_commands are ciphertext (BLOB) + encoding + schemaVersion + cryptoVersion, where cryptoVersion=0 means the inner bytes are UTF-8 JSON plaintext (PR-01/PR-02 — GatewayEventFactory wraps the JSON payload in an 'envelope.v1' document with a base64 ciphertextB64 field, and decodePayloadEnvelope round-trips it on the upload wire path, requiring cryptoVersion==0 and encoding==application/json); Phase 7 (ADR-002) swaps in an opaque encrypted envelope in the very same columns with zero schema change, and business code must never assume payload text is readable — PII (sender, body) lives inside the payload bytes, never as envelope columns, which is why ciphertext is a BLOB and the entities override equals/hashCode on the primary key alone.",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json#L412-L543",
+          "version": "repo-lines-v1:sha256:5e253e0c7ff37837b27493b363ba23396a9e5f2f15ba10c374e7d2edadfc3736:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0OTViOGM1YmY4NjM3NDM2NzFkZWYzZjYzMGViMjMyZDU5YTdhNjM0YTA3MGZjNDM2ZWVjMzdhODY3NGU2YzMwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiOTc4ZTI1MDNiOGNmMzdhMDZmN2Q2ZjBhM2E2YjZmZTM1NjkxZmJjYWI1MGI4Nzc1Y2FiNmZhYmM3MWM1OTJiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwNTlmOTA0OWI5MGM3YWE5Mzc0MzlkN2ZkNTk1NTAzMDU5ZDgwMmUwZWYzY2E2OTViOGE1MWIzYWQ2M2UxMWZlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyZTNhNzZjOWJkNzBiOGVkODI2MzRlNjc1M2YwNGQyMTgwZmMzZTRmOWM5MGZlODg2OTM0NmRlMWU5ZjBkODUwIn0"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt#L57-L100",
+          "version": "repo-lines-v1:sha256:d43b4cf758759dbcb943da5c365dfb346606a1de44f202ae5d50b0de84d34ff5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiODE0Mjk0ODY4NThmM2JiNjBjNzhmZTk3NGE1OTBkOTQxYjQxNjJlNjk0MjhmMzY4YmMwNzNhNGM1OWI0ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkYWRmZjBlNTc2YjFlOWE0ZjgzOWZmY2U2Y2ZhOGRlYzY4YTdhYmVkZTZhOTFkNmNkMTlkNjU4N2FlYjhhZTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L179-L208",
+          "version": "repo-lines-v1:sha256:5521583eefda660109ae023a696a9e53cb02701ce2165ee5a16ee80445bc98a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwODViMzJmYWEyNmRjZDk0NTI1ZDcwOGU3ZTQwNTZlOWQ2MDA1MmZjYTgyZjY1MWM4YTkwYjkwNTExNWNiNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMWIzZjA1ZGU2NTRiMzJiMjFjYWVkOGQ4OTlkMDMwYWViN2FmNzdmMmY1MjRiYWJhZGI5ZTdmODhlMWYwYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4MmY2MzM4MDFjNDhiZWUyOGFjYTBiOWZjMGNiNjdhYmQ0YTZiODYzMzNmNzRmNTAyODQ1NTM3YjI0NmI0NDAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L27-L98",
+          "version": "repo-lines-v1:sha256:350863199cec4b7f2876b0ba8ab07c844dd56e02c6f800b8fb936480498fb93c:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmODU3YTUwMjFjYTE0OWRiNTk4ZWI3YzNlMjcwZDcxM2NjZDE1MmNiMWFmMzA4MzYwNWM3ZGIzNDIzY2JjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMTYzZjc3ODZjNDJjYTg4OTI3MGY3NTNhNzgwNjI2NDI2YzAzZjk3M2EwNWFkZWFlZGQ0ZmE0ZDI3MGYwZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwYTc1Y2YwMjQ0MjQyYzkzMTQ5NzVmMWJlYTVjYWIzYWUzMjM5MTJkMmVmYTYyMzViM2VmOGU1Njk1ZDk4ZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyODlmOTI3NzBkMTBmNjI2NzgzYmU4NGRmOGMyY2M1MTdhNDVmYTJkMTU3NDMzZWU1ZGJjZDhkNmU5MzQ5MGQifQ"
+        },
+        {
+          "resource": "repo://docs/adr/ADR-002-command-encryption-and-cke.md#L13-L51",
+          "version": "repo-lines-v1:sha256:fff60c55883a71f2d3c6f8a7e524f6253dfb4102ed87783c631c6c94e1854ebb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMzY5ODE1MjVmMzU4YzdhZWY2ZWQ4NDFjZDFmOWRjNGUxNThhMjczZjhhM2RiNjVhNTZmOTA2Y2E5N2Q3MGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3OTA1YWNiYWQyOGQ2Yjk1NDc4Zjk2YWE3NDA1OTMyOTc4NWQzOTQ4Y2RjODBiNTkxNzU5ZWE2ZGY5NmRjOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiMTU3YTZkMjc2N2ZmN2Y0MTMzZWUyNzY1MTM2N2M2ZmRmZjdhYjRmZDliYTNjYjQyNjJlMmFhNDQ5MGNjYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmNzMyODlkZTFiYjVlM2E4NDM0Y2ZmMzYxNjczOGY4NWU3ZDQzMmM5MTM2Y2E4MDk0MGI0NTk4MGE4YWViOGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad925976a426424585fae4353deb1289",
+      "statement": "remote_conversation_map (conversationId PK, unique threadId index, createdAt) is the ONLY place the provider threadId ↔ opaque conversation UUID mapping exists on the device (TechSpec §12): the UUID is random, never derived from the phone number, and the provider thread id never leaves Android in events; RemoteConversationMapDao.insertOrIgnore is idempotent (returns -1 when the mapping exists) and TelephonySyncCoordinator.conversationIdFor creates the row on first use, reading back the winner after an insert race, so concurrent event commits of the same thread converge on one UUID.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L34-L61",
+          "version": "repo-lines-v1:sha256:0ca8f7682a85f7dac4f48af4c0b019ca0a3f552679f4c259e6a7533476411200:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2ZjVjZmFkMTY2NzM5YTFkODgzODUwMGUwODBmYjZiZjE0MjUxMzg4MTEzNzVhMjA0NGI3N2JhYTQwNjgzZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1YzdlODU1YTBmYjlhNzNkOTk1OGVmNWYwMDdmMjE3MWYwZGU3MzJmZDlmN2Y5NGM1YzhmMDUwZjJjMzk1MjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlN2Q1M2VmNDJjNWIzMWM3NmZlNTk0NzAzYjlhYjIwODU0MTAzMDMwZGJlY2ViZTkwNTliZjg5ODQxNzdkNTcifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L289-L302",
+          "version": "repo-lines-v1:sha256:660eb9a12d865a60667b9c5d0862aaba31cdbd58ae9ad45b6aeb0f9e5c795ad6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjN2RmOTllYWE1ZWNmZWI1YWJlM2ZmZjUxYTRiY2FlZWI5MjI5N2RjOTQxOTRkNTg4Y2YyYmViNmZkMmIwYzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b25ca6a070a443e2946ce50ac0905734",
+      "statement": "gateway_event_outbox is the durable cloud outbox (TechSpec §15): every outgoing webhook/event is committed here before upload, in practice in the same Room transaction as the message row it describes (PR-02 Rule 4 — event and message live or die together; a mid-flight crash leaves both absent and the deterministic eventUuid dedupes the re-enqueue), with state machine PENDING→SENDING→ACKED (terminal) or PENDING+attemptCount+1+backoff due time on transport failure and DEAD_LETTER for permanent schema/auth rejects that are never silently dropped (health alerts read this state); process-death recovery is first-class (a crash between claim and upload leaves SENDING rows, and EventUploader.start() runs resetSendingToPending before claiming), the uploader's claimBatch is transactional (select + markSending in one Room withTransaction before any HTTP), the (state, nextAttemptAt) index serves the due-rows-first/FIFO claim query, and the unique eventUuid index makes re-committing a committed event a no-op rather than a duplicate.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L63-L163",
+          "version": "repo-lines-v1:sha256:0715633f82713f8bfbcac3376b9e3218553f3af16ce64802f58b3ae70666c6b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYWYyMmNmMDczMjU5MmMyNDcxNDFjYmU2MWVmYTExMDEyNjEyZjVhMzEyMmI5YWY5YmJhZjUyZjU3MjRkMTk0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzMzhiMTUxMTA2OWFjNzc4OWJlNGJiNzBiYTRkMjM1NGVkZWUwYjdhMGE2NTE3OTgzMWFjOTg2N2Y2NDY5NGMyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MzAwNzMwNWU1ZWEwNjM4NjZhYmZkMWU1N2VmMmZjMWYwMmNkYjUyOWNjODI0ZTJlOWI1ZDhlZDFlMTY3ODQzIn0"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L19-L90",
+          "version": "repo-lines-v1:sha256:0b691928d90e8b8613d192a11d3473a447c4d9fcc399bea193d959c560b4e854:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwY2QwMjU3OWZkNDc4NWZlZGRkYTU3ODM3MmFmMTgxNDcwYzE5Zjg2YzAyMDU3MzllM2UwNWZiMTJhZmUyNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjNDFlZmYyZWNiNDlhYjA4MWQzNzA3ZWNiY2MyYmMxNjc1ZDA3NGZiNTljZWU2MDFiMTgwYzFlOTY2MzNlMTYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L62-L94",
+          "version": "repo-lines-v1:sha256:c670809fda6a144b5372c3ad2fcd310ee03454c7065221e83ecb097848622e6f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2OTA3ZTg3MGNkZDk0YjczM2M5YjhhODhjMmE3OTBjMjEyZjMxYTBjMWM0NGU3ODgyZTYxNGFjZDk3YWEyNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNzI1YmQzZDAxOWU2OTAyOGQzNTk2NWVlYWJhZWNmM2M0NjA5MTRiYmExZDIwZDI0ZmQ2ODU4OGE4ZTZhN2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwNzhmZTdhZGViZGFiZWE4MGU3NDczNzY3MWM5MmY2ZTZkOTE3NTkyOGQwZTFhZDg5NmExNDAxZWMyZDk4M2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e12fff179ce144be8cf28c0a96b85b59",
+      "statement": "remote_commands (PK commandId, unique idempotencyKey) is the durable command inbox where commands are stored and deduped BEFORE execution — the exactly-once contract: insertOrIgnore returns -1 for a redelivery (the existing row's commandId is surfaced, e.g. by GatewayOutgoingPipeline.enqueueSendSms for local SEND_SMS sends); RemoteCommandDao.markAcceptedIfReceived is the atomic single-owner claim (WHERE state='RECEIVED') and the generic markState transition enforces the legal-from set in its WHERE clause so a stale caller cannot advance a moved command; the lifecycle is RECEIVED→ACCEPTED→EXECUTING→COMPLETED/FAILED with EXPIRED for never-picked-up commands (expireStale); remote_command_executions holds one row per execution attempt (commandId indexed, attempt, startedAt, finishedAt, result), so a command is never executed twice without two rows existing — the ledger makes exactly-once provable from the database itself.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L165-L271",
+          "version": "repo-lines-v1:sha256:6b4c33a9386646b91b7b489add7b25e21e3c69a2cc43e3348fd721f837484a73:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYWYyMmNmMDczMjU5MmMyNDcxNDFjYmU2MWVmYTExMDEyNjEyZjVhMzEyMmI5YWY5YmJhZjUyZjU3MjRkMTk0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkODdiNjBiNGExOWUwYTRlMDhiMDYzZjRiZWQ2OWJkMjgzMjBiNjc3NTA0NTUxZDQ5MTU0MDE3Y2I2OGJkZDBjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmMTQ1NzZkNzk1ZDc4M2YxNWMxNDQzZWUyMWM3ZjRmMmZkMjQ2N2U3Nzg5ZTJjOWMwMzRjOTQxNmRhN2VhYTlkIn0"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L96-L105",
+          "version": "repo-lines-v1:sha256:7fcc14edbc6346103cfabda3d6b7629afdc609b45693047ad51dbfb190ec18d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4OWMzYTFhZjYzMDJhMTA5ODM1OGY3NWRmNTg3ZWU0ZmEwMGNiMDg0NTNjNzM4ODJkNWZmODk1ZTlkOTBiMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNzI1MTIyY2YyY2ZkM2MxNTFlOWU5Y2I0ODg0YzA1ZTJmMGJjNTNhYmU3YjYzZmU3YTg2YmUxOWZjZDU1YzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzMjBmYWNkMTFiZjhhM2YwNmI3NTE5OWY0ZmY1NmVmMGY4MTI4YTVhMTRhY2RiYjcyOTQ2NzQ5ZmZhMTVmYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMWI4ODQ5N2FkNzFhZTQxMWUzOTc2NGFiZjM5OWU5N2ExMjgzNWVmNWViNDQ5NzQzYzdlMzBiN2RhMWI2MjEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L44-L98",
+          "version": "repo-lines-v1:sha256:0a3d5050cceda7ade56b80c602552363374178bee241583a2c5cdcbdcb0f5ffb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2YjgwODk1ZmNiODE0YzU1Mzg4MTllMDI5NTViY2UzYmY4MDhjMWRmMzJjZjhjMTE2OWY3ZDc0OWYxYzhmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0b1567147fc249f589bdaeae97a4b4c9",
+      "statement": "sync_cursors (PK direction with constants eventUpload/commandInbox/trustLog, lastSequence, lastServerAck, updatedAt, REPLACE upsert) is deliberately separate from sync_state: telephony watermarks in sync_state advance with provider dates, while gateway cursors advance with SERVER sequences, so reconnects resume from the last server sequence instead of rescanning.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L273-L299",
+          "version": "repo-lines-v1:sha256:4dd0be7649d66846ead944308519e035c3964a5c71a488322476ac1e9e528928:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkN2Y3ODQ5OGU4MDQ4MDMwNTUzMjEzODE0YjVhMzVjZjkwNDc0NTRlZDM5MDFhNDcyZDZhNTcwMmNiMjM1MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_444c8a1f7dcf43f090b31070e9ac8059",
+      "statement": "MIGRATION_6_7 / UPGRADE_TO_V7_SQL is additive-only — exactly 12 statements: 5 CREATE TABLE IF NOT EXISTS (remote_conversation_map, gateway_event_outbox, remote_commands, remote_command_executions, sync_cursors) and 7 CREATE [UNIQUE] INDEX IF NOT EXISTS, no DROP/ALTER/RENAME, so a v6 database upgrades by simply gaining five empty tables; defaults live in the Kotlin entities so the migration carries no DEFAULT clauses (same pattern as MIGRATION_4_5), the CREATE text must match the KSP-generated 7.json exactly (Room validates verbatim at upgrade time, identity hash 37d2e1bbeac251d8fa87df49adaf527d), and the three UNIQUE indexes (index_remote_conversation_map_threadId, index_gateway_event_outbox_eventUuid, index_remote_commands_idempotencyKey) are where the idempotency/exactly-once contracts physically live.",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json#L1-L6",
+          "version": "repo-lines-v1:sha256:da253e7924b722192c6fbfb93fd23722328fbc163f8720e354fd544f2b92031b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZmYjA4ZmRhMWFjYjk1N2I2MTE2YmQzNzgxMWExZmU0MWEwMTYxMWMwNjMxZWRiZjc4NmQ2ODg5YTI3YTU1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ2YWRjMmZmYjA2NTZiZWZmMDQwZTE4NmQyZWJhYjE0OTM1ZWVhMGY2NDZhNDE5Nzk4YWM1NDAxMGRjY2U4OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjFlOTVmMjczNzZkZTZlMTY3ZGJiNWNiZjAxMWM4YzMwM2M1YTU0YWJkOWY2ZDgyY2IwZmM5YzhkNzRmYjIyYSJ9"
+        },
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json#L757-L760",
+          "version": "repo-lines-v1:sha256:93ff0046ea462ab6f4de565cab1f1354cb388329517d95635778f6f95c0d4351:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTU0ZDRmZjNkMTVmMTE5MjU2Mjc0Y2JlYTkzYmQzMDMwYTMwNzhlNDY3ZjhiY2NlNWIzOGYxMDYxOTJiNjI1MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRkMjQ0NTgyYjZmYjAzZDIzYjg0MTVhYmVjZDM0NmIwYzlmNDY2YjZmNzUyYjA2ODE4OWNlN2U5YTJkYzM1MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGZmZmMyMTZkOTkxMjVhYjE4Njc2NmM4MzY1Njc5MTg1NWVmYTg5ODhjMjg1YzExZmI3ZGY0YjAxZjJmZjRkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJjNWM5MGY2YTQzNDMwZDNiZmVlOGE2MmE4NTljNDM0MzEyMzZhMzQzZGMyOGJkOTFjMWE1MDdkYTAzM2RiZCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L237-L262",
+          "version": "repo-lines-v1:sha256:b6e8788545b8da037ceafcb2089175d77efa8ed0b12b1d2a1d72321e316e4e65:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZDczYzY2ZWY1YmE4YWZmN2Y3NGYwYTBiMGQ4M2Q4NGZiNzdiMDU2YmFlMjJkODZmNGQyMjgzNzY1OTE4MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOTQ2MWM4MGE1NGYyOThlMmVhYzBjZjU1NDM1ZmYzZDM1YmNmYWZjNjMxODQ1NjJiZWJkNmFmN2E2MGExMWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ea93c14a00348c4927208e7ad411df6",
+      "statement": "GatewaySyncSchemaTest (app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt) pins MIGRATION_6_7 against the KSP-generated 7.json the same way MigrationToV6SqlTest pins v6: it asserts the 6→7 boundary, that UPGRADE_TO_V7_SQL is additive-only with exactly 12 statements (5 tables + 7 indexes, all CREATE), that every migration CREATE TABLE column-list tail and every normalized index (UNIQUE|name|(cols), abstracting the ${TABLE_NAME} placeholder) appears in 7.json, and that exactly the three idempotency UNIQUE indexes are present by name — so drift between the hand-written migration and Room's generated schema is caught on every testDebugUnitTest run instead of exploding on a device at upgrade time.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt#L10-L127",
+          "version": "repo-lines-v1:sha256:f6a67cafced9f7ebd0a9fce2422ddded43b59972b7d5cdfb0791e9b76ccc5583:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYWYyMmNmMDczMjU5MmMyNDcxNDFjYmU2MWVmYTExMDEyNjEyZjVhMzEyMmI5YWY5YmJhZjUyZjU3MjRkMTk0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiNjhmNTFlMzM4NDIzMThjYWY5ZjEwY2M0ZGZiY2IzY2M3M2I0Njc2MTU1ODk2YmViOGRjNDRkOTMxMjQ1Mjg1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

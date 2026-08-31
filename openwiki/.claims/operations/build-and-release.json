@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e4e67769246edbcc3ba0ec261da70b0bb69e4d3f90fbc6db010f7238c5768bc4",
+  "pageVersion": "sha256:da8446e506e5563401b9ca59b7f3d32cef8929134c587cb5ea78efb4cc9be5d3",
   "claims": [
     {
       "id": "claim_b4438e2d50964b4e98dccdfed96c05ee",
@@ -48,7 +48,7 @@
     },
     {
       "id": "claim_a98c50e9efc342e2911e495d4c2f4ef2",
-      "statement": "The app module targets namespace/applicationId com.autonomousone.messages, compileSdk 36, minSdk 26, targetSdk 36, enables both compose and buildConfig in buildFeatures, and is currently at versionCode 61 / versionName 2.6.19.",
+      "statement": "The app module targets namespace/applicationId com.autonomousone.messages, compileSdk 36, minSdk 26, targetSdk 36, enables both compose and buildConfig in buildFeatures, and is currently at versionCode 62 / versionName 2.6.20.",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L11-L13",
@@ -56,7 +56,7 @@
         },
         {
           "resource": "repo://app/build.gradle.kts#L34-L49",
-          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+          "version": "repo-lines-v1:sha256:a54445d4ea02a388e1d44ba1494a2349d394da5299b80a7a2452fb3632afc3ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
         },
         {
           "resource": "repo://app/build.gradle.kts#L74-L77",
@@ -79,7 +79,7 @@
       "statement": "The MMS stack (org.fossify:mmslib:1.0.0, a Fossify fork of klinker android-smsmms) is vendored as the committed binary app/libs/mmslib-1.0.0.aar and consumed via implementation(files(\"libs/mmslib-1.0.0.aar\")) because JitPack, its only remote publication, has had repeated multi-day outages that failed CI dependency resolution; JitPack was removed from all repository lists, so nothing else in the build can depend on it, and the vendoring decision must be preserved.",
       "evidence": [
         {
-          "resource": "repo://app/build.gradle.kts#L122-L128",
+          "resource": "repo://app/build.gradle.kts#L126-L132",
           "version": "repo-lines-v1:sha256:bcd3177d86f3511122db3567c13365e7ac9344dcc913dbb71f644ddfd52db3cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTIzOGM0N2RlYjZlZmI3YmRhOTk1MjZiMDI2Yjg3Yzc3MDY2NjA0YTBkNGI0ZmY3YWIxN2VkZTIwMjc1YWE2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNmYzVlNGM5MmIwMmM5YzlhN2VjZjY3ZTE1MjEzYjAwNGM4NzRjYzg0NDI0NzQ3NmRiMjUyNGMzYjgyZGQ3YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGEwYmY4ZTk4OTBlYzk5ZjNiYWRiODZmZTdlY2NkNzkxN2IwOTZhYzQ1Nzk3M2JhN2FmMDRhOTUyYTZhNjg3NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTgyZGQ4Yjg2ODAzZjFlNGEyNTZjZjFiMjA1NDZhODgyMmY0NGIwNjdlNWE5MzYwZTMzOWZiZTI5YzNlMmUxMyJ9"
         },
         {
@@ -97,8 +97,8 @@
       "statement": "Because the vendored mmslib file dependency carries no transitive metadata, the three runtime dependencies from its published POM are declared explicitly in app/build.gradle.kts with versions pinned in libs.versions.toml: com.klinkerapps:logger 1.0.3, com.squareup.okhttp:okhttp 2.5.0, and com.squareup.okhttp:okhttp-urlconnection 2.5.0.",
       "evidence": [
         {
-          "resource": "repo://app/build.gradle.kts#L128-L131",
-          "version": "repo-lines-v1:sha256:105e485179a467a8f726df9df135a8f4e5bbbbd899bdeeb38121be09e10bc25e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNmYzVlNGM5MmIwMmM5YzlhN2VjZjY3ZTE1MjEzYjAwNGM4NzRjYzg0NDI0NzQ3NmRiMjUyNGMzYjgyZGQ3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjMxMTBkODBhMmRhNjhiNGVmMTZmYjk1ODI1NWUzYjc4N2Y3NzQ3MjJiNzA5NjBlOGE4YzQzMGViZjAyODNmZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDQxNDQwODg2M2ZhMDE2MWYyZGVjNjUwYmY1MmIwMWU0ZTdlY2RkOTc1YmRkNmYxYmYyNmU4Y2Q2MDY0NzI5ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ0N2RkNjgzNThmZjQ2MTdlMWM0N2FmNjYxOWNhOGU4MDZjZDkwYWM4ZjUzYzcyOWQ0MDMwMzIxOWEwMTQyYiJ9"
+          "resource": "repo://app/build.gradle.kts#L133-L135",
+          "version": "repo-lines-v1:sha256:e82dd8b86803f1e4a256cf1b20546a8822f44b067e5a9360e339fbe29c3e2e13:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODZmMzY4NDQzMGM0NDJiN2NkZjM4ZjJmMDZkMzQxMTYwNTYzNGFmOWVmZTk5ODc0MzgyMjM4YjQyNWQxNzZiYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjMxMTBkODBhMmRhNjhiNGVmMTZmYjk1ODI1NWUzYjc4N2Y3NzQ3MjJiNzA5NjBlOGE4YzQzMGViZjAyODNmZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjIzYTE5NjlmNmVkMzFkMzBhMWQ5YjQxMWY0NWQ0MmNlOTk5Y2UzZDFkZGYxYmUxZTJkN2U3NDJhOTBkOGNlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ0N2RkNjgzNThmZjQ2MTdlMWM0N2FmNjYxOWNhOGU4MDZjZDkwYWM4ZjUzYzcyOWQ0MDMwMzIxOWEwMTQyYiJ9"
         },
         {
           "resource": "repo://gradle/libs.versions.toml#L16-L18",
@@ -174,11 +174,11 @@
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/RegistrationManager.kt#L50-L50",
-          "version": "repo-lines-v1:sha256:f35b3a0f98da9e3879f81f36f153ecfba55195a1b01786b4eb0d9a232ebce405:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGFiOWFlNmU0YzAzNTMxODc1OTMyZDA4NjcxNjQ1MWM5MDQ5YTM0NGFiMzAyZTZlMjNhYzdjMjkyN2IzMTUzZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzQ2ZWU5ZmFkNGUzYmE0YWY2OGVkNmI3ZDM5MGMzNmQ3ODVhZDY5YmNiOWE4MWFhZWIzMzJjOTU5MmQzYTk4ZCJ9"
+          "version": "repo-lines-v1:sha256:f35b3a0f98da9e3879f81f36f153ecfba55195a1b01786b4eb0d9a232ebce405:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM1YjNhMGY5OGRhOWUzODc5ZjgxZjM2ZjE1M2VjZmJhNTUxOTVhMWIwMTc4NmI0ZWIwZDlhMjMyZWJjZTQwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGFiOWFlNmU0YzAzNTMxODc1OTMyZDA4NjcxNjQ1MWM5MDQ5YTM0NGFiMzAyZTZlMjNhYzdjMjkyN2IzMTUzZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzU1YmQ2YzcwNzUzNjg0ZTdjZWU5NmRiZjMxMzkxYzI5MTdlOWYyNGYzY2ZlZmI3MzJjZmM2MmQyMzU2NDdjZSJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L67-L67",
-          "version": "repo-lines-v1:sha256:7ff0b0ab6438af3de5eca060e34a12176552894928250a3dc28bac02175089da:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ZmMGIwYWI2NDM4YWYzZGU1ZWNhMDYwZTM0YTEyMTc2NTUyODk0OTI4MjUwYTNkYzI4YmFjMDIxNzUwODlkYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ZmMGIwYWI2NDM4YWYzZGU1ZWNhMDYwZTM0YTEyMTc2NTUyODk0OTI4MjUwYTNkYzI4YmFjMDIxNzUwODlkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWQ1MGNlOWRiNGM3ZDc3Y2RmODU5ZjNmNWM4Yjc5MzU5MmIyMzI0NTAwNjI2MzhkMzJhM2I3NzM2NTliMzQ1YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDA3ZWU0NTBjODliZjYzMDUzNDE1ZmYwMDljZmI1Nzg3MjU0ZDAwMzU4YWQyYzI0MWU0NDljZGIxNjdlODQ3YiJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L55-L58",
+          "version": "repo-lines-v1:sha256:3501ec1a858b6d474aba397a0fb4ed6cb25bed3c2a87f0c0aec2bcb157d24c13:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGEyMTFiNzBkYWI4OTdkNjViNzc1MzY2ZThlMTI4Mzk1MWM2MGRjMTBlMmIzMWFjNTAyZjVhOGJlMDliODU1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTljZTg0NTEzMjFmOTgyNmY1ZDY5NzNlNDU5MDhlNzZkNzM2OTQ3YzUxNTk1NzRkYzAyYjJmNmYxN2Y1NTIyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWYxNjBlZTk0MGFlMmQwODM4NmE3MTA0ZWZjZDE5YWM3ZjM3MWJhNTg4MDdkMDY0Y2QwZDJjOTVhOGZlYjE1MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDA3ZWU0NTBjODliZjYzMDUzNDE1ZmYwMDljZmI1Nzg3MjU0ZDAwMzU4YWQyYzI0MWU0NDljZGIxNjdlODQ3YiJ9"
         }
       ]
     },
@@ -288,7 +288,7 @@
     },
     {
       "id": "claim_818f1e3412ad4a118fe8a2c4610d9044",
-      "statement": "Releases are produced by bumping versionCode and versionName in defaultConfig (currently 61 / 2.6.19) and pushing a v* tag; each shipped version has a docs/release-vX.Y.Z.md note recording the versionCode and schema state, which is how versionCode history is tracked across releases.",
+      "statement": "Releases are produced by bumping versionCode and versionName in defaultConfig (currently 62 / 2.6.20) and pushing a v* tag; each shipped version has a docs/release-vX.Y.Z.md note recording the versionCode and schema state, which is how versionCode history is tracked across releases.",
       "evidence": [
         {
           "resource": "repo://.github/workflows/release.yml#L3-L6",
@@ -296,25 +296,25 @@
         },
         {
           "resource": "repo://app/build.gradle.kts#L34-L49",
-          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+          "version": "repo-lines-v1:sha256:a54445d4ea02a388e1d44ba1494a2349d394da5299b80a7a2452fb3632afc3ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
         },
         {
-          "resource": "repo://docs/release-v2.6.19.md#L1-L3",
-          "version": "repo-lines-v1:sha256:c651d26c5be1ed4958db3ebe6339c1a23ba1c4f749c1040cfa32ee819ccb391c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdjMDVhOWI1MjY3ZmEzMDE0OTdjZGY0ZTg1ZDExNmQ1NWYxYzIzNDhkNDdiODVlOWFhYTJiYzAwNzNhODBmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQ2NGZlZDZiOGY1NDVkZWU0YTIwM2VjN2M2NThmYWE4YWRiZTUzNmQzNTk0ZDIxMTZiMzk1YWEwZDhmZGJkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJlOWUyMzQ5NTVhNWEwZjZjMTJmMTIxZTBhY2JhMzM2NDljMWViZjU4OTg1YmYxMjAxZjViZjFhNmVkODBmYyJ9"
+          "resource": "repo://docs/release-v2.6.20.md#L1-L3",
+          "version": "repo-lines-v1:sha256:32b1a02b41c63236fb244ff323c100bc89445a83c3bf74a362e6575c81abb23a:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFhMTI4YmUyNjc1YjY1OTQwNTY0YzRmYjdlMGU1NTU3NzM5ZjVmMDBkMDhmN2RhYjI0NjQ0Zjk4ODhiOTVlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjNhZTUzODFlZGU1YTJmMGM1OTRmNzM2NzI4Y2U0YTkyMThlOTdmMDRkOWI1MjYwMWQ3MzliZWI0YWI5YWFmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJlOWUyMzQ5NTVhNWEwZjZjMTJmMTIxZTBhY2JhMzM2NDljMWViZjU4OTg1YmYxMjAxZjViZjFhNmVkODBmYyJ9"
         }
       ]
     },
     {
       "id": "claim_9a6c4237a8764e69af030b914b45bdbf",
-      "statement": "KSP exports Room schemas to app/schemas via the room.schemaLocation argument (exportSchema = true on MessagesDatabase); the exported schema JSON files (currently 2.json through 6.json) are committed schema-history artifacts — the record of how messages.db evolved — not hand-editable build inputs, and regenerating them overwrites the history (per docs/room-migration-strategy.md).",
+      "statement": "KSP exports Room schemas to app/schemas via the room.schemaLocation argument (exportSchema = true on MessagesDatabase); the exported schema JSON files (currently 2.json through 7.json) are committed schema-history artifacts — the record of how messages.db evolved — not hand-editable build inputs, and regenerating them overwrites the history (per docs/room-migration-strategy.md).",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L91-L95",
           "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
-          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L47",
+          "version": "repo-lines-v1:sha256:408b4678894ec2d52fc6a50f55c04ad257f78ea9d03289dc9f037e94b10d5289:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMWUwMGY1ZTBmZTVhNjY1YWQ2N2E1MzY1YTVjYTgxNThkMWFhMWEzZjljMzVlNWJhZjdiY2IzM2JhMzlhNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlODY0NmQ0MWJkOGY5N2YxNTcxMTAzZTNkOWU2Mjc2YTk2NjIxODI3NWYwYWU3MjgwYjM0Y2MxZTExMjYwNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
         },
         {
           "resource": "repo://docs/room-migration-strategy.md#L26-L33",
@@ -338,25 +338,57 @@
     },
     {
       "id": "claim_8eb6f53dd6c04ce182812db17d937675",
-      "statement": "MessagesDatabase is at Room version 6 and ships real Migration objects (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) wired via .addMigrations(...), with the destructive fallback fallbackToDestructiveMigration(dropAllTables = true) applied only in debug builds — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl.",
+      "statement": "MessagesDatabase is at Room version 7 and ships real Migration objects (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7) wired via .addMigrations(...) — MIGRATION_2_4 and MIGRATION_3_4 converge both historical paths directly to v4 with a data-preserving sync_state rebuild because the broken shipped 2→3 migration is never traversed — with the destructive fallback fallbackToDestructiveMigration(dropAllTables = true) applied only in debug builds — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl.",
       "evidence": [
         {
-          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json",
-          "version": "repo-file-v1:sha256:d5024a3e0d190e6f591d1726fc921cbd4653b3a28a3bcbfeb353633eb3fd9f73"
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json",
+          "version": "repo-file-v1:sha256:5a4fc7fd483bdd24f96146d4cce3253e7edba6afb038262373c996c17790be04"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L227-L244",
-          "version": "repo-lines-v1:sha256:63e7297b96dea011ab3449f86d96e19f4a3ee9920d9e5997c285816e17a5395b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L269-L286",
+          "version": "repo-lines-v1:sha256:e736d2384ffbe309cc895a2819400b48d9a0f5e772aa057055e1921bd6a95561:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L35-L35",
-          "version": "repo-lines-v1:sha256:16c156512f766232ee14cb6beec74be5d42f5278a62a6755336f0bdd973c2dd4:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZjMTU2NTEyZjc2NjIzMmVlMTRjYjZiZWVjNzRiZTVkNDJmNTI3OGE2MmE2NzU1MzM2ZjBiZGQ5NzNjMmRkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZjMTU2NTEyZjc2NjIzMmVlMTRjYjZiZWVjNzRiZTVkNDJmNTI3OGE2MmE2NzU1MzM2ZjBiZGQ5NzNjMmRkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzZhMmVjYjI1OTg5OWViNzhmMzkxMGM1YmZhNjQ2NDNlYWVhMWQwM2I5OGUwMzE3MGMxMDQ2OGNjZDA5NjM4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2ViZWVlZGI4MzQ1YTFmNmFkNjcyZmZlMmJmZGEyNGVhYTcyYzE3Yzc2Mjk2ZjdmNTA1MmI4MjE3MWM5ODNjOSJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L45-L45",
+          "version": "repo-lines-v1:sha256:6ef26541bad60e774abfd6d5fb95f8e680410b71af4c1f98d44d6aae54af323e:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmVmMjY1NDFiYWQ2MGU3NzRhYmZkNmQ1ZmI5NWY4ZTY4MDQxMGI3MWFmNGMxZjk4ZDQ0ZDZhYWU1NGFmMzIzZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmVmMjY1NDFiYWQ2MGU3NzRhYmZkNmQ1ZmI5NWY4ZTY4MDQxMGI3MWFmNGMxZjk4ZDQ0ZDZhYWU1NGFmMzIzZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTRiZjgyMDM4NTc1ZTM1Njc4YWY5MjNkM2Q5MjlhMzQxNmYwNTNkZTBkN2JiMTRlOTQxMmNhMTMwMDhlNjk0NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2ViZWVlZGI4MzQ1YTFmNmFkNjcyZmZlMmJmZGEyNGVhYTcyYzE3Yzc2Mjk2ZjdmNTA1MmI4MjE3MWM5ODNjOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c7b324a8ce242dfbbe0f7d7966e9c54",
+      "statement": "MIGRATION_6_7 (UPGRADE_TO_V7_SQL) is additive-only: it creates the five v7 durability tables — remote_conversation_map, gateway_event_outbox, remote_commands, remote_command_executions, sync_cursors — plus seven indexes, exactly three of which are UNIQUE (eventUuid on gateway_event_outbox, idempotencyKey on remote_commands, threadId on remote_conversation_map) and carry the exactly-once contracts, with gateway payload columns as crypto-friendly opaque blobs (ciphertext/encoding/schemaVersion/cryptoVersion); GatewaySyncSchemaTest pins this shape against the KSP-generated 7.json, asserting pure CREATE statements, exactly 5 tables and 7 indexes, and the three unique idempotency indexes by name.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L237-L262",
+          "version": "repo-lines-v1:sha256:b6e8788545b8da037ceafcb2089175d77efa8ed0b12b1d2a1d72321e316e4e65:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZDczYzY2ZWY1YmE4YWZmN2Y3NGYwYTBiMGQ4M2Q4NGZiNzdiMDU2YmFlMjJkODZmNGQyMjgzNzY1OTE4MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOTQ2MWM4MGE1NGYyOThlMmVhYzBjZjU1NDM1ZmYzZDM1YmNmYWZjNjMxODQ1NjJiZWJkNmFmN2E2MGExMWYifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt#L108-L127",
+          "version": "repo-lines-v1:sha256:49288ed7d435a722282402b8d5226769208d3782c6694d4b256a7035ef972770:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMTJiMGQ2NWVlNzY3NWNlNTA3ODgzYWJmZWExZjEyZmE0MDViOTUzNjQ1MDJkYmJhOTcwMDNjNDI3OTM0NmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt#L33-L49",
+          "version": "repo-lines-v1:sha256:aa175dcd527cb342f3c5066b9e76ea82c0ea7d14626b0bc6c55fd8d7b7006e2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZjA5ZWIwYzU3NDRmYjk3MzMxYjk4ZmYzZmJmMDVhNjAyYmEzZjdmNjdlNWRhNWJlOTA5NTAzM2Y2MjU4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkZWI1N2VmNzYxNTJkYjUzZDQ3NjY0YjcyOWE0OWIzODU3MWU4YmQ5ZmYwOTYxZTY5NDk4ODQzNDI4ODA4YTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYjRhYzA4MWEyNjg1NTUzMGJlNGY1ODM5ZTgxOGNmN2ZiNjllZDQzNTRiNDA5YTlhMTVjNzllMTkxNGVkZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c84c9b43542c4ce6b615ed499c6c2736",
+      "statement": "app/build.gradle.kts declares testImplementation(\"org.json:json:20240303\") so JVM unit tests exercise real JSON classes: under returnDefaultValues the android.jar JSON stubs return default values, which breaks JSON round-trip assertions such as GatewayEventFactoryTest's payload-envelope decode, while the app runtime still uses the platform's own org.json classes.",
+      "evidence": [
+        {
+          "resource": "repo://app/build.gradle.kts#L107-L110",
+          "version": "repo-lines-v1:sha256:f09ab387f2e40a4cfd4e698cf61dc51eafe7eb90a094c08e646014f1d6dd0785:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmI2M2Q3MzRjZDFhNzFkMzA4YmFhMzAxMzNmNDFhOWQzZjI3NTA3ZTA0N2JhZmZjNWYzYzQ5NDljZmM0NWRiMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGNkM2VlNDI3MjgwY2I5ZmQxYjg0ZjhjMjliMGQ3OTQyOGExYWFiYTgxOWM4YWUyMjQxOTk2NjIyNDUzNzM1ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmE3MTA0MDQzYTRkOGE2Zjc2YWRmZDA5Mjg3YWQwYWI4OTYwZGY5YTM0NGYxYzliNTkwMWU1OTEwZTg3ZjU1NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYThmZmJmMGY1MDVjZGRmZmVhYzcxNzk3YjM2MDcyNjc3ZjNmMTI3ZTY0Mzc5MjA5NWRlNmI4OTdlMjI5NjRkMCJ9"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt#L42-L58",
+          "version": "repo-lines-v1:sha256:bf66a0a17fdc82c22269c50a282644cc056239199028c5abb3dcf0ac1cb1c4bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTVmZjBmMzFmMDczNDQ1MjM2YmEwMDUwMjhmZDE2Y2VkYzMzZGQ5NTc3ZDg2ODNhZGQxMTEzMTM5ZTM1OGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4ZWFmM2UxZGIyODRmNmE2ZmQ0ZTA2NmFlMmZiNjU0YWU2OGZkZmNmM2U3ZTRkY2E0YzJkZDIxNGE0OWI5ZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkMWZkYTIwZDgxY2QxODNhNjc2YWY5ODEyY2JhYmFhZTEyNmU3ZTVlODAwOGE4MTc0ODNiYzc3ZDgyMjJiOGIifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

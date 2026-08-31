@@ -5,7 +5,7 @@ description: "Whole-system map of the Messages Android app: the default-SMS-app 
 tags: [architecture, overview, sms, mms, default-sms-app, room, telephony, gateway, android, sync]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -23,6 +23,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt
   - id: openwiki-source-1188ef94bbd10bf1710668b7
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9

@@ -4,7 +4,7 @@ title: "Conversation Window and Keyset Pagination"
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-6bd690faeb48b8a379dfdcda
     resource: repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt

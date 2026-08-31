@@ -1,12 +1,12 @@
 ---
 type: workflow
 title: "Workflow: Incoming Message Pipeline"
-description: "End-to-end trace of one received message: broadcast arrival and default-app dedupe, provider persist and read-back, the IncomingMessageDispatcher fan-out (Room shadow mutate, blocklist gate, address-cache invalidation, SmsEventBus optimistic UI, WebhookEngine, and viewing-suppressed notification), and the MMS variant through mmslib's MmsReceiver."
-tags: [sms, mms, incoming-message, receiver, sms-receiver, mms-receiver, incoming-message-dispatcher, telephony-sync-coordinator, sms-event-bus, webhook-engine, notification, blocklist, content-observer, change-router, single-source-of-truth, android]
+description: "End-to-end trace of one received message: broadcast arrival and default-app dedupe, provider persist and read-back, the IncomingMessageDispatcher fan-out (Room shadow mutate that also commits the PR-02 durable MESSAGE_CREATED outbox event in the same transaction, blocklist gate, address-cache invalidation, SmsEventBus optimistic UI, the local-only WebhookEngine webhook, and viewing-suppressed notification), and the MMS variant through mmslib's MmsReceiver."
+tags: [sms, mms, incoming-message, receiver, sms-receiver, mms-receiver, incoming-message-dispatcher, telephony-sync-coordinator, sms-event-bus, webhook-engine, notification, blocklist, content-observer, change-router, gateway-event-outbox, event-uploader, single-source-of-truth, android]
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -46,13 +46,15 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt
   - id: openwiki-source-353c7d0bc150b187b3587e50
     resource: repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
   - id: openwiki-source-72b0bf10f6f0169c18fa69f3
     resource: repo://app/src/test/java/com/autonomousone/messages/SameConversationRoutingTest.kt
   - id: openwiki-source-4910c1194d1e60dcd7fb5000
     resource: repo://app/src/test/java/com/autonomousone/messages/SmsObserverTimingTest.kt
   - id: openwiki-source-7abea9ce6f657aff34d4e142
     resource: repo://app/src/test/java/com/autonomousone/messages/UnreadDeltaTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T09:09:40.113Z" }
 ---
 
 
@@ -61,9 +63,9 @@ generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 This page follows one inbound message from the moment Android raises a broadcast to the moment the user sees it — on the Home list, in the open conversation, on a webhook endpoint, or as a notification. The pipeline is defined by one invariant and one funnel:
 
 - **Persist before fan-out.** The Telephony provider is the single source of truth. Every consumer (Room shadow, UI, webhook, notification) is fed from *provider-confirmed state* — the row the receiver just wrote, or read back after someone else wrote it. No consumer ever sees optimistic local state as truth.
-- **One funnel.** Every inbound path — default-app `SMS_DELIVER`, non-default `SMS_RECEIVED`, and MMS via mmslib — terminates at `IncomingMessageDispatcher.dispatch(context, sms, source)`, which applies a fixed order: Room mirror → blocklist gate → address-cache invalidation → event bus → webhook → notification.
+- **One funnel.** Every inbound path — default-app `SMS_DELIVER`, non-default `SMS_RECEIVED`, and MMS via mmslib — terminates at `IncomingMessageDispatcher.dispatch(context, sms, source)`, which applies a fixed order: Room mirror → blocklist gate → address-cache invalidation → event bus → local webhook → notification. The Room mirror is not merely a UI shadow: for a brand-new row it also commits the durable `MESSAGE_CREATED` cloud event into `gateway_event_outbox` inside the *same* Room transaction (PR-02).
 
-The static anatomy of each component lives on [Incoming SMS/MMS Reception](/openwiki/architecture/incoming-messaging.md) and [Provider-to-Room Sync](/openwiki/architecture/sync-coordinator.md); the transport details of the two webhook legs live on [Incoming-SMS Webhooks and Cloud Events](/openwiki/integrations/incoming-webhooks.md); the paged conversation window that renders the appended row is on [Conversation Window and Keyset Pagination](/openwiki/architecture/conversation-paging.md). This page is the trace itself.
+The static anatomy of each component lives on [Incoming SMS/MMS Reception](/openwiki/architecture/incoming-messaging.md) and [Provider-to-Room Sync](/openwiki/architecture/sync-coordinator.md); the durable cloud-event outbox (state machine, `EventUploader`, identity rules) is documented on [Durable Gateway Sync](/openwiki/architecture/durable-gateway-sync.md), and the local webhook's transport details are on [Incoming-SMS Webhooks and Cloud Events](/openwiki/integrations/incoming-webhooks.md); the paged conversation window that renders the appended row is on [Conversation Window and Keyset Pagination](/openwiki/architecture/conversation-paging.md). This page is the trace itself.
 
 ## The whole trace
 
@@ -96,8 +98,8 @@ sequenceDiagram
         CR->>C: targeted mutate or bounded reconcile
     end
 
-    D->>C: mutate(Upsert) mirrors to Room first
-    C->>RM: transaction upsert message and conversation
+    D->>C: mutate(Upsert), mirrors to Room first
+    C->>RM: one transaction: message, conversation, durable event for new rows
     RM-->>H: Room Flow re-emits, list repaints
 
     alt Sender on the blocklist
@@ -106,12 +108,12 @@ sequenceDiagram
         D->>D: invalidate address caches
         D->>CB: emitSms
         CB-->>H: optimistic prepend to Home list
-        D->>W: sendIncomingSmsWebhook, fire and forget
+        D->>W: sendLocalWebhook, local only, fire and forget
         D->>N: showSmsNotification unless viewing this conversation
     end
 ```
 
-Caption: one received message traced from broadcast to every consumer — the default-app persist/read-back path, the non-default ContentObserver fallback, and the dispatcher's fixed fan-out order with its blocklist branch (early exit after the Room mirror) and the bus/webhook/notification fan-out.
+Caption: one received message traced from broadcast to every consumer — the default-app persist/read-back path, the non-default ContentObserver fallback, and the dispatcher's fixed fan-out order with its blocklist branch (early exit after the Room mirror). The Room mirror is a single transaction that also commits the durable `MESSAGE_CREATED` outbox event for brand-new rows (PR-02); the webhook step now fires only the user-configured local leg.
 
 ## Step 1 — Broadcast entry: `SmsReceiver`
 
@@ -140,11 +142,12 @@ The MMS path reaches the same funnel a different way: mmslib's manifest-declared
 
 `dispatch` is the one funnel for all inbound traffic (SMS and MMS alike). Its contract is that `sms.id`/`sms.threadId` **must** come from the provider row that was just written or read back. It runs on a caller-supplied background context and does network/DB work freely. The steps, in this exact order:
 
-1. **Room shadow mirror — always first.** `TelephonySyncCoordinator.get(context).mutate(MessageMutation.Upsert(source, sms))`. This is the ordering guarantee of the whole pipeline: persistence into the provider precedes every fan-out, and the Room mirror precedes every *other* fan-out. Comment in code: blocking is a notification policy, not a sync policy — the row stays persisted either way.
-2. **Blocked-sender early exit.** `BlocklistRepository.isBlocked(context, sms.sender)` — the static shortcut exists so broadcast receivers can check without instance state. If blocked, `dispatch` **returns immediately**: no bus event, no webhook, no notification. Silent handling; the message remains persisted in the provider and the Room shadow. Blocking silences, it does not delete, and blocked senders are invisible to webhook consumers by construction.
+<!-- openwiki: broken internal link [#the-room-mirror-mutexert-to-the-o1-fast-path] heading anchor "the-room-mirror-mutexert-to-the-o1-fast-path" does not exist in /openwiki/workflows/incoming-message-pipeline.md. Fix the href or restore the target, then delete this comment. -->
+1. **Room shadow mirror — always first.** `TelephonySyncCoordinator.get(context).mutate(MessageMutation.Upsert(source, sms))`. This is the ordering guarantee of the whole pipeline: persistence into the provider precedes every fan-out, and the Room mirror precedes every *other* fan-out. Comment in code: blocking is a notification policy, not a sync policy — the row stays persisted either way. The mutation is also where the durable `MESSAGE_CREATED` cloud event is committed (see [The Room mirror](#the-room-mirror-mutexert-to-the-o1-fast-path)) — for a brand-new row it lands in the *same* Room transaction.
+2. **Blocked-sender early exit.** `BlocklistRepository.isBlocked(context, sms.sender)` — the static shortcut exists so broadcast receivers can check without instance state. If blocked, `dispatch` **returns immediately**: no bus event, no local webhook, no notification. Silent handling; the message remains persisted in the provider and the Room shadow. Blocking silences UI/webhook/notification, it does not delete — and because the durable event was already committed in step 1, a *brand-new* blocked message still produces a `MESSAGE_CREATED` outbox row even though the user never sees it locally.
 3. **Address-cache invalidation.** `SmsRepository(context).invalidateAddressCaches()` drops the process-wide `AddressCache` (the canonical thread→address map and the per-thread cache used by the conversation-list fast path). A brand-new sender must not render as "Unknown" on the next list refresh — the caches are dropped so names re-resolve against the contact list.
-4. **Optimistic UI nudge.** `SmsEventBus.emitSms(sms)` — a fire-and-forget `SharedFlow` (no replay, `extraBufferCapacity = 64` absorbs bursts). It is a nudge, not a data source: the authoritative repaint comes from the committed Room mirror (step 1 below), and the bus makes the first frame instant.
-5. **Webhook dispatch.** `WebhookEngine.sendIncomingSmsWebhook(context, sms)` — fire-and-forget, consent-gated inside (webhook branch below).
+4. **Optimistic UI nudge.** `SmsEventBus.emitSms(sms)` — a fire-and-forget `SharedFlow` (no replay, `extraBufferCapacity = 64` absorbs bursts). It is a nudge, not a data source: the authoritative repaint comes from the committed Room mirror (step 1 above), and the bus makes the first frame instant.
+5. **Local webhook.** `WebhookEngine.sendLocalWebhook(context, sms)` — fire-and-forget, consent-gated inside (webhook branch below). This is the user-configured local leg only; the durable cloud event is *not* fired here anymore — it lives in the outbox committed by step 1.
 6. **Notification.** `NotificationHelper.showSmsNotification(context, sms)` — **skipped when the user is actively viewing this conversation**: `ContactRepository.sameConversation(sms.sender, SmsEventBus.activeConversationPhone) && SmsEventBus.isAppInForeground`. `activeConversationPhone` is set by `ConversationViewModel` on conversation load and cleared on `onCleared`; `isAppInForeground` is set by `MainActivity.onResume`/`onPause`. `sameConversation` normalizes (strips non-digits, handles `+`) and matches on suffix with a ≥7-digit guard so short fragments never join two conversations. So: viewing the *other* chat → notify; app backgrounded → notify; viewing *this* chat in foreground → suppress.
 
 ### The Room mirror: `mutate(Upsert)` to the O(1) fast path
@@ -156,20 +159,21 @@ The MMS path reaches the same funnel a different way: mmslib's manifest-declared
 
 For an incoming message, `applyMutation(Upsert)` runs **one Room transaction**: upsert the `MessageEntity` (keyed by `(source, providerId)`), compute the unread delta with `UnreadDelta` (signed O(1) — brand-new unread is +1, re-upsert is 0, unread→read is −1; the thread is never recounted), and upsert the conversation projection with `upsertPreservingFlags` — a *true* upsert, so a brand-new thread is INSERTed right here and Home never depends on a later rebuild. `lastMessageDate` is the max of new and existing, and pin/archived flags are preserved.
 
+**PR-02: the durable cloud event commits here, in the same transaction.** When the upsert is for a brand-new row (`old == null`), the transaction also calls `enqueueCloudEvent { GatewayEventFactory.messageCreated(...) }`, which builds a `MESSAGE_CREATED` outbox row and inserts it into `gateway_event_outbox` with `INSERT OR IGNORE` — *inside* the open `withTransaction` block. The event row and the message row it describes therefore live or die together: a process death before commit loses both, and the provider reconcile re-mirrors the row and re-enqueues the event; a duplicate commit is a no-op against the unique `eventUuid` index. The event's identity is deterministic (`GatewayEventFactory.eventUuidFor(MESSAGE_CREATED, source, providerId, dateMs)`; the payload's `messageId` is a name-UUID of `source:providerId:dateMs`), the `conversationId` is the opaque UUID from `remote_conversation_map` (created on first use), and the payload is an envelope (`cryptoVersion = 0` UTF-8 JSON for now; Phase 7 swaps in AEAD bytes with zero schema change). An enqueue failure is logged and swallowed — it never fails the local mutation.
+
+The durable leg is deliberately *separated* from the dispatch's best-effort legs: the outbox commit needs no consent, token, or network — transmission is the uploader's problem. `EventUploader` (started by `GatewayService` under `ConnectionSupervisor`) is the only cloud transmitter: it claims batches transactionally, POSTs them to `/api/v1/agent/events/batch`, marks ACKs per `eventUuid`, retries on backoff, dead-letters permanent 4xx rejects, and requeues `SENDING` rows after a crash — the full state machine is documented on [Durable Gateway Sync](/openwiki/architecture/durable-gateway-sync.md). While the gateway runtime flag `isEnabled` is off or `gmwebUrl` is blank, the uploader idles and rows simply accumulate `PENDING`.
+
 The committed transaction invalidates the Room `Flow`s. That is the authoritative leg of the UI update: `HomeViewModel.observeRoomConversations` collects `conversationDao().observeAll()` and repaints the list once the read-cutover gate is open (see below). The event-bus prepend from step 4 is what makes the row appear *instantly*; the Room Flow commit is what makes it *correct* — and `HomeViewModel` deliberately does **not** run a provider scan on the bus event, because the exact mutation already reached Room.
 
 **Read-cutover gate.** Room may serve the UI only after both sources have mirrored their initial window: `isShadowReady()` checks `initialWindowReady` for both `SOURCE_SMS` and `SOURCE_MMS` in the sync-state table, and the flag flips only *after* the conversations projection has been rebuilt from the mirrored messages — the UI can never observe "ready" against an empty projection. Until the gate opens, Home falls back to the provider path (or the persisted `ConversationCache`); if the shadow DB cannot be opened at all (failed migration), `HomeViewModel` disables the cutover and degrades to the provider path — the shadow is a read model, the provider remains truth.
 
 **Conversation screen.** `ConversationViewModel` collects the same bus flow: when the incoming sender matches the open conversation (`sameConversation`), it appends the row via `appendLiveMessage` (deduping by id, or by body + ≤5 s time proximity so the bus row collapses with the provider-confirmed one), scrolls to it when the user is at the latest edge, and — because the user is watching — marks the thread read in the provider (`repository.markThreadAsRead`, which updates both `Telephony.Sms.READ` and `Telephony.Mms.READ` and notes the write in `LocalProviderWrites`). That provider write fires the ContentObserver again, closing the loop on the fallback path below.
 
-### The webhook branch: `WebhookEngine`
+### The webhook branch: `WebhookEngine` (local leg only)
 
-`sendIncomingSmsWebhook` is gated once, up front, by `GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)` — versioned privacy consent **and** the supervisor-derived runtime `isEnabled` flag. If the gate fails, *both* legs are skipped at once. When open:
+PR-02 deleted the old fire-and-forget *cloud* leg — the cloud event is now the durable `gateway_event_outbox` row committed in the Room transaction above, transmitted by `EventUploader`. What remains in `WebhookEngine` is the user-configured **local** webhook, best-effort by design and unchanged in behaviour:
 
-- **Local webhook** — JSON POST (`event: "sms_received"`, sender, message, timestamp, threadId) to the user-configured URL on the engine's IO scope. Non-HTTPS URLs are rejected and logged. With a configured secret, the body is HMAC-SHA256 signed over `"<timestamp>.<body>"` and sent as `X-Signature` + `X-Timestamp` so receivers can verify authenticity and reject replays. Timeouts are 8 s each; failures are logged, never thrown.
-- **Cloud event** — the same message posted as `type: "sms.received"` to the backend's `/api/gateways/events/sms`, only when the gateway is registered with a token. The `eventId` is a **deterministic** UUID (name-based hash of sender + date + first 100 chars of body), checked against a local sent-event cache before sending and marked sent only on `Success` — a crash before acknowledgment re-derives the same id, and the backend dedupes on it. A `Failure` leaves the event unmarked (in practice `SMS_DELIVER` fires once, so a permanently down backend means a lost event; the backend's own retry covers downstream webhook delivery).
-
-Both legs are fire-and-forget: nothing downstream of the dispatcher depends on webhook success, and the receiver process is already past `pending.finish()` by then.
+`sendLocalWebhook` is gated once, up front, by `GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)` — versioned privacy consent **and** the supervisor-derived runtime `isEnabled` flag; it also no-ops when no `webhookUrl` is configured. Non-HTTPS URLs are rejected and logged (never sent). When open, a JSON POST (`event: "sms_received"`, sender, message, timestamp, threadId) runs fire-and-forget on the engine's IO scope: with a configured secret the body is HMAC-SHA256 signed over `"<timestamp>.<body>"` and sent as `X-Signature` + `X-Timestamp` so receivers can verify authenticity and reject replays; timeouts are 8 s each; failures are logged, never thrown. Nothing downstream of the dispatcher depends on it, and the receiver process is already past `pending.finish()` by then.
 
 ### The notification branch: `NotificationHelper`
 
@@ -198,11 +202,12 @@ This observer path is what keeps the shadow authoritative for non-default deploy
 
 ## Invariants and failure semantics
 
-- **Persistence precedes fan-out; provider state precedes everything.** No consumer (UI, webhook, notification, shadow) is ever fed optimistic state as truth; a read-back failure degrades to broadcast data with a logged warning rather than aborting delivery.
-- **The Room mirror is unconditional** — it precedes the blocklist gate, so a blocked message exists in the provider *and* the shadow; blocking silences bus/webhook/notification, it does not delete.
-- **Exactly-once Room writes on the realtime path.** The UNLIMITED mutation channel never conflates or drops; one message = one transaction = one Flow emission. Full scans (`fullRebuildConversations`, the keyset backfill) are confined to the conflated reconcile path and never run on the incoming-message hot path.
-- **Two identity spaces, one key.** SMS ids are positive provider ids; MMS ids are negated at the `MmsReceiver` boundary and restored with `abs()` in `TelephonySyncCoordinator.providerId`; the composite shadow key is `(source, providerId)` with stable wire values `"sms"`/`"mms"`.
-- **The broadcast window is bounded and sufficient.** Only the INSERT + read-back must complete inside `goAsync()`; the Room commit, webhooks, and notification are handed to background scopes (coordinator loop, engine IO scope, main-thread notification post) and survive `pending.finish()`.
+- **Persistence precedes fan-out; provider state precedes everything.** No consumer (UI, local webhook, notification, shadow, durable outbox) is ever fed optimistic state as truth; a read-back failure degrades to broadcast data with a logged warning rather than aborting delivery.
+- **The Room mirror is unconditional** — it precedes the blocklist gate, so a blocked message exists in the provider *and* the shadow; blocking silences bus/local webhook/notification, it does not delete. Consequence: a *brand-new* blocked message still commits a `MESSAGE_CREATED` outbox row (the durable leg is not blocklist-gated), even though the user never sees it locally.
+- **Exactly-once Room writes, and the durable event rides the same commit.** The UNLIMITED mutation channel never conflates or drops; one new message = one transaction = one Flow emission, and that transaction also carries the `MESSAGE_CREATED` outbox row (for a brand-new row only). `eventUuid` uniqueness plus `INSERT OR IGNORE` makes a re-commit a no-op, so the provider reconcile can re-mirror and re-enqueue after a crash without ever duplicating an event. Full scans (`fullRebuildConversations`, the keyset backfill) are confined to the conflated reconcile path and never run on the incoming-message hot path.
+- **Durable correctness lives in the queue, not on the wire.** The outbox row commits *before* any network attempt — transmission, retry/backoff, ACK, and dead-lettering are `EventUploader`'s job under `GatewayService`; an outage or a dead gateway only delays delivery, it never loses the event. The local webhook is the one leg that remains best-effort and fire-and-forget.
+- **Two identity spaces, one key.** SMS ids are positive provider ids; MMS ids are negated at the `MmsReceiver` boundary and restored with `abs()` in `TelephonySyncCoordinator.providerId`; the composite shadow key is `(source, providerId)` with stable wire values `"sms"`/`"mms"`, and those same `(source, providerId)` values seed the deterministic cloud-event identity (`messageId`, `eventUuid`).
+- **The broadcast window is bounded and sufficient.** Only the INSERT + read-back must complete inside `goAsync()`; the Room commit (message + conversation + outbox event), the local webhook, and the notification are handed to background scopes (coordinator loop, engine IO scope, main-thread notification post) and survive `pending.finish()`.
 - **The shadow is degradable.** If Room cannot be opened, the read-cutover latch disables Room reads and the app continues on the provider path — a broken shadow must never kill the app.
 
 ## Focused tests
@@ -213,11 +218,13 @@ The boundary logic that the pipeline depends on has JVM tests that pin it:
 - `SmsObserverTimingTest` — the observer's timing contract: the first change fires synchronously on the leading edge (<50 ms), and a 10-change burst fires only once (the rest coalesces into the trailing call).
 - `UnreadDeltaTest` — every state transition of the O(1) unread-delta rule the mutation transaction relies on (new unread +1, re-upsert 0, unread→read −1), so a 360K-message thread pays nothing per incoming SMS and badges actually come down.
 - `SameConversationRoutingTest` — the `sameConversation` predicate behind both the viewing-suppression check and the blocklist matching: normalization, country-code suffix matching, and the ≥7-digit guard.
+- `GatewayEventFactoryTest` — the identity contract behind the in-transaction `MESSAGE_CREATED` commit: `messageId` is stable per provider row and never body-derived, `eventUuid` differs per event kind, and the payload envelope round-trips while rejecting any `cryptoVersion` other than 0 until Phase 7 lands.
 
 ## Related pages
 
 - [Incoming SMS/MMS Reception](/openwiki/architecture/incoming-messaging.md) — static anatomy of the receiver layer, mmslib, dispatcher, and blocklist
 - [Provider-to-Room Sync](/openwiki/architecture/sync-coordinator.md) — the dual-channel coordinator, cutover gate, and durable backfill
+- [Durable Gateway Sync](/openwiki/architecture/durable-gateway-sync.md) — the `gateway_event_outbox` state machine, `EventUploader` transmitter, and the identity/envelope rules the in-transaction `MESSAGE_CREATED` commit relies on
+- [Incoming-SMS Webhooks and Cloud Events](/openwiki/integrations/incoming-webhooks.md) — the user-configured local webhook leg and its signing
 - [UI, Navigation, and App Shell](/openwiki/architecture/ui-architecture.md) — the MVVM shell that hosts Home/Conversation ViewModels and the event bus
-- [Incoming-SMS Webhooks and Cloud Events](/openwiki/integrations/incoming-webhooks.md) — the two webhook legs, signing, and idempotency
 - [Conversation Window and Keyset Pagination](/openwiki/architecture/conversation-paging.md) — how the conversation screen renders the appended live row

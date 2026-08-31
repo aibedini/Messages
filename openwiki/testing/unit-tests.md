@@ -5,7 +5,7 @@ description: "How to run the headless JVM unit-test suite (testDebugUnitTest), t
 tags: [testing, unit-tests, jvm, android, gradle, test-seams, ci, invariants]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-a180c650e871410c5a663cf9
     resource: repo://.github/workflows/build-debug.yml
@@ -21,6 +21,10 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt
   - id: openwiki-source-4a70e57f63fcd7dff3299bb5
     resource: repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
   - id: openwiki-source-b4330449f6d1b6163298aae4
     resource: repo://app/src/main/java/com/autonomousone/messages/data/LocalProviderWrites.kt
   - id: openwiki-source-51189b7b42ba492b233ef785
@@ -31,8 +35,14 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt
   - id: openwiki-source-df3820a8f6419586aaa828f3
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt
+  - id: openwiki-source-37195168a05503d3bcaa457f
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/DeviceIdentity.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-f624f17c409bc74370fff0b7
     resource: repo://app/src/main/java/com/autonomousone/messages/observer/SmsContentObserver.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
   - id: openwiki-source-bfc3db3bd26a58eea298ec42
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt
   - id: openwiki-source-238fc3d5d69fd114964b25fa
@@ -49,6 +59,8 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt
   - id: openwiki-source-5457e8a01e67c6b1980537ef
     resource: repo://app/src/test/java/com/autonomousone/messages/ConversationListMapperTest.kt
+  - id: openwiki-source-5b3633c9c4fdb2754a93c6b7
+    resource: repo://app/src/test/java/com/autonomousone/messages/DeviceIdentityFormatTest.kt
   - id: openwiki-source-e751999d76ff43e6908f09bf
     resource: repo://app/src/test/java/com/autonomousone/messages/DiagnosticLogTest.kt
   - id: openwiki-source-5d9105beecd437514587cd99
@@ -57,6 +69,12 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/FtsQueryTest.kt
   - id: openwiki-source-78df0f57b8c1bc78f8110a9d
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-c971d5d0d445dd3ffeebfc88
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
   - id: openwiki-source-723056c1a2bbf4b935b093d9
     resource: repo://app/src/test/java/com/autonomousone/messages/IncomingShareParserTest.kt
   - id: openwiki-source-3b0d5ff7eb2ce9580b695097

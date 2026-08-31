@@ -5,16 +5,24 @@ description: "Outbound notifications of received SMS: the user-configured HTTPS 
 tags: [webhooks, hmac, cloud-events, idempotency, incoming-sms, gateway, outbound-notifications]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-b394c571401a67cd53a9d162
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-df3820a8f6419586aaa828f3
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt
+  - id: openwiki-source-1188ef94bbd10bf1710668b7
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt
-  - id: openwiki-source-6ab27fc85c22eab7ffed6e67
-    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/HeartbeatManager.kt
+  - id: openwiki-source-4ad02c444ebadf27339b8cbb
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-362c458761cae734c7912208
@@ -25,6 +33,12 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt
   - id: openwiki-source-78df0f57b8c1bc78f8110a9d
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-c971d5d0d445dd3ffeebfc88
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
   - id: openwiki-source-b9aae9b07139533828a184a4
     resource: repo://docs/api/openapi.yaml
   - id: openwiki-source-9ea8f1733182ce8ef8964ce1

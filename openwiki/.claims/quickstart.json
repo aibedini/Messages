@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:07e44a2b509df491909f29588833469ee646cfe400dbea504490219db37cf4ed",
+  "pageVersion": "sha256:7b36461fc5de491a4add3fe5e0a91d2add60efdb017860002e9c99a59c14292c",
   "claims": [
     {
       "id": "claim_d76361c26033445fbda64d1a042a5a42",
-      "statement": "Messages is a single-APK Kotlin/Jetpack-Compose Android app that is simultaneously (a) a full default SMS/MMS app (Compose UI, onboarding, quick replies, drafts, blocklist, app lock, search, backup) and (b) an embedded self-hosted SMS/MMS gateway: a LAN HTTP REST server (default port 8080) plus a webhook engine; it targets minSdk 26 (Android 8.0+), targetSdk/compileSdk 36, and is currently versionName 2.6.19 / versionCode 61. It is a heavily extended fork of manjitrana/Messages.",
+      "statement": "Messages is a single-APK Kotlin/Jetpack-Compose Android app that is simultaneously (a) a full default SMS/MMS app (Compose UI, onboarding, quick replies, drafts, blocklist, app lock, search, backup) and (b) an embedded self-hosted SMS/MMS gateway: a LAN HTTP REST server (default port 8080) plus a webhook engine; it targets minSdk 26 (Android 8.0+), targetSdk/compileSdk 36, and is currently versionName 2.6.20 / versionCode 62. It is a heavily extended fork of manjitrana/Messages.",
       "evidence": [
         {
           "resource": "repo://README.md#L5-L16",
@@ -12,7 +12,7 @@
         },
         {
           "resource": "repo://app/build.gradle.kts#L34-L49",
-          "version": "repo-lines-v1:sha256:20aa307c8c347f65f5559cfed021ceab231f1e6e4be439ea53adb32207cc9373:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
+          "version": "repo-lines-v1:sha256:a54445d4ea02a388e1d44ba1494a2349d394da5299b80a7a2452fb3632afc3ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2FhOWViNjAwOTVmYTZlMjkyMjBiMTdmMjgxNDcyZmFhZDExMjRiZmYyNmQ3ZWMwMDE3NmRmMTBhNDZhZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxNTBiZjdmODdlYTcxNTNkYWEzNTc0MWE3N2Y5NTliZTM5Y2IyMmNlZmMxZGM2MjY5NjUxMTkyOTI5NTYwZDcifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L50-L50",
@@ -76,11 +76,15 @@
     },
     {
       "id": "claim_5a9284bdf5c542118ba18c6284d8526c",
-      "statement": "The system Telephony content providers are the durable source of truth: MessagesDatabase is an explicitly labeled local read-SSOT shadow that the UI reads from, and IncomingMessageDispatcher fans out every received message from the persisted provider row's real id + threadId (not broadcast extras) so UI, webhooks, and notifications all react to provider state.",
+      "statement": "The storage-tier invariant: the system Telephony content providers are the durable source of truth; MessagesDatabase (Room) is an explicitly labeled local read-SSOT shadow that the UI reads from and that is rebuildable from the provider; and SharedPreferences (GatewayPreferences) hold gateway config and Keystore-encrypted secrets. IncomingMessageDispatcher fans out every received message from the persisted provider row's real id + threadId (not broadcast extras) so UI, webhooks, and notifications all react to provider state.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L11-L13",
           "version": "repo-lines-v1:sha256:245173d4a549522f4c451f905b092605405e3488a58b33c567747dbeb6bc1cf4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVkNWFiYWNhMjI2ODBhZTk1MzM2NzAwZGY3NjYzNjE5N2E3Y2I2YzAwNGY0Y2Q3OWFjMWIxZmQyZjBhYzRhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2RkMGJhMmMyOTExNzg4ZGQwOWE3MjIzMzVjYzBiYjdlOWFlMzllY2IxYzY0YTc2OGM4MGJhMTVjODllNjM3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWFmOWU5N2JkMDFkNTUxZWYyZDRhM2E2YTFhNmI1NzdkODNjN2ExYTJkOGY0ZjAzNzE4MzZkYTJmMTI0ZDI1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTkwNTdmODY3YjAyMjFjMGNlZDc0YmUxZWY3YjJlOTk1OWI1YThjOTEwZjI2ZjRkZGI3MGMxYjllY2VmYWM2OSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L284-L297",
+          "version": "repo-lines-v1:sha256:a04668f16c2db4880db7fc3fbdfa8393b0b4503208500fc8414823529c07d95e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkNGVmMzJlNjQ1YzRhOTZhNzgxN2VjZjYwODVkNTZiY2EzOTM0MjdiOTMwYzA2MjNiOGYxODhjYjljNDVkM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmZmFlOTdhYjc4N2FkZDljMDQ5ZjYzYWRiZGVlNGEyMTkyY2YwNjVjZjA0ZjhkZWQ1NzRjZjY5MDNkMGQxYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L17-L31",
@@ -188,7 +192,7 @@
     },
     {
       "id": "claim_89a3d2c2fa3a4382bedb485a5e2943f4",
-      "statement": "The gateway's outbound bridges are: BackendClient (central HTTPS-only HTTP client with Bearer token auth, 15s/30s timeouts, for the optional cloud relay register/heartbeat/event flow), WebhookEngine (fire-and-forget, consent-gated POST of incoming SMS to a user-configured HTTPS webhook with HMAC-SHA256 X-Signature plus idempotent cloud event upload), and OutboxPoller (outbound-only GMweb long-poll bridge: GET /gateway/pull then POST /gateway/ack, authenticated with the phone's own gateway API key, delivering polled tasks through EveSmsQueue).",
+      "statement": "The gateway's outbound bridges are: BackendClient (central HTTPS-only HTTP client with Bearer token auth and 15s/30s timeouts, for the cloud relay register/heartbeat/event flow), OutboxPoller (outbound-only GMweb long-poll bridge: GET /gateway/pull then POST /gateway/ack, authenticated with the phone's own gateway API key, delivering polled tasks through EveSmsQueue), and WebhookEngine (now LOCAL-only after PR-02: a consent-gated, best-effort, HTTPS-only POST of incoming SMS to a user-configured webhook with optional HMAC-SHA256 X-Signature; the fire-and-forget cloud path was deleted).",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt#L12-L56",
@@ -199,8 +203,8 @@
           "version": "repo-lines-v1:sha256:188be4e7a63193c9f75cbe71650e9c6e601acce9a308ed1beade611a16fc061c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmE0MjkzODJiMmUxNDcxOGUwZTM3YjA1NzBhOGExNzAyOTkxZmNkODQ5OGNkODQwNjBhOGJmNGYwNTAxN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhZTBmMjA3NTYzZjM0MGQxMGM0NDgxOTE5NzJhYzk5ZDk4NGRlM2EwN2Y1YzRkNThiNjNjZmQ5ZTZhZDhmZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzODJjZDNjYTMyZTI2NDE3OWYwZWM5YjY3M2Y0MzliNzcyMjg5YmM5YzczYzc2ZWI2MDdhYjM3YjY3MzQ2MTgifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L20-L47",
-          "version": "repo-lines-v1:sha256:49b5ad76d5b007f8ef4eaee2ef309237fd60f933dadeb6e5d329550780bb0f50:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiYTU2OTg5M2U2NzVmNzJhYWIyZjk2YmYzOWM3ZjA2NzMxZDlhMTM2N2NiYzJmNTQ1M2JkMjk3YjkzZTI3MTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5M2I0Mjc4MGVhNmZhODc0NzZmNzg1NzA3N2UwOTlmYThmOWQwNTdiMWQ2NDg1OGQyMTRmOWI1YjdlZmZiYzYifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L14-L41",
+          "version": "repo-lines-v1:sha256:a0b8c475cefb8acb86ac8d8501618b2ee6d374e00f37efe8c1f8b4d27c39032a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjhhNmYxZDEzOTg4MjE0NWE0ZmY0Y2ViYTc5N2M1NWE2NDJmYWFhZmI2YTVhN2ZiOWRmNTZiNGI4NzhmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3MjkxN2ZmZjRmMDBjOWQyMWFhMjY0ZTAwOGU2MGNlOTU2NTk4MGMxYTc5NjllNDNlZWExZGZjNjRjMjc3NzQifQ"
         }
       ]
     },
@@ -216,19 +220,19 @@
     },
     {
       "id": "claim_d4c836c077c94153a8826a3f3dbe3d16",
-      "statement": "The quality gate is a headless JUnit 4 unit-test suite under app/src/test (junit 4.13.2 is the only test dependency; no Robolectric), which runs on a bare JVM because testOptions sets unitTests.isReturnDefaultValues = true so Android APIs like android.util.Log no-op; the instrumented suite under app/src/androidTest is a single placeholder, so device-bound behavior (MMS receivers, the live gateway, ContentObserver) is verified on a device or emulator.",
+      "statement": "The quality gate is a headless JUnit 4 unit-test suite under app/src/test (no Robolectric) that runs on a bare JVM because testOptions sets unitTests.isReturnDefaultValues = true so Android APIs like android.util.Log no-op, with a test-only org.json:json dependency supplying real JSON for JVM round-trip tests; the instrumented suite under app/src/androidTest comprises a placeholder plus the device-only GatewayDurabilityDeviceTest, so device-bound behavior (MMS receivers, the live gateway, ContentObserver, durability contracts) is verified on a device or emulator.",
       "evidence": [
         {
-          "resource": "repo://app/build.gradle.kts#L106-L106",
-          "version": "repo-lines-v1:sha256:405ca47fda97d75e54888b11d96e86dbda4bd8ffef23f7e3778b79e601c9957a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYThmZmJmMGY1MDVjZGRmZmVhYzcxNzk3YjM2MDcyNjc3ZjNmMTI3ZTY0Mzc5MjA5NWRlNmI4OTdlMjI5NjRkMCJ9"
+          "resource": "repo://app/build.gradle.kts#L106-L110",
+          "version": "repo-lines-v1:sha256:c80c3068cbe5e6f152b5c6b137234aaa38101604e283f4946f5c805c6fd50fb2:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGNkM2VlNDI3MjgwY2I5ZmQxYjg0ZjhjMjliMGQ3OTQyOGExYWFiYTgxOWM4YWUyMjQxOTk2NjIyNDUzNzM1ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYThmZmJmMGY1MDVjZGRmZmVhYzcxNzk3YjM2MDcyNjc3ZjNmMTI3ZTY0Mzc5MjA5NWRlNmI4OTdlMjI5NjRkMCJ9"
         },
         {
           "resource": "repo://app/build.gradle.kts#L79-L82",
           "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
         },
         {
-          "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt#L16-L23",
-          "version": "repo-lines-v1:sha256:0fdf1b3cd078b58c072954f5dc9267d3b1597590b51205ac13d15f2083e0cdd6:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJmNmQzZDE4Mjk4MmMwOWNlZGVkMmUxYzVjYWE1NTQxOTUyN2VjMGMxNTgyNmY5MDYxMzRjM2MxMmRmYjhmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTZjMjU4M2I3NmYxMGU5ZjE0ZDZlMjZhN2EyNzYxYzI3ODRmZDJhNzQ2OTBiYmEwZWIyNDMyNmY4MzhlYjMzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDEwYjM2YWE3NGE1OWJjZjRhODgxODU4MzdmNjU4YWZhZjM2NDZlZmYyYmIxNmMzOTI4ZDBlOTMzNWU5NDVkMiJ9"
+          "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/GatewayDurabilityDeviceTest.kt#L17-L29",
+          "version": "repo-lines-v1:sha256:c2444db4b20f8613c8dd1e001252da9081db985c8c86a33f82cd99b1e47133ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlNzc0MTkzOTM3MTU0ZTY0NTQyOWEwNTRlNmNhNGU3ZDMwMzM5M2IzYmYzMjU3NmJhMjA1OWMzZGZiNzI3ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzNjNhMmU1ZjkyNGZjNDNjNGQ2ZjExY2E2YzlhZmQ4YjM3MmU3YTg2NTRiYmJlYmJmZTIwYmExOWU5ODE1ZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwNWY4MWVhODYwMWRhZDZhMDVhYjUyMGEwMDE5ZjU1YTZhMzc4Njk2YmM0NTExNjZmOTM5YzE4NzI5ZWRhNzgifQ"
         }
       ]
     },
@@ -347,10 +351,100 @@
           "version": "repo-lines-v1:sha256:b3941feafd0b59515b056f1f10a8b461c703a407df0d33d6b18af12155730065:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxY2ZmNGFkMzNiYTkxYjE0OGUxYjFiODI5MGI4ZmZmMjdiMjAzZmFiZmVlNTg3MDI4MmRlMzY3MzgzYjFiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYTQxNjY0OTBiMTcyOWI1ZWNiZmFmYmRlMmY1YmFiMDlkMmY3ZWVmZTQ0ZGQ1ZWZkMDZkZmUyMDViYjYxYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmZTVjYTdmYmJkMTk5YTZhZDgyZGU1MmY0ZWE2NDMxODVmNjM1MGE4MGJhNTJkNWFkN2VlYTMyNTY3NzUwYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkODlkZGU2NjgwODU1NjRmYmRkYzFiZDc3MzAxMGMyNGNhZGViOTViYzQ2ZTcxMTBiMzE5N2NkYmJhN2NkZjgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_cd2a800a01cd4f2d95db86282144deb8",
+      "statement": "MessagesDatabase v7 (PR-01) adds five durable tables — remote_conversation_map, gateway_event_outbox, remote_commands, remote_command_executions, sync_cursors — via a purely additive MIGRATION_6_7 (CREATE TABLE / CREATE [UNIQUE] INDEX only), whose three UNIQUE indexes (eventUuid, idempotencyKey, threadId) are the exactly-once/dedupe contract; GatewayOutgoingPipeline.enqueueSendSms enqueues SEND_SMS rows into remote_commands with a unique idempotencyKey, a 24 h expiry floor, and opaque conversation UUIDs.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L243-L262",
+          "version": "repo-lines-v1:sha256:859ed5bf94e777665aef6f433c639b3ecd447db097b2da9f7101532b3f3d8455:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNTI4NjRmYTI2YWZmYmM1MmI0NzMxNmE5ODRmMjI0N2Y4MWY1ZWU5NmMyNDgzYzZlYzY5ZTAxZjRhYTM5ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxMDZmMjY0YWQ3ZjUzNWI4NTRmMGE5MDI5NGU3ZTQ5Y2M3OTJjNzc5NTJlOTExYzc4NzMzZTcxNjUxOTY3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOTQ2MWM4MGE1NGYyOThlMmVhYzBjZjU1NDM1ZmYzZDM1YmNmYWZjNjMxODQ1NjJiZWJkNmFmN2E2MGExMWYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L47",
+          "version": "repo-lines-v1:sha256:408b4678894ec2d52fc6a50f55c04ad257f78ea9d03289dc9f037e94b10d5289:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMWUwMGY1ZTBmZTVhNjY1YWQ2N2E1MzY1YTVjYTgxNThkMWFhMWEzZjljMzVlNWJhZjdiY2IzM2JhMzlhNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlODY0NmQ0MWJkOGY5N2YxNTcxMTAzZTNkOWU2Mjc2YTk2NjIxODI3NWYwYWU3MjgwYjM0Y2MxZTExMjYwNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L44-L98",
+          "version": "repo-lines-v1:sha256:0a3d5050cceda7ade56b80c602552363374178bee241583a2c5cdcbdcb0f5ffb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2YjgwODk1ZmNiODE0YzU1Mzg4MTllMDI5NTViY2UzYmY4MDhjMWRmMzJjZjhjMTE2OWY3ZDc0OWYxYzhmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0MTMwNmM4ZmE3NGNjYTQ5YzM4ODEzZDg3ZDgzOTQ1MjdhYzM2ODkxMDU5MTE3ZTAwOGMyZDg3YjQyN2I5YzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_793ffd15365f4f0f88036bcdc5ee9359",
+      "statement": "PR-02 is live: TelephonySyncCoordinator — the single writer into Room — commits the matching cloud event (GatewayEventFactory outbox row) INSIDE the same Room transaction as each message mutation (new-row Upsert, Delete, RefreshStatus, MarkThreadRead) via insertOrIgnore on gateway_event_outbox, so message and event live or die together and a process death re-mirrors both from the provider; EventUploader is the sole durable cloud transmitter (recoverSending first, transactional claim, POST /api/v1/agent/events/batch, per-eventUuid partial ACK, full-jitter backoff, DEAD_LETTER for permanent 4xx and undecodable payloads), and WebhookEngine's fire-and-forget cloud path is deleted (local webhook only).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt#L143-L287",
+          "version": "repo-lines-v1:sha256:a351ed15fb46bd15367a5fa37032ab9aa5d90358a8041b34609fdca578a4a88d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyZWI1ZjEyNjYwYzE1ODY0ZTg4ODcxOGFiNDhmYzRiYjBmZjk4Zjk4MGExOTA2YjI0ODUxNmFlMjY0NGVlYjFmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE5YTZkY2MwNGUyMTNhM2M3YTc3YTQ1NmIwMWU3NmQxZWY3OGNkMDBiYmVjMWQ4ZjgxNDU4ZmU5M2VkYzU2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0MmRkNzdlY2M1NWVjMjdiNDI1MDU0MzIxYThhMzZjY2NkN2UzY2YzMzViZjk0MjBlOTQ0NzFmNjhkNGYwZDMwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyZmI1ZTMzYWQ2ZTE4MDgwYjA4ZGJlODAyMzlkMTU3NzAyNzI1OTg4ZGU2ZTM5YmMyNTQ5MDEwNjgxM2M4ODU1In0"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L19-L90",
+          "version": "repo-lines-v1:sha256:0b691928d90e8b8613d192a11d3473a447c4d9fcc399bea193d959c560b4e854:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwY2QwMjU3OWZkNDc4NWZlZGRkYTU3ODM3MmFmMTgxNDcwYzE5Zjg2YzAyMDU3MzllM2UwNWZiMTJhZmUyNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjNDFlZmYyZWNiNDlhYjA4MWQzNzA3ZWNiY2MyYmMxNjc1ZDA3NGZiNTljZWU2MDFiMTgwYzFlOTY2MzNlMTYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt#L14-L41",
+          "version": "repo-lines-v1:sha256:a0b8c475cefb8acb86ac8d8501618b2ee6d374e00f37efe8c1f8b4d27c39032a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjhhNmYxZDEzOTg4MjE0NWE0ZmY0Y2ViYTc5N2M1NWE2NDJmYWFhZmI2YTVhN2ZiOWRmNTZiNGI4NzhmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3MjkxN2ZmZjRmMDBjOWQyMWFhMjY0ZTAwOGU2MGNlOTU2NTk4MGMxYTc5NjllNDNlZWExZGZjNjRjMjc3NzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_52b3da0c1b064c5ba3b03330395613d3",
+      "statement": "All send sources (UI composer, notification reply, REST gateway, EVE queue, scheduled sends) funnel through SmsSender.sendWithOutcome, with directSend the only SmsManager touchpoint; when GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS is off — the default until the ADR-003 device process-death matrix passes — every send takes the direct path, and when on the durable branch claims the command (markCommandAcceptedIfReceived) and executes it inline in the send thread: there is no async drain executor for remote_commands and no production writer of remote_command_executions audit rows.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L58-L58",
+          "version": "repo-lines-v1:sha256:b07574c1b25b1bb0ea4f3ff78c6f7a3841696d87e31058d134e1d69d63a2908f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjA3NTc0YzFiMjViMWJiMGVhNGYzZmY3OGM2ZjdhMzg0MTY5NmQ4N2UzMTA1OGQxMzRlMWQ2OWQ2M2EyOTA4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjA3NTc0YzFiMjViMWJiMGVhNGYzZmY3OGM2ZjdhMzg0MTY5NmQ4N2UzMTA1OGQxMzRlMWQ2OWQ2M2EyOTA4ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjcwOWRhYTk1ZjMyZWQ0ZDBmMjQ2NTliNjZlMGMxNDBlZmM5ZWJmYTYyZTUyYmJhZTJmMzc2Y2ZiODc1OGJjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjQ0YWZkZjU4YWQ2YTM4YTRhZmZjNWMyZjQyYzM4NjYwMzZkMTRlYzE2NzFjNGQ1ODYzMWIyODJiYTdkMTg4NiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L21-L32",
+          "version": "repo-lines-v1:sha256:d28943c0d8079644639a0a2ae390691ccace5138b18ed8ffcc54933e33964ae0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1ODYxNzA1Nzk1MzNmZmNiNzAyZDZkYzlhOWVlYWEzZGM4MzVjNTg1ODUyMjViNmJlYzhmMTlkMzE3NjVmNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYWQyMTFiYzYyYTgzMThjMTE2YjUxN2ZlNTg5NDE0N2YzNWEyZDYzZTIzZjQwYjg2MGNjOGIwZTcwZmM3NjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiN2RiZDczYWZmNDNlMWVlYmYwMDhiODlkZTYxNmQ2MzM0MTg1ODEyODIwOGIxZjU0Y2MwZjU1MmYzNjRiNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYmM4NWE4ODM5OTg2ZjRkYjkyYzRmZTMwMmUyYmQxNmIxZmZlOTk5N2E5ODFkYWRjY2M4NzhmNzkzMzc3NjYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L107-L165",
+          "version": "repo-lines-v1:sha256:2ac09f6a8427f1a22c7953dfb19cdfb0f3dff79d05651459c4a25ccf94e0ccfc:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NTA4NGVkYTVmYWU4MTFkNWI3OTlhZGYzNzUyNDI0M2ZmMmI3ZTM0YmQ5NDY0OGQ3MTQ0Nzk3NjY5ZTA3YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNGZlY2U5ZTI2ZTQ1MjkzOThmMjY1OTdlN2Q5MzY0YjZlYzIzZWEyZGM1MGY5OGNkZGRkMTcyMWVlYjFmNjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3NzExZjVlZjkwN2MxNTU1MWQ4NTc1YTVhZGY0OGVlNTRiODhkYTJlNTEwYWNkMDBkNTViOGUzMTQzMTI1MmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_593230a95f4d4e3f8c10a3ff1dca6879",
+      "statement": "ConnectionSupervisor now owns the lifecycle of an enlarged component set beyond the LAN server, heartbeat, and OutboxPoller: it starts/stops the PR-02 EventUploader (durable outbox worker), the PR-10 SecureCommandPoller (agent-bridge command transport), and the TelephonySyncCoordinator ensureLoopRunning hook (telephony sync loop), gating all components on the runtime isEnabled flag it derives and sets.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L214-L276",
+          "version": "repo-lines-v1:sha256:4d3c3a97e7e3239123a41ec10b17e46734b2bd121b62a7b4afee457b8a99c3ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L80-L94",
+          "version": "repo-lines-v1:sha256:8fa5f88a71be581a703e7d0fa6f0a5359f56f981fd9e38e25bc25dd599542998:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMmRhMWE3MDU5N2MzYTYyYWM4YWY2Y2FhZjBmNzE1NzQ1MDMwMDkzZDg3MDUwYmI4NjljNTczOWQwYzBhNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MjIwNGM2NWY1MDJkYzE2NDU0YjYyNDA4NTZhOWFiN2FkZTAwM2E4ZTlmODYzMzNlYzBiN2M5ZTQwOTQ5MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhY2MzNTQ4ZGQ5Y2E5NjNhOTA2NjM4MTc4OTMyNzUyN2JiZmExNDk5MTYyNDg3ZGYyYTE5MTQ0MzhlYjRiYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2YzA3ODYyNTgyYWY4YjM0YjQ5Y2M0YWMwYTMyNDc3OGZhMTBmZjYwMDU4MzUyMjM5MmE4NzM5N2M0MDY4YjYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L145-L192",
+          "version": "repo-lines-v1:sha256:1befb6f669b14260c8e9f860bbfcfa0073643cb7df9b78f50f133fd411cc4b24:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MmJmNWJhMTM3YWYyY2JmOWUyYTVkMWMxNjdiMWI5NjBmY2MxZGZhN2NkNjY4ZmUyNzg5MjAzMzdmNmFmMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0YjdiYmQ2N2U0MGQ1YTFiYzA1NmIxY2NiODc2MjFlNWVlYzc0M2MxNDI5NjJmMzI5YTQwYTE2MDY2Y2UzZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MTczN2E0MmNlMTJiMDJmY2RjMTljMjUwZmQzZWVmZDJkMTM5ZDg2YjZiZmM4YjY2YmY4OTkyNWEzYjEzMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4M2U5ZGMxNDljMWFhMWYzN2Y5ZjBiOWY1ODYwMjA5NzA5ZGFlNTUwMzJkMTlhNTAyZjQ0MjY4NTI3NGY0MjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d457bac20f3e433e809f8effc4cee571",
+      "statement": "SecureCommandPoller (PR-10) is the strategic agent-bridge command transport: it long-polls GMweb POST /api/v1/agent/commands/claim (X-API-Key plus per-device agent signing, 25 commands per claim), ingests rows into remote_commands via INSERT OR IGNORE on the unique idempotencyKey (exactly-once; redeliveries are reported honestly from durable state), reports lifecycle via POST /api/v1/agent/commands/{id}/status, and executes freshly ingested SEND_SMS commands immediately through GatewayOutgoingPipeline.executeIngested with guarded RECEIVED→ACCEPTED→EXECUTING→COMPLETED/FAILED state transitions.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L183-L242",
+          "version": "repo-lines-v1:sha256:dd4bb0e0186b0581c0b90c57adab6ae1c606cd52b5205a872de06eb1374c8fbb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyODA3YTNmMTZhNTZlMzc4NzQ4YTgzOWQ0ODFmNjVlZjM1MDhkYmUyZTYzZTBjZWRkNzIxMWI3ODMxYjRhNzIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L24-L60",
+          "version": "repo-lines-v1:sha256:e59688a6b9dad064305d9fc6c7f4f5671c8eeeb29b78eb0901bbf4caea427a3e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0N2QwODY5ODA5MTM1MzU3NjY0Nzc1OTg3ZmExYjAxZjZmZTFlMzU1OGUxYThlMjk2YTBiNWRlNDdmNDVkZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjMzBlZmE2NzIzMzZkYWVkYWNlMTg2MTcyY2YwM2JlNDE1Yjc0ZTI4YzU1NDg2OWZkZjU2NjgyOTAxYjM1NDEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L100-L156",
+          "version": "repo-lines-v1:sha256:5dfec47c95680a02ed3d63daed5c849907924e004f668882cf0ebfd77394ad34:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJhMDRkYTMwZjU3ZGYwMmY1YzQzNDdhNjU5MGY4OGM0NGQzMWNlYzI3MjM0ZTcxYmEwZTE5NWRlODMzNmFlZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

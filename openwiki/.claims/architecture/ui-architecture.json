@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e3df1eef7370941828b96400694b5d692eb7275705fb4ce95209537718fc4a27",
+  "pageVersion": "sha256:ab8a9bcd51d15bef6f8294c1da26b603dd1ae1e10c619355802c676e5cfcb0bb",
   "claims": [
     {
       "id": "claim_1e72e59e7625468cb2ab358dc7393f81",
@@ -272,11 +272,11 @@
     },
     {
       "id": "claim_0198ecea5d4f4148bd46a1aa214952e0",
-      "statement": "ConversationScreen is backed by an activity-scoped ConversationViewModel that wraps every background job (initial load, older/newer pages, refresh, boundary jumps) in a crashGuard CoroutineExceptionHandler — dropping CancellationException but converting any other failure into a one-shot on-screen errorMessage shown as a snackbar — and MessagesApp installs a last-resort global uncaught-exception handler that logs full context and then delegates to the previous platform handler.",
+      "statement": "ConversationScreen is backed by an activity-scoped ConversationViewModel that wraps every background job (initial load, older/newer pages, refresh, boundary jumps) in a crashGuard CoroutineExceptionHandler — rethrowing CancellationException (a normal lifecycle event) but converting any other failure into a one-shot on-screen errorMessage shown as a snackbar plus a CONVERSATION_CRASH entry in DiagnosticLog — and MessagesApp installs a last-resort global uncaught-exception handler that logs CRASH_GUARD context (thread name + full stack, and a CRASH line in DiagnosticLog) and then delegates to the previous platform handler, never swallowing.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/MessagesApp.kt#L18-L38",
-          "version": "repo-lines-v1:sha256:0bfdd274baec02c860099c97c1f5896498a6dca2d9752b1b104210fa9eca4e98:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMjc0NzI4MGQ0OGNiMGIyOTMwM2IyMGVlNGYyN2JmZjYzZDE5YTkxMGVjMDk1NTU4MWU4MGFjNjMzNzYwZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZDM0YjZiN2I0MmViNDhhY2Q4MWZiYzZhNTA3MDQ1OTZiYWE0ZWM0YjQ0YjU4MjdhOGNmMmJlZDY4OTE5ZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/MessagesApp.kt#L18-L39",
+          "version": "repo-lines-v1:sha256:ac3e08a3281b7eb478b8a9b863f54f2d7960f6e1aa3f7e110f43c2844965e141:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMjc0NzI4MGQ0OGNiMGIyOTMwM2IyMGVlNGYyN2JmZjYzZDE5YTkxMGVjMDk1NTU4MWU4MGFjNjMzNzYwZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZDM0YjZiN2I0MmViNDhhY2Q4MWZiYzZhNTA3MDQ1OTZiYWE0ZWM0YjQ0YjU4MjdhOGNmMmJlZDY4OTE5ZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L314-L323",
@@ -356,7 +356,7 @@
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L43-L69",
-          "version": "repo-lines-v1:sha256:2bc012c6edd862a0e51243e9425155969a686d41cc464ecc60f33ed44fbc5793:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZGU0MzFjNjA3N2MzMzE1N2M2ZDQzZmY1NTIwZDE4NDVmYzk5ODUxNjU3MTA0MzljMGM4YWMzNmMzZmFmYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlMGNmZGJjODFkMjBhNzZhZTBkMzM4MzQyMzA4Yjk3ZGU5ZDM1NTc2NGJjMjhlNThjNmRkY2VlOWNhODQ0NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDNmOGIwNjFhMGVkOGFiZWI3M2Q3YjMwYTRhMDhiMGI1OWQ1MjllMzYxYmUwMjI0ODhjYjQyMzk3ZDRjNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyYTZjYzc0MTA0NTY0ODRhOTdjYTY2NzBjNGMyYWNjOTY4ZjYyM2MyZTlmZDQ0MmNjNDViY2RjYzFkOGMxMDEifQ"
+          "version": "repo-lines-v1:sha256:872d7b0d2147f9b5fa13b2f3d3f30d31fc504b57a69442ff7966bc9d85c94eff:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZGU0MzFjNjA3N2MzMzE1N2M2ZDQzZmY1NTIwZDE4NDVmYzk5ODUxNjU3MTA0MzljMGM4YWMzNmMzZmFmYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5Y2FkNzM5ZmMzMGQ5M2FjOWFlNGUzNzJhYjdmNzNjYTk5NDMzMGFjZDJjOTRmM2Q3MDI0NjI3ZDVkNjI2YTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDNmOGIwNjFhMGVkOGFiZWI3M2Q3YjMwYTRhMDhiMGI1OWQ1MjllMzYxYmUwMjI0ODhjYjQyMzk3ZDRjNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyYTZjYzc0MTA0NTY0ODRhOTdjYTY2NzBjNGMyYWNjOTY4ZjYyM2MyZTlmZDQ0MmNjNDViY2RjYzFkOGMxMDEifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L748-L764",
@@ -391,8 +391,8 @@
       "statement": "outgoingSentFlow is fired by SmsSender right after an outgoing message is persisted to the provider (threadId 0, resolved by phone match); because the Home list sits behind the open Conversation in the single-activity back stack and cannot rely on Activity.onResume, HomeViewModel listens to move the thread to the top with the new snippet while the chat is still open, and ConversationViewModel listens too so sends persisted elsewhere (notification quick reply, the EVE gateway queue, scheduled sends) appear in an open chat immediately via appendLiveMessage.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L50-L75",
-          "version": "repo-lines-v1:sha256:2d278ebdd8b9544fc45275205fbe80c4ea26e7076b495d929502e6dd28a003c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3ZTllNzllODFmODg5MWRkYmI2Yzk2ZGU2NGFiMTdhZTE4NTFkN2VkZjU1OWU5YzNlY2NhZTYyMmJmZWJhM2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlM2Q3Mzg0YjFhOTFjMGQ0ZGNjMjJmNjdhNmJmNTU0MWViMmFkN2Q1ZTQ2ZmQ0ZWYzNTUwMWNlY2MzNGFjZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmZTZhOTEyM2NhZWQ5ZWY0ZGVmYmZmNjIwOGFjYThmZDMyYWRmYTIzMDA5OTdmOWE3YjBiNjgzMGYxOTUwNDkifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L77-L101",
+          "version": "repo-lines-v1:sha256:b2fbb2ea452e0727daec26448f8e0e1c3e13d14e94f5a0b826bfc1f03f725a02:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMDNjMWFiYTk4NDdhZjFmNzU4M2I1ZjUwNDI3MzZjMzRjMjE1MzcyMDJmM2ExYzc5MGQ1ZjBlOGJkOTllMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3Y2FlZTU4NjZhNjE2ZWI2ZDdlMGUwMTI5YmYxMWJmODMzN2ZiODdhZTI5YTQ1MmY4YzZiMzI4YTIzZmU2OTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmZTZhOTEyM2NhZWQ5ZWY0ZGVmYmZmNjIwOGFjYThmZDMyYWRmYTIzMDA5OTdmOWE3YjBiNjgzMGYxOTUwNDkifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L853-L876",
@@ -464,8 +464,12 @@
     },
     {
       "id": "claim_e054bbd41d6d47108a754deee5760746",
-      "statement": "The UI/navigation layer's pure logic is pinned by three JVM unit tests: OnboardingPolicyTest (disclosure-first, role-before-restricted-permissions, explicit optional skip, role-loss regression), NavigationRouteEncodingTest (percent-encoding round-trips: space → %20, '+' prefix survival, '&'/'=' cannot split args, embedded %XX not double-decoded, non-Latin names), and IncomingShareParserTest (SEND/SENDTO parsing: encoded '+' numbers, sms_body extra precedence over query body, EXTRA_TEXT fallback, text-only share).",
+      "statement": "The UI/navigation layer's pure logic is pinned by four JVM unit tests: OnboardingPolicyTest (disclosure-first, role-before-restricted-permissions, explicit optional skip, role-loss regression), NavigationRouteEncodingTest (percent-encoding round-trips: space → %20, '+' prefix survival, '&'/'=' cannot split args, embedded %XX not double-decoded, non-Latin names), IncomingShareParserTest (SEND/SENDTO parsing: encoded '+' numbers, sms_body extra precedence over query body, EXTRA_TEXT fallback, text-only share), and DiagnosticLogTest (phoneToken is a stable 10-hex-char digest that does not contain the original number).",
       "evidence": [
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/DiagnosticLogTest.kt#L8-L19",
+          "version": "repo-lines-v1:sha256:d74fe137f259ab26951e5e0d6906a74c402c1bad811d845efb03ac1e0e34fe57:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNGZkY2E2N2MxZDk1ODk2ZjEwNGIyNWJmZGYyNDA5NjAzOTJmYjE3ZGM2MTYzYmJkY2I1YjQ1ZTVkYWY4YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjOTQ0YzU3MmZmNjBmNDI2ODU2OGY0M2Y5MGY4ZjIyYmY5OGQyNGZhNDVjMjQ3ODA1NDlhMzUzOTYyYTJjYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
         {
           "resource": "repo://app/src/test/java/com/autonomousone/messages/IncomingShareParserTest.kt#L8-L51",
           "version": "repo-lines-v1:sha256:e4b1056569467515dad762ae6d020ab97c1134855585035c6a2d1fcd66073eb3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmN2RhNzQxODdlNGIwMWZjMmRhNTdhMTM4ZGViNzJjYWEwOGQ2NjU0NzNhZTU5NDkxMTFkMTJhNzI0YTc5M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5NWQ2YmFjMjI4Nzk0ZjcyYjAxMjRjOGU5YmMyNzM5OTIyZGZiNDlkODBhNTBlYzY1NmQwZTczNzYwYzQwY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
@@ -497,10 +501,68 @@
           "version": "repo-lines-v1:sha256:9994eb53f3e0732f409aaae30f2a4a0a07ab193947a8844c1b3a9a5677e7d0a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliZDhlNTE5MzMxYjM0NzBlYjI2MzExYjVlYjM1NGRlM2RmNmRmYmEwYmQxYTMwY2E1OTgwNzRiNjYyMmRjMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwZDhmNTkxMzRmOGU3MTZmMWFmYmM5MTIxZDJlOWFmNzgyMGVkYzBhYzNjOTQxZWY2MWEyZDViOWU3ZTc5YmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMTlhYzIzNjVmMjYzY2Q4NDY1ZTc4Y2IyZjg0MDkyZGIzMjRhY2M5NDkxMTMwNjhkODY3MzgwODQzZDgwYWEifQ"
         }
       ]
+    },
+    {
+      "id": "claim_a4c8cde0aa5446a7bc503cc81687effc",
+      "statement": "MessagesApp.onCreate (running before any activity) performs three process hooks in order: Holders.init(this) initializes the shared application-context holder used by context-free object singletons such as GatewayOutgoingPipeline, DiagnosticLog.initialize(this) opens the on-device diagnostic log, and a global uncaught-exception handler is installed that logs CRASH_GUARD context (thread name + full stack to logcat, plus a CRASH entry in DiagnosticLog) and then delegates to the previous platform handler — never swallowing, so the platform still produces its standard tombstone/ANR trail.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/Holders.kt#L9-L21",
+          "version": "repo-lines-v1:sha256:f14a03df0653c1fde46f62d74ce627028f449052a6211a7a33131178102f8455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZjY1NGE5YTU5MjMzNWIwM2IyNzhmZGIwMmQ5NWRjMzJiNjIzMThkNWIyMTViNWRkNDI5ODY5MzhlYTA0MGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxYjAyNDZiMzJmNDBiNzhhOTAwZjQwMDZiNGJiMzU4ZmExOWU5MzZlNTg5YTU2ZTJkMTQzYzU0NzQzZjIyODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/MessagesApp.kt#L20-L39",
+          "version": "repo-lines-v1:sha256:19efe2cebf0648b7c45e640af0d17d13926053f20e0803e83f94f6a755a61139:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2NzM0OTcxNTRjMDUyZGZiMWE0NDA0YjdmZmRlNDllZTNkMTRkMDFlMzVhNDUwODRhYjM3M2JjNzYzNmVlODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4NTNhN2JhMmU2N2E2NTFkNzkxMTU0ZWU2MWM3NzBiODhjMDE1ZDFhYjViZDU2OTNmY2VmZWU3YmY2Mjk4YTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9f06cdd7daa473c94949882769c57fe",
+      "statement": "Holders is a minimal app-context object explicitly scoped for object-singletons only (pipeline, factory wiring) that are not handed a Context — not for ViewModels or activities — and is read at call time by context-free objects such as GatewayOutgoingPipeline (resolving MessagesDatabase when enqueuing a SEND_SMS command, and constructing SmsSender when draining an ingested command) and SmsSender's durable enqueue path (reaching GatewaySyncRepository).",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/Holders.kt#L3-L21",
+          "version": "repo-lines-v1:sha256:a9a6ef19ba695d5309931f27e444aa6788c78a0eef0609a320a3c0f4bdbabca0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZTJhZDdkMWM1NjNlMDlhMDJkNGJjNzQyNzkxNjAxMmMzNzExZDdmNTRhNjkyNTQxM2M4MGZkZDdiMWI4NDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L141-L148",
+          "version": "repo-lines-v1:sha256:38cad92514a7912c6eed8a9e0ae89827d193c02b18d9d8782e80deda289f6915:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmE3MGU3NmEyMjM5MjU0YzBmMTAyZDllYmQyZTg3MDZmYTk0NDI4NDcxYzY5ODllMWRmM2ViNjViMGY2MWZjNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjNhNDkzZjg0MzdjOWU3MzhlYWNiMGRkZTRiNzk2YWE4NGEyMDJmOGU4OTBlNGU1ZDQzYTNkZDJkY2M2NDg2OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGZkZGQwZjdiYmJmOTE4ZTc4ZDg1OTRkNTA3ZDg0NWRiNGJlNGM5YWU0MTZiMjkwZmZhMGE5MWRmZGViNmFkZCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt#L58-L61",
+          "version": "repo-lines-v1:sha256:336b1f0aa8563d923f612e2d7fd57833bdcffeb68fbb5c72e0011918f8ee7886:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDMyNzZiOTk1NzFiNWZiZDhmMzlkNjk3YTdmYWZiZGQxZTQ0Nzk4YjVlOGMyNjJhZmEzZGJjNDIwZGZlYzIyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjFiZGM1OTBkZDQxN2I3OWY4NTdlNWY4YzI3MTBmMDQ2MGMyM2E5N2I0Mjc0ZGM4YTgwNzg3NWU2NjVhYTM0OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGU2YjE2MjY4YTk2MTRjMjc1N2UyNGNjN2I0ZGFlNGExMWIzMDliOGU5YTIwMWQ0ZDMyMTlmYTZkMTdlYzM1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWFiN2Y2Y2E5NmViYzA5OTI4ZjcwMTQ4ZTBlYjVmN2QxOWJkN2VlN2IyMWY2MjUyMTM0MjQ1ZmM2YzFhYzcwOCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L137-L141",
+          "version": "repo-lines-v1:sha256:ec32d4184fd326af7e6bbc88dcc6459d0d9901e26589b208446116d53e582e8d:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWM1MTFhZGUxMzZiODZjNTRiNTBmZGI3YmM5OTNjOTNkOTcwOTRkZWY0MGFlY2EyMTM4MWVlNjUzMTY2NDQ0ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTljZTg0NTEzMjFmOTgyNmY1ZDY5NzNlNDU5MDhlNzZkNzM2OTQ3YzUxNTk1NzRkYzAyYjJmNmYxN2Y1NTIyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWQxZWNkMWExMTc4ZTBjNDExZGYxMWE0YWIwZDkzNDE4ZGRkYzQ2OWQ2YzI1MDc0OGE5OWI3YWZjOWU3NmMyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDJjZGU5ZTg4ZDBmMDg2MjhiZDhmMDVlNGZkZDI5MmE0OTM2OTI2ZTUyYjdkYjA4OGY1NTRlNjY3MWExMDUyMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_601fca064ec8457c8cdf600309c96ce2",
+      "statement": "DiagnosticLog is a privacy-aware, rotating on-device diagnostic log (messages-diagnostics.log in app-private filesDir, 384 KB per generation, 3 generations) that records state transitions and raw numeric result codes — never SMS bodies or full phone numbers — by sanitizing every line with a phone regex that substitutes a stable 10-hex-char SHA-256 phoneToken, and createExportFile produces a merged user-shareable snapshot from Settings → Data tools; the pipeline (SmsSender, SmsStatusReceiver), ConversationViewModel's crashGuard, and the global crash guard all write to it, so crash context lands in the same exportable file.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/SettingsScreen.kt#L260-L285",
+          "version": "repo-lines-v1:sha256:3a27562472105642362e0d7768ceadc8ba8a98dfdcbfdd7be6b8bd95cf46362c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzY2FjOGQ2ZGRmMzUyMzE2Y2ZjZmUwMDIzNDRjYTBlOGYzMjIxY2RiZDBlNGRlNzQyZTc0ODZlYjBiZjhkOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5OWQ4OTRlNjg4YTdhYTU4M2YyM2U1NWY1ZTc3NDEyZmEzMDlmOWQwZjE2NTJmOTQ4ZTVlYjY5NTAxMmQ2NGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJiODZiOTU0ODA5OTVlMTExZmM0ZTAwMGYzYzVmYjdkOTk2NzhmYmNlN2U3MGJjZTkyMDIyOTk5YTQyZWMzMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlZTE5YTg1MzY1MzQ1ZDVjODNkMjRkNDY1ZGMzY2NlNWUwYTJhNzg3MGJjY2ZkYzg3NzdiYjUyZDQzOGNmNzYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/utils/DiagnosticLog.kt#L11-L25",
+          "version": "repo-lines-v1:sha256:12808ca098e8ad8178d8bd8fdc885ed3d5b6c02b4c2a8faa59b59b2a5ac7cc58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NTY1ZWFmOTJlNjEyZDFjMDhhODlmYmFkMDMyMjUzZWE2ZWNkMDhhNGRmZWFkN2E2NDVhNzQwNGYxY2NiYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkNjMxNDRjNDVlM2ZiYmE0NGVjZWY3OGFiOTVhZjY2YjA2Yjc2N2MzMDdlODZkYjIwYWM1OGEyZGQyYWVjNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkMzQ1ZDc4ZDFiM2VmNmJlM2YwNzFmMTFjZjkxNTBkMDJkYWRmNjJmZGM0NmQyMTE0N2M2ODAwYWY0M2NiODMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/utils/DiagnosticLog.kt#L48-L98",
+          "version": "repo-lines-v1:sha256:4d8f9060b3ac0c4e41a7b7d1ce64820a5493dfa36279dd59c9f8491197875653:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMTg2Y2JkMGYyZTFlNzJhYzBjYjdiMDBmODJiYzhjMTk0ODdiYjRiZjgxZmFkMzJhMjQxZDQ3MTc2NzBlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NTgzZTcxMDljOWRjMTI5NDY1ZjdmOWYwYTljZDU4YjM5MzdjMWJlOWEyZGM3YWQ5ZjllOTcxMDBmOWQyNmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5NTAxYWE3MGMwODJhOTE2MmI4MzFlZTMzYTAyYWFiNWVmMWEwOTJjMGYxMzlkZWUyOGY0YTkzZDQ0ZjQ2YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNDFjZDRiOWI4ZGRiMGMxODYxNjE0ODUyNGI5MDBmZjFlN2U1OTVjNzk5OTA2ODBiNTI2ZmE2M2UyZjk1OWUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L305-L310",
+          "version": "repo-lines-v1:sha256:eaa506a7543d9a51f77d36b1fa33d6d0c0a56d3a6ea62e807ef04f010a92f953:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDU0YzMxNTUxOGZmOGNlMDM1Y2U0ZGMwNWI2NzlmN2JlNWIzYTBiYWE2ZWNiNmY2ZGI1ZDM0YTc2Y2ZjYmFlYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDE4ZWVkMTkyYTVjM2ZmM2Q3ZDIzYTM4MjBhYzdlMTNkZTU5NGI3OWZhNmYxYzhjMzliZmFmMjM5NjNmNWYxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWZkMDM2MTNhMzYxYWJlYjY3YTdkZmQzMzk3MmIwYzMxY2U4ZmMyMjg4MTY4ZWNjNmNkZWExMDc4ZDBjNTJlZCJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

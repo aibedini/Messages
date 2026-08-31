@@ -5,7 +5,7 @@ description: "Broadcast-to-fan-out reception of inbound messages: SmsReceiver's 
 tags: [sms, mms, broadcast-receiver, telephony, incoming-message, dispatcher, blocklist, notification, webhook, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
@@ -17,10 +17,16 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt
   - id: openwiki-source-5d01d9b3022a75be71ff583f
     resource: repo://app/src/main/java/com/autonomousone/messages/data/Entities.kt
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
   - id: openwiki-source-b394c571401a67cd53a9d162
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-deeb7f22dbb08abc85208b19
     resource: repo://app/src/main/java/com/autonomousone/messages/event/SmsEventBus.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
@@ -47,6 +53,10 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt
   - id: openwiki-source-353c7d0bc150b187b3587e50
     resource: repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
   - id: openwiki-source-dba6f86134fecbe45c6e7893
     resource: repo://app/src/test/java/com/autonomousone/messages/MessageEntityMappingTest.kt
   - id: openwiki-source-72b0bf10f6f0169c18fa69f3
@@ -55,6 +65,8 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/SmsObserverTimingTest.kt
   - id: openwiki-source-a20f4a8ea22833c9244aaa6c
     resource: repo://docs/release-v2.2.0.md
+  - id: openwiki-source-a522bf9941fe7fe97c5cb9fc
+    resource: repo://docs/release-v2.6.20.md
   - id: openwiki-source-094aa25fa68df926781236d7
     resource: repo://docs/release-v2.6.6.md
 generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }

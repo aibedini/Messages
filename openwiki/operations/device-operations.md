@@ -5,56 +5,18 @@ description: "Device-side operations for the Messages app: enabling the SMS gate
 tags: [gateway, operations, api-key, diagnostics, backup, networking, data-tools, consent]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
-  - id: openwiki-source-3bfcb28142050978edf94754
-    resource: repo://app/build.gradle.kts
-  - id: openwiki-source-186e96b8d6739f3745947903
-    resource: repo://app/src/main/AndroidManifest.xml
-  - id: openwiki-source-1188ef94bbd10bf1710668b7
-    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-b394c571401a67cd53a9d162
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt
-  - id: openwiki-source-ba9880c97168532a944be6b9
-    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt
-  - id: openwiki-source-4c55b07448cb165f971fcb2f
-    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt
   - id: openwiki-source-4ad02c444ebadf27339b8cbb
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt
-  - id: openwiki-source-754f516c2fdb40e657ff023b
-    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
-  - id: openwiki-source-90d7a118c67c21ceb59d31b7
-    resource: repo://app/src/main/java/com/autonomousone/messages/MessagesApp.kt
-  - id: openwiki-source-f47a2668cd817415f8991735
-    resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
-  - id: openwiki-source-191caaa13435c40a96e19f4b
-    resource: repo://app/src/main/java/com/autonomousone/messages/repository/BackupRepository.kt
-  - id: openwiki-source-7b83d51526fed8d4f594dfe3
-    resource: repo://app/src/main/java/com/autonomousone/messages/repository/ExportRepository.kt
-  - id: openwiki-source-311ed32a68df077c7ffde611
-    resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
-  - id: openwiki-source-28fb31f12fd82e09df6386db
-    resource: repo://app/src/main/java/com/autonomousone/messages/ui/components/TopBar.kt
-  - id: openwiki-source-e50095612332e5f2dc89a253
-    resource: repo://app/src/main/java/com/autonomousone/messages/ui/screens/GatewayScreen.kt
-  - id: openwiki-source-06459d844b0771576679afe1
-    resource: repo://app/src/main/java/com/autonomousone/messages/ui/screens/SettingsScreen.kt
-  - id: openwiki-source-667df7c8b8bb817bf8c844eb
-    resource: repo://app/src/main/java/com/autonomousone/messages/utils/DiagnosticLog.kt
-  - id: openwiki-source-c1e828b6994dd7b424a69f47
-    resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/DataToolsViewModel.kt
-  - id: openwiki-source-118a7a1d805522e96275e615
-    resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt
-  - id: openwiki-source-46898728a48815b6270011ac
-    resource: repo://app/src/main/res/values/strings.xml
-  - id: openwiki-source-0e85074d86e07986d36a0aef
-    resource: repo://PRIVACY.md
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-  - id: openwiki-source-a7aba9fc0424872883ef238f
-    resource: repo://scripts/test-gateway-api.ps1
 generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 

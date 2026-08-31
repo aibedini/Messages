@@ -5,7 +5,7 @@ description: "Everything about building and shipping Messages: the single :app m
 tags: [build, ci, release, gradle, signing, android, ci-workflows, release-metadata]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-a180c650e871410c5a663cf9
     resource: repo://.github/workflows/build-debug.yml
@@ -19,8 +19,8 @@ sources:
     resource: repo://app/build.gradle.kts
   - id: openwiki-source-a107f16d58beac4b84f5c928
     resource: repo://app/proguard-rules.pro
-  - id: openwiki-source-e622d3f293f5b27df77aca9e
-    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json
+  - id: openwiki-source-ccfee0846cdddf90c6adc571
+    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
   - id: openwiki-source-51189b7b42ba492b233ef785
@@ -37,12 +37,16 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-06459d844b0771576679afe1
     resource: repo://app/src/main/java/com/autonomousone/messages/ui/screens/SettingsScreen.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
   - id: openwiki-source-2a9daaac1604f238ef4c63fb
     resource: repo://build.gradle.kts
   - id: openwiki-source-4dfc732524f458a2f7c140e4
     resource: repo://docs/PLAY_PROTECT_APPEAL.md
-  - id: openwiki-source-303d6277fec6e7b4459b4ebc
-    resource: repo://docs/release-v2.6.19.md
+  - id: openwiki-source-a522bf9941fe7fe97c5cb9fc
+    resource: repo://docs/release-v2.6.20.md
   - id: openwiki-source-da88124d798582f4006a15d9
     resource: repo://docs/room-migration-strategy.md
   - id: openwiki-source-b68c69ba290f0fee793ec69b

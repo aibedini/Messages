@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Messages: Android SMS App + Self-Hosted SMS Gateway](quickstart.md) - Entry point to the Messages repo: what it is (a default SMS/MMS app that also embeds an HTTP gateway and webhook engine), the top-level layout, build/test commands, and a task-routing map into the wiki hierarchy.
+- [Messages: Android SMS App + Self-Hosted SMS Gateway](quickstart.md) - Entry point to the Messages repo: what it is (a default SMS/MMS app that also embeds an HTTP gateway and webhook engine), the top-level layout, build/test commands, first-run steps, the in-flight durable gateway sync (PR-01..03) status, and a task-routing map into the wiki hierarchy.
 
 # Directories
 

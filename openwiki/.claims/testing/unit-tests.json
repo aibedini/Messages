@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:f08ed54838ae78c83cd21f87fb81962c6b9236dd8a72b8d673591d0969ce2d0a",
+  "pageVersion": "sha256:f420245da27aeb8ffc02a300a1256711f6d97bce3e96c859ac03119b37d51bd3",
   "claims": [
     {
       "id": "claim_2c274c51e810460c9789560ca7aaf5a8",
-      "statement": "The app's only real test layer is a headless JUnit 4 unit-test suite under app/src/test (JUnit 4.13.2 via testImplementation(libs.junit)); there is no Robolectric or Android-instrumentation dependency in the unit-test scope, which is why the entire suite can run on the bare JVM with no device or emulator.",
+      "statement": "The app's only real test layer is a headless JUnit 4 unit-test suite under app/src/test (JUnit 4.13.2 via testImplementation(libs.junit)); the only unit-test-scope dependencies are junit and org.json:json:20240303 (pinned because android.jar's org.json stub returns defaults under returnDefaultValues and would break JSON round-trips in GatewayEventFactoryTest) — no Robolectric and no Android-instrumentation dependency — which is why the entire suite can run on the bare JVM with no device or emulator.",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L106-L110",
-          "version": "repo-lines-v1:sha256:f7a36521bee2626a130dc5067c91c9e22f906d37e15e14a6ea4cd6836029f683:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI3MWMxMmZjY2MwYzBmOWRlMTVmNzA0OTYyZWQ0ZTMxYmNiNTFiMmMwOWNhMTUzNmY1MTczMmRhZTBhOTg0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDY4NDM1NWIxYmRjYWY2NjE0Yjc1NTRjMDljNmM0YTdhY2VhYjJkMTc3OGNkNTZiZWMwMjNlODIwNGNlYzUxNyJ9"
+          "version": "repo-lines-v1:sha256:2fceb3e18163cf51b78127eeff74ea2343880417e9269ca10d423b88a9a0cdcc:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA1Y2E0N2ZkYTk3ZDc1ZTU0ODg4YjExZDk2ZTg2ZGJkYTRiZDhmZmVmMjNmN2UzNzc4Yjc5ZTYwMWM5OTU3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI3MWMxMmZjY2MwYzBmOWRlMTVmNzA0OTYyZWQ0ZTMxYmNiNTFiMmMwOWNhMTUzNmY1MTczMmRhZTBhOTg0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGVjNmMzMTdkZWNiNTExNzk5ZjFiODJmMGE1YmQ4ZmY5YWE1NWRiZDhiMzllYzMxMmQyZGUxODhiYzRiNjFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDY4NDM1NWIxYmRjYWY2NjE0Yjc1NTRjMDljNmM0YTdhY2VhYjJkMTc3OGNkNTZiZWMwMjNlODIwNGNlYzUxNyJ9"
         },
         {
           "resource": "repo://app/src/test/java/com/autonomousone/messages/MessageEntityMappingTest.kt#L7-L11",
@@ -54,7 +54,7 @@
     },
     {
       "id": "claim_c4a5d1c1e25243e99dff9fd75bbeb7d2",
-      "statement": "The JVM-testability pattern is a pure core plus a thin device adapter joined by a small seam. The four named seams: (1) ThreadPager.forTesting(source, threadId, phone) — a companion factory on a private primary constructor (the 'PART AZ' seam) whose single dependency is the internal ThreadMessageSource interface (querySms/queryMms taking selection, selectionArgs, sortOrder, limit); production binds ProviderThreadMessageSource delegating to SmsRepository.querySmsRaw/queryMmsRaw, tests bind an in-memory FakeSource that interprets the real selection strings; keeping exactly one public constructor avoids overload ambiguity at ThreadPager(getApplication(), ...) call sites. (2) EveSmsQueue's pluggable Store interface (load/save) with MemoryStore for tests and SharedPrefsStore for the device, plus resetForTest(store, sender) injecting a fake sender. (3) SQL-level migration tests that compare hand-written migration SQL constants against the KSP-generated app/schemas JSON instead of running a live SQLite DB. (4) FtsQuery.build as a pure string function pinning quoted-MATCH grammar.",
+      "statement": "The JVM-testability pattern is a pure core plus a thin device adapter joined by a small seam. The seams named in this repo: (1) ThreadPager.forTesting(source, threadId, phone) — a companion factory on a private primary constructor (the 'PART AZ' seam) whose single dependency is the internal ThreadMessageSource interface (querySms/queryMms taking selection, selectionArgs, sortOrder, limit); production binds ProviderThreadMessageSource delegating to SmsRepository.querySmsRaw/queryMmsRaw, tests bind an in-memory FakeSource that interprets the real selection strings; keeping exactly one public constructor avoids overload ambiguity at ThreadPager(getApplication(), ...) call sites. (2) EveSmsQueue's pluggable Store interface (load/save) with MemoryStore for tests and SharedPrefsStore for the device, plus resetForTest(store, sender) injecting a fake sender. (3) SQL-level migration tests that compare hand-written migration SQL constants against the KSP-generated app/schemas JSON instead of running a live SQLite DB. (4) FtsQuery.build as a pure string function pinning quoted-MATCH grammar. (5) The durable-sync layer: the outbox/command state machines are testable on the JVM at the Policy level (GatewaySyncRepository.Policy, a pure object) and the DAO-SQL level, while the EventUploader network loop stays device-only.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/data/FtsQuery.kt#L10-L20",
@@ -63,6 +63,10 @@
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt#L63-L79",
           "version": "repo-lines-v1:sha256:725aae43e6b3316f96a0df53470d3dc19819facb63ff6e1cc8425f4680853dfe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NzViMDEwZDdhMjM5ZjI2ZDE2ZDA0ZjExZjhjYjk5YTlhMGRiMmQyNWFmM2M4MjFkZmU3YzJmMjQwYmUzZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0OWU1MDQxODZlZjBjYmY1MTllNmI0NDFiZjhkNzg1ZjI1MDZhYzdlOGI0OTIxODVlYmI5YTE4MzI1NWYxZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMjE2YzRhMDQ0OTI2MjVlZjM3MWM2MjBmNzUxNzNiMDQ4YTY5ODkzMTM4ZWQyMDY3OGRlYmNiZTQ1NTg1NmUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L31-L60",
+          "version": "repo-lines-v1:sha256:f072668d3f9317935ea3ff4425169a7ea1c642f3a4654c37fd4d7ae50a38caee:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMmFjM2FiNTFiY2YzODU2ZjI1YmY1ZmRhYWYwZmY5MzA0YmZjZDIyMjExMmVhYTEwNmUzOGQ3ZmVjN2M0N2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxZjg3ODQ4MzVmNWUyZWU5NDliYmY3OWY2YjEwZDRjOTEzZDBjYWI3ZjVhNDlhYTcyNWU4MmY1YjVjNzgwOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwYzlhMWM4NjIxODhhNjYzZGQzZWY4MWQzZTA3YTQyZTAwNDRiMTczZTk2NGI5NTBkNjczZDQ0OWI0ZWVjM2QifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt#L9-L112",
@@ -116,15 +120,15 @@
     },
     {
       "id": "claim_4b55ba28f3a34cd49cbaca0a3a92ce43",
-      "statement": "The Room schema is exported to app/schemas/com.autonomousone.messages.data.MessagesDatabase/ by KSP (room.schemaLocation) and committed; the hand-written migrations (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, registered via addMigrations) are kept as bare-SQL constants (UPGRADE_TO_V4_SQL, UPGRADE_TO_V6_SQL) in lockstep with the generated JSON and pinned by unit tests, so drift is caught on every testDebugUnitTest run instead of throwing on the device at upgrade time.",
+      "statement": "The Room schema (version = 7) is exported to app/schemas/com.autonomousone.messages.data.MessagesDatabase/ by KSP (room.schemaLocation) and committed (2.json through 7.json); the hand-written migrations (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, registered via addMigrations) are kept as bare-SQL constants (UPGRADE_TO_V4_SQL, UPGRADE_TO_V6_SQL, UPGRADE_TO_V7_SQL) in lockstep with the generated JSON and pinned by unit tests, so drift is caught on every testDebugUnitTest run instead of throwing on the device at upgrade time.",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L91-L95",
           "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L128-L233",
-          "version": "repo-lines-v1:sha256:af908ce7796358799b7ea535b268360df0cc54d9e19240a60aebf1ea41d4174b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMzc2MGRmNDRiMjliNmEzZjk4YTY2YjYzMjRlZTA3ZDBmZGM2ZTY4MmJhMjFjNzRhZjhhZjQzY2UyNDkzMmY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlOTRiYTZiZGViMjIxZGEzYmRiNGU0M2IzYTQ4ZWJkZTY2N2VkZWZmNDBkYjZiMTk3OTE5ZjcwOWIyMjMwNDRhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0OWFkMGY1YjI3ZTNlODg0ZGFhZDNhN2Q5YTYxMzI2NmUzZjc1ODU0ZTJjZDZmYmNjZTI5YjZkZDcwN2UxOTRlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJkOGQwMDNhMWNjNDUwMjBjY2JhMWZmZWM4YjI0ZGZhZGNlMzFlZTk2NjI2YWFkYjc3MWViYTFmMGE2OWY0ZGM3In0"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L219-L275",
+          "version": "repo-lines-v1:sha256:45c9cd70b270d45ed0bae183563ab59e6eecf1f3a3c785b8670e18b7066b8cf8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MmE3Y2M3NDQxZTYzZjU0YTY2ZjQzMGMyZjdlMGMxZTY3MjIxMmZlZDk4OWM1NTFhOTk0NDU5MjMyY2FmYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjMTI4NDliMDIxZjRjM2E2OTg5NDMxNjE0ODI2MjcyMGNjYjllZTZlNGQyNTkyY2U2NTM4ZDZiZmVjNDgxMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YzQ4ZjE3OGRlM2E4YmQ1YTcyNWZkMDg2ZTYyNjBhOTIxN2QwNDdlZmIzYWJjYjUyMzUxNWM4ZTVkMDA0ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ZDAwM2ExY2M0NTAyMGNjYmExZmZlYzhiMjRkZmFkY2UzMWVlOTY2MjZhYWRiNzcxZWJhMWYwYTY5ZjRkYzcifQ"
         }
       ]
     },
@@ -238,11 +242,11 @@
     },
     {
       "id": "claim_22abd7185ad2400c9912af7e92d7e19f",
-      "statement": "The instrumented test suite (app/src/androidTest) contains only ExampleInstrumentedTest, a template that merely asserts the app package name, so it is effectively a placeholder. Behavior that requires the Android runtime — the vendored Fossify MMS receive stack (com.android.mms.transaction.PushReceiver and TransactionService), the hand-rolled ServerSocket-based GatewayServer with its network clients (Keystore, ConnectivityManager, HTTP), EveSmsQueue's real SharedPrefsStore round-trip and background worker drain loop, and the ContentObserver's main-looper trailing dispatch / ChangeRouter's Dispatchers.IO provider reads — is therefore verified on a device or emulator, not by the JVM suite; only the pure logic (GatewayAccessPolicy truth tables, the queue core, the leading-edge dispatch decision) is covered in-repo.",
+      "statement": "The instrumented test suite (app/src/androidTest) contains only ExampleInstrumentedTest, a template that merely asserts the app package name, so it is effectively a placeholder. Behavior that requires the Android runtime — the vendored Fossify MMS receive stack (com.android.mms.transaction.PushReceiver and TransactionService), the hand-rolled ServerSocket-based GatewayServer with its network clients (Keystore, ConnectivityManager, HTTP), the EventUploader durable-outbox network loop (claim, batch POST, partial ACK, backoff/dead-letter), EveSmsQueue's real SharedPrefsStore round-trip and background worker drain loop, and the ContentObserver's main-looper trailing dispatch / ChangeRouter's Dispatchers.IO provider reads — is therefore verified on a device or emulator, not by the JVM suite; only the pure logic (GatewayAccessPolicy truth tables, DeviceIdentity wire-format basics, the queue core, the durable-sync Policy math, the leading-edge dispatch decision) is covered in-repo.",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L122-L131",
-          "version": "repo-lines-v1:sha256:da5e32bd697eaa0ccea8dcd1ee0116f665686d9d920bc082eb910eddda8bac23:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMzhjNDdkZWI2ZWZiN2JkYTk5NTI2YjAyNmI4N2M3NzA2NjYwNGEwZDRiNGZmN2FiMTdlZGUyMDI3NWFhNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMTEwZDgwYTJkYTY4YjRlZjE2ZmI5NTgyNTVlM2I3ODdmNzc0NzIyYjcwOTYwZThhOGM0MzBlYmYwMjgzZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhMGJmOGU5ODkwZWM5OWYzYmFkYjg2ZmU3ZWNjZDc5MTdiMDk2YWM0NTc5NzNiYTdhZjA0YTk1MmE2YTY4NzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkNDdkZDY4MzU4ZmY0NjE3ZTFjNDdhZjY2MTljYThlODA2Y2Q5MGFjOGY1M2M3MjlkNDAzMDMyMTlhMDE0MmIifQ"
+          "version": "repo-lines-v1:sha256:a0fbca5d93bb2f75a449f7e7d566bc2ede8ae8fd13c647f85c6df775f13d1c47:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1YWJmMDhlNDE0MGMxYTM2MWFjM2Y5YzlmYWY3YWU4MWNmNzNhYTZjZTRhNzg0NzAyNzI4ZDAxODFmMTZmYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MTEzODRmODRlODk3NDgxZjk3MzA3OTM1M2I3MjBlMWU5ZTViMjVlM2U2MmUzZTQyNTBiZGU1YjhlYzA3MDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwODEyNWFkOTJmNjY5MTczY2EzNTAwYjg0OGRlZmQyODFlOWI0NTIyYzVjZGYxZGMwZDI0OWFiOTY0NmNiYzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyMTcwMjNmNDEyMDZlMGJjZTZiZjUzODg4MzQ5NTQzZWQ1NzY1Yjc5ODRhYTQ2NWNmNWYzNTAyN2U4NDM3OTAifQ"
         },
         {
           "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt#L11-L23",
@@ -251,6 +255,10 @@
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt#L12-L26",
           "version": "repo-lines-v1:sha256:177a96c33b6b5048747d0c0ee1dd0c776c0524879498bc50bae2f79a1349f79a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjhhNmYxZDEzOTg4MjE0NWE0ZmY0Y2ViYTc5N2M1NWE2NDJmYWFhZmI2YTVhN2ZiOWRmNTZiNGI4NzhmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiYWI1NzRlYTM0ZmNjYWUzZmNiOTZlYWJjY2QzMjcxNzcwN2E3NTc5NTkxNWEyNTdiOTU3MjhmZDYyMjZmZjMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L35-L97",
+          "version": "repo-lines-v1:sha256:3de99ba28267b30dd130a0b97fd8e1d9e1dce80f4eb934996885410edddcb5f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ODIxZTJlN2Y3MDliZDVlNTEzMjhhOTcyMjFiYWQ4ZTQ4ZWQ5Zjc4YjQ0Y2M4ZDRlYjE5MTgzMjQyZjBjZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MDEyNDE2YzI5YmM0ZTcwYjgzOTgxYWM4NTU4ZGIyNmI1OGFkMTkxY2MwZWE1MDNmMGE3MTU2MzlhNzVjMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczYWRmM2M1NTEwOGIxYmY1YWE5ZjQ0ZWVlZDYyYWIwMzEyNDFhYjUzOTQwNGMyMGU4MDFjMTAxY2RjMWUyZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwZjM0YmNiZjVhZGMwM2MxZWUzZDA3ZDhjZmYxMzk2MTcwNzJhMzA5NGFhYjQ3NTU0MjE0ODA5MDY3NzU3M2EifQ"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/observer/SmsContentObserver.kt#L13-L60",
@@ -362,7 +370,7 @@
     },
     {
       "id": "claim_e33a8ef1a6454289b88e1069f7ec80b3",
-      "statement": "ConversationListMapperTest (the 26th test class, in the root package) pins the pure buildReverseChatItems function in ui/conversation/ConversationListMapper.kt that owns the v2.6.7 reverse-layout flip, with no Android dependency and no seam (like FtsQuery/UnreadDelta). It asserts: the mapped list runs newest-to-oldest (index 0 is the newest message) while the ViewModel's canonical messages stay ASC, so the LazyColumn's reverseLayout lands on the latest row with no scroll command; each DateSeparator is emitted AFTER its day's messages (painting above them like a section header), a single-day window ends with exactly one 'Today' separator, and a multi-day window interleaves messages and closes each day with its own header; chatItemKey is identity-based (msg_<id>_<date>_<type> for messages, date_<yyyy-DAY_OF_YEAR> for separators) so a negative MMS model id never collides with its positive SMS mirror; and a self-SMS duplicate race (the provider handing the same row twice) is deduped to the freshest copy per model id before building rows because the LazyColumn requires unique keys.",
+      "statement": "ConversationListMapperTest (in the root package) pins the pure buildReverseChatItems function in ui/conversation/ConversationListMapper.kt that owns the v2.6.7 reverse-layout flip, with no Android dependency and no seam (like FtsQuery/UnreadDelta). It asserts: the mapped list runs newest-to-oldest (index 0 is the newest message) while the ViewModel's canonical messages stay ASC, so the LazyColumn's reverseLayout lands on the latest row with no scroll command; each DateSeparator is emitted AFTER its day's messages (painting above them like a section header), a single-day window ends with exactly one 'Today' separator, and a multi-day window interleaves messages and closes each day with its own header; chatItemKey is identity-based (msg_<id>_<date>_<type> for messages, date_<yyyy-DAY_OF_YEAR> for separators) so a negative MMS model id never collides with its positive SMS mirror; and a self-SMS duplicate race (the provider handing the same row twice) is deduped to the freshest copy per model id before building rows because the LazyColumn requires unique keys.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationListMapper.kt#L37-L77",
@@ -377,10 +385,98 @@
           "version": "repo-lines-v1:sha256:ad91b0175b96c742f7bf3f4f48a89fe30254e4aff15c34dde978c43ca441c5e4:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MGE5YTI2ZGQ1YzljZDFkMDNjMzQ0MTBlZDNlOWU2YjIzMDUzNmQ0M2ZhZmJiOWExYzU4NjI3MTI3ODM2NDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_b2ae264094d347fa88cda45efdf27243",
+      "statement": "GatewaySyncSchemaTest guards MIGRATION_6_7 (the PR-01 gateway durability tables) the way MigrationToV6SqlTest guards v6, against the KSP-generated app/schemas/.../7.json: the boundary is 6->7; UPGRADE_TO_V7_SQL is additive-only — exactly 12 statements (5 CREATE TABLE + 7 CREATE [UNIQUE] INDEX), with no drop/rename/alter; every CREATE TABLE matches 7.json on its normalized column tail after the placeholder table name, and every index normalizes to the same UNIQUE|name|(cols) key as a 7.json index; and the exactly-once contract is pinned in exactly three unique indexes by name — index_remote_commands_idempotencyKey, index_gateway_event_outbox_eventUuid, and index_remote_conversation_map_threadId. When 7.json is missing the test fails with the hint to run :app:kspDebugKotlin to regenerate it.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L237-L262",
+          "version": "repo-lines-v1:sha256:b6e8788545b8da037ceafcb2089175d77efa8ed0b12b1d2a1d72321e316e4e65:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzYwZGY0NGIyOWI2YTNmOThhNjZiNjMyNGVlMDdkMGZkYzZlNjgyYmEyMWM3NGFmOGFmNDNjZTI0OTMyZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZDczYzY2ZWY1YmE4YWZmN2Y3NGYwYTBiMGQ4M2Q4NGZiNzdiMDU2YmFlMjJkODZmNGQyMjgzNzY1OTE4MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiOTQ2MWM4MGE1NGYyOThlMmVhYzBjZjU1NDM1ZmYzZDM1YmNmYWZjNjMxODQ1NjJiZWJkNmFmN2E2MGExMWYifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt#L21-L127",
+          "version": "repo-lines-v1:sha256:e1f395e658e8018027a67148845f3ba104ebe1dad356dee34f436dfc88aaea1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyNTc1MDBjMzVlM2YyM2I1MTZmYzI2YzNjNmNhMjhkZThmOTUwYWNjMjA1NTgwYWQyMWFhMmRiZjRmNWRiNTM0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhMTljODg0N2RiNjA4OWYyZjgwMDhiZjcxOWU4YmU3OWE2YmZmYzQzMmFjNTgyNTUwZjJmY2JmYjY4MzJlNGM1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_6381bc6f68704f2c81271a1c88955e65",
+      "statement": "GatewaySyncPolicyTest pins the LOCK-13 upload policy in GatewaySyncRepository.Policy, a pure object deliberately kept 'pure math so the JVM tests can pin it'. It asserts: selectBatch caps a batch at MAX_BATCH_EVENTS = 100 (150 candidates yield exactly 100); the batch stops before exceeding MAX_BATCH_BYTES = 512 KiB (twenty 40,960-byte events yield 12, i.e. 491,520 B, since the 13th would overflow); a lone oversized event still ships alone because the byte cap only stops a batch that already holds at least one event (a 600 KiB event yields a batch of exactly that event — the queue must never wedge); empty candidates produce an empty batch; and backoffDelayMs is full-jitter, uniform in [0, min(BACKOFF_CAP_MS = 5 minutes, BACKOFF_BASE_MS = 2000 ms shifted by attempt coerced to 0..20)) — statistically checked over 200 draws per attempt level (0/1/3/10/30), with attempt 0 under the 2 s base ceiling, late attempts under the 5 min cap, and a monotonically growing ceiling that is already capped by attempt 12.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L31-L60",
+          "version": "repo-lines-v1:sha256:f072668d3f9317935ea3ff4425169a7ea1c642f3a4654c37fd4d7ae50a38caee:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMmFjM2FiNTFiY2YzODU2ZjI1YmY1ZmRhYWYwZmY5MzA0YmZjZDIyMjExMmVhYTEwNmUzOGQ3ZmVjN2M0N2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxZjg3ODQ4MzVmNWUyZWU5NDliYmY3OWY2YjEwZDRjOTEzZDBjYWI3ZjVhNDlhYTcyNWU4MmY1YjVjNzgwOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwYzlhMWM4NjIxODhhNjYzZGQzZWY4MWQzZTA3YTQyZTAwNDRiMTczZTk2NGI5NTBkNjczZDQ0OWI0ZWVjM2QifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt#L28-L90",
+          "version": "repo-lines-v1:sha256:b6663ed0d961253b18dd58c2f2de2b2da05dc505d0a3f097f260752ca48c52a9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZjA5ZWIwYzU3NDRmYjk3MzMxYjk4ZmYzZmJmMDVhNjAyYmEzZjdmNjdlNWRhNWJlOTA5NTAzM2Y2MjU4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxNTUzYzRjMzI0MGRlMzA0YjI1ZGRjMjZkYzFkMTk4YjYzYWY3NTliZWFmZjhiNzkzZWEwYmJmMWY4MzY3M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bde42122b22542c785bf0b09edb780b5",
+      "statement": "GatewayEventFactoryTest pins the §13 identity and the PR-01 envelope contract headlessly: messageIdFor(source, providerId, createdAtMs) is stable for the same durable provider row and never body-derived (a different source id space, provider id, or date yields a different UUID); eventUuidFor embeds the event kind so MESSAGE_CREATED and MESSAGE_STATUS_CHANGED for the same row differ while a rebuild of the same event dedupes via the outbox unique index; messageCreated() produces an outbox row with encoding 'envelope.v1' and cryptoVersion 0 whose ciphertext column decodes (decodePayloadEnvelope) back to JSON containing the Persian test body and direction verbatim; and decodePayloadEnvelope explicitly rejects cryptoVersion >= 1 (IllegalArgumentException naming cryptoVersion=1) until Phase 7 E2EE lands — the extension point is pinned, not implicit. The test also re-pins the LOCK-13 boundary values (MAX_BATCH_EVENTS == 100, MAX_BATCH_BYTES == 512 KiB, the 12-of-20 batch, the lone oversized event, and full-jitter non-negativity/cap over 500 draws) from the repository's perspective.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt#L30-L100",
+          "version": "repo-lines-v1:sha256:85ce1893f6479775cd5c0a11d9f3d0d59cb38ef77688b20aa5deb57b59b0da5e:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3YTFmODMzMzQ4ZTU4ZGYxNTJjNjkyMWFlODhkYTg1ZGFmZDBjYjc3NTY3NTNlODkyNmI5YWU0YTI3ZTI4OTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2NDM3MGMyZjdkZGM5NjRiOTExMGU0NGNiYjU1ZmMwODVmMzVkZjk2NmE4YTEyMjMzOTg3ZTlmOWZlZjZhOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkYWRmZjBlNTc2YjFlOWE0ZjgzOWZmY2U2Y2ZhOGRlYzY4YTdhYmVkZTZhOTFkNmNkMTlkNjU4N2FlYjhhZTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt#L17-L103",
+          "version": "repo-lines-v1:sha256:080111035094d2844bc8f19697221a787f24a6d4a8efe611aa4b4ed0d560d26b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3ZWQ1NzQ4NTJlOGE2MzIxMjkzNTcxZTAyNmZmN2UyOWZlYzkyN2IxOTllYzdhZjk4ZDZhOGJiYWUyMGQ0YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkMmM3YWRhZjkzNzdlMDZjOTMxOTVlMTc5ZmI1MTExNGRmMWNkZWQxODcxYTAyYWZmMGQzYzJlOTBhNDBmZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_110fa6d62ec442f1aac878d8c3e6b7a1",
+      "statement": "The gateway_event_outbox row state machine (PENDING -> SENDING -> ACKED or PENDING-retry or DEAD_LETTER) is defined entirely in guarded SQL in GatewayEventOutboxDao, so it is testable at the Policy/DAO-SQL level on the JVM without Android: insertOrIgnore is idempotent against the unique eventUuid index (re-committed events are no-ops, not duplicates); claimBatch selects due PENDING/SENDING rows and marks them SENDING inside one Room transaction (the process-death guarantee); markAcked moves only SENDING rows to ACKED with a per-eventUuid serverSequence (partial ACK, LOCK 13); markRetry reverts SENDING to PENDING with attemptCount+1 and a due time; markDead records the permanent reject (4xx != 429 or undecodable envelope) as DEAD_LETTER, never a silent drop; and resetSendingToPending flips crash-window SENDING rows back to PENDING as the first act of EventUploader.start.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L111-L163",
+          "version": "repo-lines-v1:sha256:8140ed36f92c98f0febd129a3077d26c8d497cef26f85ca1df79ebc4db9a9e90:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3NGY1MTNkNWJkYTI2NTM4YjAyNmMyYzVjYjdmYjFiM2VlN2E1ODJjYTQxNzk5ODY3ZWEyZTgxMjdmODQ3MjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliM2Q4ZDY0MGNiYjJkYjhmMmRiYWM4NmE5YTNhYmI0NGVmYjQ2MGIyYzQ4MmEyZTVjNGRhYTA1MGZhMTY4YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzMDA3MzA1ZTVlYTA2Mzg2NmFiZmQxZTU3ZWYyZmMxZjAyY2RiNTI5Y2M4MjRlMmU5YjVkOGVkMWUxNjc4NDMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L51-L97",
+          "version": "repo-lines-v1:sha256:1300121696b3bb420a9e82449c3cf8f73bec8ff55496fcd1026ee0802410f42b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMDFjMGY3NjI1YTQyYjMyNDcxNWU1MWI3MmZhNDY3Y2I1ZjAxZDFkYzU3MjgwNDVkODIyYjc5ZTZkOWY1YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MDEyNDE2YzI5YmM0ZTcwYjgzOTgxYWM4NTU4ZGIyNmI1OGFkMTkxY2MwZWE1MDNmMGE3MTU2MzlhNzVjMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0YTk5OGJkMTllMDE4ZWJmZjA3ZmJlMDE1MTIxMDI0YjllNzBlZGE4ODFiNWI2NzJjNDNhNTY2ZjllYjk4NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwZjM0YmNiZjVhZGMwM2MxZWUzZDA3ZDhjZmYxMzk2MTcwNzJhMzA5NGFhYjQ3NTU0MjE0ODA5MDY3NzU3M2EifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L62-L94",
+          "version": "repo-lines-v1:sha256:c670809fda6a144b5372c3ad2fcd310ee03454c7065221e83ecb097848622e6f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2OTA3ZTg3MGNkZDk0YjczM2M5YjhhODhjMmE3OTBjMjEyZjMxYTBjMWM0NGU3ODgyZTYxNGFjZDk3YWEyNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNzI1YmQzZDAxOWU2OTAyOGQzNTk2NWVlYWJhZWNmM2M0NjA5MTRiYmExZDIwZDI0ZmQ2ODU4OGE4ZTZhN2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwNzhmZTdhZGViZGFiZWE4MGU3NDczNzY3MWM5MmY2ZTZkOTE3NTkyOGQwZTFhZDg5NmExNDAxZWMyZDk4M2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c3abf3ad9294eae819e09870b0f497f",
+      "statement": "The remote command inbox is exactly-once by the same structural trick as the outbox and is testable at the Policy/DAO-SQL level today: the unique idempotencyKey index plus INSERT OR IGNORE makes a redelivered command surface the existing row instead of double-enqueueing; markAcceptedIfReceived is an atomic single-owner RECEIVED->ACCEPTED claim; markState enforces the legal-from set with WHERE state IN (:fromStates) as the guarded lifecycle transition used by the send executor; and one remote_command_executions row per attempt is the audit trail that makes exactly-once provable. What stays device-only is the runtime that drives these rows (SecureCommandPoller and the send executor), not the rules.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt#L165-L271",
+          "version": "repo-lines-v1:sha256:6b4c33a9386646b91b7b489add7b25e21e3c69a2cc43e3348fd721f837484a73:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYWYyMmNmMDczMjU5MmMyNDcxNDFjYmU2MWVmYTExMDEyNjEyZjVhMzEyMmI5YWY5YmJhZjUyZjU3MjRkMTk0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkODdiNjBiNGExOWUwYTRlMDhiMDYzZjRiZWQ2OWJkMjgzMjBiNjc3NTA0NTUxZDQ5MTU0MDE3Y2I2OGJkZDBjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmMTQ1NzZkNzk1ZDc4M2YxNWMxNDQzZWUyMWM3ZjRmMmZkMjQ2N2U3Nzg5ZTJjOWMwMzRjOTQxNmRhN2VhYTlkIn0"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt#L96-L108",
+          "version": "repo-lines-v1:sha256:078a71deacffba05ae4ab4b8a593358a02db12923870d85c90e473b75d22676b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4OWMzYTFhZjYzMDJhMTA5ODM1OGY3NWRmNTg3ZWU0ZmEwMGNiMDg0NTNjNzM4ODJkNWZmODk1ZTlkOTBiMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0NWI0MDRlNDRlYzY1ZjRlZTkyZWQ2MGY0NDQ0NWYxMGNiZTNhY2M1NjgxZjg3MjU2NGVlMTczN2VhZDc2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzMjBmYWNkMTFiZjhhM2YwNmI3NTE5OWY0ZmY1NmVmMGY4MTI4YTVhMTRhY2RiYjcyOTQ2NzQ5ZmZhMTVmYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMWI4ODQ5N2FkNzFhZTQxMWUzOTc2NGFiZjM5OWU5N2ExMjgzNWVmNWViNDQ5NzQzYzdlMzBiN2RhMWI2MjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9902e53ea5d841c4a41abc671fad42a1",
+      "statement": "DeviceIdentityFormatTest pins the PR-05 wire-format basics that can run on the JVM: the uncompressed EC point encoding must be exactly 65 bytes — a 0x04 prefix followed by both secp256r1 coordinates padded to 32 bytes (BigInteger strips leading zeros, so padding must be exact) — mirroring DeviceIdentity.uncompressedPoint() and kept in lockstep by the test; and SHA256withECDSA sign/verify round-trips on a freshly generated key pair and rejects tampered data. Keystore key generation (AndroidKeyStore, StrongBox fallback) itself is device-only.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/DeviceIdentity.kt#L141-L177",
+          "version": "repo-lines-v1:sha256:2bbcf1d620f35da9ad2592434e7c0792c112c7061dd460505a65b9e7d0a5a002:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YzlkZTkxNTk0YzhiZjIwZjc4MmZhODdkNGRiZjY2MDU4ZjQzZDIzMTQwNTZkNGE3YmUyMzk4ZmYxMjAyOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmZGRiOTRjYjU4NjRkODk3ZDUyYWI3ZmFlNzFjZjJiYjBjYmJiODM4YjE2YWNlNDk5NjkzMTY4ZDMwZTNhZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/DeviceIdentityFormatTest.kt#L11-L78",
+          "version": "repo-lines-v1:sha256:2cb42fea6b17a065327ba97b97d367e42a582094bafa148c7e005c8e93bdb578:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiYTkyMWM5MWRhNjAxOGY0ZmQzZDIzNGRjNDg3OTZkMDFmZWZiNjZhZDBiMDZiZDUxZjk4ZjYwZWViODMxNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

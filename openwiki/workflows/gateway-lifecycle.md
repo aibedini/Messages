@@ -5,7 +5,7 @@ description: "How the SMS gateway goes from a user toggle (or a boot/START_STICK
 tags: [gateway, lifecycle, self-heal, connection-supervisor, reconcile, boot-recovery, dhcp-rebind, foreground-service, consent]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -13,6 +13,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
   - id: openwiki-source-1188ef94bbd10bf1710668b7
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
@@ -27,12 +29,16 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/NetworkMonitor.kt
   - id: openwiki-source-754f516c2fdb40e657ff023b
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-8234b1c40928ccc75e3a6a70
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-f47a2668cd817415f8991735
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-118a7a1d805522e96275e615
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt
+  - id: openwiki-source-78df0f57b8c1bc78f8110a9d
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt
 generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 

@@ -4,7 +4,7 @@ title: "Gateway service"
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
@@ -12,8 +12,14 @@ sources:
     resource: repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-51189b7b42ba492b233ef785
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt
   - id: openwiki-source-1188ef94bbd10bf1710668b7
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-5b64d9fe16083515732d7fa1
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayAccessPolicy.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
@@ -32,12 +38,22 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-f47a2668cd817415f8991735
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
+  - id: openwiki-source-362c458761cae734c7912208
+    resource: repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt
+  - id: openwiki-source-48c016677ac392f8822f01d6
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/GatewaySyncRepository.kt
   - id: openwiki-source-1beb8b1c71f48b2b11fd81ce
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/SecureStore.kt
   - id: openwiki-source-5d9105beecd437514587cd99
     resource: repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt
   - id: openwiki-source-78df0f57b8c1bc78f8110a9d
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt
+  - id: openwiki-source-5a41e4f8d9bac15201c1e818
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewayEventFactoryTest.kt
+  - id: openwiki-source-c971d5d0d445dd3ffeebfc88
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncPolicyTest.kt
+  - id: openwiki-source-4483a04ddf11761c916ba4e0
+    resource: repo://app/src/test/java/com/autonomousone/messages/GatewaySyncSchemaTest.kt
 generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 

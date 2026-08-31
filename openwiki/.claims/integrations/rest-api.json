@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:594c53485d14fcdda00fb1a83ac55893100aee615d3885ca8a28e0d3f598fcbd",
+  "pageVersion": "sha256:f1031d268a820c0dfb307c1865d44822a8d8cd04102d3a683a13c1fe7826bea8",
   "claims": [
     {
       "id": "claim_ed6a3aad5ca64cc9ab22c5cb6c7bc2a9",
@@ -181,8 +181,8 @@
           "version": "repo-lines-v1:sha256:4d7c2b63d1af5c6f29df987c4387ac939b540f61ece5b48226bd9aced033d2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzg1YWIyOGIyYjNjMmViZTZkNTI4MjdkM2FjNmQ3ZmE5MGE0ZDg3ZjQ4ZjgzNmY1ZWQ5NDAyYTdkYWVjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZjQ4MDJlY2Y3NmMxMDNhYjYyZmVjMjEzOTkzM2Q1OTZmYzE0ODlhOWRlN2NlZmViMzY0ZTlhZjFmYWUxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1YTc1MjZhNDU1Mjc1Mzk5ZGZiMmI0MWVkMjEwZTNmOTM2ZjFmYTk3YTcxYWE0MGIwNGU2OTJlYWJkMWVmZTQifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L89-L117",
-          "version": "repo-lines-v1:sha256:ba3960c176242f61cbaa56c6bad2b8c78d56ef54717fbeb6e05a8257440531b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NTA4NGVkYTVmYWU4MTFkNWI3OTlhZGYzNzUyNDI0M2ZmMmI3ZTM0YmQ5NDY0OGQ3MTQ0Nzk3NjY5ZTA3YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMDYzODM4ZjA0ODA4ZjQxZjgwZDYwMmEwM2Y4NTAwMWExMzAwMzRiZGM2YTkwMjEzZDI0M2QwMmY3Y2UwNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZDJjY2YwNzcwMTZkYzk2YTUwZTBhZDIwOTFlNzNlZmI2YWRjYTQ4YTRhZGE1NWYyNGY5N2NhMWQ1ODhkNmEifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L76-L120",
+          "version": "repo-lines-v1:sha256:2d8bf71ee6646867d7af782ed38936af44c382d19b4c9eb0df24c12978fab65b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjMWRlMmEzZjU3OWUzN2I1ZWUyNWY0NThlYmUxNjMxODczZGFmNTJkOTU3MDVkNzNmYWVhM2VmMTQ2OWM4NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZjBlNDQ0ODJkOWE3ODVjOTZiZmEyYTA4NzY3ZThmYWI2NGVmZjBiZTM0YTgwYTg2MzkwMTE0NDRiYzViOGYifQ"
         },
         {
           "resource": "repo://docs/api/openapi.yaml#L214-L254",
@@ -503,10 +503,28 @@
           "version": "repo-lines-v1:sha256:19dc9e6f7e4916ef918af5b0766601fe6779b7dd6adad30dadc4fc5baed7c107:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNjBjYTFjYzZkNzBjNTA3MzdlNzMyZDJlOWIwNDMyMTQwZjhjNDE0YjJjNmQzYTA2NDNjZmQwNjdmYzU4M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhZmE1ZWQ1YzVhY2Q0MTRlYWM3YjY3MzYwYjlhZmI1NmE2MTAyZGMxNTdmYmUxMzM0YjlmYjQzNDhiZWJlZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkMTcwNmZiYmU3ZmY2YjZlNmE4MjBlNzNkNTQ4ZjNmNmFlMjE0NmFiYWNiY2ZkZmEyMjUyOTkxZDAxMzQyMWQifQ"
         }
       ]
+    },
+    {
+      "id": "claim_240e6a48481848f9a391835447207602",
+      "statement": "GatewayServer serves only the LAN inbound routes and has no /api/v1/agent/* path: the durable outbox's GMweb upload is an outbound client call — EventUploader (a supervisor-managed component) POSTs /api/v1/agent/events/batch to the configured GMweb backend with base64 opaque envelope payloads — so it shares the /api/v1/ path prefix with the app API but is not a route on the LAN REST surface.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L105-L140",
+          "version": "repo-lines-v1:sha256:7e6e778b66a5c1c37281ada63058b72a91b7eba8e162ffb0d4805fe0c01f0013:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZGI1MDE3NTZhMmVmZmEzZGQ2NjI5ZGQ5ZmQ4YzM1ZWNlZDUyMWE5YTFmNWY2OTI5NGVkOGM2ZWE2MDQxZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2MTQ4NWVhNjg3ZmYzM2ViMTk5ZDNiMzY4YmMwMmI0MDU5YjExOTFmM2U2NTI1MGRiZTMwMDg0ZTBlZDFmNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlOWMzMWViZmZhNmUxYzA0YWIyZmQzOTE4ZDA0MGI2YTQ4YzI3NWY1NTJjNTJkZjc3NTg5YmM3YzNlYzAzMWIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt#L19-L45",
+          "version": "repo-lines-v1:sha256:f296a505e424209128175f3751b121bc8ccc05657fb9dd52f6cd51ce70778751:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwY2QwMjU3OWZkNDc4NWZlZGRkYTU3ODM3MmFmMTgxNDcwYzE5Zjg2YzAyMDU3MzllM2UwNWZiMTJhZmUyNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhNjcwZTE2YTNiZDY5Yjc5MDZkNTMxMDE0MDMzYzM1ZWY0MjZjYmMyNDAzMmI4ZDM1MWM2OTNkMGEwY2FhZDkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L260-L496",
+          "version": "repo-lines-v1:sha256:6898bc082c3c3f8e2bda611cc9ea3a14f12213ecb25bc0fe9c6f549a64300834:eyJzZWxlY3RlZExpbmVDb3VudCI6MjM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2ZWVjYTAyZTg1M2RlOWI3Mzg3NTAzYzc3N2IyMzk3NzQwOTM3MTBkMzliMTdiZmM5M2Q5OTM4NmVlZmFmMjA0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1NTIyYzQyY2QxOWM2ZDAzZDgwOGM0NTI3MjA1NTI4MjViN2VhMWM1YjQ5MWIyMTg1MTFjYWM3NDE1Y2Y5ZDliIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxNzYxYmY0YmUxYjFmYzkzOTQxMmQ3YjY4YWNlZGZlMjYzYzFjYmMyMjIzMTIxMmRmMzkwOWM3MjI5Y2QxNmVjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhZjc1ZDY4ZDJkOTM1NWI3ZmYyYTU0OTJjZDFlY2JjN2UzZDk3MDRiYTgyYzBlMDdmNjk5YmViZWQ0NzYwZGVhIn0"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

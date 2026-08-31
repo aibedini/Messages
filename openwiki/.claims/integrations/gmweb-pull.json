@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:18fd458c3419a186e750153cbfa88ca69aee49b3a6bb49309598ce41d9f8406e",
+  "pageVersion": "sha256:36a84c51868c37b3e0cc51bd95c547a2de7db02ed5ad02a3b754c2086d9b7950",
   "claims": [
     {
       "id": "claim_ee48f05d3bb249aa987f5fdc1afbeee2",
@@ -80,7 +80,7 @@
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L119-L134",
-          "version": "repo-lines-v1:sha256:6f06f63350bba7f8bcbde21788ab54712d0dafc41456d9b794999dd904a32799:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2M5ZTkzMGE5Y2NjNDNhZDAyNjgyMjQ1ZTAyMzZjZTZkNjA0N2Q4ZmZmMmNmNTE5ZjdiNThhZTRkYmUxMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMzAyOWRkMmU4N2I3NDc1YTdkNDk2MmUzZDU3NmIxOGQ2ZWRmN2I4NTM5YmQzMmFiZjQyZmQzMDVkODc2NTAifQ"
+          "version": "repo-lines-v1:sha256:a4f745cba1cee2875b95effb499f28ef7d9815452e10f212d81e72c405e89e1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmQ4ZjQ5ZTBkNDZkMGIxOGE1MjliNTY4Zjk4M2ViMWQxNjA3YmY3YzY4ZmEwM2EwNDM3YTA3NGM4MTA5ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2M5ZTkzMGE5Y2NjNDNhZDAyNjgyMjQ1ZTAyMzZjZTZkNjA0N2Q4ZmZmMmNmNTE5ZjdiNThhZTRkYmUxMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMzAyOWRkMmU4N2I3NDc1YTdkNDk2MmUzZDU3NmIxOGQ2ZWRmN2I4NTM5YmQzMmFiZjQyZmQzMDVkODc2NTAifQ"
         }
       ]
     },
@@ -89,8 +89,8 @@
       "statement": "The bridge is active whenever GatewayPreferences.gmwebUrl is non-blank; the setter requires an https:// prefix (rejecting plaintext) and treats an empty value as 'bridge disabled', while the LAN and cloud features keep working regardless.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L255-L258",
-          "version": "repo-lines-v1:sha256:af280319cdf4e82028bab1751e4df50a1893177261f88532bc1583be074e1055:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L269-L269",
+          "version": "repo-lines-v1:sha256:d8e14eaafa9bdd95709f87d87e4567f5c58fb01bd5747aa4cd3f7414576f1fe1:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDhlMTRlYWFmYTliZGQ5NTcwOWY4N2Q4N2U0NTY3ZjVjNThmYjAxYmQ1NzQ3YWE0Y2QzZjc0MTQ1NzZmMWZlMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDhlMTRlYWFmYTliZGQ5NTcwOWY4N2Q4N2U0NTY3ZjVjNThmYjAxYmQ1NzQ3YWE0Y2QzZjc0MTQ1NzZmMWZlMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQ1YzZlYjQ4MmIxOTk1NGViYTE2ODNhY2IwNGEwOGZhYmZkZDYxOTkxYWVkOGY1NWQ2NDAxNDE5OGMwOWMxOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTZiYmM1NzUyYzhjODVkNmM3N2U3YWU3MmY3MDJmNWM5NjVlY2ZhYTEzODYwMTFiYzRiMjNiYTBiNzI4MjBhZiJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt#L246-L257",
@@ -100,23 +100,27 @@
     },
     {
       "id": "claim_278a35715a934387a03e20a92dde190a",
-      "statement": "ConnectionSupervisor owns the poller lifecycle: reconcile() calls components.startPoller() only when gmwebUrl is non-blank, the disabled and offline paths call stopPoller(), and shutdown() stops it; GatewayService wires OutboxPoller's start/stop into the supervisor's ManagedComponents.",
+      "statement": "ConnectionSupervisor owns the poller lifecycle: reconcile() calls components.startPoller() only when gmwebUrl is non-blank (a blank URL means the poller is never started at all), both the disabled (desired-off/no-consent) and offline (WAITING_FOR_NETWORK) reconcile paths call stopPoller(), and shutdown() stops it on service teardown; GatewayService wires OutboxPoller's start/stop into the supervisor's ManagedComponents.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L167-L178",
-          "version": "repo-lines-v1:sha256:e2dc361674cd031ddd666976f22e27f9575005de2ad2f44f6945f618d8265b20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZWU3NWZmOGRiNjY0NTgyM2UxMDZlNTg0NzhjNDllMzRkZWMzNmZlNjI0ZjE3YjAwMjdmMDliNzAyZmE3ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3MzJjMWE5ZDEwYmQzYjAxYzFmZTU4NGZhYWVhOWQ2ZWE5MmE3MDRjY2RlZjYzNzU3YWY0MDBkNWI1ZDFkZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyZTY5YTVhNjVhMDVjODcxZTNiYjZjZmRiYmZkZTM1ZmYzYjlhNzIyY2Q2YmY2Yzg3OTkzOTkyMjNiMjc2ODgifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L173-L186",
+          "version": "repo-lines-v1:sha256:e227c45cb784c960250a432c465d6ca4a296c28dc28943d3e88c0c6bba7a0b40:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZWU3NWZmOGRiNjY0NTgyM2UxMDZlNTg0NzhjNDllMzRkZWMzNmZlNjI0ZjE3YjAwMjdmMDliNzAyZmE3ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3MzJjMWE5ZDEwYmQzYjAxYzFmZTU4NGZhYWVhOWQ2ZWE5MmE3MDRjY2RlZjYzNzU3YWY0MDBkNWI1ZDFkZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyZTY5YTVhNjVhMDVjODcxZTNiYjZjZmRiYmZkZTM1ZmYzYjlhNzIyY2Q2YmY2Yzg3OTkzOTkyMjNiMjc2ODgifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L255-L258",
-          "version": "repo-lines-v1:sha256:af280319cdf4e82028bab1751e4df50a1893177261f88532bc1583be074e1055:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L214-L241",
+          "version": "repo-lines-v1:sha256:d1d1dcbd39d1454e11d41fb9c5f4c2c0aeeba86f4a0ed3e9f4801d34293d1706:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTYyZTEwNjRmY2U1YzIxNmRmOTg0NjJlNGVmMzI4YzYzOWE2YTc3MmRiNTU1MWI1ZjE5MTFkYjIyZGJiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4MzJhOTYzYmVjZjk1YjE1ZGQ4NGY2NWFhOGY0ZjM3NzlmNzY5MWI3MDVkMzViYzZkNzU3MjBhODkxYjc0YmMifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L80-L88",
-          "version": "repo-lines-v1:sha256:6b4ef8dd0b632752e54ac132d20ccaa2a46e55557041e49aac509f863d12c6bb:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGYyZGExYTcwNTk3YzNhNjJhYzhhZjZjYWFmMGY3MTU3NDUwMzAwOTNkODcwNTBiYjg2OWM1NzM5ZDBjMGE0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzkyMjA0YzY1ZjUwMmRjMTY0NTRiNjI0MDg1NmE5YWI3YWRlMDAzYThlOWY4NjMzM2VjMGI3YzllNDA5NDkxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWFjYzM1NDhkZDljYTk2M2E5MDY2MzgxNzg5MzI3NTI3YmJmYTE0OTkxNjI0ODdkZjJhMTkxNDQzOGViNGJiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDZjMDc4NjI1ODJhZjhiMzRiNDljYzRhYzBhMzI0Nzc4ZmExMGZmNjAwNTgzNTIyMzkyYTg3Mzk3YzQwNjhiNiJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L265-L270",
+          "version": "repo-lines-v1:sha256:3f5e53a78945f7ff43b0831427a02d90d5c10d07b99525fe1ca41ba9bfb381fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNjYmQ2Njg1ZDQ1NjUyNDQyNmE1MTQ2MTBmYmU1MDQ5YzhhZTc0MTFjYjYzZjBhNzUwNzE0MWJkMmY2YWI2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0MTNmMjJmMWQ2MDM2NTZiYzhiZjk5MDZjODQ5OWNlOTRiZTdjYmViM2IyMWIwMTZkZGYxNGFkZDE2MTY1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA3NDU5NjE5YTlmNzlkOTFhY2JmZTk0MzllNDQ1MjA2ODA0NDQxNDU1YWRmZTgxYTM0ODcyYjA3ZjAxNjZlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFmNDg4YTQzN2ZjMjFiNzQyNmIwMmViMWNhMTY2MTQxMjgwMmI4ZDI5ZTRhNGU5MTU5NTY0N2MzMjA1NDU0YiJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L136-L170",
-          "version": "repo-lines-v1:sha256:5cef86b1440927658f6766c0a96ea1eb5c171dc57f2aa1f913d06926440827d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYzUyZTNiN2EzNGVlYWRhMzhiM2FiOTEzYWQ2MjJmNTE5ZDA0Mzg3YzM0NjBjZWM5ODlkZTljNzA5NDQ5M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0YjdiYmQ2N2U0MGQ1YTFiYzA1NmIxY2NiODc2MjFlNWVlYzc0M2MxNDI5NjJmMzI5YTQwYTE2MDY2Y2UzZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkZDQwMzhjOGMyNmZjNjA1NWM0MTJiZDk1ODQyYzc4ZWNhY2ZiMjBkNTZhYWQwNWQzMDA3YjdjNGIwZTU1OWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4M2U5ZGMxNDljMWFhMWYzN2Y5ZjBiOWY1ODYwMjA5NzA5ZGFlNTUwMzJkMTlhNTAyZjQ0MjY4NTI3NGY0MjkifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L138-L144",
+          "version": "repo-lines-v1:sha256:8b28692647547262015766e4d268c1630ce02c188b853afb96666bf0312167ba:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGJjNTJlM2I3YTM0ZWVhZGEzOGIzYWI5MTNhZDYyMmY1MTlkMDQzODdjMzQ2MGNlYzk4OWRlOWM3MDk0NDkzZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE5ZjhjMmJjN2ExNDFhMDIyYWYzZmViOGFiNTAwOGVjMjU3NTdlZjI0YWNkMDQ5ZjUwODlhNzRiN2M5YWU4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRkNDAzOGM4YzI2ZmM2MDU1YzQxMmJkOTU4NDJjNzhlY2FjZmIyMGQ1NmFhZDA1ZDMwMDdiN2M0YjBlNTU5YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjE2MDUwOWUwMDNmNWI0YWJiMzJjNGNkMzQzYzhmYmE1NmQwZTAwZjg3MDVmYWY2ZWEzNDIyYzQ1Y2VhOTIzOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L178-L194",
+          "version": "repo-lines-v1:sha256:cfbe997e721343740281f7ca321187d7243690b80d3d2e947f3bac5e726cb4c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNjNlZWVhZjFlMWMxZTg0MDRiYTkyM2YzZDQ3ZGVlNTdhNTM4Y2MyMDMzYzc4ZWI1YTRkN2ViODk4MDVlMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlMjg5MzFkMWI5OWY4MjVlOTExY2EwNmM0MjhiNWU3OTI0ODM5NzA3OWUyYmE5NmE3ZWE4YmIwYjFlNGViNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZDViZjczODQ3ZTU3NjgyZGI2Zjc3YmIwNjBlZmY3OTVhZDE5NTMzNzJmOTU4MmE3MWQzZmRlZGJhMWVhZDIifQ"
         }
       ]
     },
@@ -153,12 +157,12 @@
       "statement": "OutboxPoller exposes a StateFlow with states IDLE, POLLING, DELIVERING, ERROR; GatewayService mirrors it into the persistent notification (live / delivering / retrying… / idle, blank when no URL is set) and exposes it app-wide via bridgeStateFlow so a dark bridge is diagnosable from the lock screen rather than only inside the gateway screen.",
       "evidence": [
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L180-L200",
-          "version": "repo-lines-v1:sha256:8bb435c3cce4a5cc0a7675ed931e3e894e4cfa4b33ae96c7a33a74c087aab871:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4ZWY3ZGQyNzExYzI5ZTNjNTQzNWRkMzZmZTVmNjBkMmQyM2Q3OGNkN2VjNzBkZjUxOGViNTZmYzNmYTRhMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyMGRlYmMwYTc1OGVjZmMxMWNiNzA4OGMzODIxYzI4OTNlNDM2M2E4NjEzMDBmNWNjZTAxNDU2NTc0MmY1YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5MTI3NDUzMjQ4MmVkNjVhODFjODk0MTU4N2MxZDljZmY2MDNlMDBkNDc2NGQ3MjQ2NmQyZGI2YzFhOWQ5NmUifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L196-L222",
+          "version": "repo-lines-v1:sha256:e17fd7572d481ef9d0d3f343bdcb5b11cd6e3e4b926dae4b40869076d30e129d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZDE2OWRlN2I1N2E3ZDc3ZGMwNmIwOGI4OTgzOWUwNjc0ZGUyYTJkNjQ5NjJkMDU3NjQ2MTliYjA5Yjg1ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4M2U5ZGMxNDljMWFhMWYzN2Y5ZjBiOWY1ODYwMjA5NzA5ZGFlNTUwMzJkMTlhNTAyZjQ0MjY4NTI3NGY0MjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5MTI3NDUzMjQ4MmVkNjVhODFjODk0MTU4N2MxZDljZmY2MDNlMDBkNDc2NGQ3MjQ2NmQyZGI2YzFhOWQ5NmUifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L69-L72",
-          "version": "repo-lines-v1:sha256:bc388901624e3e88a4b3e437dc6be5ff6518965655052fe6cc9eb6facafa6ea9:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTk4YWVjYTc4ODg0NWExZmI3NmI2MTI4MWUwNzJlMDg1YzA5YTIxOTMwOGZiNWMzYzhiMTE4YzdhNDU0NGJiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTMyZDI0YWM2YWFmNjRiMjg0YjgzMDEwMWViZTM2YjZmODdjZWYzMzQzZTc4MTAyM2FmMmJkNDk0MzM1MTE5MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjRlNmVjZjJlZDBhNDI1MDQzYzg0ZDhmZjY0MjJhNWZhZDc1NGJhZjM4ZjMyNzBiZTIyMmRlYWU4OTE1ZGQ5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzMxZTBkYTM3OTFjMjFmZDVjZmIwOGI3YmJlZDU3NGE5M2EwMWY1NGJmZmIwOTNlMjlkOTQ5YmQ2NzMxODE5MSJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L69-L74",
+          "version": "repo-lines-v1:sha256:995acc8f09e6245ff187378fa892c7b4162b98ea03aa62d03d41794575107242:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTMyZDI0YWM2YWFmNjRiMjg0YjgzMDEwMWViZTM2YjZmODdjZWYzMzQzZTc4MTAyM2FmMmJkNDk0MzM1MTE5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTMyZDI0YWM2YWFmNjRiMjg0YjgzMDEwMWViZTM2YjZmODdjZWYzMzQzZTc4MTAyM2FmMmJkNDk0MzM1MTE5MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjJkNjA2Y2NlYWU5OTViYzk0MTc1NDE4YWUyMDcyZTA1MjkxMTdiZDQ0YWUzMWFhZTE3MTFiMzBmNjdkODUxOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzMxZTBkYTM3OTFjMjFmZDVjZmIwOGI3YmJlZDU3NGE5M2EwMWY1NGJmZmIwOTNlMjlkOTQ5YmQ2NzMxODE5MSJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt#L50-L53",
@@ -211,12 +215,12 @@
           "version": "repo-lines-v1:sha256:49ec0af1d78b13ea029af5ace8c80aa656efe3b7ef63dd666b96a3316dbfe1f5:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJiODM4YzMyOGYwZjY3MjZhZGM2NDgzOWIyZjMyMjdkYTA1ZmY3MmI1NmQ0N2IxN2NmOGMzOTBlZWE0MjZjYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWEzOWFhNTI0N2I2YzZhNjlkZTdmZTQxMDRkNTkyNmI5M2VlYTc5NzlkZTlmNzBiOWNkNTYxYjAwZjcwMTI4MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTA5YzhhNzM2MDE0MmMxODg0MzRiZjQ0YzJlMjE2Mjg4Y2JmYWRjYTY1Y2E5YTYzZjVjOWI1OTNhYmZiMTlmMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2E0N2NhZmEwZTZkYzhhNGRmYzhhZWRiNzYzMzIzNzdjNDExNzI0ZDEzMDE3MGY0M2EzYjUwMzcxMWUwZjhiMCJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L242-L263",
-          "version": "repo-lines-v1:sha256:d86bb06c6a2d786d2d1b3d205e7158b7a9ef33e4c5cd1abd76fd019fb8d77fe4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MmM4OWRlZmNjNzM4NTk2OTRlMGRmYTgzNGIxZDVmNjVlMDBhZWViN2QxYzlkNzQ2MjdmNWMyYjlkMWI0MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NGJmZTNjZjAyNzk3NmRjZTQ1MTcxZmQxM2ZlYjBlMzFlMTlkYWIxYWY0Y2YzZjQwNzY0NjA2YmMzMTIyOGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFlNjk3MTNmZDliM2Y3YmRlODAxZjkyYTYyNmFkMzQ4ZTg0OTVlNWI2MjU3MTU2NDk0ZjIyYzUxNGQ0YTlkNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiZTI1MmVkYTUxNjgxMGVmZTg2ZTQ5ODlkYmZkZjBjMjdhYTc0MzhkZjg1NjJkOTAzZWI4NzJjNGU1NmJlMzQifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L264-L305",
+          "version": "repo-lines-v1:sha256:07e1cc508ae51f31f50fe56d28439689b2b82b8974a9a406af3c1faa01c0824e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MmM4OWRlZmNjNzM4NTk2OTRlMGRmYTgzNGIxZDVmNjVlMDBhZWViN2QxYzlkNzQ2MjdmNWMyYjlkMWI0MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFlNjk3MTNmZDliM2Y3YmRlODAxZjkyYTYyNmFkMzQ4ZTg0OTVlNWI2MjU3MTU2NDk0ZjIyYzUxNGQ0YTlkNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0NGY5ZjFiMWI4NGJlNjAzNThiOWQxYTZlNzc4ODRiOWE2MDBjMDAyZDc5ZTQ0MDdmYzFjZWY1YzQwOWQxMDAifQ"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L293-L308",
-          "version": "repo-lines-v1:sha256:a8fd9035bda6476f8a72faacfb4eeaf62b5965195818a4c8b59fa08e205035e6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNzljNmY4MjA4N2E2YzJiYjcwOTZkYTgyZDQyNDVlZTA2YmYxN2E1MTFmNGNkMjIyNjc3NTdmZjZiZjM4MWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljYTA2NWY5NTYxNWNiMjk5NzcyODU2NTYwNTM5Mzg0ZDIzY2FjNTUwY2QyMGM4OTFhYWI2OGI2NmIyYTM4MjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNzU0NTEwMjQ0YmIwYzczMjk1Y2E3ODk5ZDk0MzVjODMyYmJhNzRmYzUwY2VlOTQxYWQ4NzdjYzk1NjA1YjQifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L307-L335",
+          "version": "repo-lines-v1:sha256:48646cc829e7f96c13d3e4de1a12fba11e1eb4e207c1aabb90e3e78a5c58e802:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYjE5ZGU0N2FkNThhYzM1MjMzOTUzOTBmYjU4ZjkxYjAyYWNhMDBiOGMyYmYwZjBmNjg0OWYxOWNmODFkM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmNWNhM2I5MzRjNDgyZDhiM2JkZmE3YmFmOWI1ZDYyODljNjkyZWFjMDFlMmE4NmE1N2RiYzAwZGM0MmQxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0ZThhMzAzN2E2NDE4ODQwNTM3NTQ3MmM4OTA2OTdmMDBkY2FlOTk0YTM2NTM3ZTk2NjI3MTczYTc0NGRkMzUifQ"
         }
       ]
     },
@@ -241,10 +245,24 @@
           "version": "repo-lines-v1:sha256:45bb5b88a80898879ecf42be81c9fbac34bbf8a72a4be88bb5c0f71ab32206b8:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzdmZGU5OTZmOWQzZDlkYzIyNTA4ZmE0NzJjZWIyYjE5NzQ2MjA4YTM0YTFhMTYwZjMzNmViNTFhMWNlYzE0ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSJ9"
         }
       ]
+    },
+    {
+      "id": "claim_36e22d4d2ea84b468bc08a7d5232cb92",
+      "statement": "The legacy OutboxPoller (/gateway/pull + EveSmsQueue) coexists with the newer PR-10 SecureCommandPoller, which is the strategic outbound-only HTTPS long-poll against GMweb's /api/v1/agent/commands/claim built on the durable remote_commands queue; OutboxPoller remains the compatibility transport while the executor learns to drain remote_commands.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayService.kt#L153-L160",
+          "version": "repo-lines-v1:sha256:b87192061ce288181afaa0cad19129f0145a305b147b7f4525894f95fbf3d1aa:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU4OWJiY2NmMmFkZGYwNzYzNjZiMWU1M2YxM2YzNzIwNjdiZmJmM2NiOTI3YWI0NDUwZTFmOTIwZjMyZjRlYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE5ZjhjMmJjN2ExNDFhMDIyYWYzZmViOGFiNTAwOGVjMjU3NTdlZjI0YWNkMDQ5ZjUwODlhNzRiN2M5YWU4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRkNDAzOGM4YzI2ZmM2MDU1YzQxMmJkOTU4NDJjNzhlY2FjZmIyMGQ1NmFhZDA1ZDMwMDdiN2M0YjBlNTU5YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjc5MjcxZGQxZTFmOGI2MTViZWM4NDJmMTY2NmQwYTk2NjYwYTQ2NDUxZDNjNGU1OWM1YjRkYzI5YjQwODhkOSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt#L25-L61",
+          "version": "repo-lines-v1:sha256:550d76884883abf5b99a833e1d99f5b59a098241edb926d93e138d8647fabee9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2M2RlMGQ4MTFmNTkwYjUwZWY5NWNlY2I4MGMyMDRhNDgwZTg4NTc2YTY5ZWIxZDdlMDUyNjQ0MDI2ZmJhMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZWNhN2QzMDY5MTU0ZTFhZTkzMjdlNTBkN2M4YzgwZmE3Yjk4MmU2NDBjZGVhYWMzZjA3MTFlYTFkODYxOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5Y2M1YTJiZjY4YWVhNjRhMDlhMmY1YjMxMjkyZDQxMDRjNGY5MWJkZTlmYmRkZTU0NjQ0YjczZmVjODcyZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1MGQ4NGM0M2I0M2I0NzQ5NDY4MzczNTlhZDA5OTA1ZjU0YWY0NDU4NjhkYTgxNGY4NTE1MzUxMzc4ZDQ2OGUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-31T03:59:24.885Z"
+    "at": "2026-08-31T09:09:40.113Z"
   }
 }

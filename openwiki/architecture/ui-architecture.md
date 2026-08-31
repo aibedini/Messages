@@ -5,12 +5,14 @@ description: "How the Messages app's single-activity MVVM shell is composed: Mai
 tags: [ui, navigation, app-shell, mvvm, compose, onboarding, app-lock, event-bus, single-activity, deep-linking, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
   - id: openwiki-source-deeb7f22dbb08abc85208b19
     resource: repo://app/src/main/java/com/autonomousone/messages/event/SmsEventBus.kt
+  - id: openwiki-source-1fe50dc499ba2adcb66d86bf
+    resource: repo://app/src/main/java/com/autonomousone/messages/Holders.kt
   - id: openwiki-source-8f0b87397d9aa4ca05c1f774
     resource: repo://app/src/main/java/com/autonomousone/messages/MainActivity.kt
   - id: openwiki-source-90d7a118c67c21ceb59d31b7
@@ -29,6 +31,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/onboarding/OnboardingState.kt
   - id: openwiki-source-362c458761cae734c7912208
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
   - id: openwiki-source-c637ca2a4f8a914d1089d78e
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt
   - id: openwiki-source-56dbdbad24cf2312e2a997db
@@ -55,6 +59,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/ui/theme/ThemeController.kt
   - id: openwiki-source-b802853f1fbc7661b5b8bb92
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/AppLock.kt
+  - id: openwiki-source-667df7c8b8bb817bf8c844eb
+    resource: repo://app/src/main/java/com/autonomousone/messages/utils/DiagnosticLog.kt
   - id: openwiki-source-133b4174f0a9fbf729268733
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/NotificationHelper.kt
   - id: openwiki-source-23938f5029c2373f94d20806
@@ -69,6 +75,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/MessagingSettingsViewModel.kt
   - id: openwiki-source-f5350f52285f6eb1deaf57cd
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/NewConversationViewModel.kt
+  - id: openwiki-source-e751999d76ff43e6908f09bf
+    resource: repo://app/src/test/java/com/autonomousone/messages/DiagnosticLogTest.kt
   - id: openwiki-source-723056c1a2bbf4b935b093d9
     resource: repo://app/src/test/java/com/autonomousone/messages/IncomingShareParserTest.kt
   - id: openwiki-source-9b70fb36241719170c198b46

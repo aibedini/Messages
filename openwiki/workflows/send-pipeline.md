@@ -1,14 +1,18 @@
 ---
 type: workflow
 title: "Workflow: Send Pipeline"
-description: "End-to-end trace of every outgoing send entry point (chat UI, long-press schedule, REST /api/v1/sms/send, EVE /send queue, GMweb pull, and the MMS branch) through the SmsSender funnel, provider dispatch, durable SENT/DELIVERED callbacks, the send_segments ledger, and the UI/Room updates — including the two reboot-proof scheduling paths and the 503-vs-200 machine-outcome contract."
-tags: [sms, mms, outgoing-message, send-pipeline, sms-sender, mms-sender, status-callback, eve, gateway, rest-api, scheduled-sends, workmanager, rate-limiting, telephony, ledger]
+description: "End-to-end trace of every outgoing send entry point (chat UI, notification reply, long-press schedule, REST /api/v1/sms/send, REST schedule, EVE /send queue, GMweb legacy pull, and GMweb strategic commands) through the SmsSender single funnel, provider dispatch, durable SENT/DELIVERED callbacks, the send_segments ledger, the durable gateway event outbox, and the UI/Room updates — including the PR-03 durable remote_commands queue, the two reboot-proof scheduling paths, and the 202/503 machine-outcome contract."
+tags: [sms, mms, outgoing-message, send-pipeline, sms-sender, mms-sender, status-callback, eve, gateway, rest-api, scheduled-sends, workmanager, rate-limiting, telephony, ledger, remote-commands, event-outbox, durable-queue]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-31T03:59:24.885Z
+    at: 2026-08-31T09:09:40.113Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
+  - id: openwiki-source-cfb1c00ed26591167aaf9c37
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewayEventFactory.kt
+  - id: openwiki-source-59544ea2b1ddf0de23fdcef1
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/GatewaySync.kt
   - id: openwiki-source-2ff4a932611e5b19d7ec58bf
     resource: repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt
   - id: openwiki-source-b394c571401a67cd53a9d162
@@ -17,12 +21,16 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt
   - id: openwiki-source-deeb7f22dbb08abc85208b19
     resource: repo://app/src/main/java/com/autonomousone/messages/event/SmsEventBus.kt
+  - id: openwiki-source-a0c585f933881808bc5040e8
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/EventUploader.kt
   - id: openwiki-source-ba9880c97168532a944be6b9
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt
   - id: openwiki-source-4c55b07448cb165f971fcb2f
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt
   - id: openwiki-source-754f516c2fdb40e657ff023b
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
+  - id: openwiki-source-12cb80f08b034cb20045823a
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/SecureCommandPoller.kt
   - id: openwiki-source-5503c08359fa0570d66c46a7
     resource: repo://app/src/main/java/com/autonomousone/messages/messaging/MessagingPreferences.kt
   - id: openwiki-source-f8083bba129ec68a00b6cd27
@@ -31,6 +39,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-b7eef8979c4295ba4471257d
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/NotificationActionReceiver.kt
+  - id: openwiki-source-67685a751b33760b4df0fb5b
+    resource: repo://app/src/main/java/com/autonomousone/messages/sms/GatewayOutgoingPipeline.kt
   - id: openwiki-source-c637ca2a4f8a914d1089d78e
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/ScheduledSms.kt
   - id: openwiki-source-41a91a72c73191276b041c43
@@ -53,18 +63,18 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt
   - id: openwiki-source-bd4d59d7a5eb9e8dccb3a0e2
     resource: repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T09:09:40.113Z" }
 ---
 
 # Workflow: Send Pipeline
 
-This page traces one outgoing send from the moment a person or a machine asks for it to the moment the device knows it was delivered. Four distinct doors can start an SMS — the chat UI, a long-press schedule in the UI, a REST `POST /api/v1/sms/send`, and the EVE `POST /send` queue (the latter shared with the GMweb pull bridge) — but all of them converge on one small funnel before they touch the modem: `SmsSender`, which **persists a row into the shared `Telephony.Sms` provider before dispatching**, resolves the user's SIM/SMSC/delivery-report preferences, splits the body into billable segments, and hands each segment to `SmsManager` with its own status `PendingIntent`. Modem results return later through a manifest-declared `SmsStatusReceiver`, which folds those callbacks into provider status via the pure `SmsStatusPolicy` and writes one row per segment into the `send_segments` ledger. MMS is a **separate funnel** — `MmsSender` writes the message into `Telephony.Mms` and hands it to `SmsManager.sendMultimediaMessage`, bypassing `SmsSender` and its entire status/ledger tail (see [MMS: the separate funnel](#mms-the-separate-funnel)).
+This page traces one outgoing send from the moment a person or a machine asks for it to the moment the device knows it was delivered. Seven doors can start an SMS — the chat UI, a notification quick-reply, a long-press schedule in the UI, a REST `POST /api/v1/sms/send` (plus its REST scheduled sibling), the EVE `POST /send` queue (also the funnel for the GMweb legacy pull bridge), and GMweb strategic `SEND_SMS` commands — but all of them converge on one small funnel before they touch the modem: `SmsSender`, whose **`sendWithOutcome` is the single-funnel entry** and whose private `directSend` is the **only place `SmsManager` is ever touched**. It **persists a row into the shared `Telephony.Sms` provider before dispatching**, resolves the user's SIM/SMSC/delivery-report preferences, splits the body into billable segments, and hands each segment to `SmsManager` with its own status `PendingIntent`. Behind that funnel, the **PR-03 durable `remote_commands` queue** (`GatewayOutgoingPipeline`) is the intended steady state: every send source lands there as an idempotent, exactly-once command. Modem results return later through a manifest-declared `SmsStatusReceiver`, which folds those callbacks into provider status via the pure `SmsStatusPolicy` and writes one row per segment into the `send_segments` ledger; the same status fold also commits a `MESSAGE_STATUS_CHANGED` row into the **durable `gateway_event_outbox`**. MMS is a **separate funnel** — `MmsSender` writes the message into `Telephony.Mms` and hands it to `SmsManager.sendMultimediaMessage`, bypassing `SmsSender` and its entire status/ledger tail (see [MMS: the separate funnel](#mms-the-separate-funnel)).
 
-The static anatomy of each component lives on [Outgoing Send Pipeline](/openwiki/architecture/outgoing-messaging.md); the external HTTP contract and error codes live on [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md); the Room/`send_segments` schema lives on [Data model](/openwiki/architecture/data-model.md); and the service/supervisor that hosts the server and queue live on [Gateway service](/openwiki/architecture/gateway-service.md). This page is the trace.
+The static anatomy of each component lives on [Outgoing Send Pipeline](/openwiki/architecture/outgoing-messaging.md); the external HTTP contract and error codes live on [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md); the durable command/event tables live on [Durable gateway sync](/openwiki/architecture/durable-gateway-sync.md); the Room/`send_segments` schema lives on [Data model](/openwiki/architecture/data-model.md); and the service/supervisor that hosts the server, queue, and pollers live on [Gateway service](/openwiki/architecture/gateway-service.md). This page is the trace.
 
 ## One funnel, many doors
 
-The single most important invariant: **every SMS send lands on `SmsSender`**, and the differences between entry points are *which of `SmsSender`'s three public methods they call* and *what they do before and after*. The choice of method determines two user-visible properties — whether the user's send-rate limiter applies, and whether the caller learns whether the modem accepted the message.
+The single most important invariant: **every SMS send lands on `SmsSender`**, and the differences between entry points are *which of `SmsSender`'s three public methods they call* and *what they do before and after*. Since the PR-03 refactor those three methods are no longer independent paths: `send(...)` and `sendForResult(...)` both **delegate to `sendWithOutcome`**, which is now the *single-funnel entry point*. Its body is the one place that decides between the legacy direct hand-off and the new durable-queue hand-off (see [PR-03: the durable single funnel](#pr-03-the-durable-single-funnel)), and the private `directSend` below it is the only code that ever touches `SmsManager`. The choice of method still determines two user-visible properties — whether the user's send-rate limiter applies, and whether the caller learns whether the modem accepted the message.
 
 | Entry point | `SmsSender` method | Rate-limited? | Silent (no toast)? | Learns modem outcome? |
 |---|---|---|---|---|
@@ -73,10 +83,11 @@ The single most important invariant: **every SMS send lands on `SmsSender`**, an
 | UI scheduled — `ScheduledSms.SendWorker` | `send(phone, body)` | **yes** | no | no |
 | REST `POST /api/v1/sms/send` — `GatewayServer` | `sendWithOutcome(phone, message, subId, smsc)` | no | **yes** | **yes** → 202 / 503 |
 | EVE `POST /send` — `EveSmsQueue` worker | `sendForResult(to, text)` | no | **yes** | **yes** → SENT / FAILED |
-| GMweb pull — `OutboxPoller` (via `EveSmsQueue`) | `sendForResult(to, text)` | no | **yes** | **yes** |
+| GMweb legacy pull — `OutboxPoller` (via `EveSmsQueue`) | `sendForResult(to, text)` | no | **yes** | **yes** |
+| GMweb strategic — `SecureCommandPoller` (`executeIngested`) | `sendWithOutcome(phone, body, subId, null, showToast=false)` | no | **yes** | **yes** → COMPLETED / FAILED command state |
 | REST scheduled — `GatewayScheduler.SendWorker` | `sendForResult(phone, message)` | no | **yes** | **yes** |
 
-The split is deliberate: interactive paths use `send(...)` (rate-limited, toasts, returns a row id) while machine paths use the v2.6.10 "honest" variants — `sendWithOutcome` (a sealed `Accepted`/`Rejected`) and `sendForResult` (a row id or `null`) — because a machine caller must be able to distinguish "handed to telephony" from "the modem refused". The rate limiter and the toasts live only in `send(...)`, so gateway/EVE/GMweb/gateway-scheduled traffic is never paced by the user's setting or nagged by a toast; those paths are bounded instead by queue capacity (500 pending) and schedule caps (200 pending).
+The split is deliberate: interactive paths use `send(...)` (rate-limited, toasts, returns a row id) while machine paths use the v2.6.10 "honest" variants — `sendWithOutcome` (a sealed `Accepted`/`Rejected`) and `sendForResult` (a row id or `null`) — because a machine caller must be able to distinguish "handed to telephony" from "the modem refused". The rate limiter and the toasts live only in `send(...)` and the interactive branches of the funnel, so gateway/EVE/GMweb/gateway-scheduled traffic is never paced by the user's setting or nagged by a toast; those paths are bounded instead by queue capacity (500 pending), schedule caps (200 pending), and — for the strategic command transport — the durable `remote_commands` lifecycle.
 
 ## The funnel: `SmsSender`
 
@@ -97,6 +108,19 @@ Before v2.6.10, `send()` returned a row id even when `SmsManager.sendTextMessage
 
 - `sendWithOutcome(phone, text, subId, smsc)` → `SendOutcome.Accepted(rowId)` when the hand-off succeeds, `SendOutcome.Rejected(rowId, reason)` on refusal. The contract is explicit that **`Accepted` means "handed to telephony", not "delivered"** — SENT/DELIVERED arrive later via the status receiver.
 - `sendForResult(phone, text)` → the row id on a successful hand-off, `null` when dispatch failed. This null-returning shape is what lets `EveSmsQueue`'s sender lambda stay a plain `Boolean` (`sendForResult(to, text) != null`).
+
+## PR-03: the durable single funnel
+
+PR-03 establishes the intended steady state for this pipeline: **every send source — the Android composer, notification reply, web/PWA command, scheduled send, and the Gateway/EVE API — lands in one durable `remote_commands` queue and is executed exactly once, and every modem status change is committed into the durable `gateway_event_outbox`.** The queue's contract is that nothing calls `SmsManager` outside the pipeline, and exactly-once comes from a unique `idempotencyKey` (a re-delivered command is a no-op `INSERT OR IGNORE`) plus the guarded command lifecycle `RECEIVED → ACCEPTED → EXECUTING → COMPLETED | FAILED`.
+
+Today, however, the **runtime funnel is still `SmsSender`'s three methods**, and the durable queue is only partially wired:
+
+- `GatewayOutgoingPipeline` is the durable queue object. Its `enqueueSendSms` writes a `SEND_SMS` `RemoteCommandEntity` (a JSON payload of `phone`/`body`/`threadId`/`messageId`, `expiresAt` floored at 24 h so no short timeout can delete a queued command) and resolves `threadId` → opaque conversation id via `remote_conversation_map`. A redelivery with the same `idempotencyKey` returns the existing command id rather than enqueueing twice.
+- The rollout is gated by the `@Volatile` flag **`GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS`, which is `false` by default**. `sendWithOutcome` reads the flag: **off** (the shipped path) it takes the legacy `directSend` and never touches the queue; **on** it enqueues durably, claims the command with a single-owner `markCommandAcceptedIfReceived`, runs `directSend` on a detached `Dispatchers.IO` coroutine, and marks the row `COMPLETED`/`FAILED`. The flag is meant to flip to `true` only after green process-death tests, and a later phase removes the flag entirely so `directSend` becomes unreachable outside the pipeline.
+- **There is no background drain executor for `remote_commands`.** The only in-process consumer is `SecureCommandPoller.executeIngested` (see below), which drains the specific `SEND_SMS` row the strategic command poller just ingested. Local sends enqueued while the flag is on are executed inline by `sendWithOutcome` itself; nothing independently re-drains queued-but-not-yet-claimed rows after a process death. This is the gap PR-03's rollout notes call out: the durable queue exists and is idempotent, but the general "executor that drains `remote_commands` in order" is not yet a running component.
+- The **`MESSAGE_STATUS_CHANGED` half is already live and unconditional** (it does not depend on the flag): when the status receiver's `RefreshStatus` mutation folds a callback into the Room shadow, `TelephonySyncCoordinator` commits a `MESSAGE_STATUS_CHANGED` event into `gateway_event_outbox` *in the same Room transaction* (see [Durable status callbacks](#durable-status-callbacks-and-the-send-segment-ledger)), and `EventUploader` drains that outbox to GMweb. So the *status* side of the intended steady state is already durable end-to-end, while the *command* side awaits the executor.
+
+In short: the steady state is "durable queue with exactly-once execution for commands, durable outbox for status"; the present runtime is "the three `SmsSender` methods as the funnel (direct `SmsManager` hand-off), a durable command queue that is idempotent but not yet continuously drained, and a durable status outbox that is already fully wired."
 
 ## Entry point: the chat UI
 
@@ -130,7 +154,16 @@ Long-pressing the send button opens `ScheduleSendDialog` (presets of 1 h / 3 h /
 
 This is the **503-vs-200 decision point**: the machine caller's success/failure is decided by `sendWithOutcome`'s explicit outcome, so a modem refusal can no longer masquerade as a 200 "success". (`docs/api/openapi.yaml` still documents this endpoint as 200 — a pre-202/503 drift; the code is authoritative.)
 
-**EVE — `POST /send`.** The body is `{to, text, priority?}` plus an `Idempotency-Key` header. The handler first applies a **capacity guard**: if `EveSmsQueue.totalPending()` (QUEUED + ACTIVE across all priorities) has reached `ANNOUNCEMENT_LIMIT = 500`, it answers **429** `rate_limited` with `Retry-After: 30` *before* parsing. Otherwise it enqueues into `EveSmsQueue`. A repeat idempotency key returns the **original** record with `created = false` and HTTP **200** (no duplicate SMS); a new request is **202** with `requestId`, `jobId`, `statusUrl`, and `queuePosition`. The send does **not** happen synchronously — the queue's single worker thread drains it later through `sendForResult`, and the record becomes `SENT` or `FAILED`. The same queue is also the funnel for the GMweb pull bridge (`OutboxPoller` enqueues pulled tasks into it), so a cloud-originated send gets identical persistence, ordering, and failure semantics as a LAN one.
+**EVE — `POST /send`.** The body is `{to, text, priority?}` plus an `Idempotency-Key` header. The handler first applies a **capacity guard**: if `EveSmsQueue.totalPending()` (QUEUED + ACTIVE across all priorities) has reached `ANNOUNCEMENT_LIMIT = 500`, it answers **429** `rate_limited` with `Retry-After: 30` *before* parsing. Otherwise it enqueues into `EveSmsQueue`. A repeat idempotency key returns the **original** record with `created = false` and HTTP **200** (no duplicate SMS); a new request is **202** with `requestId`, `jobId`, `statusUrl`, and `queuePosition`. The send does **not** happen synchronously — the queue's single worker thread drains it later through `sendForResult`, and the record becomes `SENT` or `FAILED`. The same queue is also the funnel for the GMweb **legacy** pull bridge (`OutboxPoller` enqueues pulled tasks into it), so a cloud-originated send gets identical persistence, ordering, and failure semantics as a LAN one.
+
+### The two GMweb transports
+
+GMweb reaches the device over **two** outbound-only HTTPS bridges, both hosted by `GatewayService`/`ConnectionSupervisor`, and they use *different* funnels:
+
+- **Legacy pull — `OutboxPoller`** (`GET /gateway/pull` + `POST /gateway/ack`, the phone's gateway API key as `X-API-Key`). It dials out, receives one queued send per request, enqueues it into the **same local `EveSmsQueue`** as `POST /send`, drives it to a terminal status via `drainUntilTerminal` (a bounded poll that also calls `EveSmsQueue.drainOne()` directly so a busy worker can't stall a single record), and **acks the server's ledger with the radio-level result**. It holds a partial wake lock only while a cycle is in flight and pauses (zero HTTP) until the network monitor reports a route. This is the compatibility transport.
+- **Strategic command transport — `SecureCommandPoller`** (PR-10, `POST /api/v1/agent/commands/claim` + `POST /api/v1/agent/commands/{id}/status`, per-device `AgentAuth` signatures). This is the correctness-critical path: it **ingests every claimed command durably first** (`ingestCommand`, `INSERT OR IGNORE` by unique `idempotencyKey` → exactly-once), acks `ACCEPTED` only for a fresh row, and for a `SEND_SMS` row hands it to `GatewayOutgoingPipeline.executeIngested`. A re-delivered command is *never* double-executed — the poller just re-reports the durable state (a `COMPLETED` row → honest `COMPLETED` ack, in-flight → the row's own executor reports). `executeIngested` runs the *same guarded lifecycle* the local funnel uses: single-owner `RECEIVED→ACCEPTED`, then `EXECUTING`, then `sendWithOutcome` (silent, no rate limit), then `COMPLETED`/`FAILED`, writing the terminal state to the row before it acks. A corrupt or payload-missing `SEND_SMS` is marked `FAILED` and surfaces an execution error rather than a silent drop.
+
+The two transports are additive, not a replacement: the legacy `OutboxPoller` keeps running while the strategic poller is the long-term command channel, and both converge on the same funnel/queue machinery so a cloud send is indistinguishable from a LAN one at the modem.
 
 ```mermaid
 sequenceDiagram
@@ -141,6 +174,7 @@ sequenceDiagram
     participant T as Modem
     participant R as StatusReceiver
     participant L as SegmentLedger
+    participant O as EventOutbox
 
     C->>GS: POST with API key header
     GS->>GS: constant-time key check with per-IP lockout
@@ -150,8 +184,8 @@ sequenceDiagram
 
     alt direct REST send
         GS->>SS: sendWithOutcome phone, message, subId, smsc
-        SS->>SS: persist Sent row as PENDING
-        SS->>T: send text or multipart with per-part intents
+        SS->>SS: funnel, persist Sent row as PENDING
+        SS->>T: directSend, send text or multipart with per-part intents
         alt modem refuses the hand-off
             SS-->>GS: Rejected, row set FAILED
             GS-->>C: 503 failed
@@ -164,7 +198,7 @@ sequenceDiagram
         Q-->>GS: record with created flag
         GS-->>C: 202 new or 200 replay
         Q->>SS: worker calls sendForResult to, text
-        SS->>T: dispatch
+        SS->>T: directSend dispatch
         alt modem refuses the hand-off
             SS-->>Q: null
             Q->>Q: record marked FAILED
@@ -174,15 +208,17 @@ sequenceDiagram
         end
     end
 
-    note over GS,SS: the 503-versus-200 split is the machine outcome, a real failure from sendWithOutcome or sendForResult rather than a lying success
+    note over GS,SS: the 202-versus-503 machine outcome is a real verdict from sendWithOutcome or sendForResult, never a lying 200 success
     T-->>R: SENT PendingIntent, one per part
     R->>L: record one segment row, success per policy
-    R->>R: nextStatus, write provider STATUS, Room refresh
+    R->>R: nextStatus, write provider STATUS
+    R->>O: RefreshStatus fold commits a status event to the outbox
     T-->>R: DELIVERED PendingIntent with PDU
     R->>R: parse TP-Status, monotonic evidence, STATUS_COMPLETE
+    R->>O: RefreshStatus fold commits the delivered status event
 ```
 
-*Caption: the REST/EVE send path — HTTP auth, the direct-send and queue-send branches, the `sendForResult`/`sendWithOutcome` machine outcome that decides 503-vs-200, and the shared durable callback tail that updates the ledger and UI.*
+*Caption: the REST/EVE send path — HTTP auth, the direct-send and queue-send branches through the single `sendWithOutcome` funnel, the 202/503 machine outcome, and the shared durable callback tail that writes the segment ledger, folds the provider status, and commits `MESSAGE_STATUS_CHANGED` into the durable event outbox.*
 
 ## Two scheduling paths (both survive reboot)
 
@@ -257,7 +293,9 @@ The central policy decision: **vendor non-OK SENT codes must never be written to
 5. still collecting SENT callbacks → `STATUS_PENDING`;
 6. else (fully sent, delivery reports gapped or disabled) → `STATUS_NONE`.
 
-After writing `STATUS` to the provider, the receiver emits `MessageMutation.RefreshStatus` through `TelephonySyncCoordinator` — a targeted O(1) re-read + upsert of that one message into the Room shadow, replacing the old full-provider-scan path.
+After writing `STATUS` to the provider, the receiver emits `MessageMutation.RefreshStatus` through `TelephonySyncCoordinator` — a targeted O(1) re-read + upsert of that one message into the Room shadow, replacing the old full-provider-scan path. Since the PR-02 durable-outbox wiring, that same `RefreshStatus` mutation does **one more thing in the same Room transaction**: it builds a `GatewayEventFactory.messageStatusChanged(...)` row and commits it into the durable `gateway_event_outbox` table (`INSERT OR IGNORE`, deduped on the deterministic `eventUuid` derived from kind + provider identity + date). This is the **`MESSAGE_STATUS_CHANGED`** event — the PR-03 "status half" of the durable pipeline, which is live today and does not depend on the `ENQUEUE_ALL_SENDS` flag. The `EventUploader` worker is the only thing that transmits it (claim → POST `/api/v1/agent/events/batch` → per-eventUuid partial ACK, retry, or dead-letter). The same transactional-commit pattern also applies to `MESSAGE_CREATED` (new messages), `MESSAGE_DELETED`, and `THREAD_READ` — every cloud event is committed atomically with the Room row it describes, so a crash between the two can never lose one without the other.
+
+Because the `eventUuid` is deterministic on `(kind, source, providerId, dateMs)`, a provider re-report of the *same* status at the *same* date is a free no-op dedupe — the outbox never double-queues a status transition, which is what makes the "durable status outbox" half of the PR-03 steady state safe against the redelivered/duplicated callbacks the receiver is already built to absorb.
 
 ### Multipart segment accounting
 
@@ -272,21 +310,24 @@ The ledger is deliberately kept **out of the sync mirror** (it is app-owned tele
 
 ## UI and Room updates
 
-The send's effect on the UI is two-channel:
+The send's effect is three-channel (two of them move the UI; the third is the durable cloud mirror):
 
-- **Instant (event bus).** `SmsSender` emits `OutgoingSent` right after persisting. `HomeViewModel` collects it to lift the thread to the top with the new snippet, and an open `ConversationViewModel` appends the row (`appendLiveMessage`) so a send produced outside the screen (REST, queue, notification reply) still appears live.
+- **Instant (event bus).** `SmsSender` emits `OutgoingSent` right after persisting (inside `directSend`, so it fires exactly once no matter which entry point ran the funnel). `HomeViewModel` collects it to lift the thread to the top with the new snippet, and an open `ConversationViewModel` appends the row (`appendLiveMessage`) so a send produced outside the screen (REST, queue, notification reply, GMweb command) still appears live.
 - **Durable (provider → Room).** The provider row is the source of truth. `SmsContentObserver` / `TelephonySyncCoordinator` mirror provider changes into the Room shadow; the status receiver's `RefreshStatus` mutation is the targeted update that moves a row from `PENDING` to sent/delivered/failed in the shadow without a full rescan.
+- **Durable (Room → cloud).** In the same transaction as the above, the status change is also committed into `gateway_event_outbox` as a `MESSAGE_STATUS_CHANGED` event and drained to GMweb by `EventUploader`, so the remote mirror sees the modem-level status even if the provider/Room path is later rebuilt from scratch.
 
 ## Failure and durability semantics
 
-- **Dispatch failure** (modem refuses before any callback) → `dispatch` writes `STATUS_FAILED`, the machine caller sees `Rejected`/`null` (503 / `FAILED`), the interactive caller sees a toast.
+- **Dispatch failure** (modem refuses before any callback) → `dispatch` writes `STATUS_FAILED`, the machine caller sees `Rejected`/`null` (503 / `FAILED` in the queue), the interactive caller sees a toast, and — when the command is tracked durably (flag on, or a GMweb `SEND_SMS`) — the `remote_commands` row is marked `FAILED`.
 - **Modem callback, non-OK** → never `STATUS_FAILED`; the row stays on the sent floor (`STATUS_NONE`) and the diagnostic code is logged.
-- **Reboot** → WorkManager re-fires both scheduling paths; `GatewayServer` (and with it `EveSmsQueue`) is re-armed by `BootGatewayReceiver` when the user left the gateway enabled, re-checking consent.
+- **Reboot** → WorkManager re-fires both scheduling paths; `GatewayServer` (and with it `EveSmsQueue`) is re-armed by `BootGatewayReceiver` when the user left the gateway enabled, re-checking consent; `EventUploader` runs `recoverSending()` first so outbox rows left `SENDING` by a crash return to `PENDING`.
 - **Process death mid-EVE-send** → a record left `ACTIVE` is re-queued to `QUEUED` on boot, so it is retried rather than lost.
+- **Process death around a durable command** → a `remote_commands` row is durable in Room, so it survives death; the atomic `RECEIVED→ACCEPTED` claim guarantees only one executor ever runs it, and a lost GMweb ack does not re-execute (the durable row is the truth, `ackIfTerminal` just re-reports it). Note the residual PR-03 gap: without a drain executor, a *locally* queued-but-never-claimed command (flag on) is not independently re-executed after death — the strategic poller re-drives only rows it claims from GMweb.
 
 ## Configuration and operations
 
 - **`MessagingPreferences`** (prefs `messaging_prefs`) drives the funnel: `deliveryReportsEnabled` (default ON — off means no DELIVERED `PendingIntent`s, so the row can never leave the sent floor), `sendSubscriptionId` (default UNSET = system default SIM), `smscAddress` / per-SIM manual SMSC (strict user-intent: an unchosen address must not override the SIM's own SMSC), and the rate-limit trio `rateLimitEnabled` (default OFF), `rateLimitCount` (default 10), `rateLimitWindowMin` (default 1).
+- **`GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS`** — the PR-03 rollout flag (`@Volatile`, default `false`). Off = the shipped three-method funnel with direct `SmsManager` hand-off; on = `sendWithOutcome` enqueues durably into `remote_commands` before executing. Flipping it on is gated on green process-death tests; it is a temporary compatibility surface, not a permanent setting.
 - **Gateway** — the API key, port, and bind are `GatewayPreferences`; `GET /ready` reports readiness as the conjunction of server-listening, default-SMS-role held, and `EveSmsQueue` running.
 - **`SendRateLimiter`** is in-memory only (per-app-lifetime window, which is deliberate — operators count short bursts, not historical totals).
 
@@ -299,6 +340,8 @@ The send's effect on the UI is two-channel:
 
 - [Outgoing Send Pipeline](/openwiki/architecture/outgoing-messaging.md) — the static component anatomy this workflow walks.
 - [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md) — the full endpoint table, error codes, and queue reference.
+- [Durable Gateway Sync](/openwiki/architecture/durable-gateway-sync.md) — the `remote_commands` command inbox, `gateway_event_outbox`, and `RemoteCommandEntity`/guarded lifecycle this page's PR-03/PR-02 sections draw on.
+- [GMweb Pull Bridge](/openwiki/integrations/gmweb-pull.md) — the `OutboxPoller` compatibility transport and the `SecureCommandPoller` strategic command transport in more depth.
 - [Data model](/openwiki/architecture/data-model.md) — the `send_segments` entity, the Room shadow, and the `TelephonySyncCoordinator` mutation channels.
-- [Gateway service](/openwiki/architecture/gateway-service.md) — the foreground service and `ConnectionSupervisor` that host the server, queue, and poller.
+- [Gateway service](/openwiki/architecture/gateway-service.md) — the foreground service and `ConnectionSupervisor` that host the server, queue, outbox uploader, and both GMweb pollers.
 - [Incoming Message Pipeline](/openwiki/workflows/incoming-message-pipeline.md) — the mirror-image inbound path sharing the same provider/Room state.
