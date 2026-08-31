@@ -23,6 +23,11 @@ import com.autonomousone.messages.BuildConfig
  *    silently missing on fresh installs).
  *  - FTS4 full-text search over message bodies (360K-scale search no longer
  *    loads every row into Kotlin).
+ *
+ * v7 adds (PR-01 / Messaging Platform durability foundation, see docs/adr/):
+ *  - remote_conversation_map, gateway_event_outbox, remote_commands,
+ *    remote_command_executions, sync_cursors — all ADDITIVE (no rebuilds);
+ *    gateway payload columns are crypto-friendly opaque blobs from day one.
  */
 @Database(
     entities = [
@@ -30,9 +35,14 @@ import com.autonomousone.messages.BuildConfig
         ConversationEntity::class,
         SyncStateEntity::class,
         MessageFts::class,
-        SendSegmentEntity::class
+        SendSegmentEntity::class,
+        RemoteConversationMapEntity::class,
+        GatewayEventOutboxEntity::class,
+        RemoteCommandEntity::class,
+        RemoteCommandExecutionEntity::class,
+        SyncCursorEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -42,6 +52,11 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun syncStateDao(): SyncStateDao
     abstract fun messageFtsDao(): MessageFtsDao
     abstract fun sendSegmentDao(): SendSegmentDao
+    abstract fun remoteConversationMapDao(): RemoteConversationMapDao
+    abstract fun gatewayEventOutboxDao(): GatewayEventOutboxDao
+    abstract fun remoteCommandDao(): RemoteCommandDao
+    abstract fun remoteCommandExecutionDao(): RemoteCommandExecutionDao
+    abstract fun syncCursorDao(): SyncCursorDao
 
     companion object {
         @Volatile
@@ -219,6 +234,33 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7: PR-01 durability tables — ADDITIVE only (fresh CREATEs;
+         * text must match the KSP-generated 7.json exactly, pinned by
+         * GatewaySyncSchemaTest). Defaults live in the Kotlin entities, so
+         * no DEFAULT clauses here (same pattern as MIGRATION_4_5).
+         */
+        internal val UPGRADE_TO_V7_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `remote_conversation_map` (`conversationId` TEXT NOT NULL, `threadId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`conversationId`))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_remote_conversation_map_threadId` ON `remote_conversation_map` (`threadId`)",
+            "CREATE TABLE IF NOT EXISTS `gateway_event_outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventUuid` TEXT NOT NULL, `eventType` TEXT NOT NULL, `aggregateId` TEXT NOT NULL, `sequenceLocal` INTEGER NOT NULL, `ciphertext` BLOB NOT NULL, `encoding` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL, `cryptoVersion` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `attemptCount` INTEGER NOT NULL, `nextAttemptAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `serverSequence` INTEGER NOT NULL, `ackedAt` INTEGER NOT NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_gateway_event_outbox_eventUuid` ON `gateway_event_outbox` (`eventUuid`)",
+            "CREATE INDEX IF NOT EXISTS `index_gateway_event_outbox_state_nextAttemptAt` ON `gateway_event_outbox` (`state`, `nextAttemptAt`)",
+            "CREATE INDEX IF NOT EXISTS `index_gateway_event_outbox_aggregateId` ON `gateway_event_outbox` (`aggregateId`)",
+            "CREATE TABLE IF NOT EXISTS `remote_commands` (`commandId` TEXT NOT NULL, `type` TEXT NOT NULL, `ciphertext` BLOB NOT NULL, `encoding` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL, `cryptoVersion` INTEGER NOT NULL, `signature` BLOB NOT NULL, `senderDeviceId` TEXT NOT NULL, `issuedAt` INTEGER NOT NULL, `receivedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `nonce` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `state` TEXT NOT NULL, PRIMARY KEY(`commandId`))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_remote_commands_idempotencyKey` ON `remote_commands` (`idempotencyKey`)",
+            "CREATE INDEX IF NOT EXISTS `index_remote_commands_state_receivedAt` ON `remote_commands` (`state`, `receivedAt`)",
+            "CREATE TABLE IF NOT EXISTS `remote_command_executions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `commandId` TEXT NOT NULL, `attempt` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, `finishedAt` INTEGER NOT NULL, `result` TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS `index_remote_command_executions_commandId` ON `remote_command_executions` (`commandId`)",
+            "CREATE TABLE IF NOT EXISTS `sync_cursors` (`direction` TEXT NOT NULL, `lastSequence` INTEGER NOT NULL, `lastServerAck` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`direction`))"
+        )
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V7_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -230,7 +272,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never
