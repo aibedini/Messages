@@ -5,7 +5,7 @@ description: "The MessagesDatabase Room schema (v6, messages.db) that backs the 
 tags: [room, database, data-model, sync, full-text-search, migration, sms, mms, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-e622d3f293f5b27df77aca9e
     resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json

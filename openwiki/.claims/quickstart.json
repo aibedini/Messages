@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a3cab005a3d158a349c7eb283c6173b1e0544deca094c7f29579b6c0b9a4eca5",
+  "pageVersion": "sha256:07e44a2b509df491909f29588833469ee646cfe400dbea504490219db37cf4ed",
   "claims": [
     {
       "id": "claim_d76361c26033445fbda64d1a042a5a42",
@@ -170,7 +170,7 @@
     },
     {
       "id": "claim_3863b4633a614f039d61adc85dd128ce",
-      "statement": "GatewayServer is a hand-rolled ServerSocket-based HTTP server (Android lacks com.sun.net.httpserver), using a single-thread acceptor and an 8-thread handler pool so slow handlers cannot starve accept(); it serves the /api/v1/* endpoints (sms/send, mms/send, sms/inbox, sms, status, sms/schedule CRUD), the EVE provider contract paths (/send, /send/status/{id}, /send/cancel/{id}, /send/capacity), and unauthenticated /health plus /ready readiness checks.",
+      "statement": "GatewayServer is a hand-rolled ServerSocket-based HTTP server (Android lacks com.sun.net.httpserver), using a single-thread acceptor and an 8-thread handler pool so slow handlers cannot starve accept(); it serves the /api/v1/* endpoints (sms/send, mms/send, sms/inbox, sms, status, sms/schedule CRUD), the EVE provider contract paths (/send, /send/status/{id}, /send/cancel/{id}, /send/capacity), the unauthenticated /health probe, and the auth-required /ready readiness check.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L230-L318",
@@ -179,6 +179,10 @@
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L28-L48",
           "version": "repo-lines-v1:sha256:1348172233a8b0880844259f07e519aa2d477461cc6b759e2dff2a39653c7e96:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViMDdmZjM5OTU5MTdlZDUyODk2OTIwNjUwNzVjNjViZjZmMGM5Mjc4MDE3MTYyMGNjMjk2MmYwZWVhYjBmMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2NmM3MTc3ODBjMDc2NDlhNWI3NGU5ZmYyYjVjOGM2ZWE3MTNlOGJjZDI3YmJmZmUzZTM2YTRjNzdjMDQ4MGYifQ"
+        },
+        {
+          "resource": "repo://docs/api/openapi.yaml#L80-L109",
+          "version": "repo-lines-v1:sha256:a6c020a85afb9df9d0558d355a99f2a644fcc3ab2e5d2a46b90823eba6515404:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNGQ5NTdmMjQ4MThkNTAwYmVkYjVjNDc1MzdlMTdmY2JjMDZjNzlhNmE1MDg1MGMyNmI4YjFjOGZlMWZiNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmIyYzI5YzQ5Y2NjZmVhNTIzNTRhNWEyMmQ2MWE5N2QzYTJkNTA2NWM2YTNjNTRlYmNjYjE3YjYzMThlYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZDVkYjU2YzY3YzNiMzA5ODZkYjg1MTQzMGI4YTlmNTI3YzM5NGU3ZWYxODlkMWIyMmEyMjNmZTgwYWZmYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzNTVjNDQ5ZDQwMTMzNzc5NmNjMGI3ODljMDM1N2FmODA1NzQ1ZmJiMzYyZjVmY2Q5NjdkNmRjNjdjYjg5OGIifQ"
         }
       ]
     },
@@ -296,23 +300,23 @@
     },
     {
       "id": "claim_f50b4ff6db604b8392d7a59e967ed7bd",
-      "statement": "Room schemas are exported to app/schemas via the KSP room.schemaLocation argument (exported JSON currently spans versions 2 through 6, matching MessagesDatabase version 6), and the schema JSON files are build artifacts of history that must never be hand-edited; destructive fallback migration is intentional while the shadow remains non-authoritative and rebuildable from the provider.",
+      "statement": "Room schemas are exported to app/schemas via the KSP room.schemaLocation argument (exported JSON currently spans versions 2 through 7, matching MessagesDatabase version 7), and the schema JSON files are build artifacts of history that must never be hand-edited; since v2.6.10 the destructive fallback migration is debug-only, so a release build with a missing migration path fails loudly instead of silently wiping the local read model, while the shadow remains non-authoritative and rebuildable from the provider.",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L91-L95",
           "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
         },
         {
-          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json",
-          "version": "repo-file-v1:sha256:d5024a3e0d190e6f591d1726fc921cbd4653b3a28a3bcbfeb353633eb3fd9f73"
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json",
+          "version": "repo-file-v1:sha256:5a4fc7fd483bdd24f96146d4cce3253e7edba6afb038262373c996c17790be04"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
-          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L269-L286",
+          "version": "repo-lines-v1:sha256:e736d2384ffbe309cc895a2819400b48d9a0f5e772aa057055e1921bd6a95561:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
         },
         {
-          "resource": "repo://docs/room-migration-strategy.md#L1-L24",
-          "version": "repo-lines-v1:sha256:b0444d7bfc3de73ff656fe3cff723f274e81738881d8087760d30248aa3e1345:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MmVhZWNiNWY4MjI1YjkzNWQ5YjNlODJmZWZhOTliOTAwYjI4YTk3YzMwNmI4NjhiYTdhZjZkNDk4M2JjMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExNjc2NTUwOTNkODY3NGMxMmRlODEwYzI1MGM3NjVlZjMzYmU3ZTAwNGY3ODcwNmE5Nzk3ODc5MDZlMGI4NDEifQ"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L32-L47",
+          "version": "repo-lines-v1:sha256:7bb50a0b272f30247f2cf55ac7a07307b7e7615536c32e1823ff52591f696b27:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MzI0MThhZmM5ZWJkMTYxMjhmMTMxYzNmMDJkNGEzMTIyNDZkYjExZmUyNjdkYjYwMWE5ODc5OGIwOWVmOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
         }
       ]
     },
@@ -347,6 +351,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

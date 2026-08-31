@@ -5,7 +5,7 @@ description: "The inbound HTTP surface of the Messages app: GatewayServer's /api
 tags: [rest-api, http-gateway, eve, priority-queue, idempotency, api-key-auth, openapi, sms]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-57542ad188e6772969dc5b89
     resource: repo://app/src/main/java/com/autonomousone/messages/eve/EveSmsQueue.kt

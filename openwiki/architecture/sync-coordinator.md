@@ -5,7 +5,7 @@ description: "How Telephony provider changes become Room rows: SmsContentObserve
 tags: [telephony, sync, room, content-observer, content-provider, dual-channel, backfill, cutover, shadow-read-model, watermark, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-c4ec49afa1d2ec40206e27c3
     resource: repo://app/src/main/java/com/autonomousone/messages/data/ChangeRouter.kt
@@ -45,7 +45,7 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/SmsObserverTimingTest.kt
   - id: openwiki-source-f96fdb136763ec99fbc9c7e5
     resource: repo://docs/architecture-v2-sync.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 Telephony is the single source of truth for SMS and MMS; the app's Room database is a **shadow read model** that must mirror it fast enough to serve the UI. `TelephonySyncCoordinator` is the component that reconciles the two, and its central design decision is that **two very different kinds of change must travel on two completely separate channels** so that a realtime event is never throttled, merged, or dropped by the recovery machinery that handles the rest. The realtime events — a single message arriving, a delivery status callback, a row being deleted — must land in Room *exactly once*, one for one, in O(1). The recovery events — startup, crash, and the observer firing without enough information to target a row — can be collapsed, because a third "sync now" request arriving while one is already queued is pure redundancy. Conflating the first class with the second is the bug this architecture exists to prevent.
@@ -66,12 +66,39 @@ The value types are split the same way in `MessageMutation.kt`:
 - `MessageMutation` — `Upsert(source, message)`, `Delete(source, providerId, threadId?)`, `RefreshStatus(source, providerId)`, `MarkThreadRead(threadId)`, `DeleteThread(threadId)`. Identity is the composite `(source, providerId)` that mirrors `MessageEntity`'s primary key. The docs are explicit: *NEVER conflated — every insert, delete, and status change must reach Room exactly once.*
 - `ReconcileRequest` — `FullSync` (data object) and `ForThread(threadId)`. *CONFLATED — N nudges collapse into 1 execution.*
 
+```mermaid
+flowchart TD
+    subgraph Producers
+        Obs["SmsContentObserver (main looper, 150 ms coalesce)"] --> CR["ChangeRouter.route"]
+        Disp["IncomingMessageDispatcher.dispatch (default-app receiver)"]
+        Status["SmsStatusReceiver (delivery callback)"]
+    end
+    CR -->|"row id in URI"| MutQ["mutations channel - UNLIMITED, never conflated"]
+    CR -->|"null or id-less URI"| Hint{"recent local mark-read? (LocalProviderWrites)"}
+    Hint -->|"yes, ForThread(threadId)"| ReconQ["reconciles channel - CONFLATED, N nudges to 1"]
+    Hint -->|"no, FullSync"| ReconQ
+    Disp -->|"mutate(Upsert)"| MutQ
+    Status -->|"mutate(RefreshStatus)"| MutQ
+    Sync["Home performLoad and silentRefresh (syncNow)"] -->|"FullSync applied inline, not via channel"| AR
+    GW["Gateway online (ConnectionSupervisor)"] -->|"ensureLoopRunning - starts the loop only"| LoopNode
+    MutQ --> LoopNode["coordinator loop on Dispatchers.IO, started once"]
+    ReconQ --> LoopNode
+    LoopNode --> AM["applyMutation - one Room transaction per mutation"]
+    LoopNode --> AR["applyReconcile - per-source window sync plus detached backfill"]
+    AM --> Room["Room shadow tables"]
+    AR --> Room
+```
+
+Caption: the two coordinator channels and every feeder — the observer's targeted path plus the receiver and status dispatch feed the UNLIMITED mutations channel; the id-less observer fallback feeds the CONFLATED reconciles channel (downgraded to `ForThread` when `LocalProviderWrites` claims a recent mark-read); Home's `syncNow` applies a `FullSync` inline; the gateway starts the loop without queueing work.
+
+**Lifecycle and entry points.** The loop starts lazily: both `mutate()` and `reconcile()` call `ensureLoop()` first, so the first queued item wakes the consumers. The loop can also be started without queueing work — `GatewayService` wires `ConnectionSupervisor`'s `startSync` component to `ensureLoopRunning()` when the gateway comes online. Note that `syncNow()` differs from `reconcile(FullSync)`: it calls `applyReconcile(FullSync)` directly on the calling coroutine rather than enqueuing onto the CONFLATED channel, and Home's Room path relies on that — `performLoad`/`silentRefresh` call `coordinator.syncNow()` before reading conversations. `requestSync()` remains as a backward-compat alias for `reconcile(FullSync)`.
+
 ## The observer and ChangeRouter: extracting the cheapest operation
 
 `SmsContentObserver` is a `ContentObserver` bound to the main-looper `Handler`. It implements **leading-edge dispatch**: the first change fires the callback immediately (no debounce delay, so the UI is millisecond-live), and any further change inside a `COALESCE_MS = 150 ms` window is collapsed into a single **trailing** call. The trailing runnable fires `onChange(null)` — a `null` URI is the sentinel meaning "unknown change type → reconcile." Two implementation notes that matter for correctness:
 
 - `onChange(selfChange, uri)` must **not** call `super`, because the base `ContentObserver` delegates `onChange(selfChange, uri)` back into `onChange(selfChange)`, which this class also overrides — calling super would double-dispatch every provider change.
-- The observer is registered per-viewmodel. Both `HomeViewModel` and `ConversationViewModel` call `SmsRepository.registerObserver(observer)` in `init` and `unregisterObserver` on `onCleared`. `registerObserver` attaches the same `ContentObserver` to **both** `Telephony.Sms.CONTENT_URI` and `Telephony.Mms.CONTENT_URI` (MMS registration is wrapped in its own `try/catch`).
+- The observer is registered per-viewmodel. Both `HomeViewModel` and `ConversationViewModel` call `SmsRepository.registerObserver(observer)` in `init` and `unregisterObserver` on `onCleared`. `registerObserver` attaches the same `ContentObserver` to **both** `Telephony.Sms.CONTENT_URI` and `Telephony.Mms.CONTENT_URI` (MMS registration is wrapped in its own `try/catch`). The two viewmodels then diverge on what they do with the URI: `HomeViewModel` bumps `ThreadMessageCache.generation` and routes the URI through `ChangeRouter`, while `ConversationViewModel` ignores the URI and triggers its bounded merge-based `refresh()` (its pager already runs a targeted tail query).
 
 `ChangeRouter.route(context, uri)` is the decision point. It runs on the main looper (invoked from the observer), so it **must never do provider I/O inline** — every provider read is launched onto a `Dispatchers.IO` scope and the result is then queued to the coordinator:
 
@@ -168,12 +195,13 @@ The page-specific invariants the design is built to hold:
 - **Reconcile requests ARE conflated.** N nudges collapse into one bounded pass; only the latest matters.
 - **The coordinator is the single writer into Room.** Every path — the receiver hot path, the observer path, app-initiated mark-read/delete, and reconcile — funnels through `mutate`/`applyMutation` or the coordinator's shadow helpers; nothing else writes `messages`/`conversations`.
 - **`isShadowReady()` gates Room reads.** Room serves the UI only once **both** sources' initial windows are ready and the projection is rebuilt; before that (and on Room failure) every read falls back to the provider.
+- **No full rebuilds on the realtime path.** `fullRebuildConversations()` runs only during reconcile (and once at the end of the backfill crawl), never per message; the per-mutation `Upsert` maintains the conversation projection by signed delta, so a single arriving message costs O(1) and triggers no full scan, no full rebuild, and no thread-wide `countUnread`.
 
 ## Tests that pin the behavior
 
 - `ChangeRouterExtractIdTest` pins URI extraction: single-row `sms`/`mms` paths yield the id; table-level, non-numeric, blank, and `null` paths yield `null`; and **thread URIs are not row ids** (`//sms/thread/123` must return `null` so it is not read as `_ID`).
 - `LocalProviderWritesTest` pins the mark-read handoff: a note is claimed **exactly once** (a second claim misses), non-positive thread ids are never noted (so an address-only fallback can't downgrade a needed `FullSync` to nothing), entries expire outside the 2 s window, and the ring keeps the newest under flood.
-- `SmsObserverTimingTest` pins the observer's timing contract: the first change fires **synchronously with no debounce delay** (leading edge), and a burst of ten changes collapses to a single leading-edge callback.
+- `SmsObserverTimingTest` pins the observer's timing contract: the first change fires **synchronously with no debounce delay** (leading edge), and a burst of ten changes fires exactly one synchronous leading-edge callback (the other nine collapse into a single trailing call scheduled on the `Handler`, which the JVM test does not run).
 
 ## Related pages
 

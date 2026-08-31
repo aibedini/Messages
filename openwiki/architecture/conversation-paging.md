@@ -4,12 +4,14 @@ title: "Conversation Window and Keyset Pagination"
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-6bd690faeb48b8a379dfdcda
     resource: repo://app/src/main/java/com/autonomousone/messages/data/Daos.kt
   - id: openwiki-source-b394c571401a67cd53a9d162
     resource: repo://app/src/main/java/com/autonomousone/messages/data/TelephonySyncCoordinator.kt
+  - id: openwiki-source-5c5dcb78f0fa201df623464b
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/ConversationCache.kt
   - id: openwiki-source-311ed32a68df077c7ffde611
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
   - id: openwiki-source-a59548250319a041fcd141d5
@@ -36,7 +38,7 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/ThreadPagerTest.kt
   - id: openwiki-source-196ad5cc9eeda1a10ee88698
     resource: repo://app/src/test/java/com/autonomousone/messages/ThreadSnippetTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 
@@ -60,8 +62,11 @@ either time direction. Three layers cooperate:
 - `ThreadMerge` / `ThreadMessageCache`
   (app/src/main/java/com/autonomousone/messages/repository/) are pure helpers:
   merge-based window updates that dedupe by id (or by body + 5 s time
-  proximity) so optimistic sends collapse into provider-confirmed rows, and a
-  per-process LRU cache that makes re-opening a chat paint instantly.
+  proximity) so optimistic sends collapse into provider-confirmed rows, and an
+  in-memory LRU cache that makes re-opening a chat paint instantly.
+  `ConversationCache` is the sibling of that cache at the *list* level — a
+  persistent disk snapshot of the Home conversation rows, not of one thread's
+  window.
 
 The UI layer, `ConversationListMapper`
 (app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationListMapper.kt),
@@ -171,6 +176,26 @@ live incoming rows) writes into the entry **without** bumping the generation:
 the entry stays "fresh" so the next open still paints instantly, and the next
 provider refresh normalizes ids and dates.
 
+### The Home-list sibling: `ConversationCache`
+
+`ConversationCache`
+(app/src/main/java/com/autonomousone/messages/repository/ConversationCache.kt)
+is the list-level twin of `ThreadMessageCache`, solving the same
+"render instantly" problem one level up: `HomeViewModel.performLoad` has no
+fast "list my threads" provider query, so the conversation list is snapshotted
+to disk (a private `SharedPreferences` file) after every successful load and
+hydrated from it at app start — no skeleton, no "syncing" flash. The snapshot
+is a compact JSON array of exactly the fields the list renders (`id`,
+`threadId`, `sender`, `message` truncated to 120 chars, `date`, `unread`,
+`type`), capped at the newest 500 threads with a `savedAt` timestamp; a
+`MAX_AGE_MS = 7 days` constant defines staleness. `HomeViewModel` saves after
+both the Room-first path and the provider `getConversationsFast` path of
+`performLoad`, and after `silentRefresh`; the provider scan then runs behind
+the painted snapshot and swaps in fresh data (`replaceConversations`,
+atomic) when it completes. Like the thread cache, this is a paint-first
+revalidation layer over the provider, not a source of truth — the Telephony
+provider (and its Room shadow) remain authoritative.
+
 ## Window modes and boundary jumps
 
 `ConversationWindowMode` (LATEST / OLDEST) declares which end of the thread
@@ -221,11 +246,14 @@ for the LATEST window only, and caching an oldest page here would re-open this
 thread years in the past tomorrow.
 
 **Scroll commands.** `ConversationScrollCommand` (`Latest` / `Oldest`, each
-carrying a message id) is a one-shot intent emitted **only after a window
-replace** — ordinary pagination never emits one, because in reverse layout a
-merged page grows at index 0 (visual bottom) and the row being read never
-slides. The commands flow through a capacity-1 `SharedFlow` with
-`DROP_OLDEST` (a burst keeps only the newest follow request).
+carrying a message id) is a one-shot intent. The ViewModel emits it after a
+window **replace** (jump-to-latest from OLDEST mode, jump-to-oldest), in
+LATEST mode where a jump-to-latest is just a scroll with no replace, and when
+a live row lands while the user is following the newest edge (auto-follow).
+Ordinary pagination never emits one, because in reverse layout a merged page
+grows at index 0 (visual bottom) and the row being read never slides. The
+commands flow through a capacity-1 `SharedFlow` with `DROP_OLDEST` (a burst
+keeps only the newest follow request).
 `ConversationScreen` (app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt,
 L397-L444) consumes them: `Latest` waits for the target row to be composed
 and laid out (1 s timeout), teleports to just short of index 0 if far away,
@@ -316,6 +344,13 @@ is your own send is by definition read.
   historical messages and can be arbitrarily incomplete; "Go to first
   message" must be correct even mid-backfill. (The Room shadow is used only
   for the *newest* instant-open window, and only once fully ready.)
+- **Read state is an overlay, never cache invalidation.** Every window
+  replace and refresh paints rows with `unread = false` and calls
+  `repository.markThreadAsRead`, mirroring the read flag into the Room shadow
+  (`markThreadReadInShadow`) and the Home list (`SmsEventBus.emitThreadRead`)
+  — but it deliberately does **not** `ThreadMessageCache.invalidate`:
+  invalidating on read would force a provider read (and a "Reading
+  messages…" flash) on every re-open of a chat.
 
 ## Tests
 

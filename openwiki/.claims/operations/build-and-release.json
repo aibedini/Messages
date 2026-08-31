@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:ba908dbaad97d6db661b46e814c716c33292d26ea0528e60b9d8911b54d63864",
+  "pageVersion": "sha256:e4e67769246edbcc3ba0ec261da70b0bb69e4d3f90fbc6db010f7238c5768bc4",
   "claims": [
     {
       "id": "claim_b4438e2d50964b4e98dccdfed96c05ee",
@@ -306,11 +306,15 @@
     },
     {
       "id": "claim_9a6c4237a8764e69af030b914b45bdbf",
-      "statement": "KSP exports Room schemas to app/schemas via the room.schemaLocation argument so future schema versions can ship real Migration objects instead of destructive wipes, and the exported schema JSON files are committed build artifacts of history that must never be hand-edited (per docs/room-migration-strategy.md).",
+      "statement": "KSP exports Room schemas to app/schemas via the room.schemaLocation argument (exportSchema = true on MessagesDatabase); the exported schema JSON files (currently 2.json through 6.json) are committed schema-history artifacts — the record of how messages.db evolved — not hand-editable build inputs, and regenerating them overwrites the history (per docs/room-migration-strategy.md).",
       "evidence": [
         {
           "resource": "repo://app/build.gradle.kts#L91-L95",
           "version": "repo-lines-v1:sha256:7e590f6ad4382aa7e7366acefa98c66013dcee9b98967d3efadc516b54081726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk3ZDc3YWM4MmM2ZWFiOGEzZjYzNzIxMDZkMTc2YjdiMTkxNTk4ZjEyNjViNDRiYTQ1NDc1ZDM0MmFjNjg4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTIyZmFhNTM1YmQyZWEzZDUyZTc0MWVkNDU0NDM1YjdmZTQ5ZTgzNTg2ZTk0M2Q5OGQ4MmJiZmIyNGQxZjVjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTliMDIyMDA3OTE4N2RmYjI2YTFjZTE4ZWNjMGIxMjMxMzUzMmY3YTUxNzlmNjliYWM4Y2EzNjliM2VjZWY4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEyOTVjYzgwZmM0NjRlNjYwZWJlZDg3ZjBjZThiYzg0ZjA3MDM2Zjg2ZjU4Yjk2NDI0MjA4YTM5MTAyZjgyYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L27-L37",
+          "version": "repo-lines-v1:sha256:e3921c807976e41be0ddf31c1880a921fc717555aa63135fb0acbb6d3eeb166c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjODE0ZDBkNWExODRkNmQyMzUwNmRlNjIyYmNlZGM3NDJiYmRjNWUzY2I3ZTgxNGZkN2YwYjUyYWE3ODg0OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMzllMDIyZTBkODU0MTIwMDAzZDc5MGMyOGI3NTk2MmVkZDMwMzc1NmQ1MTMzM2RmNzQ1Y2ZiODZlYTExY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZmQ1YjMxM2E2NGM0OWNiZmE4ZTc4ZTBlMDkxODVlMmU4MjA1NGYzZmI0MjU4YjM0Y2ZiYzFlYzA3NDU0NWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmOWQwZDRhYTIyM2I4MjVkNDY5ZGU0OGU0NzhhNjRkZDI0YWIzYzc1YThmYzUzNmU4ZmYwODFiMDg3ZmI2NGQifQ"
         },
         {
           "resource": "repo://docs/room-migration-strategy.md#L26-L33",
@@ -331,10 +335,28 @@
           "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
         }
       ]
+    },
+    {
+      "id": "claim_8eb6f53dd6c04ce182812db17d937675",
+      "statement": "MessagesDatabase is at Room version 6 and ships real Migration objects (MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) wired via .addMigrations(...), with the destructive fallback fallbackToDestructiveMigration(dropAllTables = true) applied only in debug builds — in release a missing migration must fail loudly in QA rather than silently wipe the local read model (send_segments ledger, sync state, projections) and force a full Telephony re-crawl.",
+      "evidence": [
+        {
+          "resource": "repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json",
+          "version": "repo-file-v1:sha256:d5024a3e0d190e6f591d1726fc921cbd4653b3a28a3bcbfeb353633eb3fd9f73"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L227-L244",
+          "version": "repo-lines-v1:sha256:63e7297b96dea011ab3449f86d96e19f4a3ee9920d9e5997c285816e17a5395b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTQxOTM0MzZkMjFjMTQ2ZjcxM2YwMWM4OTkyYjBmYjRkNWE3MTc3Yjk0YjEwZGYyZjQ5NmY2YjQ0NzFhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNTFiZmFiY2ZiNmQ4OWZkOWY0ZTNiN2JjNGExNzRmZDkwYzk5ODE4NmU0ZmRlMmM4ZmEzNGU2ZDVjMjkzYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkY2U3MzUwODhmY2NjN2NmOWE5YTYwZTRkNjQ5ZjdiMzI3MTdjMThlNjg1NjZiZDliNzEyYjYwMTNiMzgxZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYmNjYjkyZTI2MzkxZTkyZmNlMGYzMmM5MzEyMDcxY2JiYWFlYTg3MTA2YzEwNmI4YTE2NmU2YTBjYzAwODIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt#L35-L35",
+          "version": "repo-lines-v1:sha256:16c156512f766232ee14cb6beec74be5d42f5278a62a6755336f0bdd973c2dd4:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZjMTU2NTEyZjc2NjIzMmVlMTRjYjZiZWVjNzRiZTVkNDJmNTI3OGE2MmE2NzU1MzM2ZjBiZGQ5NzNjMmRkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZjMTU2NTEyZjc2NjIzMmVlMTRjYjZiZWVjNzRiZTVkNDJmNTI3OGE2MmE2NzU1MzM2ZjBiZGQ5NzNjMmRkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzZhMmVjYjI1OTg5OWViNzhmMzkxMGM1YmZhNjQ2NDNlYWVhMWQwM2I5OGUwMzE3MGMxMDQ2OGNjZDA5NjM4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2ViZWVlZGI4MzQ1YTFmNmFkNjcyZmZlMmJmZGEyNGVhYTcyYzE3Yzc2Mjk2ZjdmNTA1MmI4MjE3MWM5ODNjOSJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

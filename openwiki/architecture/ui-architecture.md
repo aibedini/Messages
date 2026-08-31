@@ -5,7 +5,7 @@ description: "How the Messages app's single-activity MVVM shell is composed: Mai
 tags: [ui, navigation, app-shell, mvvm, compose, onboarding, app-lock, event-bus, single-activity, deep-linking, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -75,7 +75,7 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/navigation/NavigationRouteEncodingTest.kt
   - id: openwiki-source-ffe4163618bc30a113c169c8
     resource: repo://app/src/test/java/com/autonomousone/messages/OnboardingPolicyTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # UI, Navigation, and App Shell
@@ -153,7 +153,7 @@ The re-lock lifecycle is what makes it a *foreground* gate rather than a one-tim
 
 - `onPause` sets `SmsEventBus.isAppInForeground = false` and remembers `wasPausedForLock = true`.
 - `onStart` re-locks (`isLockedState = true`) **only** if `wasPausedForLock` is set, the lock is enabled, and biometrics are available. The `wasPausedForLock` flag exists so a config change (rotation) that recreates the activity *without* a prior `onPause` does not re-nag the user mid-session.
-- `LockScreen`'s Unlock button calls `MainActivity.requestUnlock(...)`, which shows the prompt and clears `isLockedState` on success; "Turn off" flips `AppLockPreferences.isEnabled = false`.
+- `LockScreen`'s Unlock button calls `MainActivity.requestUnlock(...)` (it only casts `LocalContext` to `MainActivity`); the activity's `onUnlock` callback clears `isLockedState` only on prompt success, and the "Turn off" button flips `AppLockPreferences.isEnabled = false` and clears the lock state.
 
 The lock composes in front of the navigation graph but *behind* nothing: `pendingShare`/`pendingNavigation` state (see below) survives the lock, so a notification deep-link tapped while locked is still honored after the user unlocks.
 

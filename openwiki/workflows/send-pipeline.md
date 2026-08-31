@@ -1,11 +1,11 @@
 ---
 type: workflow
-title: "Workflow: Sending (UI, REST, EVE, Scheduled)"
-description: "End-to-end trace of every send entry point (chat UI, long-press schedule, REST /api/v1/sms/send, EVE /send queue, GMweb pull) through the SmsSender funnel, provider dispatch, durable SENT/DELIVERED callbacks, the send_segments ledger, and the UI/Room updates — including the two reboot-proof scheduling paths and the 503-vs-200 machine-outcome contract."
-tags: [sms, outgoing-message, send-pipeline, sms-sender, status-callback, eve, gateway, rest-api, scheduled-sends, workmanager, rate-limiting, telephony, ledger]
+title: "Workflow: Send Pipeline"
+description: "End-to-end trace of every outgoing send entry point (chat UI, long-press schedule, REST /api/v1/sms/send, EVE /send queue, GMweb pull, and the MMS branch) through the SmsSender funnel, provider dispatch, durable SENT/DELIVERED callbacks, the send_segments ledger, and the UI/Room updates — including the two reboot-proof scheduling paths and the 503-vs-200 machine-outcome contract."
+tags: [sms, mms, outgoing-message, send-pipeline, sms-sender, mms-sender, status-callback, eve, gateway, rest-api, scheduled-sends, workmanager, rate-limiting, telephony, ledger]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -25,6 +25,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/OutboxPoller.kt
   - id: openwiki-source-5503c08359fa0570d66c46a7
     resource: repo://app/src/main/java/com/autonomousone/messages/messaging/MessagingPreferences.kt
+  - id: openwiki-source-f8083bba129ec68a00b6cd27
+    resource: repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt
   - id: openwiki-source-f47a2668cd817415f8991735
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-b7eef8979c4295ba4471257d
@@ -51,12 +53,12 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt
   - id: openwiki-source-bd4d59d7a5eb9e8dccb3a0e2
     resource: repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
-# Workflow: Sending (UI, REST, EVE, Scheduled)
+# Workflow: Send Pipeline
 
-This page traces one outgoing SMS from the moment a person or a machine asks for it to the moment the device knows it was delivered. Four distinct doors can start a send — the chat UI, a long-press schedule in the UI, a REST `POST /api/v1/sms/send`, and the EVE `POST /send` queue (the latter shared with the GMweb pull bridge) — but all of them converge on one small funnel before they touch the modem: `SmsSender`, which **persists a row into the shared `Telephony.Sms` provider before dispatching**, resolves the user's SIM/SMSC/delivery-report preferences, splits the body into billable segments, and hands each segment to `SmsManager` with its own status `PendingIntent`. Modem results return later through a manifest-declared `SmsStatusReceiver`, which folds those callbacks into provider status via the pure `SmsStatusPolicy` and writes one row per segment into the `send_segments` ledger.
+This page traces one outgoing send from the moment a person or a machine asks for it to the moment the device knows it was delivered. Four distinct doors can start an SMS — the chat UI, a long-press schedule in the UI, a REST `POST /api/v1/sms/send`, and the EVE `POST /send` queue (the latter shared with the GMweb pull bridge) — but all of them converge on one small funnel before they touch the modem: `SmsSender`, which **persists a row into the shared `Telephony.Sms` provider before dispatching**, resolves the user's SIM/SMSC/delivery-report preferences, splits the body into billable segments, and hands each segment to `SmsManager` with its own status `PendingIntent`. Modem results return later through a manifest-declared `SmsStatusReceiver`, which folds those callbacks into provider status via the pure `SmsStatusPolicy` and writes one row per segment into the `send_segments` ledger. MMS is a **separate funnel** — `MmsSender` writes the message into `Telephony.Mms` and hands it to `SmsManager.sendMultimediaMessage`, bypassing `SmsSender` and its entire status/ledger tail (see [MMS: the separate funnel](#mms-the-separate-funnel)).
 
 The static anatomy of each component lives on [Outgoing Send Pipeline](/openwiki/architecture/outgoing-messaging.md); the external HTTP contract and error codes live on [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md); the Room/`send_segments` schema lives on [Data model](/openwiki/architecture/data-model.md); and the service/supervisor that hosts the server and queue live on [Gateway service](/openwiki/architecture/gateway-service.md). This page is the trace.
 
@@ -200,6 +202,39 @@ There are two independent "send later" systems, and the key distinction is **wha
 Both are durable across reboot because the **delivery job lives in WorkManager's persistent store**, which re-fires a pending `OneTimeWorkRequest` after a reboot or process death. The difference is the *record-keeping* layer: `ScheduledSms` keeps nothing of its own (WorkManager's store is the registry), while `GatewayScheduler` keeps a `SharedPreferences` index on top so REST clients can poll each schedule's fate (`scheduled → sent | failed | cancelled`) and so an idempotent replay works. That registry is also why `GatewayScheduler.SendWorker` re-checks the entry's status before sending: an entry cancelled while waiting becomes a no-op success, not a send.
 
 The fire-time `SmsSender` difference is subtle but real: the UI path's `send(...)` honors the user's rate limiter and can toast, whereas the gateway path's `sendForResult(...)` is silent and unthrottled — matching every other machine door.
+
+## MMS: the separate funnel
+
+MMS is **not** a branch of the `SmsSender` funnel — it is a parallel path through `MmsSender`, and it carries none of the SMS funnel's machinery. There are three doors into it: the composer's **image** attachment (`ConversationViewModel.sendImageMessage` → `MmsSender.sendImage`), the composer's **audio** attachment (`sendAudioMessage` → `MmsSender.sendAudio`), and the composer's **group text** branch (multiple recipients with `groupMessagingEnabled` on → `MmsSender.sendGroupText`, which creates one group `Telephony.Threads` thread for all recipients instead of N separate SMS). The REST gateway adds a fourth door: `POST /api/v1/mms/send` (`GatewayServer` → `MmsSender.sendImage`).
+
+Each `MmsSender` method writes the message into the shared `Telephony.Mms` provider — an `Mms` row (`MESSAGE_BOX_OUTBOX`, `MESSAGE_TYPE_SEND_REQ = 0x80`, resolved `THREAD_ID`), one `Addr` row for the FROM token plus one per recipient, and a `Part` row with its content (text written directly; images **downsampled and JPEG-compressed** to fit a ~900 KB carrier cap; audio copied through) — then calls `triggerSend`, which hands the row to the radio via `SmsManager.sendMultimediaMessage(context, mmsUri, null, null, null)` with a `null` MMSC location (the carrier's MMSC settings are used).
+
+The decisive difference is that **`triggerSend` passes `null` for the sent and delivered `PendingIntent`s**. An MMS send therefore:
+
+- produces **no `SmsStatusReceiver` callback** — the manifest-declared receiver is reached only by the explicit intents `SmsSender` builds, and MMS builds none;
+- writes **no `send_segments` row** — so an MMS send never counts toward the Home "N SMS today" chip (that counter is SMS-segment-only);
+- gets **no app-side `STATUS`/`DATE_SENT`** — delivery confirmation for MMS is the platform's job (the default-SMS-app MMS stack updates the `Telephony.Mms` row, which the provider-to-Room mirror picks up); the app never observes a modem-level MMS verdict;
+- applies **none of the SMS funnel's controls** — no rate limiter, no `sendSubscriptionId`/SMSC preference (the group-text and image paths pass `null` to `SmsSender` or never call it), no `SendOutcome`/`sendForResult` outcome plumbing. A failure surfaces only as the `false` returned by `sendImage`/`sendAudio`/`sendGroupText` when the provider insert or dispatch throws.
+
+`POST /api/v1/mms/send` is also a different *shape* of REST door than `/api/v1/sms/send`: it is **synchronous** (no queue, no 202/503 outcome contract — `sendImage`'s boolean maps to **200** `{"status":"success"}` or **500** `{"status":"failed"}`), and its `imageUrl` is hardened against SSRF: only `https://` URLs on **public** hosts are accepted (`resolveImageUri` downloads the image to the app cache, refusing `http://`, `content://` — which the UI paths still pass natively — and any host in a private/loopback/link-local range, including ULA `fc00::/7`), and the download is capped at 10 MB.
+
+```mermaid
+flowchart TD
+    UI["Composer (image / audio / group text)"] --> MS["MmsSender.sendImage / sendAudio / sendGroupText"]
+    REST["POST /api/v1/mms/send"] --> RES["resolveImageUri: https public host only, 10 MB cap"]
+    RES --> MS
+    MS --> INS["insert Telephony.Mms row + Addr rows + Part row"]
+    INS --> TRIG["triggerSend: sendMultimediaMessage with null sent and delivered intents"]
+    TRIG --> RADIO["Modem"]
+    RADIO -->|platform MMS stack updates Telephony.Mms| MIRROR["provider-to-Room mirror"]
+    TRIG -.->|"no SmsStatusReceiver callback, no send_segments row, no app STATUS/DATE_SENT"| SMS["SMS funnel tail (status receiver, ledger, Home counter)"]
+    TRIG -->|insert or dispatch throws| FAIL["returns false"]
+
+    classDef excluded stroke-dasharray: 5 5;
+    class SMS excluded;
+```
+
+*Caption: the MMS funnel — the composer attachments, group text, and the SSRF-guarded REST door all write a `Telephony.Mms` row and dispatch via `sendMultimediaMessage` with null status intents, so the dotted line to the SMS funnel's status/ledger tail never fires.*
 
 ## Durable status callbacks and the send-segment ledger
 

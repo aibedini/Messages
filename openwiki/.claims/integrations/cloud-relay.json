@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:0dacace0f4895d10c703a6e6b3de0de1bcf4a37a96914cd494fe4297ec224c73",
+  "pageVersion": "sha256:a8193c07e636707b31ce4eb3f7798c44cdf140343e0051513b2ccc9d45b2528b",
   "claims": [
     {
       "id": "claim_1fc48b107e594bbaaab486c9e5909e58",
@@ -353,10 +353,38 @@
           "version": "repo-lines-v1:sha256:1b67373f052560fa8074420f70922865bf293f8167e556301601795145f57df0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlN2Y0YjM2YWM5Y2UwZDA2ZGNkNzJjY2MyNGViMjkwZWNjYTNkYWRjZWUzNmNkNjQxNjg5YTI4MDQ4Yzg1NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZTZkYTdmZTQ3M2Q0ZDYzNjU1YzE0NjU4OWViMzgyZGIwZWUwZWJkYzQxNjRiZjRiZTEyYjI1NzliYzcwNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlZDYyODNlZmUxMTgwNzgwMDAxOTA1YWNkMzkzZmQ0ZGRiYjUzNzVmMTM1NGQ3MmZiNjY5MTgyYzE4ZTg3MTgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_6cb2b546b2e444e987e941030968a190",
+      "statement": "The inbound leg of the cloud relay has no app-side code that polls or receives relayed messages from the backend: an external project posts to the fixed backend URL and the backend forwards the message to the device's local GatewayServer, which serves POST /api/v1/sms/send (body {phone, message} plus optional subscription_id/smsc) authenticated by X-API-Key (Bearer Authorization header as fallback) with constant-time comparison and per-IP rate limiting; a successful send returns 202 (status 'accepted', handed to telephony) and a modem rejection returns 503 (status 'failed'), and this inbound path is managed by ConnectionSupervisor independently of cloud registration state.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L123-L126",
+          "version": "repo-lines-v1:sha256:ca88be4231726eec58e2c601fad0cea47a75a3b34392fc57f8e906d03cf8d34a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI2M2E5ZDBlY2UyNmYwM2JlZTk1YjZlZWVmMjhmZjI3Y2EzN2NlMjUyN2M2YjAyMmZiY2FkZjUxZTVmYjE3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWY1MDg5ZmUyZjdhMzUwMjAzZDZjZTI2YjgzZTUzNDRhMTA0YzQ1NDI0MmY2ZGE3Mzc1ZjBjNmQzNzcwMDk3OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGQzODdiNDhmNDgwNjYzZTZhYWZiODFhNTdlZGM4YjFlODY1MTdlMjZiMzc2OWViYjZlZjRlYjQ3YmUxZDUxNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDlkNzU5Y2JkOGFiN2Q1OWJmY2Q1NzRmZjJjMzYzOTYxZDE0NGRjY2RkZDY1NDM1YjhiYjM3OGE4NjVjZmI4MCJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L237-L258",
+          "version": "repo-lines-v1:sha256:4eb4d90fa9749293b15e08b7fd85a6643fb4032f3eb76e41d7acff681e9a58cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMTAxNzQxYjgxZDNmNDg4YTgzZTExNTdkZDYwZTYxNWFjNGFhMWI2NDkwMTg0OTE0MWNiNmQ3YzllOTdkOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyOTgxOGE2Mzk0NGMzYjc3YmZhMGU0MGEwN2ZiNTc5YTkyMjcyNWNlMzJiNjUwNWU4ZGQ0MGY0M2ZkNzE5NzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyMDY5OTI3NzFhZmFkOGMwNDE3ZGY2NGMxNzZmY2U1YTJlNmJjYmQzNzdiNjFhZWU1MmJiYzgxNjIwN2U5NmYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L320-L372",
+          "version": "repo-lines-v1:sha256:4d7c2b63d1af5c6f29df987c4387ac939b540f61ece5b48226bd9aced033d2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzg1YWIyOGIyYjNjMmViZTZkNTI4MjdkM2FjNmQ3ZmE5MGE0ZDg3ZjQ4ZjgzNmY1ZWQ5NDAyYTdkYWVjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZjQ4MDJlY2Y3NmMxMDNhYjYyZmVjMjEzOTkzM2Q1OTZmYzE0ODlhOWRlN2NlZmViMzY0ZTlhZjFmYWUxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1YTc1MjZhNDU1Mjc1Mzk5ZGZiMmI0MWVkMjEwZTNmOTM2ZjFmYTk3YTcxYWE0MGIwNGU2OTJlYWJkMWVmZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad6e9934e6a04765aa0e7d9e63aab3ef",
+      "statement": "Four alternatives to the cloud relay let external projects reach the same local GatewayServer directly without the relay backend, registration, or the GATEWAY_BACKEND_URL chain: Cloudflare Tunnel (cloudflared tunnel --url http://localhost:8080), Tailscale (mesh VPN, no exposed ports), port forwarding + DDNS (router config), and ADB reverse (adb reverse tcp:8080 tcp:8080); the README positions the cloud backend as the zero-setup option, and these are pure transport choices over the LAN server so the consent and runtime isEnabled gates still apply.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L129-L137",
+          "version": "repo-lines-v1:sha256:0268e6372e7c1ab501c0ea2b4312192a7c277fa7db0d47cde08139ce71d94057:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2RlOThkMzBhOTdjYjQzYTAxMmNhYzZhZDI5MWI2NTA2NWZjODRhNDM3NjFmNWI2ZWFlNDI4ODI4ODgxOGQ0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmVlYTczMmFhZTZjZDgzZWU5ZmVhMDc1OGYzOWY4M2MxNGRmNzllN2ZiN2RkMGRiZjZmMWExNGZkNGM0ODc3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRiMjBkYWJhYzhiYzZkOTk1OTg5OGY1ZjNjZGJhOWVmOTY4OTI5OTgzOWQxNGUxNjQ5NzliYzRlNTgyYzhkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzc5YTliZWQyNWFmN2Y1MmYwOWNkOTg1N2ZiMjYwNzM3Y2E5ZWU2NDdiMGMzZWViNGQ1MGVmZGExZmI4ODQzYiJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

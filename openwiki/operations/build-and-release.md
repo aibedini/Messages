@@ -1,10 +1,11 @@
 ---
 type: "Reference"
 title: "Build, CI, and Release"
-openwiki_generated: true
+description: "Everything about building and shipping Messages: the single :app module, version catalog pins, the vendored mmslib AAR (JitPack deliberately absent), scoped Aliyun mirror fallback, BuildConfig flags, release signing with unsigned fallback, the three CI workflows, and release metadata/Play Protect tooling."
+tags: [build, ci, release, gradle, signing, android, ci-workflows, release-metadata]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-a180c650e871410c5a663cf9
     resource: repo://.github/workflows/build-debug.yml
@@ -18,8 +19,12 @@ sources:
     resource: repo://app/build.gradle.kts
   - id: openwiki-source-a107f16d58beac4b84f5c928
     resource: repo://app/proguard-rules.pro
+  - id: openwiki-source-e622d3f293f5b27df77aca9e
+    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
+  - id: openwiki-source-51189b7b42ba492b233ef785
+    resource: repo://app/src/main/java/com/autonomousone/messages/data/MessagesDatabase.kt
   - id: openwiki-source-df3820a8f6419586aaa828f3
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
@@ -56,13 +61,15 @@ sources:
     resource: repo://scripts/generate-release-metadata.ps1
   - id: openwiki-source-e620d7484b72a53c7fa812cd
     resource: repo://settings.gradle.kts
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 
 # Build, CI, and Release
 
 The repository is a single-module Android Gradle project — `settings.gradle.kts` sets `rootProject.name = "Messages"` and includes only `:app` — plus a small set of release tooling around it: three GitHub Actions workflows, a gitignored local keystore file, and a PowerShell script that produces the release metadata used for Google Play Protect appeals. The top-level `build.gradle.kts` declares the shared plugins (AGP, Kotlin, Kotlin Compose, KSP) with `apply false`; the app module applies them from the version catalog.
+
+Per `AGENTS.md`, the narrowest quiet command proves each build behavior on this page: `./gradlew assembleDebug` (module + mmslib resolution), `./gradlew testDebugUnitTest` (headless unit suite), `./gradlew assembleRelease` (minified release with the signing fallback path), and `./gradlew assembleDebug -PGATEWAY_BACKEND_URL=https://your-relay.example.com` (BuildConfig override).
 
 ## Gradle setup
 
@@ -84,7 +91,7 @@ The app module targets `namespace`/`applicationId = com.autonomousone.messages`,
 
 ### Repository order and fallback mirrors
 
-Both `pluginManagement` and `dependencyResolutionManagement` in `settings.gradle.kts` resolve from `google()` and `mavenCentral()` first, then from a scoped Aliyun mirror (`https://maven.aliyun.com/repository/google`) as a **last-resort fallback** for networks where `dl.google.com` is unavailable. The mirror is content-scoped to `com.android.*`, `com.google.*`, and `androidx.*` groups only, and the comments explicitly warn that mirrors "occasionally return 5xx, which must not break CI" — Central stays first. The Room Gradle plugin (`androidx.room`) is noted as resolving through this mirror when `dl.google.com` 404s. `repositoriesMode` is `FAIL_ON_PROJECT_REPOS`, so module-level repository declarations are a build error.
+Both `pluginManagement` and `dependencyResolutionManagement` in `settings.gradle.kts` resolve from `google()` and `mavenCentral()` first, then from a scoped Aliyun mirror (`https://maven.aliyun.com/repository/google`) as a **last-resort fallback** for networks where `dl.google.com` is unavailable. The mirror is content-scoped to `com.android.*`, `com.google.*`, and `androidx.*` groups only, and the comments explicitly warn that mirrors "occasionally return 5xx, which must not break CI" — Central stays first. The Room Gradle plugin (`androidx.room`) is noted as resolving through this mirror when `dl.google.com` 404s — the restricted-network failure mode the comments describe. `repositoriesMode` is `FAIL_ON_PROJECT_REPOS`, so module-level repository declarations are a build error.
 
 ### Gradle daemon settings (`gradle.properties`)
 
@@ -103,15 +110,15 @@ Because a `files(...)` dependency carries no transitive metadata, the three runt
 
 ### Other build-time hooks
 
-- Room schemas are exported by KSP to `app/schemas/` (`room.schemaLocation`) and committed, so future schema bumps can ship real `Migration`s instead of destructive wipes (see `docs/room-migration-strategy.md` — exported schema JSONs are build artifacts of history and must never be hand-edited).
+- Room schemas are exported by KSP to `app/schemas/` (`room.schemaLocation`, with `exportSchema = true` on `MessagesDatabase`) and **committed**. The committed JSON files (`app/schemas/com.autonomousone.messages.data.MessagesDatabase/2.json` … `6.json`) are exported schema-history artifacts — the record of how `messages.db` evolved — not hand-editable build inputs; regenerating them overwrites the history. The history already carries its payoff: the database is at version 6 with real `Migration` objects (`MIGRATION_2_4` through `MIGRATION_5_6`) wired via `.addMigrations(...)`, and the destructive fallback (`fallbackToDestructiveMigration(dropAllTables = true)`) is applied **only in debug builds** — in release, a missing migration must fail loudly in QA rather than silently wipe the local read model.
 - `testOptions.unitTests.isReturnDefaultValues = true` makes `android.util.Log` and friends harmless no-ops in JVM unit tests, which is what lets the full JUnit suite run headlessly in CI via `testDebugUnitTest`.
 
 ## BuildConfig flags
 
 Two `buildConfigField`s in `app/build.gradle.kts` `defaultConfig` are load-bearing for the gateway:
 
-- **`GATEWAY_BACKEND_URL`** (String) — defaults to `https://gaitway.autonomousone.in` (the domain is spelled exactly like that; keep it verbatim). It can be overridden at build time with the `-P` property, e.g. `./gradlew assembleDebug -PGATEWAY_BACKEND_URL=https://your-relay.example.com`. At runtime `GatewayPreferences.backendUrl` returns a stored user preference if present and otherwise falls back to `BuildConfig.GATEWAY_BACKEND_URL`, and any stored value must be `https://` (insecure URLs are rejected so the bearer token is never sent in cleartext); the value is also displayed in `SettingsScreen`. See [Cloud Relay Backend](/openwiki/integrations/cloud-relay.md).
-- **`APP_VERSION`** (String) — built from `versionName`, making `defaultConfig` the single source of truth for the app version. The gateway components all identify themselves with it: `BackendClient` and `WebhookEngine` set `User-Agent: AndroidGateway/<APP_VERSION>` / `Android-SMS-Gateway/<APP_VERSION>`, and `HeartbeatManager` / `RegistrationManager` send it as the `appVersion` field in their payloads. Bumping `versionName` without touching those files is the whole versioning story.
+- **`GATEWAY_BACKEND_URL`** (String) — defaults to `https://gaitway.autonomousone.in` (the domain is spelled exactly like that; keep it verbatim). It can be overridden at build time with the `-P` property, e.g. `./gradlew assembleDebug -PGATEWAY_BACKEND_URL=https://your-relay.example.com`. At runtime `GatewayPreferences.backendUrl` returns a stored user preference if present and otherwise falls back to `BuildConfig.GATEWAY_BACKEND_URL`, and any stored value must be `https://` (insecure URLs are rejected so the bearer token is never sent in cleartext); the build-time value is also displayed in `SettingsScreen`. See [Cloud Relay Backend](/openwiki/integrations/cloud-relay.md).
+- **`APP_VERSION`** (String) — built from `versionName`, making `defaultConfig` the single source of truth for the app version. The gateway components all identify themselves with it: `BackendClient` sets `User-Agent: AndroidGateway/<APP_VERSION>`, `WebhookEngine` sets `User-Agent: Android-SMS-Gateway/<APP_VERSION>`, and `HeartbeatManager` / `RegistrationManager` send it as the `appVersion` field in their payloads. Bumping `versionName` without touching those files is the whole versioning story.
 
 ## Signing chain
 
@@ -127,7 +134,7 @@ Credentials resolve with a strict precedence: **CI environment variables win ove
 Mechanics, all in `app/build.gradle.kts`:
 
 1. `signingConfigs.release` loads `keystore.properties` from the repo root *if it exists*, then sets each field as `System.getenv(<ENV_VAR>) ?: props.getProperty(<key>)`. `storeFile` is only assigned when a path is available from either source.
-2. `buildTypes.release` computes `keystoreAvailable` = `KEYSTORE_FILE` env set **or** non-blank `storeFile` property. The `release` signing config is applied **only** when that is true — otherwise the release build skips signing entirely and produces an unsigned APK (which is exactly what happens when the CI `KEYSTORE_BASE64` secret is missing and the decode step is skipped).
+2. `buildTypes.release` computes `keystoreAvailable` = `KEYSTORE_FILE` env set **or** non-blank `storeFile` property. The `release` signing config is applied **only** when that is true — otherwise the release build skips signing entirely and produces an unsigned APK (which is exactly what happens when the CI `KEYSTORE_BASE64` secret is missing and the decode step is skipped). Running `./gradlew assembleRelease` with no keystore material anywhere is the minimal demonstration: it succeeds and emits an unsigned `app-release.apk` instead of failing.
 
 `keystore.properties` is local-only by design: `.gitignore` blocks `*.jks`, `*.keystore`, `keystore-base64*.txt`, `keystore-final.txt`, `password.txt`, `alias.txt`, `app/release/`, and `keystore.properties` itself under a "NEVER commit keystores or passwords" rule. Local release builds work purely off the local file; CI works purely off secrets.
 
@@ -174,17 +181,17 @@ Triggers only on **push of a `v*` tag**; requests `contents: write`. Steps:
 2. **Build Release APK** — `./gradlew assembleRelease` with the signing chain env vars mapped from secrets: `KEYSTORE_FILE` → `$GITHUB_WORKSPACE/keystore.jks`, plus `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
 3. **Create GitHub Release** — `softprops/action-gh-release@v1` uploads `app/build/outputs/apk/release/app-release.apk` to a non-draft, non-prerelease GitHub Release named `Release <tag>`.
 
-Note the asymmetry: the release workflow does **not** run unit tests; test coverage is enforced on PRs by `build-debug.yml`, so a release is trusted on the same code that passed (or was merged from) the PR pipeline.
+Note the asymmetry: the release workflow does **not** run unit tests; test coverage is enforced on PRs and pushes by `build-debug.yml`, so a release is trusted on the same code that passed (or was merged from) the PR pipeline.
 
 ### `openwiki-update.yml` — "OpenWiki Update"
 
-The documentation refresh loop: scheduled at `0 6 * * *` (06:00 UTC daily) plus manual `workflow_dispatch`, with `contents: write` / `pull-requests: write`. It checks out with `fetch-depth: 0` — full history is required so `openwiki code --update` can diff HEAD against the commit it last documented (a shallow clone silently produces an empty change summary), installs Node 22 and `openwiki` (plus `mermaid`/`jsdom` for diagram validation), runs `openwiki code --update --print` against a configured OpenAI-compatible model, then opens a PR from branch `openwiki/update` covering `openwiki`, `AGENTS.md`, `CLAUDE.md`, and the workflow file itself. The run step is `continue-on-error`; if the outcome is `failure`, a final `exit 1` step propagates the failure to the workflow status while the PR still preserves the pages completed before the failure (merge it to make that progress the baseline for the next run).
+The documentation refresh loop: scheduled at `0 6 * * *` (06:00 UTC daily) plus manual `workflow_dispatch`, with `contents: write` / `pull-requests: write`. It checks out with `fetch-depth: 0` — full history is required so `openwiki code --update` can diff HEAD against the commit it last documented (a shallow clone silently produces an empty change summary), installs Node 22 and `openwiki` (plus `mermaid@11.16.0`/`jsdom@29.1.1` for diagram validation), runs `openwiki code --update --print` against a configured OpenAI-compatible model (DashScope endpoint, `qwen3.8-27b`), removes transient run state (`openwiki/.run.json`), then opens a PR from branch `openwiki/update` covering `openwiki`, `AGENTS.md`, `CLAUDE.md`, and the workflow file itself. The run step is `continue-on-error`; if the outcome is `failure`, a final `exit 1` step propagates the failure to the workflow status while the PR still preserves the pages completed before the failure (merge it to make that progress the baseline for the next run).
 
 ## Release process and metadata
 
 1. **Bump the version** — increment `versionCode` and `versionName` in `defaultConfig` (currently `61` / `2.6.19`). Each shipped version gets a `docs/release-vX.Y.Z.md` note recording the versionCode, schema state, and changes; that convention is how `versionCode` history is tracked.
 2. **Tag it** — push a `v<version>` tag (e.g. `v2.6.19`); `release.yml` builds the signed APK and publishes the GitHub Release automatically. No manual upload step is expected in the normal path.
-3. **Emit metadata for Play Protect** — `scripts/generate-release-metadata.ps1` (Windows PowerShell, run against a local release build) locates the newest Android build-tools (SDK root from `sdk.dir` in `local.properties`, else `%LOCALAPPDATA%\Android\Sdk`), then writes `release-metadata.txt` containing: the `aapt dump badging` package line, the APK SHA-256, the signer #1 certificate SHA-256 from `apksigner verify --print-certs`, and a fixed `play_protect_status` note. `docs/PLAY_PROTECT_APPEAL.md` requires this file when appealing the internet-sideload warning: upload the exact release APK without rebuilding or renaming it, and cite both hashes from the metadata file.
+3. **Emit metadata for Play Protect** — `scripts/generate-release-metadata.ps1` (Windows PowerShell, run against a local release build; defaults to `app/build/outputs/apk/release/app-release.apk`) locates the newest Android build-tools (SDK root from `sdk.dir` in `local.properties`, else `%LOCALAPPDATA%\Android\Sdk`), then writes `release-metadata.txt` containing the artifact name, the `aapt dump badging` package line, the APK SHA-256, the signer #1 certificate SHA-256 from `apksigner verify --print-certs`, and a fixed `play_protect_status` note. `docs/PLAY_PROTECT_APPEAL.md` requires this file when appealing the internet-sideload warning: upload the exact release APK without rebuilding or renaming it, and cite both hashes from the metadata file.
 
 ## Invariants and pitfalls
 
@@ -194,9 +201,11 @@ The documentation refresh loop: scheduled at `0 6 * * *` (06:00 UTC daily) plus 
 - Do not commit any keystore, password, or `keystore.properties` content; signing must work with zero secrets present (unsigned fallback) so a missing secret degrades gracefully instead of blocking the tag.
 - Keep `APP_VERSION` derived from `versionName` — any second version constant will drift and misidentify the device to the relay backend.
 - The Aliyun mirror is a scoped last resort; adding unscoped mirrors ahead of `mavenCentral()` reintroduces the 5xx flakiness the comments warn about.
+- Never hand-edit the committed `app/schemas/` JSONs — they are the schema history; schema changes ship by bumping the `@Database` version and adding a real `Migration` to `.addMigrations(...)`.
 
 ## Related
 
 - [Cloud Relay Backend](/openwiki/integrations/cloud-relay.md) — runtime consumer of `GATEWAY_BACKEND_URL` and `APP_VERSION`
 - [Quickstart](/openwiki/quickstart.md) — local build and run commands
+- [Device Operations](/openwiki/operations/device-operations.md) — device-side gateway setup, diagnostics, and backup
 - [Unit tests](/openwiki/testing/unit-tests.md) — the suite `testDebugUnitTest` runs in CI

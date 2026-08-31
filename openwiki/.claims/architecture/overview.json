@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:b97cc953cf8a2e1165b0c9a4dcb4a272577fee3d2614699dc9bae251fb757f69",
+  "pageVersion": "sha256:49545449874cc34fde39e2f60e6418205380cdee2a20c0efaf7851121562746e",
   "claims": [
     {
       "id": "claim_b964b5579d184f6394a8369e01f591d4",
@@ -207,10 +207,38 @@
           "version": "repo-lines-v1:sha256:1612b0ae6e6b414c446f40bbc2dffbecfe05551fd4439017bd758dbce0249117:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0ZWFlNjg3NjJjZTgxMDU4NjQ4YmIxNGFhYTJmNmM4NmFjZWQ0YjFmYjUwNjFiYzczMjg2ZjJiNTI1N2YyYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlZjI5OWYzZGQ2MDMwZjcyNjIwNTdlNmFkZDEzYzY4MDQ2NDkzMjQ5MmIzN2UwYzZlYjQ4ZjQxOWQyYjcyMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkZmRkZmVhYTE2YjAyYjIwMjE1ZDk1MTBiMDkwYTdkZWUxMzNmNTUzMzYxMDg0MzI4NTIxNDAwMzY4ZTJmZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3N2U0MDI5NjM5ZmIzOGQxZGRmYzZjMjllOWJiZTRkNGMxMWVmMjBlOTRiZmM4ZWE5YTdjYzI3NmVlYjUxOTMifQ"
         }
       ]
+    },
+    {
+      "id": "claim_bcb572f66ad449e2bc497e345948be98",
+      "statement": "Provider change notifications reach the data layer through SmsContentObserver instances owned by the ViewModels but registered via SmsRepository.registerObserver on both Telephony.Sms.CONTENT_URI and Telephony.Mms.CONTENT_URI; the observer dispatches on the leading edge (first change fires immediately) and coalesces any further changes inside a 150 ms window into a single trailing null-URI nudge, so a burst (e.g. multipart SMS or MMS parts) still ends with exactly one final reconcile.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/observer/SmsContentObserver.kt#L18-L68",
+          "version": "repo-lines-v1:sha256:5b0cb9e07f968d7faab522fcaaf9f5ebfb41738cc28835184a82ee5069a39351:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiYTM5ZDIyYmUwN2FlNWU5OGE5YjA2ZmEyMzM2NDQ5Y2QxYmYzYjA1YjNiZjBkMGIzNWQ0Y2VjNDY1MzJiNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjN2FiYTlmZDFhNTRiYjQ5MDEwMjRiY2I2ZmUxNGUxODNiOTBhNzhmZThhMmVlMzcwZjc0Yzc3ODBlZmI2YTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt#L1083-L1102",
+          "version": "repo-lines-v1:sha256:e11f3e8494e87c27c1730d03b30c2fedf8829d6ae75812e2d2cae10e1135286d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjYTlkODM5YWIzYjUwOTZmY2EyNjMwNGUyZTEwMTcwMGEwZGExMDhlNTEyNTRkNzQ5Y2I5YjFjOGZiNTczNDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1NTU3M2FmMjI2YTIxNDJkZjg4YmVhNGNkZGE1NTAzZTA0YjhhNmQyYTk3YjNhNjBhYzg2OWNiMDVjZGM1ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNzFmZThiOWFjZmMyMzJhYTA5NzliYzAwYzZkZTIxNjc3ZGYxNWYxNjhkMjUzZjlhMDI2ZDk5YmY0ZTAwNWIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L84-L88",
+          "version": "repo-lines-v1:sha256:7c662be90c2477cd3ba2726a17e06af37b6d456d7d408aa3d89b910c1f696399:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmJkNDM4MThmZTk3MmI4NzNlNGI2NWIzMTNiZWY3YzMxZTcwZjVkZGMyMzVkYzFiZDk1OTAyYjI4ZDMyYjZhMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY4MDFlNDhkOGE5YmYzZWJhMTQ5OWU0ZmViZDQxMTI1NjZhNGNiMTAzYWVhOTZkYzVlYzIwYTAzMTgwZTgwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmYxMDlmOGIzNTI5OTY3ZjBmYmZiNzQzOWU1ZGMyYjFlMmYwNDcyMDg2ZDI5OWNjNjM5OWNiYzYxNGQ4YTEwMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d519f0c9220416da0b275ce7fe97047",
+      "statement": "The ConnectionSupervisor's reconcile loop is itself the gateway's backoff mechanism: a failed reconcile (e.g. a port bind failure) sets State.ERROR and retries after an exponential delay that doubles from 5 s up to a 300 s cap, so the supervisor's start() stays non-blocking and non-throwing while the loop self-heals components in the background.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt#L192-L202",
+          "version": "repo-lines-v1:sha256:a78430802aa33d94fe9c26c9551251baf69af17264442ff18c948ed8ad7fa9b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NjM1ZTI4Njg1OWVkNGNhNjBlOTQyYThjOWRmYTVlMTM2ZGJiNWMyNGFhZjczMzg3YWY5ZGI2MGMyNjI4ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1OWNkOTYyOGY1YzVjOTQxYTk2NmEzYmNiMWRjZWI4N2U5MjVhNTc2ZDNmNTFjNmMyZmI5OTVjYzZkNDllZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

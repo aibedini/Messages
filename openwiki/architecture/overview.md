@@ -5,7 +5,7 @@ description: "Whole-system map of the Messages Android app: the default-SMS-app 
 tags: [architecture, overview, sms, mms, default-sms-app, room, telephony, gateway, android, sync]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -45,6 +45,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt
   - id: openwiki-source-99fef859245bb7a59c2e041e
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/SmsReceiver.kt
+  - id: openwiki-source-311ed32a68df077c7ffde611
+    resource: repo://app/src/main/java/com/autonomousone/messages/repository/SmsRepository.kt
   - id: openwiki-source-56dbdbad24cf2312e2a997db
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt
   - id: openwiki-source-6f2ff92700e23d56741d36a1
@@ -55,7 +57,7 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt
   - id: openwiki-source-f96fdb136763ec99fbc9c7e5
     resource: repo://docs/architecture-v2-sync.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # System Overview
@@ -84,7 +86,7 @@ flowchart TD
     end
 
     subgraph APP["App components (manifest)"]
-        MA["MainActivity - Compose UI"]
+        MA["MainActivity: Compose UI"]
         SR["SmsReceiver"]
         PR["mmslib PushReceiver"]
         MR["MmsReceiver"]
@@ -92,7 +94,7 @@ flowchart TD
         HS["HeadlessSmsSendService"]
         BG["BootGatewayReceiver"]
         SRS["SmsStatusReceiver"]
-        GW["GatewayService - foreground"]
+        GW["GatewayService: foreground"]
     end
 
     subgraph FANOUT["Incoming fan-out"]
@@ -103,8 +105,8 @@ flowchart TD
     subgraph DATA["Data layer"]
         HM["HomeViewModel"]
         CR["ChangeRouter"]
-        REPO["SmsRepository - provider reads"]
-        SRC["TelephonySyncCoordinator - single Room writer"]
+        REPO["SmsRepository: provider reads"]
+        SRC["TelephonySyncCoordinator: single Room writer"]
         ROOM[("MessagesDatabase: Room shadow")]
     end
 
@@ -187,12 +189,12 @@ Most of what the app can do is *gated* by being the default SMS app, and that st
 
 **UI (Compose).** `MainActivity` is the single `singleTask` launcher that also captures `SENDTO`/`SEND` share intents. `HomeViewModel` is the main consumer of the data layer: it registers a `SmsContentObserver` on the SMS and MMS providers, and once the Room read-cutover gate is open it drives the conversation list from `conversationDao().observeAll()` — Room **invalidation** re-emits the Flow after each committed mutation, so an incoming message repaints without any provider scan on the realtime path.
 
-**Data layer / sync.** `TelephonySyncCoordinator` is the **single writer** into Room. It owns two channels: exact **mutations** (an `Upsert`, `Delete`, `RefreshStatus`, `MarkThreadRead`, or `DeleteThread`) that are never conflated — every event reaches Room exactly once, in a single `withTransaction` that writes the message and updates the conversation projection atomically — and **reconcile** requests (`FullSync` / `ForThread`) that *are* conflated, so N nudges collapse into one bounded repair pass. `SmsRepository` is the read side against the providers (and the owner of the registered content observer).
+**Data layer / sync.** `TelephonySyncCoordinator` is the **single writer** into Room. It owns two channels: exact **mutations** (an `Upsert`, `Delete`, `RefreshStatus`, `MarkThreadRead`, or `DeleteThread`) that are never conflated — every event reaches Room exactly once, in a single `withTransaction` that writes the message and updates the conversation projection atomically — and **reconcile** requests (`FullSync` / `ForThread`) that *are* conflated, so N nudges collapse into one bounded repair pass. `SmsRepository` is the read side against the providers, and its `registerObserver` is what puts the ViewModels' `SmsContentObserver` on the SMS and MMS providers; the observer dispatches on the leading edge and coalesces any burst inside a 150 ms window into one trailing nudge, so a multipart message still ends with exactly one final reconcile.
 
 **Incoming pipeline.** Both the default-app path (`SmsReceiver` after the provider insert) and the non-default/observer path converge on `IncomingMessageDispatcher.dispatch`, which imposes a fixed order: mirror into Room via `mutate(Upsert)` **first** (blocking is a notification policy, not a sync policy — the row stays persisted either way), then, for a non-blocked sender, emit to the `SmsEventBus`, fire the gateway's `WebhookEngine`, and show a notification unless the user is actively viewing that conversation. The provider-observer side is `SmsContentObserver` → `ChangeRouter`, which extracts the row id from the change URI when the OEM provides one (a targeted `mutate`) and otherwise falls back to a bounded reconcile — always offloaded off the main looper.
 
 **Outgoing pipeline.** `SmsSender`/`MmsSender` persist the Sent row, hand the message to `SmsManager`/the MMS APN, and register explicit `PendingIntent`s. Delivery reports arrive at the manifest-declared `SmsStatusReceiver` (manifest lifetime is required so SENT/DELIVERED survive the initiating process going away) and are applied as a targeted `mutate(RefreshStatus)`.
 
-**Gateway foreground service.** `GatewayService` is the exported-false foreground service that owns the persistent notification and the `ACTION_START`/`ACTION_STOP`/`ACTION_RETRY_NOW` intents (returning `START_STICKY`). Its real brain is the process-wide `ConnectionSupervisor`, one conflated reconcile loop over a declarative desired state (`state = f(desiredEnabled, hasConsent, online, serverIsUp, boundIp == nowIp)`). The supervisor starts/stops the **LAN `GatewayServer`** (a hand-rolled `ServerSocket` REST server), the **cloud `HeartbeatManager`/`RegistrationManager`**, the **`OutboxPoller`** GMweb pull bridge, and — importantly — the data layer's `TelephonySyncCoordinator.ensureLoopRunning()`, so the shadow keeps syncing while the gateway is online. The outbound bridges all funnel into `SmsSender`/`MmsSender`: the LAN REST send endpoints call them directly, and both the LAN `/send` (EVE) endpoint and the GMweb pull enqueue through the persistent priority **`EveSmsQueue`** and drain through the same sender.
+**Gateway foreground service.** `GatewayService` is the exported-false foreground service that owns the persistent notification and the `ACTION_START`/`ACTION_STOP`/`ACTION_RETRY_NOW` intents (returning `START_STICKY`). Its real brain is the process-wide `ConnectionSupervisor`, one conflated reconcile loop over a declarative desired state (`state = f(desiredEnabled, hasConsent, online, serverIsUp, boundIp == nowIp)`). The supervisor starts/stops the **LAN `GatewayServer`** (a hand-rolled `ServerSocket` REST server), the **cloud `HeartbeatManager`/`RegistrationManager`**, the **`OutboxPoller`** GMweb pull bridge, and — importantly — the data layer's `TelephonySyncCoordinator.ensureLoopRunning()`, so the shadow keeps syncing while the gateway is online. The reconcile loop is itself the backoff: a bind failure (port taken) or a dropped component is retried on the loop with exponential backoff, which is what keeps `start()` non-blocking and non-throwing. The outbound bridges all funnel into `SmsSender`/`MmsSender`: the LAN REST send endpoints call them directly, and both the LAN `/send` (EVE) endpoint and the GMweb pull enqueue through the persistent priority **`EveSmsQueue`** and drain through the same sender.
 
 **Reboot / recovery.** `gatewayDesiredEnabled` is the user's *intent*, persisted and never touched by runtime teardown; `BootGatewayReceiver` (or a `START_STICKY` null-intent revival) reads it plus consent and replays `ACTION_START`. Every gateway start is re-gated by `GatewayAccessPolicy.canStart`/`canTransmit` against the stored consent, so a revoked consent silently drops a start.

@@ -1,10 +1,12 @@
 ---
-type: "Reference"
-title: "Workflow: Incoming Message to UI, Webhook, and Notification"
+type: workflow
+title: "Workflow: Incoming Message Pipeline"
+description: "End-to-end trace of one received message: broadcast arrival and default-app dedupe, provider persist and read-back, the IncomingMessageDispatcher fan-out (Room shadow mutate, blocklist gate, address-cache invalidation, SmsEventBus optimistic UI, WebhookEngine, and viewing-suppressed notification), and the MMS variant through mmslib's MmsReceiver."
+tags: [sms, mms, incoming-message, receiver, sms-receiver, mms-receiver, incoming-message-dispatcher, telephony-sync-coordinator, sms-event-bus, webhook-engine, notification, blocklist, content-observer, change-router, single-source-of-truth, android]
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -50,11 +52,11 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/SmsObserverTimingTest.kt
   - id: openwiki-source-7abea9ce6f657aff34d4e142
     resource: repo://app/src/test/java/com/autonomousone/messages/UnreadDeltaTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 
-# Workflow: Incoming Message to UI, Webhook, and Notification
+# Workflow: Incoming Message Pipeline
 
 This page follows one inbound message from the moment Android raises a broadcast to the moment the user sees it — on the Home list, in the open conversation, on a webhook endpoint, or as a notification. The pipeline is defined by one invariant and one funnel:
 
@@ -97,15 +99,19 @@ sequenceDiagram
     D->>C: mutate(Upsert) mirrors to Room first
     C->>RM: transaction upsert message and conversation
     RM-->>H: Room Flow re-emits, list repaints
-    D->>D: blocked sender? early exit, silent
-    D->>D: invalidate address caches
-    D->>CB: emitSms
-    CB-->>H: optimistic prepend to Home list
-    D->>W: sendIncomingSmsWebhook, fire and forget
-    D->>N: showSmsNotification unless viewing this conversation
+
+    alt Sender on the blocklist
+        D-->>D: return immediately, no bus, webhook, or notification
+    else Sender not blocked
+        D->>D: invalidate address caches
+        D->>CB: emitSms
+        CB-->>H: optimistic prepend to Home list
+        D->>W: sendIncomingSmsWebhook, fire and forget
+        D->>N: showSmsNotification unless viewing this conversation
+    end
 ```
 
-Caption: one received SMS traced from broadcast to every consumer — the default-app persist/read-back path, the non-default ContentObserver fallback, and the dispatcher's fixed fan-out order with its three parallel branches (Room/UI, webhook, notification).
+Caption: one received message traced from broadcast to every consumer — the default-app persist/read-back path, the non-default ContentObserver fallback, and the dispatcher's fixed fan-out order with its blocklist branch (early exit after the Room mirror) and the bus/webhook/notification fan-out.
 
 ## Step 1 — Broadcast entry: `SmsReceiver`
 
@@ -124,7 +130,7 @@ For `SMS_DELIVER` (default-app path only), the receiver:
 
 1. **INSERTs the row itself** into `Telephony.Sms.Inbox` with `ADDRESS`, `BODY`, `DATE`, `DATE_SENT`, `READ=0`, `SEEN=0`, `TYPE=MESSAGE_TYPE_INBOX`, and the resolved `THREAD_ID` (so the platform Threads table stays consistent, mirroring what the stock SMS app does). The insert is wrapped in `try/catch`; a failure yields `persistedId = -1`.
 2. **Reads the freshly persisted row back** from `Telephony.Sms` by id (`readBackFromProvider`), so every downstream consumer sees exactly what the provider holds — the real row id, the provider-normalized `THREAD_ID`, the authoritative `DATE` and `READ` flag.
-3. **Falls back to broadcast data** when the row is not visible (non-default role, insert failure, read-back exception): a `Sms` model built from the PDU with `id` set to the PDU timestamp as a surrogate, `threadId` from `resolveThreadId`, `unread = true`. The fan-out still runs; the fallback degrades id quality, not delivery.
+3. **Falls back to broadcast data** when the row is not visible (non-default role, insert failure, read-back exception): a `Sms` model built from the PDU with `id` set to the persisted insert id when the INSERT succeeded, otherwise the PDU timestamp as a surrogate, `threadId` from `resolveThreadId`, `unread = true`. The fan-out still runs; the fallback degrades id quality, not delivery.
 
 Then a single call — `IncomingMessageDispatcher.dispatch(context, sms)` — ends the receiver's job.
 
@@ -137,8 +143,8 @@ The MMS path reaches the same funnel a different way: mmslib's manifest-declared
 1. **Room shadow mirror — always first.** `TelephonySyncCoordinator.get(context).mutate(MessageMutation.Upsert(source, sms))`. This is the ordering guarantee of the whole pipeline: persistence into the provider precedes every fan-out, and the Room mirror precedes every *other* fan-out. Comment in code: blocking is a notification policy, not a sync policy — the row stays persisted either way.
 2. **Blocked-sender early exit.** `BlocklistRepository.isBlocked(context, sms.sender)` — the static shortcut exists so broadcast receivers can check without instance state. If blocked, `dispatch` **returns immediately**: no bus event, no webhook, no notification. Silent handling; the message remains persisted in the provider and the Room shadow. Blocking silences, it does not delete, and blocked senders are invisible to webhook consumers by construction.
 3. **Address-cache invalidation.** `SmsRepository(context).invalidateAddressCaches()` drops the process-wide `AddressCache` (the canonical thread→address map and the per-thread cache used by the conversation-list fast path). A brand-new sender must not render as "Unknown" on the next list refresh — the caches are dropped so names re-resolve against the contact list.
-4. **Optimistic UI nudge.** `SmsEventBus.emitSms(sms)` — a fire-and-forget `SharedFlow` (no replay, `extraBufferCapacity = 64` absorbs bursts). It is a nudge, not a data source: the authoritative repaint comes from Room invalidation (step 5 below), and the bus makes the first frame instant.
-5. **Webhook dispatch.** `WebhookEngine.sendIncomingSmsWebhook(context, sms)` — fire-and-forget, consent-gated inside (see step 5 below).
+4. **Optimistic UI nudge.** `SmsEventBus.emitSms(sms)` — a fire-and-forget `SharedFlow` (no replay, `extraBufferCapacity = 64` absorbs bursts). It is a nudge, not a data source: the authoritative repaint comes from the committed Room mirror (step 1 below), and the bus makes the first frame instant.
+5. **Webhook dispatch.** `WebhookEngine.sendIncomingSmsWebhook(context, sms)` — fire-and-forget, consent-gated inside (webhook branch below).
 6. **Notification.** `NotificationHelper.showSmsNotification(context, sms)` — **skipped when the user is actively viewing this conversation**: `ContactRepository.sameConversation(sms.sender, SmsEventBus.activeConversationPhone) && SmsEventBus.isAppInForeground`. `activeConversationPhone` is set by `ConversationViewModel` on conversation load and cleared on `onCleared`; `isAppInForeground` is set by `MainActivity.onResume`/`onPause`. `sameConversation` normalizes (strips non-digits, handles `+`) and matches on suffix with a ≥7-digit guard so short fragments never join two conversations. So: viewing the *other* chat → notify; app backgrounded → notify; viewing *this* chat in foreground → suppress.
 
 ### The Room mirror: `mutate(Upsert)` to the O(1) fast path
@@ -212,5 +218,6 @@ The boundary logic that the pipeline depends on has JVM tests that pin it:
 
 - [Incoming SMS/MMS Reception](/openwiki/architecture/incoming-messaging.md) — static anatomy of the receiver layer, mmslib, dispatcher, and blocklist
 - [Provider-to-Room Sync](/openwiki/architecture/sync-coordinator.md) — the dual-channel coordinator, cutover gate, and durable backfill
+- [UI, Navigation, and App Shell](/openwiki/architecture/ui-architecture.md) — the MVVM shell that hosts Home/Conversation ViewModels and the event bus
 - [Incoming-SMS Webhooks and Cloud Events](/openwiki/integrations/incoming-webhooks.md) — the two webhook legs, signing, and idempotency
 - [Conversation Window and Keyset Pagination](/openwiki/architecture/conversation-paging.md) — how the conversation screen renders the appended live row

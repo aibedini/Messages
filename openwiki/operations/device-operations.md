@@ -5,14 +5,18 @@ description: "Device-side operations for the Messages app: enabling the SMS gate
 tags: [gateway, operations, api-key, diagnostics, backup, networking, data-tools, consent]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
+  - id: openwiki-source-186e96b8d6739f3745947903
+    resource: repo://app/src/main/AndroidManifest.xml
   - id: openwiki-source-1188ef94bbd10bf1710668b7
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/ConnectionSupervisor.kt
   - id: openwiki-source-29e9264a39b70125a964bdc9
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayPreferences.kt
+  - id: openwiki-source-ba9880c97168532a944be6b9
+    resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayScheduler.kt
   - id: openwiki-source-4c55b07448cb165f971fcb2f
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt
   - id: openwiki-source-4ad02c444ebadf27339b8cbb
@@ -23,6 +27,8 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/WebhookEngine.kt
   - id: openwiki-source-90d7a118c67c21ceb59d31b7
     resource: repo://app/src/main/java/com/autonomousone/messages/MessagesApp.kt
+  - id: openwiki-source-f47a2668cd817415f8991735
+    resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-191caaa13435c40a96e19f4b
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/BackupRepository.kt
   - id: openwiki-source-7b83d51526fed8d4f594dfe3
@@ -49,12 +55,12 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-a7aba9fc0424872883ef238f
     resource: repo://scripts/test-gateway-api.ps1
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # On-Device Operations: Setup, Networking, Diagnostics, Backup
 
-This page covers what an operator actually does on the phone and around it: turning the SMS gateway on from the 3-Dots menu, managing its API key, understanding what the LAN server binds to by default, exposing the gateway to the internet (LAN, tunnel, Tailscale, port forwarding, adb reverse), exercising the REST API, exporting the privacy-aware diagnostic log, and backing up / restoring the message store. The gateway's internal lifecycle, supervisor state machine, and endpoint reference are documented on [Gateway service](/openwiki/architecture/gateway-service.md), [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md), and [Gateway lifecycle](/openwiki/workflows/gateway-lifecycle.md); this page is the operational layer on top of those.
+This page covers what an operator actually does on the phone and around it: turning the SMS gateway on from the 3-Dots menu, managing its API key, understanding what the LAN server binds to by default, exposing the gateway to the internet (LAN, tunnel, Tailscale, port forwarding, adb reverse), exercising the REST API, verifying each step with the narrowest quiet signal (smoke script or a specific logcat tag), exporting the privacy-aware diagnostic log, and backing up / restoring the message store. The gateway's internal lifecycle, supervisor state machine, and endpoint reference are documented on [Gateway service](/openwiki/architecture/gateway-service.md), [Gateway REST API and EVE Provider Contract](/openwiki/integrations/rest-api.md), and [Gateway lifecycle](/openwiki/workflows/gateway-lifecycle.md); this page is the operational layer on top of those.
 
 ## Enabling the gateway: in-app flow
 
@@ -95,7 +101,7 @@ The main switch is bound to the *user's intent* (`gatewayDesiredEnabled`) rather
 
 ## API key management
 
-The gateway authenticates every REST request with the `X-API-Key` header (only `/health` is unauthenticated — see [Gateway REST API](/openwiki/integrations/rest-api.md)). Keys are generated as `gw_` + 32 hex characters — 128 bits from a cryptographically strong RNG (`SecureStore.randomHex(16)`). On the gateway screen the key can be copied to the clipboard, or regenerated ("Generate New Key" via `generateNewApiKey()`), which invalidates every client holding the old key; the on-screen live log records only a masked form (`gw_abcd…wxyz`, first 7 and last 4 characters). A manual key-set path (`updateApiKey`) lets the operator paste a key generated elsewhere — e.g. a GMweb server's `GMWEB_ANDROID_DEVICE_KEY` — so both sides share one secret without copy-pasting in both directions; a blank key is rejected with a toast.
+The gateway authenticates every REST request with the `X-API-Key` header (only `/health` is unauthenticated — see [Gateway REST API](/openwiki/integrations/rest-api.md)). Keys are generated as `gw_` + 32 hex characters — 128 bits from a cryptographically strong RNG (`SecureStore.randomHex(16)`). The "API Key Authentication" card in the advanced gateway modes provides copy-to-clipboard and regeneration ("Generate New Key" via `generateNewApiKey()`, which invalidates every client holding the old key); that card is currently hidden behind `showAdvancedGatewayModes = false`, so on the visible screen the key appears only in masked form (`take(7)…takeLast(4)`) in the GMweb card's supporting text. The on-screen live log also records only the masked form, never the full key. A manual key-set path (`updateApiKey`, the GMweb card's "Shared API key" field) lets the operator paste a key generated elsewhere — e.g. a GMweb server's `GMWEB_ANDROID_DEVICE_KEY` — so both sides share one secret without copy-pasting in both directions; a blank key is rejected with a toast.
 
 At rest the key is AES-encrypted with the Android Keystore (`enc:v1:` prefix via `SecureStore`), and legacy plaintext values are transparently re-encrypted on first read. The store is fail-closed: if the Keystore is unavailable, `storeEncrypted` throws instead of persisting the secret in plaintext.
 
@@ -109,6 +115,16 @@ Two non-defaults matter for operators:
 - **DHCP rebind.** While the gateway runs, `ConnectionSupervisor` compares the bound IP against the current LAN IP on a 10-second cadence; when the phone's address changes (WiFi switch, DHCP renew) the supervisor stops the old server, constructs a fresh one, and logs "LAN address changed (old → new) — rebinding server". When `bindAllInterfaces` is on, the bound IP is reported as `0.0.0.0` and the rebind check is skipped. A bind failure (e.g. port taken) lands the supervisor in `ERROR` with 5 s → 300 s exponential backoff until the port frees up.
 
 The port is persisted in prefs with validation `1024..65535` in `GatewayViewModel.savePort`, and the UI notes that a port change requires a server restart to apply; note the current `GatewayScreen` does not render a port input field, so the 8080 default is the practical operating value unless you drive the view model from elsewhere.
+
+## Reboot and crash recovery: nothing to do, but know the signals
+
+The gateway is expected to come back on its own after a reboot or process death, and the operator's job is only to confirm it did:
+
+- **Reboot.** `BootGatewayReceiver` (registered for `ACTION_BOOT_COMPLETED` in the manifest) re-plays `ACTION_START` whenever `gatewayDesiredEnabled` and consent both persist in SharedPreferences — no manual step. Confirm with `adb logcat -s BOOT_GW` (a "Boot: restarting gateway (user intent persisted)" line) or simply watch for the persistent "SMS Gateway Active" notification to return.
+- **Doze/force-stop adjacent kill.** `GatewayService.onDestroy` schedules a 15 s exact `AlarmManager` watchdog (`setExactAndAllowWhileIdle`) that revives the service even from Doze, but only while the gateway is still desired-enabled — so after an operator-initiated stop or a consent revocation the phone correctly stays down.
+- **Process death with the app open.** The `START_STICKY` null-intent restart re-enters the same `supervisor.start()` path and replays `desiredEnabled` from prefs.
+
+The split between *intent* (`gatewayDesiredEnabled`, never touched by runtime teardown) and *runtime* (`isEnabled`, re-derived by the supervisor) is what makes all three paths automatic; see [Gateway lifecycle](/openwiki/workflows/gateway-lifecycle.md) for the full state machine.
 
 ## Exercising the API
 
@@ -158,7 +174,7 @@ Two on-device transports complement this matrix:
 - **GMweb pull bridge (recommended in the current UI).** The phone dials *out* to a GMweb-API server over HTTPS — no tunnel, no inbound port, no static IP, so changing mobile IPs and NAT/firewalls need no configuration. You enter the server URL (must be `https://`) and optionally paste the server-side key; on the server side the matching value is `GMWEB_ANDROID_DEVICE_KEY=<the same key>`. The phone then long-polls `GET {gmwebUrl}/gateway/pull?waitMs=…` (25 s server hold), sends queued jobs through the local send path, and acks them; the device appears online within roughly 25 s of saving. An empty URL disables the bridge. Details on [GMweb pull bridge](/openwiki/integrations/gmweb-pull.md).
 - **Cloud relay backend.** The gateway can register itself with a relay (default `https://gaitway.autonomousone.in`, overridable at build time with `-PGATEWAY_BACKEND_URL=…`) and then send periodic heartbeats (battery, signal, queue depth) while the Gateway Service is enabled; external projects POST to the fixed HTTPS URL and the relay forwards to the phone. The backend URL is user-configurable but HTTPS is enforced — the `backendUrl` setter rejects anything not starting with `https://` so the bearer token can never ride plaintext HTTP. Nothing is transmitted unless you enable the service. Details on [Cloud relay backend](/openwiki/integrations/cloud-relay.md).
 
-In the current UI the GMweb card, the server-status card (with base URL and bind switch), the REST-endpoints card, and the live-logs card are the visible sections; the Cloud backend card, API-key-auth card, and Incoming SMS Webhook card are wired but hidden behind the `showAdvancedGatewayModes = false` flag, so operators currently reach webhook configuration and cloud registration through code/prefs state rather than the screen. The REST-endpoints card shows the effective base URL with a Cloud Mode / LAN Mode badge: when a cloud registration is active it shows the backend URL (falling back to the default relay URL) plus the LAN fallback address; otherwise it shows `http://<local-ip>:<port>`.
+In the current UI the GMweb card, the server-status card (with base URL and bind switch), the REST-endpoints card, and the live-logs card are the visible sections; the Cloud backend card, API-key-auth card, and Incoming SMS Webhook card are wired but hidden behind the `showAdvancedGatewayModes = false` flag, so operators currently reach webhook configuration, cloud registration, and the full key/copy/regenerate controls through code/prefs state rather than the screen. The REST-endpoints card shows the effective base URL with a Cloud Mode / LAN Mode badge: when a cloud registration is active it shows the backend URL (falling back to the default relay URL) plus the LAN fallback address; otherwise it shows `http://<local-ip>:<port>`.
 
 The **incoming SMS webhook** (when configured): incoming SMS are POSTed as JSON to the configured endpoint, and when a signing secret is set the payload is HMAC-SHA256-signed over `"<timestamp>.<body>"` and sent as the `X-Signature` header (with `X-Timestamp`) by `WebhookEngine` so receivers can verify authenticity and reject replayed payloads; the secret is stored Keystore-encrypted, and a blank secret disables signing. Blocked numbers never trigger webhooks. Details on [Incoming webhooks](/openwiki/integrations/incoming-webhooks.md).
 
@@ -173,6 +189,21 @@ The **incoming SMS webhook** (when configured): incoming SMS are POSTed as JSON 
 `initialize()` is called from `MessagesApp.onCreate`, where the default uncaught-exception handler also writes `DiagnosticLog.event("CRASH", …)` with the full stack trace before delegating to the previous handler — so a crash is always captured on-device even though logcat may have rotated past it.
 
 **Export is user-initiated and explicit.** Settings → Data tools → "Export diagnostic log" calls `DiagnosticLog.createExportFile`, which writes a merged snapshot to the cache dir (`messages-diagnostics-<ts>.txt`) and hands it out through `FileProvider` in an `ACTION_SEND` share sheet (no storage permission needed). The export header explicitly states "SMS bodies and full phone numbers are intentionally excluded.", and the generations are appended oldest-first with `===== <file> =====` separators so the file reads chronologically. The originals always stay app-private. The gateway screen separately offers a **live server log** feed (last 100 supervisor/service log lines) with a share button for quick debugging without leaving the app.
+
+### Narrowest quiet validation: logcat tags
+
+When a device behavior needs proof (and logcat is narrower than a full export), each gateway component logs under a stable tag:
+
+| Tag | Proves | Look for |
+|---|---|---|
+| `GATEWAY_SERVER` | LAN socket bound and request handling | `GatewayServer listening on …` after enable/rebind; `⚠️ 401 …` / `⛔ 429 …` on auth failures |
+| `GATEWAY_SCHED` | Scheduled send persisted / fired | schedule create and delivery lines |
+| `OUTBOX_POLLER` | GMweb pull bridge cycles | "Outbox poller started", "Pulled …", "✅ Delivered …" per job |
+| `BOOT_GW` | Gateway re-armed after reboot | "Boot: restarting gateway (user intent persisted)" |
+| `CRASH_GUARD` | Last-resort uncaught-exception capture | "Uncaught on '<thread>'" with the full stack |
+| `DIAGNOSTICS` | Diagnostic file write failures | "Unable to write diagnostic log" (should be rare) |
+
+Example: after enabling the gateway, `adb logcat -s GATEWAY_SERVER` showing `listening on <ip>:8080` is the quiet confirmation the LAN server is up; after a reboot, `adb logcat -s BOOT_GW` is the one-line proof auto-restart ran. The in-app Live Server Logs card renders the same supervisor/service activity in real time (capped at 100 lines) if a PC is not attached.
 
 ## Backup and restore
 
@@ -203,15 +234,16 @@ Note the coverage split: **both the XML backup and the JSON export cover the SMS
 
 | Task | Where | Notes |
 |---|---|---|
-| Enable gateway + get key | 3-Dots → SMS Gateway → toggle on, copy key | Consent dialog on first enable; key is `gw_…`, Keystore-encrypted at rest |
+| Enable gateway + get key | 3-Dots → SMS Gateway → toggle on, copy key | Consent dialog on first enable; key is `gw_…`, Keystore-encrypted at rest; full key + copy/regenerate live in the hidden Advanced card, visible UI shows the masked form only |
 | Regenerate / replace key | Gateway screen (key card) or GMweb card manual key | Regeneration invalidates old clients; logs show masked key only |
-| Reach the API on the LAN | `http://<phone-ip>:8080` + `X-API-Key` | Binds to the LAN IPv4 by default; "Bind to all interfaces" → `0.0.0.0` next start |
+| Reach the API on the LAN | `http://<phone-ip>:8080` + `X-API-Key` | Binds to the LAN IPv4 by default; "Bind to all interfaces" → `0.0.0.0` next start; confirm with `adb logcat -s GATEWAY_SERVER` |
 | USB/testing access | `adb forward tcp:8080 tcp:8080` (or `adb reverse tcp:8080 tcp:8080` for emulators) | Use `-HostIp 127.0.0.1` |
-| Internet exposure | GMweb bridge (outbound HTTPS, recommended) · cloud relay · Cloudflare Tunnel · Tailscale · port forwarding + DDNS | See table above; Tunnels/Tailscale need no in-app config — they front the LAN port |
+| Internet exposure | GMweb bridge (outbound HTTPS, recommended) · cloud relay · Cloudflare Tunnel · Tailscale · port forwarding + DDNS | See table above; Tunnels/Tailscale need no in-app config — they front the LAN port; bridge liveness via `adb logcat -s OUTBOX_POLLER` |
+| Verify after reboot | no manual step — `adb logcat -s BOOT_GW` | Boot receiver replays the start when intent + consent persist; 15 s AlarmManager watchdog covers Doze kills |
 | Smoke test the API | `.\scripts\test-gateway-api.ps1 -HostIp … -ApiKey …` | Read-only by default; `-SendTestSms -To …` costs real SMS/MMS |
 | Export diagnostics | Settings → Data tools → Export diagnostic log | Merged 3-generation snapshot; SMS bodies and full numbers excluded by construction |
 | Backup / restore | Settings → Data tools → Backup / Restore (SAF) | SMS Backup & Restore-compatible XML; restore is additive; archives cover the SMS provider — MMS rows/media are not archived |
-| Stop everything | Gateway screen → "Revoke consent and stop Gateway" | Stops service, clears consent, desired/auto-start, and cloud credentials |
+| Stop everything | Gateway screen → "Revoke consent and stop Gateway" | Stops service, clears consent, desired/auto-start, and cloud credentials; the phone then correctly stays down across reboots |
 
 ## Related pages
 

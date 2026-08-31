@@ -5,7 +5,7 @@ description: "Entry point to the Messages repo: what it is (a default SMS/MMS ap
 tags: [quickstart, android, sms, mms, gateway, gradle, kotlin, compose, eve, webhooks]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-a180c650e871410c5a663cf9
     resource: repo://.github/workflows/build-debug.yml
@@ -21,8 +21,8 @@ sources:
     resource: repo://app/build.gradle.kts
   - id: openwiki-source-8783d55b63076a92c2ba261d
     resource: repo://app/libs/mmslib-1.0.0.aar
-  - id: openwiki-source-e622d3f293f5b27df77aca9e
-    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/6.json
+  - id: openwiki-source-ccfee0846cdddf90c6adc571
+    resource: repo://app/schemas/com.autonomousone.messages.data.MessagesDatabase/7.json
   - id: openwiki-source-ea11aef3cbe7111f27dd9955
     resource: repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt
   - id: openwiki-source-186e96b8d6739f3745947903
@@ -51,8 +51,6 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt
   - id: openwiki-source-b9aae9b07139533828a184a4
     resource: repo://docs/api/openapi.yaml
-  - id: openwiki-source-da88124d798582f4006a15d9
-    resource: repo://docs/room-migration-strategy.md
   - id: openwiki-source-81d5f1627e19148569f46f81
     resource: repo://gradle/libs.versions.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
@@ -63,7 +61,7 @@ sources:
     resource: repo://scripts/test-gateway-api.ps1
   - id: openwiki-source-e620d7484b72a53c7fa812cd
     resource: repo://settings.gradle.kts
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # Messages: Android SMS App + Self-Hosted SMS Gateway
@@ -110,7 +108,7 @@ broadcast extras, and no component may claim authority over them. See
 │   ├── src/test/java/…/          # headless JUnit 4 unit-test suite (the CI gate)
 │   ├── src/androidTest/java/…/   # single placeholder instrumented test
 │   ├── libs/mmslib-1.0.0.aar     # VENDORED mmslib (JitPack intentionally absent)
-│   └── schemas/                  # exported Room schemas (2.json … 6.json)
+│   └── schemas/                  # exported Room schemas (2.json … 7.json)
 ├── settings.gradle.kts           # rootProject "Messages", include(":app"), repo fallbacks
 ├── build.gradle.kts              # root plugin declarations only
 ├── gradle/libs.versions.toml     # version catalog (AGP 8.10.1, Kotlin 2.2.10, Room 2.8.4)
@@ -155,7 +153,9 @@ Facts about this build worth knowing before touching it:
   device-bound behavior (MMS receivers, the live gateway, `ContentObserver`) is verified on a
   device/emulator. Details on [Testing Strategy](/openwiki/testing/unit-tests.md).
 - Room schemas are exported to `app/schemas/` (KSP `room.schemaLocation`) — never edit the
-  JSON files; they are build artifacts of schema history (currently v6).
+  JSON files; they are build artifacts of schema history (currently v7). Since v2.6.10 the
+  destructive migration fallback is debug-only, so a release build with a missing migration
+  path fails loudly instead of silently wiping the local read model.
 - `mmslib` is vendored as `app/libs/mmslib-1.0.0.aar` with its three POM deps declared
   explicitly, because JitPack (its only remote source) has repeated CI-breaking outages.
   Keep JitPack out of `settings.gradle.kts`; the Aliyun mirror there is a scoped

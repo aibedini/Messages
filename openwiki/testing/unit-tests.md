@@ -5,7 +5,7 @@ description: "How to run the headless JVM unit-test suite (testDebugUnitTest), t
 tags: [testing, unit-tests, jvm, android, gradle, test-seams, ci, invariants]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-a180c650e871410c5a663cf9
     resource: repo://.github/workflows/build-debug.yml
@@ -37,12 +37,18 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/repository/ThreadPager.kt
   - id: openwiki-source-238fc3d5d69fd114964b25fa
     resource: repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusPolicy.kt
+  - id: openwiki-source-6b5048af8b2bf0e03c234b5d
+    resource: repo://app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationListMapper.kt
+  - id: openwiki-source-1ab0bd003a2d6c3758bd4e2e
+    resource: repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt
   - id: openwiki-source-30534083fc58b8968af61505
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/DigitNormalizer.kt
   - id: openwiki-source-f34313ec58078ae25cf6b37f
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/SmsSegmentCounter.kt
   - id: openwiki-source-353c7d0bc150b187b3587e50
     resource: repo://app/src/test/java/com/autonomousone/messages/ChangeRouterExtractIdTest.kt
+  - id: openwiki-source-5457e8a01e67c6b1980537ef
+    resource: repo://app/src/test/java/com/autonomousone/messages/ConversationListMapperTest.kt
   - id: openwiki-source-e751999d76ff43e6908f09bf
     resource: repo://app/src/test/java/com/autonomousone/messages/DiagnosticLogTest.kt
   - id: openwiki-source-5d9105beecd437514587cd99
@@ -93,7 +99,7 @@ sources:
     resource: repo://gradle/libs.versions.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # Testing Strategy
@@ -126,9 +132,10 @@ device or emulator, not by these tests.
   `app-debug.apk`. This is the **only** workflow that runs unit tests — `release.yml`
   (the `v*`-tag release build) does **not**, so a release is trusted on the same code that
   passed the PR pipeline.
-- Release notes track the suite count as a gate; recent releases record e.g.
-  `testDebugUnitTest 162/162` green, and the current tree holds **26 test classes** in
-  `app/src/test/java/com/autonomousone/messages/`.
+- Release notes track the suite count as a gate (e.g. v2.6.13 records
+  `testDebugUnitTest 162/162` green), and the current tree holds **26 test classes** under
+  `app/src/test/java/com/autonomousone/messages/` (24 in the root package, plus
+  `navigation/NavigationRouteEncodingTest` and `sms/SmsStatusPolicyTest`).
 
 The single Gradle setting that makes all of this possible:
 
@@ -232,6 +239,30 @@ pager issues so the test can assert on the SQL grammar itself. The invariants pi
   counter), and MMS rows carry negative model ids.
 
 See [Conversation Window and Keyset Pagination](/openwiki/architecture/conversation-paging.md).
+
+### Conversation list mapping — `ConversationListMapperTest`
+
+The pager above returns canonical ASC; a separate **pure** function,
+`buildReverseChatItems` (`ui/conversation/ConversationListMapper.kt`, called by
+`ConversationScreen`), owns the reverse-layout flip so opening a conversation lands on the
+latest row with no scroll command. It is a plain string/list function with no Android
+dependency, so it is unit-tested directly (no seam, like `FtsQuery` / `UnreadDelta`). The
+invariants pinned:
+
+- **Index 0 is the newest message** — the mapped list runs newest→oldest even though the
+  ViewModel's `messages` stay ASC, so the LazyColumn's `reverseLayout` paints the latest row
+  at the bottom on first layout.
+- **Date separators trail their day group** — because the data order is mirrored, each
+  `DateSeparator` is emitted *after* its day's messages (it then paints above them, like a
+  section header); a single-day window ends with exactly one `"Today"` separator, and a
+  multi-day window interleaves messages and closes each day with its own header
+  (`"Today"`, `"Yesterday"`, then locale-formatted).
+- **Keys are identity-based, not localized-text-based** — `chatItemKey` uses
+  `msg_<id>_<date>_<type>` for messages and `date_<yyyy-DAY_OF_YEAR>` for separators, so a
+  negative MMS model id never collides with its positive SMS mirror.
+- **Self-SMS duplicate race** — if the provider hands the same row twice (refresh + live
+  incoming race), the mapper keeps the freshest copy per model id before building rows,
+  because the LazyColumn requires unique keys.
 
 ### Room migrations — `MigrationToV4SqlTest`, `MigrationToV6SqlTest`
 

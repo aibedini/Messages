@@ -5,7 +5,7 @@ description: "Outbound notifications of received SMS: the user-configured HTTPS 
 tags: [webhooks, hmac, cloud-events, idempotency, incoming-sms, gateway, outbound-notifications]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-df3820a8f6419586aaa828f3
     resource: repo://app/src/main/java/com/autonomousone/messages/gateway/BackendClient.kt
@@ -29,7 +29,9 @@ sources:
     resource: repo://docs/api/openapi.yaml
   - id: openwiki-source-9ea8f1733182ce8ef8964ce1
     resource: repo://docs/api/README.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+  - id: openwiki-source-a7aba9fc0424872883ef238f
+    resource: repo://scripts/test-gateway-api.ps1
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 The app's outbound notification path for *received* messages has two independent legs that share one entrypoint — `WebhookEngine.sendIncomingSmsWebhook(context, sms)`, called from `IncomingMessageDispatcher.dispatch`, the single funnel every inbound SMS and MMS passes through:
@@ -155,7 +157,7 @@ The cloud leg (`sendCloudEvent`) is the event side of the [cloud relay](/openwik
 
 - `app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt` — unit-tests the exact gate truth tables (`canStart` requires consent; `canTransmit` requires consent **and** runtime-enabled) that both legs are gated on; run with `./gradlew test`. It is the only in-repo JVM test covering this subsystem.
 - `WebhookEngine`, `BackendClient`, and `GatewayPreferences` are Android-dependent (`HttpURLConnection`, SharedPreferences, Keystore) and have no in-repo JVM tests; their behavior is observed on-device via logcat (`WEBHOOK_ENGINE`, `BACKEND_CLIENT` tags) and the gateway screen's log flow.
-- The `docs/api` package (OpenAPI spec + interactive viewer + smoke script) is the acceptance contract a webhook receiver or relay backend must satisfy.
+- The `docs/api` package (OpenAPI spec + self-contained Swagger UI viewer) is the shareable contract a webhook receiver or relay-backend implementer must satisfy. The in-repo smoke script (`scripts/test-gateway-api.ps1`, referenced from the docs) exercises the device's LAN REST API — status probe, auth rejection, send, inbox — rather than the inbound webhook or cloud-event path.
 
 ## Related pages
 

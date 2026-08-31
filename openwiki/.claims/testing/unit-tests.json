@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:46bd293fcb2f97cedc7ad85c06a79a480c159e57001992f2bc22624a0703ed3b",
+  "pageVersion": "sha256:f08ed54838ae78c83cd21f87fb81962c6b9236dd8a72b8d673591d0969ce2d0a",
   "claims": [
     {
       "id": "claim_2c274c51e810460c9789560ca7aaf5a8",
@@ -359,10 +359,28 @@
           "version": "repo-lines-v1:sha256:e54bbc629f58faeb6964a6f03825575203a9e460810c86eae19ed30c9fc12d49:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTgyY2NiYmQwZDMyZmMzODVhNTBmZGI1OWFlYzQxMWFmNWZmMzg3OTEzNzhiOTdhMWVmMzBmZjE4MGQ1ZjdhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQxOWE2ZGNjMDRlMjEzYTNjN2E3N2E0NTZiMDFlNzZkMWVmNzhjZDAwYmJlYzFkOGY4MTQ1OGZlOTNlZGM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjZWFjNmMwYTIzN2QwN2Y2ZGUyY2M5YzkzYmI4MmI2NGE5ZmNkYzg4NTA1NzIyNTM3MTU3NGJiMjYyMDY4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQyYTFiYTJhZDc1NDQ1ZDRkOTk4YmU0Y2Q0Yjg3NjM3ZDJhMjRjZjdmOThhMTg5NTk4NzFlNzc1YzIzNTY5OCJ9"
         }
       ]
+    },
+    {
+      "id": "claim_e33a8ef1a6454289b88e1069f7ec80b3",
+      "statement": "ConversationListMapperTest (the 26th test class, in the root package) pins the pure buildReverseChatItems function in ui/conversation/ConversationListMapper.kt that owns the v2.6.7 reverse-layout flip, with no Android dependency and no seam (like FtsQuery/UnreadDelta). It asserts: the mapped list runs newest-to-oldest (index 0 is the newest message) while the ViewModel's canonical messages stay ASC, so the LazyColumn's reverseLayout lands on the latest row with no scroll command; each DateSeparator is emitted AFTER its day's messages (painting above them like a section header), a single-day window ends with exactly one 'Today' separator, and a multi-day window interleaves messages and closes each day with its own header; chatItemKey is identity-based (msg_<id>_<date>_<type> for messages, date_<yyyy-DAY_OF_YEAR> for separators) so a negative MMS model id never collides with its positive SMS mirror; and a self-SMS duplicate race (the provider handing the same row twice) is deduped to the freshest copy per model id before building rows because the LazyColumn requires unique keys.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationListMapper.kt#L37-L77",
+          "version": "repo-lines-v1:sha256:bd9081d134ae447313c2835811bbe15aa76c80dd45e0a21a67d1b6876102e762:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5MTZhYzJmM2YzYjI4NzJkZjk4ODkxNGZkZmJmYTVlOTJhMDQ5ZjRmYjMzYTZiYmVkMmNjNDhhMTE4YWY0YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyNTdkODdkMzA2Y2UzMWQ3OTI4OGRhMTJjOTUwNDNiYjgzYmZlYmJlOGJjNWRkMWFiNDVhNjQzZGU5MTk2MzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMzYWZmYjU5OTE0ZDM3YTBjMWYyNmUxZjdhOTI0ZmIyY2U0ZTMyMDBmMzQ1MTMzMmYxZGRmNDk0N2JkNWVlYTMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L325-L356",
+          "version": "repo-lines-v1:sha256:ddba9970be5b86c55d9202c4b88af5442685527ffa2e73119d533abb3e156994:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMDA0NjQ4MDJmNWFjOGM1NGZjMjA4NzRiNjkwMDdjZjQ0MzA1MTk4YzY0YTk3M2Y4NjdiZTRkNjlhMWU4MTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNTM0MmMxZDU3YWJiMWVkYmZkOGU4MTZmZTFjMjUxM2M5ZmVlNjkwYTJlODY3ZDZkM2YxOTE0N2ZmNTczMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNGJkZDM1YmQ5M2Y1MTNiYzQ0MjUyNTU2NzExY2RiMzQ1ZWExNjU4YTgxMmQ1YjVlMTMxZDZiMjZmYzRiNzkifQ"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/ConversationListMapperTest.kt#L34-L114",
+          "version": "repo-lines-v1:sha256:ad91b0175b96c742f7bf3f4f48a89fe30254e4aff15c34dde978c43ca441c5e4:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGNlNDkwOTZmZmE2ZDY4ZjM4YzE5OTQxZjI5ZmNiYjNhY2FiMWZmYjZhZWVmYTIxZjhmZjk3OThkMGE1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MGE5YTI2ZGQ1YzljZDFkMDNjMzQ0MTBlZDNlOWU2YjIzMDUzNmQ0M2ZhZmJiOWExYzU4NjI3MTI3ODM2NDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

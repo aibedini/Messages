@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:57684c1ace7dbb3bdb01907708a7b0ced369213b12256eaeda1b3824b48ef75c",
+  "pageVersion": "sha256:c56aff8b514f8a656c4e698831c4ff4c2b7e4e3f6e4ce88437450f4a1439b8c7",
   "claims": [
     {
       "id": "claim_93a40df8f3984a529beb9f0e0f746451",
@@ -475,10 +475,84 @@
           "version": "repo-lines-v1:sha256:5ac610a0710d730bdeee2f441ae028546df88ef973ec1d113eefae093a34d1c0:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MDEwZjU4ZTYzYzgxNjgzZjYyYTdhYTg1OWY5MTllOTQ5NDQxNjgwYjQ4NDllODhkNDk3YjJlZDk1NjEwNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMzU2ZWM3MzI3ZDhhMWRlYWUwMzMzYzQ0OTgxYjI3N2M1NmY4NmQ1ZDExZTZkYzM4OWE3MGJmZTJmNDRhODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         }
       ]
+    },
+    {
+      "id": "claim_534387b0093c4a7eb0d5b60d06c4139d",
+      "statement": "MMS is a parallel funnel that bypasses SmsSender entirely: the composer's image and audio attachments (ConversationViewModel.sendImageMessage / sendAudioMessage), the group-text branch (multiple recipients with groupMessagingEnabled on), and the REST POST /api/v1/mms/send all route through MmsSender, whose methods persist a Telephony.Mms row (MESSAGE_BOX_OUTBOX, MESSAGE_TYPE_SEND_REQ=0x80, resolved THREAD_ID) plus a FROM token and one Addr row per recipient and a content Part (text written directly, images downsampled and JPEG-compressed to ~900 KB, audio copied through), then dispatch via SmsManager.sendMultimediaMessage(context, mmsUri, null, null, null) with a null MMSC location so the carrier's MMSC settings are used.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L373-L395",
+          "version": "repo-lines-v1:sha256:305176ee8d8bb6a992d32c30b98577bffc187809139c4bebaf1edeb3af8e8e68:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNTFhZDU3ZDU5ZWZiNDNjZWVjMjEwOWMzOTU4MDkyNTI0OTEwOWZkYWM2ZDBmNmQwYTYxYzFhMzVhMzdhODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2QxYTUxOGQ4YjI2MDI2YWFmOTQ0MjQyOWZhOTQ4ZGQ1YmVkY2Y3MzljYjgwYThmMjFhYWFiNzI1MzY2MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNTNjNGViMzQ5YmU2ODQ3NTRkYzczMzU1YjkxNDdmYTIyN2ZmMWQzMzg1MjE4ZDBjODY1NjFhZDY2MzM4MmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt#L103-L128",
+          "version": "repo-lines-v1:sha256:153527b2bacfbe6f083741796357ffc77bc69e833baed2af94c8f6270487d7b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4M2E5MDNmOTg3NmU1ZGE1OGUzYjYwMDEwZjU5ZDVjYjAwYmJlZmJiYTg2M2YzYThiZTkxZWM2NjEwYTdiYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1MmMxYmVmY2U3ZjkxNjYxOThjNTZjOGRkYjc5OTI4YTA3MjFhMmY1OGYyZTQ5YWI4ODJiOTZkMDE2MTU4MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3ZDVhNmZmZWE5YjZiYzJlNjY2ZDc2ZWUxNDg0YWJlNmFjMTA5Y2Y2YWY1MjE0MmU4MGNjZDNjNTJmMGU1NDkifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt#L185-L216",
+          "version": "repo-lines-v1:sha256:d7b7fcad0c60c4df665cd57b49a077a524ead90c9fe706b3542343e5ad2f067b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMDc1ZjFiZmIyMjJkN2QxMzNhMjZiN2EzMGIwMjdlNjQyZjU5NmIzZTllMTBiOWVhYjNmYmMzN2IwYTk5OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYzVkNTgzODgyZmQyMzA3YjViOTYyYTJiYjQ0MzI3MDY5ODY0ZmExNmQzYTg4NjgzMDVmYzljYWZmY2ZmYzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkNjliN2M1MDhlNWZhOThjZjIyYjEwZjU2YTc5Y2MxYzkxYWU1ZDcwZmQ1MzdmYTgwZmQ1ZTEwZGE1MDYyYjgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt#L81-L98",
+          "version": "repo-lines-v1:sha256:15a07dae1c44875ed0e2593c00ad26d01bdf71183b6625a60971db7c286ad6cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5MDNkMzM1ZDZjN2UyMTEwNWM4YTZlNzhjNjY5NDI1MTIzZTNlY2UwZDAyNjExOGY3YTc3MjZkYjdiNDcxZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiMWViYmJkMDgzZTk1MmViMTA0MjMyYmEyMDM5Y2NkMWVmMzZlOWI5ZDY2YzVlYzQ0NzcwYzA3YTA0MjFjYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNGE5YWNmMTY3ZTMxYWQwMjI4YWQ0OWQwNjAxZmY3M2YxNGY1YWFmMGEzOWNlNzI5MjhkMTE0MTNmNmViYWYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L942-L966",
+          "version": "repo-lines-v1:sha256:92e0aeb1b37afdf90ed50d4e56b94173eff756f10de6d58dc400a43012df2d55:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0Mjg2YjEwODlmYjY3YWUyZDlhMjc5NmZhNWFmZDcyNDgwZTJmMzYyNjk5ZDIzNzVhMGVhNDI1M2UyMmJhNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2ODhhOGY4MmQ4OWU0N2NhMDQ1NTNkNjM3YWNiNDJjYzA3OTE0ZTJhZDM3MzRkNzczYmUwNzE5NTUwZWQ0Y2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZTVlMjk2MzdmYjM3MzFjYjAxOGU1MmNkNzFkNDk3NjVkZDU2OGI5NjcyN2Q3YWNkZTY1ZmZmYjBlZTNkN2YifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L974-L1047",
+          "version": "repo-lines-v1:sha256:f5ab401c9715cb84afe7d8dd0af4b37e1741c45462ab2bf036494a0219c9079e:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiNWNlNDdhMjg1MTQ5NTQwYjk1ZWJmYmE1OGRhZjkyN2I5NGFjOGVhMzZmYzIxMDA2YWQ3ZjFhNzE5MmNmZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlYTdkZDNiYjFkMzc4ZmY2ZjI0ODNjM2Y4M2VkMGFmMWU3MDM2ZjBjMGY0MjY5NzA2N2M3M2U0MDU4YTVjNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjZTU3NDk1ZTNmZDJlNTMxMDViMjBkZmFmZDY5OTBlOWE4NWQ1NTk3Nzg0ZGRkNWRmM2M2ZGU5NzJkYjY2MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7203f5b416724597a47e85b19818a946",
+      "statement": "Because MmsSender.triggerSend passes null for the sent and delivered PendingIntents, an MMS send never reaches the manifest-declared SmsStatusReceiver (which has no intent filter and is only fired by explicit SmsSender-built intents), so it writes no send_segments row — and therefore never counts toward the Home 'N SMS today' segment counter — and gets no app-side STATUS/DATE_SENT; delivery confirmation is the platform default-SMS-app MMS stack's job, which updates the Telephony.Mms row that the provider-to-Room mirror picks up. MMS also applies none of the SMS funnel's controls (no rate limiter, no sendSubscriptionId/SMSC override, no SendOutcome); a failure surfaces only as the false returned by sendImage/sendAudio/sendGroupText when the provider insert or dispatch throws.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/AndroidManifest.xml#L144-L148",
+          "version": "repo-lines-v1:sha256:8ab185b94054f2424d6b30bc64bae1fd0f2b0ade5225d4cb018323d43625626c:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI3ZjkyYjYwZGUyYjQ5NzVlOTZhNTc1ZmQ5ZjFlNzUxZWQ0ZDhiNGVjOTJjMmRlNzg1ZjE5MDlkODY0ZTUyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQ1MWVhMjRkZDY3NTk5OTA4NTdhOWRkOGYwZDMzYmU1NGE2ODFmMWVkMjFmODk1OTVmODE1NGZkOWY4YTIzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmQ4NGZlY2IxMDBiZDM0OTM3NjExZGZmMjM4YmYzZDBjNTcwMzU4ZDMwNTkxZThkYTgwZWE4Mjk4OWE2ODA3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU4NGM1M2JlMjJlZDA2MDZiZTc1YzExZjYxOTdkYjAxYjFmNDAzMTc4NWRkYzdkZjZmNTZhMTIwMjk5YTQwYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/data/SendSegment.kt#L56-L69",
+          "version": "repo-lines-v1:sha256:454002a4ff68397143841108a9edbc75f1637566fca5008f7462fc4767502ab8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNzA3MzdlZmZiZTg5MDJhZWM3ZDhkNWM3ZjE3OWM2NWNlNzY5NjcxNmRiNGNhMzljNDk5NzY5ZWRjNzk0Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OWM0ODU3ZGFlOThiMDI4ZTg2Yzk4ZGQzMzk3OTBkMmM4ODkyYWM2NmIyOTNhMWVlYzMxN2Y3MTdiOWFkZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNmZhNmZlZTc0OWY1NTQzNjU4Y2Q2NmM1YjIyMTAyMjNmZjljMWU2M2UxNDY0NDhiNDNjZWNlOTUyNWZlM2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMmIzNTdlYjIzMzcxMmQ5YmNiMzMwMmE3NWYzN2IyMDVhZjExMDQzNWM3OGUyMzQxOWRkMDI3OTUxYTI0MzgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/mms/MmsSender.kt#L207-L216",
+          "version": "repo-lines-v1:sha256:9096fddddf2e6a88edc0f024a9e194d06f22f7db240819e5a697de0ec221fbc4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkNTg1OTkwYmVkYTAyN2NlNjJjNjM2MWNiODk4ODA0OWIxYTQ5NTU0MTFkNTY2ZTUxMTJjNzM0ZDQ1YWNjYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjZTIxMGJhMTdiOTllMjZkZWYwYzVmYjVhMDc0ZTI0ODQ5YjU5NTM4NDE5NmJkOWM4YjM3NmY1YjgwNWUyOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkNjliN2M1MDhlNWZhOThjZjIyYjEwZjU2YTc5Y2MxYzkxYWU1ZDcwZmQ1MzdmYTgwZmQ1ZTEwZGE1MDYyYjgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsSender.kt#L172-L187",
+          "version": "repo-lines-v1:sha256:bbf05f3521ea6e8fc969f4cb3563debf6a5bd7384102b699e3a63e52a59be39f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyYzZiOGM2ODc3MDJlNjhiYjVhNmI2NjlhYTI2YzJmNTE5ZjZjOTM2MmNhZjgyOGQyMGU5YmZkYjg2MGMyM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxMjY1MzMxOThmOGUwMGQxMzBkOWFjM2YxMmViYTk3M2ExNzgxMGRiNGM4NTQ3N2U0ZWM5YzRlNGIxY2UwMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlYjVhMGYyYzMwMzg2MjNkM2YzZjc4MDA0YWM4MmRlNjllNjQzZTI4YmQ4MGQ2MTljMDAwZjM1NjkyN2IxZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5MDM0NTE4NzY4OGVmYTgxMDdkMzc1NWNlMjdlYzVhOWQxNmFiYTljNGVjYTgzODA4NzdjMDgwMTA4MzVhYWEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L157-L179",
+          "version": "repo-lines-v1:sha256:a6ffde697192e554c28d2cd94e180a993da0ab99c59d85bbf513f79ff27b03e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhODI3NGY1YjYxMzQ5Y2NkNmYwMTRhYzQxY2VmMWFjZTM5MDExMmMxOGMxZWJkOTVlOTdlZWYwMGQxMWYyYjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZmNlZTNkMmZkZGU4NzBiYTc5YjMzZDllMTZmODZlMjI1ZjY1ZDczMTgzNDhiYTc4MmIxOWQ0MmNkNzU4MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzNmE2YzAxYTc1ZDI3MTk5ZjE2YThiMGU0MGU2MjBkMDdhOGEwZjAyOWM5MjIxOWNlMjY1ZjNhMzBhOTA0YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a29ceea76333407ebf5572be920ec08e",
+      "statement": "POST /api/v1/mms/send is a synchronous door (unlike /api/v1/sms/send's 202/503 machine-outcome contract): it maps MmsSender.sendImage's boolean to 200 {status:success} or 500 {status:failed}, and its imageUrl is SSRF-hardened — resolveImageUri accepts only https:// URLs whose host is a public (non-private/loopback/link-local/ULA fc00::/7) address, refusing http://, content:// (which the UI paths still pass natively), and private ranges, while downloadImageToCache caps the transfer at MAX_IMAGE_DOWNLOAD_BYTES=10 MB and returns a FileProvider Uri over a cacheDir file.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L373-L395",
+          "version": "repo-lines-v1:sha256:305176ee8d8bb6a992d32c30b98577bffc187809139c4bebaf1edeb3af8e8e68:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNTFhZDU3ZDU5ZWZiNDNjZWVjMjEwOWMzOTU4MDkyNTI0OTEwOWZkYWM2ZDBmNmQwYTYxYzFhMzVhMzdhODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2QxYTUxOGQ4YjI2MDI2YWFmOTQ0MjQyOWZhOTQ4ZGQ1YmVkY2Y3MzljYjgwYThmMjFhYWFiNzI1MzY2MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNTNjNGViMzQ5YmU2ODQ3NTRkYzczMzU1YjkxNDdmYTIyN2ZmMWQzMzg1MjE4ZDBjODY1NjFhZDY2MzM4MmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L880-L932",
+          "version": "repo-lines-v1:sha256:66743cdb54bb60b3e861d287966b8976ba331895af9509c255bb9ab7add5db80:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZGMwZGVkZTg5YTY2NzA1MjkzZGU3OTUwNDU1MWFmNzJlNTk3ZjkyNDM2MjllZTdiZjYyMTc4OGUzNzI5Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1MWVlYmZjMjJlN2FhY2JiNTNhYTM1MDBlYzhlNzg5YTBmZjgwNjNhM2IyZWQxNTUyNTNlNmYyN2ZiZjNlNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhMWRlY2ZiNmVhNTYzMjEyNjU0YmFlNGQ5OGE0ZTVjYTU0Nzc4ZTU1M2NlMGUxZWQxZDViZTBlMjlhOTU0MmEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/gateway/GatewayServer.kt#L934-L974",
+          "version": "repo-lines-v1:sha256:c169f6736872ea5fdd20027fc36035c94968ad22793ebc72f7446ee21375962f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZTg2Mzc3NTgzNDE1YjQ4OTYxZjQ5M2M0YWMxMmZjYjk0OTgwMjBiYzcxOGJmMmExZDEwMDYwNDg0OTkyODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NWNhZDczMGI4ZjRhODI0NzhmZGJmMjVjOWZiZTViNTE3MjhhZTgzN2IyMzExNTNhZDIwZmIyOTkzZGFjMDAifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

@@ -5,7 +5,7 @@ description: "How the SMS gateway goes from a user toggle (or a boot/START_STICK
 tags: [gateway, lifecycle, self-heal, connection-supervisor, reconcile, boot-recovery, dhcp-rebind, foreground-service, consent]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -33,7 +33,7 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-118a7a1d805522e96275e615
     resource: repo://app/src/main/java/com/autonomousone/messages/viewmodel/GatewayViewModel.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 # Gateway Startup, Reboot Recovery, and Self-Heal
@@ -74,6 +74,37 @@ Every transmission boundary gates on the first two through `GatewayAccessPolicy.
 
 ## The reconcile loop
 
+```mermaid
+sequenceDiagram
+    participant UI as GatewayScreen and ViewModel
+    participant SVC as GatewayService
+    participant SUP as ConnectionSupervisor
+    participant SRV as GatewayServer
+    participant HB as HeartbeatManager
+    participant POLL as OutboxPoller
+    participant BOOT as BootGatewayReceiver
+    Note over UI,SRV: First-time toggle, with consent
+    UI->>UI: toggleServer true, no consent, dialog shown
+    UI->>UI: acceptGatewayConsentAndStart records consent
+    UI->>SVC: startGateway consent re-check, then ACTION_START
+    SVC->>SUP: supervisor.start desired true persisted
+    SUP->>SUP: ensureLoop plus reconcileNow on conflated channel
+    SUP->>SRV: newServer factory builds fresh instance, start
+    SUP->>HB: startHeartbeat idempotent
+    SUP->>POLL: startPoller only when gmwebUrl set
+    SUP->>SUP: isEnabled true, State CONNECTED
+    Note over UI,SRV: Process death then START_STICKY revival
+    SVC-->>SVC: process killed, system revives with null intent
+    SVC->>SUP: ACTION_START null branch, supervisor.start again
+    SUP->>SRV: reconcile rebinds server if needed
+    SUP->>HB: startHeartbeat idempotent
+    Note over UI,SRV: Reboot recovery
+    BOOT->>SVC: BOOT_COMPLETED, desired and consent, startGateway
+    SVC->>SUP: supervisor.start, full reconcile from scratch
+```
+
+*Caption: startup and recovery paths — the first-time toggle with consent (UI → service → supervisor → server/heartbeat/poller) and the two recovery passes (START_STICKY null-intent revival, and the boot receiver replaying `ACTION_START`).*
+
 `ConnectionSupervisor` is a process-wide singleton (`get(...)`/`peek()`). Its `ensureLoop()` (idempotent) launches the loop into the service scope, and that loop owns three sub-coroutines:
 
 1. a collector on `networkMonitor.onlineFlow()` — when the network flips **online** and the gateway is desired, it calls `retryNow()` (the immediate-retry path, below); any other transition calls `reconcileNow()`. `NetworkMonitor` is the single source of truth for "validated internet": it requires `NET_CAPABILITY_VALIDATED`, not just an up interface, so a captive-portal or airplaned network is correctly *offline*.
@@ -82,22 +113,21 @@ Every transmission boundary gates on the first two through `GatewayAccessPolicy.
 
 `reconcile()` itself is a short decision tree. The flowchart below is grounded directly in `ConnectionSupervisor.reconcile()`:
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: a semicolon inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
     N["reconcileNow() nudge"] --> G1{"desiredEnabled and hasConsent?"}
     G1 -- "no" --> DISABLE["set isEnabled=false first, then stop poller, heartbeat, server"] --> S_DIS["State.DISABLED"]
     G1 -- "yes" --> G2{"networkMonitor.isOnline()?"}
-    G2 -- "no" --> WAIT["set isEnabled=false, stop poller and heartbeat; LAN server stays up"] --> S_WAIT["State.WAITING_FOR_NETWORK"]
+    G2 -- "no" --> WAIT["set isEnabled=false, stop poller and heartbeat, LAN server stays up"] --> S_WAIT["State.WAITING_FOR_NETWORK"]
     G2 -- "yes" --> DEG{"state was RECONNECTING, ERROR or WAITING_FOR_NETWORK?"}
     DEG -- "yes" --> S_REC["State.RECONNECTING"]
     DEG -- "no" --> BIND
     S_REC --> BIND{"server not running, or boundIp differs from current LAN IP?"}
-    BIND -- "yes" --> RBL["stop old server, build fresh via newServer, start; throw if not running"]
+    BIND -- "yes" --> RBL["stop old server, build fresh via newServer, start, throw if not running"]
     RBL --> COMP
     BIND -- "no" --> COMP["startHeartbeat, startPoller if gmwebUrl set, startSync"]
     COMP --> OK["reset backoff to 5s, set isEnabled=true"] --> S_CON["State.CONNECTED"]
-    RBL -. "threw (e.g. port taken)" .-> ERR["catch: set State.ERROR and log"] --> BO["delay backoffMs, then double backoffMs up to 300s"]
+    RBL -. "threw (e.g. port taken)" .-> ERR["catch, set State.ERROR and log"] --> BO["delay backoffMs, then double backoffMs up to 300s"]
     BO -. "next nudge" .-> N
 ```
 
@@ -153,7 +183,7 @@ Three complementary paths make "it was on, now it's on again" automatic — all 
 
 1. **Reboot.** `BootGatewayReceiver` is declared in the manifest for both `BOOT_COMPLETED` and `LOCKED_BOOT_COMPLETED`. It proceeds only when `gatewayDesiredEnabled && hasGatewayConsent`, then calls `GatewayService.startGateway(context)` — replaying `ACTION_START` so the supervisor reconciles from scratch with no manual step. Note the asymmetry: although the manifest filters on both boot actions, the receiver's own guard currently lets **only** `ACTION_BOOT_COMPLETED` through (`if (intent.action != Intent.ACTION_BOOT_COMPLETED) return`), so on most devices recovery is effectively driven by `BOOT_COMPLETED`. Consent is re-checked inside `startGateway`, so a revoked consent means the start is silently dropped.
 2. **Process death.** `GatewayService` returns `START_STICKY` for the on-actions, so after the process is killed the system restarts it with a **`null` intent**. That lands in the `ACTION_START, null` branch, where `supervisor.start()` re-reads `gatewayDesiredEnabled` from prefs and reconciles from scratch — no intent payload needed.
-3. **Delayed revival under Doze.** `START_STICKY` revival can be slow or suppressed while the device is in Doze, and while the service is dead the GMweb pull bridge is dark (sends fail with `503 android_gateway_unreachable`). To close that gap, `onDestroy` calls `scheduleRestartWatchdog()`: if consent is present **and** the runtime `isEnabled` is still true (i.e. the death was not user-initiated — `ACTION_STOP` already cleared it), it arms an `AlarmManager` alarm (`setExactAndAllowWhileIdle`, with an inexact `setAndAllowWhileIdle` fallback when exact alarms are disallowed) that fires `ACTION_START` after 15 s, even from Doze. The watchdog is never explicitly cancelled; the redundant `ACTION_START` it may deliver is harmless because `supervisor.start()` is idempotent.
+3. **Delayed revival under Doze.** `START_STICKY` revival can be slow or suppressed while the device is in Doze, and while the service is dead the GMweb pull bridge is dark (sends fail with `503 android_gateway_unreachable`). To close that gap, `onDestroy` calls `scheduleRestartWatchdog()` **before** it calls `supervisor.stop()` — the ordering matters, because the gate must read the runtime `isEnabled` while it still reflects the pre-death state. If consent is present **and** `isEnabled` is still true (i.e. the death was not user-initiated — `ACTION_STOP` already cleared it), it arms an `AlarmManager` alarm (`setExactAndAllowWhileIdle`, with an inexact `setAndAllowWhileIdle` fallback when exact alarms are disallowed) that fires `ACTION_START` after 15 s, even from Doze. The `supervisor.stop()` that follows persists `gatewayDesiredEnabled = false` and `shutdownComponents()` clears the singleton; on a hard process kill `onDestroy` never runs at all, so the flags survive and the `START_STICKY` path above applies instead. The watchdog is never explicitly cancelled; the redundant `ACTION_START` it may deliver is harmless because `supervisor.start()` is idempotent — and it is what re-asserts the user intent 15 s after a system-initiated service stop.
 
 ### The shadow-sync nudge
 

@@ -5,7 +5,7 @@ description: "Broadcast-to-fan-out reception of inbound messages: SmsReceiver's 
 tags: [sms, mms, broadcast-receiver, telephony, incoming-message, dispatcher, blocklist, notification, webhook, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:7e1fd1a22d05c07c7957cfc8bfe2b1cf04f0ecdaca4bb90caaea22a80df1ebef",
+  "pageVersion": "sha256:e3df1eef7370941828b96400694b5d692eb7275705fb4ce95209537718fc4a27",
   "claims": [
     {
       "id": "claim_1e72e59e7625468cb2ab358dc7393f81",
@@ -479,10 +479,28 @@
           "version": "repo-lines-v1:sha256:a0856f9269a66b47527f1ce64bbd7d148df6e98a3c86207d1fd2d24024cb9ae2:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNGU3MjJjNWVmYTZjNzVhYzk4ODc1ZDYzMzU0YzAwZDk1M2FkZDhhNDUzZThkOTFkMTZiZDUyMGQ2ZGQ2MTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhYjgyMjNhOWFiNjE3ODZkMjE0Y2VjOWM2OTYwODAwYWUyY2IzYWMxOGFiZjVmZTY5NmU5OTVkMDFiMWQwMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         }
       ]
+    },
+    {
+      "id": "claim_7d89739396e346b69771d0eb7d091531",
+      "statement": "The ConversationScreen composable owns the composer and its draft persistence, deliberately separated from ConversationViewModel: it grabs the process-wide DraftRepository singleton with a threadId-or-normalized-phone key, seeds the composer from the stored draft (or the one-shot draftText route arg, never auto-sending), and saves on every keystroke via a LaunchedEffect (with an onDispose safety net) because the activity's onResume fires before conversation composition is disposed, so save-on-dispose alone would land after Home already re-read its drafts; it also creates SimManager/SimRulesRepository/MessagingPreferences to preselect the SIM for the recipient, while the ViewModel itself only holds SmsRepository, SmsSender, MmsSender, ThreadPager, ThreadMerge, and ThreadMessageCache.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L162-L201",
+          "version": "repo-lines-v1:sha256:525511669d5d6650cf065d53117506a3d5dd81dd99c836ebf2f1e0685df9c870:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxNWI2OGQ0ZmJhMDE0YTY2ZmEwNWJiOGE2ODU2ZWJiNmE3NWNhNjdkOGQyN2FkZmViZGY5MTc3NmVkYjg5MGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiY2Y1MmM1ZDZlYjc0MmI4NjVlOTBkYTcyMDkyOTFmNjk0NDBiYjI3ZGM2NDY1ZWM1YTcwNzA3ZjZmYmQ0NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2YTRkZGJkODVlY2E1YTM3ZmY3ZThjNjhiYWNlYzQ5YTliMjFlZDNhYTBhZjg5NWQ3MWI5ZGNmY2U0ZWNlZmYifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/ui/screens/ConversationScreen.kt#L551-L562",
+          "version": "repo-lines-v1:sha256:00f014a075e9ff121894921388ba54baf764e8f47f2a3560a5c4b2bc2b03dc7b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZDcyZDA1ZmZkMGVlYzZlMjJkZWEwNjM3MmE2YzU0ZTU2NDU1NjE0YzM5NzBkNDQwM2VkMWQwMjlhZmM0ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjZGRmNzVlM2U1N2UxMjVkNGFmMWE3MTU1MmQyYzI3MjhiMGE1YjdiYzRlMWY2NmYyNWI0YzdjOTlkNTQyN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiODY2NTNlMTMyMGQyNGJmOWRhZTU0NzVlMzdhNjE3ZjhiODY1NjE5NDA1MDQ3ZTFmMDJhMWE0NDVmYmVhMGMifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L56-L77",
+          "version": "repo-lines-v1:sha256:9994eb53f3e0732f409aaae30f2a4a0a07ab193947a8844c1b3a9a5677e7d0a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliZDhlNTE5MzMxYjM0NzBlYjI2MzExYjVlYjM1NGRlM2RmNmRmYmEwYmQxYTMwY2E1OTgwNzRiNjYyMmRjMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwZDhmNTkxMzRmOGU3MTZmMWFmYmM5MTIxZDJlOWFmNzgyMGVkYzBhYzNjOTQxZWY2MWEyZDViOWU3ZTc5YmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMTlhYzIzNjVmMjYzY2Q4NDY1ZTc4Y2IyZjg0MDkyZGIzMjRhY2M5NDkxMTMwNjhkODY3MzgwODQzZDgwYWEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

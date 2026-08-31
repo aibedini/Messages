@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a0fade85167b041108f42e9e08384e6fae9b3a396006f8d5079de84b6294de34",
+  "pageVersion": "sha256:3159b3ac0e4a0ec92a6b45323c04db612f55dca56b94466f0d43466bc21c3635",
   "claims": [
     {
       "id": "claim_acddbf6da8de459bb766bd74f944ee15",
@@ -412,11 +412,15 @@
     },
     {
       "id": "claim_d6fdf92f54724f41b17f6651dbd1d251",
-      "statement": "The only gateway-specific JVM unit test in the repository is GatewayAccessPolicyTest, which verifies the full truth tables of canStart (consent required) and canTransmit (consent and runtime enabled both required); ConnectionSupervisor and GatewayServer are Android-dependent and have no unit tests, the androidTest source set containing only the stock example instrumented test.",
+      "statement": "The gateway runtime has exactly two JVM unit tests: GatewayAccessPolicyTest, which verifies the full truth tables of canStart (consent required) and canTransmit (consent and runtime enabled both required), and EveSmsQueueTest, a pure-JVM suite over EveSmsQueue.MemoryStore covering the gateway send queue's priority ordering, idempotency keys, queued-to-active-to-sent/failed status flow, cancellation rules, per-priority capacity, and GMweb-compatible verification fields; ConnectionSupervisor and GatewayServer themselves are Android-dependent and have no JVM unit tests, and the androidTest source set contains only the stock example instrumented test.",
       "evidence": [
         {
           "resource": "repo://app/src/androidTest/java/com/autonomousone/messages/ExampleInstrumentedTest.kt",
           "version": "repo-file-v1:sha256:19284d538fe970232234217a3fbb8aa1cfcbb367ee3d31957ae38046cd2f3b81"
+        },
+        {
+          "resource": "repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt#L13-L167",
+          "version": "repo-lines-v1:sha256:f24bf456596951963c9fb41e0f4b7d4295dd2de4e17f766252a9c072be30d4ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMDY4MTAxMjRkMjJjODBjMzE4MWMxNDI0MGM4MjQxYjgwMTM2NmQzYTNkOTk1NjJlNzY5NGQ2MzZmMGUzOGI2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3YzQ1NjUyOWIyMDE3YTY3MjQ2ZjBmYjQ3OTA4ZDNjMDcyNThhMzVjZDNkMGNmMDg0YmMwYWQ4NzE0MmJjZDI5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
         },
         {
           "resource": "repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt#L8-L20",
@@ -427,6 +431,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

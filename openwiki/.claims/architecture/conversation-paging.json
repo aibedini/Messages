@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:ae2c03636d6431ab3a4651b30f903ad71c21d3766ffd4f6416d1a292791c7d11",
+  "pageVersion": "sha256:7ea10db4f55a46525b8b766c9cfe25fa631aded84517d159d9c0a1a4845d046c",
   "claims": [
     {
       "id": "claim_1d04c24eea58411b866ee59248230233",
@@ -292,19 +292,31 @@
     },
     {
       "id": "claim_eb31792d40e44372ba622bb48e921dcf",
-      "statement": "ConversationScrollCommand (Latest / Oldest, each carrying a message id) is a one-shot scroll intent emitted only after a window replace (jump-to-latest / jump-to-oldest); ordinary pagination never emits one because in reverse layout a merged page grows at index 0 and the row being read never slides. Commands flow through a capacity-1 SharedFlow with DROP_OLDEST so a burst retains only the newest follow request.",
+      "statement": "ConversationScrollCommand (Latest / Oldest, each carrying a message id) is a one-shot scroll intent emitted from four sites: the window-replace jumps (jump-to-latest from OLDEST mode and jump-to-oldest), the LATEST-mode jump-to-latest that is a plain scroll without a replace, and the appendLiveMessage auto-follow when a live row arrives while the user is at the newest edge. Ordinary pagination never emits one, because in reverse layout a merged page grows at index 0 and the row being read never slides. Commands flow through a capacity-1 SharedFlow with DROP_OLDEST so a burst retains only the newest follow request.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L185-L189",
           "version": "repo-lines-v1:sha256:271d2f0ad9c174c313a3a077fea34fc233ee6720fb230fe3af723130cfa9358b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQxZTYwYWYwMjA4MDMyMGRmMGM3ZjE5YjIwM2MyMDZhZjY4OGNmNDk3NDUyZTc1ODg3MGI2YjFiMDc3MDFjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDE1NDFjNjI0NGE4MTQ4N2YyMGQzNTMxNDU3OTZlMDcwN2IyMTFhMGEwMjRiYjYyYjhkMDg3M2MyYzk4OWVhOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjAyOTZjOTBiMmNkMzI5MTkyZmU2Y2UzYzQzN2Y3MWVkMTIyYzY5Mjc5YTE4NGZkMWNkZDhiZjRkMzcxMzE4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTM4ZGYzODdlZmUwNmRlYTQ5NmI3ZjkyZDNmYjZjM2Q4MmRhZmU1Zjg4ZmIxMzI3ZGRlOGQwMWYwODYzM2VmYyJ9"
         },
         {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L222-L222",
-          "version": "repo-lines-v1:sha256:e413f3e5cc61054a32e4d291caa8ef1326d77ff3e73d6571f5b935e4404a30a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQxM2YzZTVjYzYxMDU0YTMyZTRkMjkxY2FhOGVmMTMyNmQ3N2ZmM2U3M2Q2NTcxZjViOTM1ZTQ0MDRhMzBhOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQxM2YzZTVjYzYxMDU0YTMyZTRkMjkxY2FhOGVmMTMyNmQ3N2ZmM2U3M2Q2NTcxZjViOTM1ZTQ0MDRhMzBhOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDk4Y2QyNzNmZTk3MjQ2YjQ0ZDI4NDVjZWM0NGUwNzAwMjRiMDlhMjBhZThhNmEzOTQ2MjRkMmU0MDVhYTQ1YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTJlODdiMzgxYzAzNTA0NGUzNTkyZWVmZDQ0MDIyOTBiY2JhNTk1OGU3YTI3OGU5ZDYxN2JlYzNiMjI0MGJlYyJ9"
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L216-L225",
+          "version": "repo-lines-v1:sha256:c82e61305b24e19f7a873dca898acac1bb91d354b1c828dd7dbf4a772d8b504b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5ZTliZDM2NTFlMWEwOTQ0YTc0M2U1ZWI4NTJkNjZhMDliNDIyZjViOTRiZGQzMWRiYTE4ZDg5ZWY1Y2UzNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0Y2FmNjA5MDYwM2Y5OWMzODM0MDRkNTk5ZDE2NTQxODYxN2Q2NzA3MzllYWYwODgwODU0OWUwODc1ZTMxNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1ZTQzOWQyMzk2MWJmOTdiYTUyNjgwMzc1YzNkZWI0YzAxOTNlNTVhZWM3NTc3YzZjNTJlYThlYTJjZjI1YTEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L399-L407",
+          "version": "repo-lines-v1:sha256:0c9a7f861dfd6b3acc7b8f2c4110399d1cdcd45243d8ac04838206287aceace3:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjMwMjUwOWFlMmI5YWU3NjEyODE1YjE3OWUzMmQwNzBkOWY5ZjRiMTI5Yjk3MWEyZmY4MGFjN2ZhZTI2MGMyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MWJmYWJjZmI2ZDg5ZmQ5ZjRlM2I3YmM0YTE3NGZkOTBjOTk4MTg2ZTRmZGUyYzhmYTM0ZTZkNWMyOTNhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzNhZTQ4NDc2OWM1NTUxOTU5NmU4OWIwMGE3OTFlMmJmY2MzMTg3YmIwMjA5YmEyN2FiZjhkMGFjNDFmZDFmNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUzODM5MTkwM2QxNzM4NDNhY2Q2NDAyZTZmMWYwZWRiMjZhZTQ3YWU4MmI0ZjdkY2M1NTIxN2I0MzllZDBkYiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L438-L440",
+          "version": "repo-lines-v1:sha256:819a804206199271194e2f2ce972c07ecbce3725736bcdcfdbf50740b14f06de:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDYyYjFiZTcwMjZiMDJkMDIxMTdlMTM3OWJiNzRmZmNhZTM3MWIzMTM2YTczZDNmY2MyMzdjMDdjNmUxNDU3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxN2UxYzhjZWQ2MTYwM2ZiMDliYWRjNzI2MzNlZDEzNWY1YThjOWU5MTgwNzljNjMzZjgyNjU1NzUxZWMyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTg2NmNiZThlODFjNzMyZmM0MjVmNTRhM2YwYzg1OTBmMDFkYzcxNjIzMGFhNDVmYjExODZjYzBjOGNkOWUzZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWE3MDkyNTAzYjZiODMzNWM3NzJmZGVkNjJkZDNhNGY4ZTVmODZlM2NmMWU3ZDk3MzZkODMyN2I2MTQwOGU5NCJ9"
         },
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L45-L54",
           "version": "repo-lines-v1:sha256:9f09274a72272af1dabc34f83438ecdd0763a397fe89856f7c644ce9625b03cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmZhYTUzNWJkMmVhM2Q1MmU3NDFlZDQ1NDQzNWI3ZmU0OWU4MzU4NmU5NDNkOThkODJiYmZiMjRkMWY1YzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMmQ0NDJkNmJkYTQ5Y2I5ZmRmMjkyNjYyYmZiNGVhMDQ2NjlkMjE2YWQ1OWRjNDhmMmNkYTUxY2Q3Y2QxMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhZThhYTg4ODZmNGEzOTNiOTZiMjIzNzRkODUxMDRkNjcwODgwY2U3NTM1ZDYxOTg4YWU4NWY1ZDg0NTgyZjgifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L485-L487",
+          "version": "repo-lines-v1:sha256:4796aad75c344ede01702953fcbf8eff5a4c1935cd83ea03402c2169b0c88681:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDYyYjFiZTcwMjZiMDJkMDIxMTdlMTM3OWJiNzRmZmNhZTM3MWIzMTM2YTczZDNmY2MyMzdjMDdjNmUxNDU3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxN2UxYzhjZWQ2MTYwM2ZiMDliYWRjNzI2MzNlZDEzNWY1YThjOWU5MTgwNzljNjMzZjgyNjU1NzUxZWMyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGI5Yjg1OTkyNDQ0Nzg5NDJiMjJlNGMxZjM1MDUzOWRhN2U4YzQ4M2UyOWMxYzI3Yzc1YjE3MjBmYjY5MzYyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWIwMTlmZWQwN2FlMWJlMGM1OGQzYmZiYmIyODllNDE5ZTYyODBiYzYwYmFkYmQxMGJmMzRkYTcwYjkyOTI5MCJ9"
         }
       ]
     },
@@ -429,10 +441,68 @@
           "version": "repo-lines-v1:sha256:c49e0a14ef18a1e779cb7de5145b1a1591069d1e5d4ac02ee85433a4c11f3318:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MzFkMDgyOWNmMTIwY2VjNDMxZjBiOWUxNmJmNjU2NmFiMGQ5YzA2ZGQ1NmM5OTUxNWJhZjIzZTY1NzJkNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWU3NDEyMWRkMDg0Mzk3NjY4YmI3ZDM4MGZjNTQ1YzVkMmMxMWU1Y2ZkOWJiZDQ5OTI1NjAxNDc5ZGJiNGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNmU2MWNkNjM1Mzg5OGMwYmZmZTA3NzUyMTM4OThiZjQxNjk4ZWFiOTY5ZjBlODgxNTE1YTFhZTkwM2I2ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1NWNiNjlkZjNjNjE0NDE5NGQ1ZGY3MmZiM2ZiZjEwM2Q1MTYxN2M3MjI4M2MwZjY1MWM3YzBlMzQ5NTkyZmEifQ"
         }
       ]
+    },
+    {
+      "id": "claim_b7fdcfdedda846aaacd828257e395350",
+      "statement": "ConversationCache is a persistent list-level snapshot for instant Home rendering: HomeViewModel hydrates the conversation list from it on the first load whenever the Room-shadow path did not paint, and re-saves it after every successful load - the Room-first path and the provider getConversationsFast path of performLoad, plus both silentRefresh outcomes - so the Home list renders instantly while the full provider scan runs behind the painted snapshot and atomically swaps in fresh data when it completes. The Telephony provider (and its Room shadow) remain the source of truth; ConversationCache is a paint-first revalidation layer, structurally the Home-list sibling of the per-thread ThreadMessageCache.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ConversationCache.kt#L10-L71",
+          "version": "repo-lines-v1:sha256:bbec32616791ba8d3fef46ca3d89ff5f67546c79229ae09df55f3cc11c7ffc4f:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5YmI2MzllMzE4OWNhMDI2NWYzYTM3YWIyMTRiZDUwODZhM2M5NmNmNmE2MTMwNzczY2RmMGQwYjk1NTNhZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkOTY0OTVkMjRmMDk2MzQ2MzhhMzZjMzhjODMzMDQ4M2QwOWRmMTI0ZGQ0MWJmMjQ3ZTBiMDY0MmMyNjNjOTIifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L220-L293",
+          "version": "repo-lines-v1:sha256:5fe5b6df3818197e7aff14d49d444bb05ce29b896b6998a4788eab508d07ecc9:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1NWViNWQxMTM4YTUwYjNmZGMwZjBlNmVlOGI4MDUyODgyMjdlZWIxYmE5YWNjNzMyNTI2NDA2NjI4ZDE4NDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZmVlYmRkNzMzZWE1YTViMTkwZmMyNTFhZmM3ZTJkNjAyMGU1YmQxYjUxNDMwYWEzMWFmZDYxZDZlZDRmMjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzODQ3Yzg5MzczNTA0MTc1NzZmMTAxM2U2YzFkODg5NTkwZWQxMGM2MjY5YjE0NGZmZDBjODI0ZmVkNTFkZDAifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/HomeViewModel.kt#L304-L339",
+          "version": "repo-lines-v1:sha256:952e5894acbf7789fe069519c4ecc08276e5fb7d0a1161b81ce3788a69eb25f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1MjkzYjk3M2UzNzU2MTg1ZmE2Y2Q5YTQxNTUyMDdjZWUyNmI5MWFmNmUxOTlkN2UwNzM5NzAzMWJiNDllYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTg1NzJiODg4YjA4Zjc5Nzk4YTE5YWNhZDFlZmRhZmVkMDI3MDQyNWEzZTFjMjJkODg4ZDEwNmQ2NTY4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTRlYmJmZDhlZmVhNGQ0OWVjNWM3YTM4Yjg3MTYwNWNlNGYzMGM5NTY3NmQ2ZTU5MTBmYzQ4ZjUwMzQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MTdiOWFhMDI4MGMxMzYxZGJlZmRjYTBhMGQ5Yjc0ODhmOTQ1ODgxYzQ1ZWMwNjY5MjdmYjYzODY2MzI2YzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad965ad0032740bf9538eba9e8fc0114",
+      "statement": "The ConversationCache snapshot is a compact JSON array in a private SharedPreferences file ('conversation_cache'), storing at most the newest 500 thread rows - each projected to only the fields the list renders (id, threadId, sender, message truncated to 120 chars, date, unread, type) - plus a savedAt timestamp; a MAX_AGE_MS = 7-day constant defines how stale a snapshot is considered, and load() degrades to an empty snapshot on any parse failure.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ConversationCache.kt#L28-L45",
+          "version": "repo-lines-v1:sha256:8d77f92eb3343a8585219228d6317104dd9a82ae1ec474f79e6fbbebb175a661:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmMzMwMjdiYzIwYjViY2M0YjEzOTBiNjM2YjJhY2E4YjA4NTNiZjUwMjA0YjAyMDlhMTdiOGY0ODQwN2M3OGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZDk1ODRkMGE3NTk4NDg3ODM2NTEwOTY1OTc4NzE0MWEyOTQyMjY2MWIxNTk4YzZhZGEzNmY5ZDc3ZDlhOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0Y2Q1NjFhNDg2ZThhMGVlMGJjNDVmYjNjOGJjMmI4MjMxYmEwNTJhYzJlOGJhNWEzYWQyNzkyMjYwMmZlYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhMjdiYWQxY2RhOTg2OTE2YmZmOWRmMDhhM2FkOTU3MDcxNDgzYTg3NGE1NTljMzVhYWE2YzUxN2IxNWJkN2YifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ConversationCache.kt#L74-L98",
+          "version": "repo-lines-v1:sha256:8aa2c31e9ef0f145b99b910be5319b3e658255fec06544d42bebf20295779b48:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhMzA0M2I0NzVkYWYxNmIwOTU0MzNiMTU5M2IxMWE5MWMzNDllNDdiMDNlMTIwZDU0OGQzY2ZjMDgzOGZjYmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0NTBjZjQ0YjY1YjEwZjIzYmFmYTQ3MTUyNTI0MzM5ZmE1YTY1M2IzYTI2ODg1ODFlMjNhMmNlOTg2ZDNjM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2MGIwODBmZGM5MjU0NDVjZDEwNjc2MjhkZmUzMjVmM2FmZmNiNGY0ZWE3ZjhiYWE1MzAyNWJjMDJiYmNiMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f3683646736403489cb283599321831",
+      "statement": "Reading a conversation is a UI-level overlay, never a cache invalidation: every window replace and refresh paints its rows with unread=false and calls markThreadAsRead, mirroring the read flag into the Room shadow (TelephonySyncCoordinator.markThreadReadInShadow) and the Home list (SmsEventBus.emitThreadRead), but deliberately never calls ThreadMessageCache.invalidate - the message content did not change, and invalidating on read is what would force a full provider read (a 'Reading messages...' flash) on every re-open of a conversation.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/repository/ThreadMessageCache.kt#L86-L89",
+          "version": "repo-lines-v1:sha256:31ab4ccab12dd5deeda1dc1084055146451499d1e97afb4548b26e0766969fb6:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWVkYTNjZGVmYmJiNjUyMDk5MmM5Zjc0NGI4MGViYTQ3YTQ2Njg1YjYwMWNiNjQxZGY5ODUwODg1YjVkNjQ4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDk3ZWUxMDQxOWY0MjkzYzcwNzY3YmU3MjAzMzJkZjZlMjAzNmZmODUxMzYwY2VmNmRhYzg3MTkwY2Q4MmQ5OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGVjNTE5OTQ0OTJlOGJkMTQ5MWQ3MmFiMjMzOTZhMTg2NmI1NTk5ZDhhZTlhNDY0MjVkMjQ4YmQ0YWRhZTU5ZiJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L566-L576",
+          "version": "repo-lines-v1:sha256:b74295137ca9cfc37f6e7038671c299da41a64258a95776baefb9761aa76ec4b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2MDJhZWY0OTI0NDJhOTlkZWJhNzJjOTYzZDczY2E2NjkzN2Y3YzE1ZjcyNTA4Y2ExOTg3ZjZjZTdhNTAyNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYWMzMDcyMjk1Y2EzMTkwZWU5MjMyNjc5YjgzY2NiMTI4MTI5NGZiZGM1OWMyZGMyMzEwZmIwMTRmNjU4MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MDM3OWY1MmY0NDcxZGJmY2U5YjE2YWU3Yzc0MzJmMzEwYmRiYmRiNmZmOThmN2RlZGEzOTA5ZTFmNTFhYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiODM2NDg5ZThiNDllZWNjM2U4YzRiNTkyMDg1YTQ1MDk4Y2I1MjMxNGIyZjQ2YzFmYjNkOWYyZGExNDg4YzEifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L640-L642",
+          "version": "repo-lines-v1:sha256:a65191b25f4cf42b828d525f82c40f107dbdfa284a6e58e5899bcb821aa9385f:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmY1MmQ3NGVjMzgzM2NjNmIxMTU2Y2M4MWJiNWVlZTBkMWZiYTg5MDdmODhhNWM1NDQyYmY2Mzk5N2JmZDAwZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjY3OGJhZTcyNTY4ZjM1MjRiZmY2Y2UxNmIyMzNmN2MxNmUwNjBkODdlNjhjNjFiNjEyZjE2NjRiOTJkNmM2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFhY2U4ZDQ2NWRkMGI0MzNiM2EwZjM5NmI0YmFlMjM3OWM3Njc0MjAwOTQ2NzUwNWQzODU5ZjgxZGRjYjNjNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjAwMGZmMzU5ZmNjNGEyMDVkMWE4Y2RiNjY3ZmM0YWMyNWIxY2FhNmJjMzkwMjUxZTY4MWUxNjc3NmFiMzA3ZSJ9"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L729-L746",
+          "version": "repo-lines-v1:sha256:d592827ad870291ba5dab8b6f7b27659a0d81109180df74e5a17d2f39d529693:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZmExM2RhZDc0M2RhOWM4MTlhZTE5YTEwNDFhZWI2OGE5YTg5MzE5MTMyZWY4Yjc3YjRmNGZlMjQ2ZGMxY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MTlhNmRjYzA0ZTIxM2EzYzdhNzdhNDU2YjAxZTc2ZDFlZjc4Y2QwMGJiZWMxZDhmODE0NThmZTkzZWRjNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MTNhN2E5ZGIwMzJmMjQ4ZjQ1MWM2Mzg0YmQ1NjBiNGQ2MDU4YTZjMzg0MGM5ODUwMTYwYzhhZjAyOGY1ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwYjM5ZjBjNjQwZTZiNzMxYTliNWVmZjQzZDRhMTljZGI4YjgyZjI0OTRkZjBjYWNlZTYyNjQ3N2Y1ODA0MTQifQ"
+        },
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/viewmodel/ConversationViewModel.kt#L826-L828",
+          "version": "repo-lines-v1:sha256:ab1e791851d27d874e7814be6fd7d54fdbf8db772159ab27594759705ac703d3:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmQ2ZjlhMGM2MTc5NzRjNzMwNzFjMmNhM2U1YzE1MDBmYjE5NzY5MTEzNmJjZDNlNTEzMjMzZjcwZGY5NmM2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MWJmYWJjZmI2ZDg5ZmQ5ZjRlM2I3YmM0YTE3NGZkOTBjOTk4MTg2ZTRmZGUyYzhmYTM0ZTZkNWMyOTNhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGY4MGZkMGUxZGVjOWE0OTNjMzg5YTAzZmFiOWIzMzY5ODQ3NzZhMTdhYmZmMDIzMzJiODJlZTcyZTEzOTZmYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTRmY2UzOTI2ZGY4ZWQwMDJmZDkzMzdmMDkwNDJmYWU5Zjc4NTkyNjU1ZGY3MjkyY2U5YWNhZTExMzFmMmVjMSJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

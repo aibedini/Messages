@@ -5,7 +5,7 @@ description: "Everything from user/API intent to a sent SMS/MMS: SmsSender's per
 tags: [sms, mms, outgoing-message, status-callback, telephony, rate-limiting, workmanager, scheduled-sends, gateway, android]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -55,7 +55,7 @@ sources:
     resource: repo://app/src/test/java/com/autonomousone/messages/sms/SmsStatusPolicyTest.kt
   - id: openwiki-source-abab24512635508d1d46bebd
     resource: repo://docs/release-v2.6.10.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 Every outgoing message on the device — typed in the UI, quick-replied from a notification, POSTed to the LAN REST gateway, pulled from the GMweb bridge, or scheduled for later — converges on one small layer before it touches the modem. `SmsSender` owns the SMS funnel: it persists a row into the shared `Telephony.Sms` provider **before** dispatch, resolves the user's SIM/SMSC/delivery-report preferences, splits multipart bodies, and hands each part to `SmsManager` with its own status `PendingIntent`. Modem results come back through a manifest-declared `SmsStatusReceiver` whose only job is to fold those callbacks into provider status via the pure `SmsStatusPolicy` and to write the per-segment send ledger. `MmsSender` is a parallel, provider-insert-based path for images, audio, and group text. Two independent scheduling mechanisms exist — a WorkManager-only user path (`ScheduledSms`) and a REST-facing path with a persistent registry (`GatewayScheduler`) — and a stub `HeadlessSmsSendService` satisfies the default-SMS-app `RESPOND_VIA_MESSAGE` contract.
@@ -135,7 +135,7 @@ The central policy decision of the receiver is that **vendor non-OK SENT codes m
 
 `parseDeliveryEvidence` reads the raw SMS-STATUS-REPORT PDU from the delivery intent's `pdu` extra and parses it with `SmsMessage.createFromPdu`, trying the declared format first, then `FORMAT_3GPP`, then `FORMAT_3GPP2` — only falling back to "the callback succeeded" when a vendor omits or mangles the PDU. A failed callback without a parseable report is `UNKNOWN` and must never manufacture `STATUS_FAILED`. The pure `SmsStatusPolicy` maps the TP-Status: 3GPP `0x00..0x1f` → DELIVERED, `0x20..0x3f` → TEMPORARY, `0x40..0x7f` → FAILED, unknown/vendor values → UNKNOWN; 3GPP2 only the documented `2 << 16` → DELIVERED, everything else UNKNOWN.
 
-Per-part evidence is stored in versioned SharedPreferences sets (`sms_status_callbacks`, keys `v2617_<rowId>_{sent,dlv_done,dlv_pending,dlv_failed}_parts`) — the version prefix deliberately ignores callback state written by the pre-PDU policies in v2.6.13..16 — and is **monotonic**: a DELIVERED verdict is strongest and can never be downgraded by a duplicate or stale report, TEMPORARY may later advance to FAILED or DELIVERED, UNKNOWN leaves prior evidence untouched. The whole update is guarded by a process-wide lock.
+Per-part evidence is stored in versioned SharedPreferences sets (`sms_status_callbacks`) under four keys per row — `v2617_<rowId>_sent_parts`, `v2617_<rowId>_dlv_parts`, `v2617_<rowId>_dlv_pending`, and `v2617_<rowId>_dlv_failed` — the `v2617` version prefix deliberately ignoring callback state written by the pre-PDU policies in v2.6.13..16. The sets are **monotonic**: a DELIVERED verdict is strongest and can never be downgraded by a duplicate or stale report, TEMPORARY may later advance to FAILED or DELIVERED, and UNKNOWN leaves prior evidence untouched. The whole update is guarded by a process-wide lock.
 
 ### Aggregation and provider/Room writes
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:f95be8c1fcae6b25457994970b26759c4388a0e756dc07f90e9984ac2088a066",
+  "pageVersion": "sha256:40755ace9b985d283daa5c3549fcdb0ae4434f1ead0e6faac08657ec11f22b2a",
   "claims": [
     {
       "id": "claim_6218e9e8f7554dd4928f3f44617cb9ee",
@@ -187,16 +187,6 @@
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L221-L257",
           "version": "repo-lines-v1:sha256:2850d5f8b66a6bc91003819183dbb7cfe501672a67df54df5e9c452930084002:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Y2JiYzY1NDY5ZGIxY2EyODQyZWZkOTdkZjdlZTJjZTZjYzE1NzE0ODJkMDFhMThiNzkwYTEwYzdjNTEwZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExMmY5ZjA0YTIzZTA3NmM4MWZlMzQ5ZWU3ZGQwYzc5MWUxM2Y0MTE4YjdlZGVhMzlhNmEzMTJjZDcyMWNmZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkZWU1ODFjODBjMjhiM2YwZjcxZGE4MmY2MmM3MzJhOTg1ZjkxNWM4YTY4Y2FhZTk1M2JhNWJlNWM2NjBjOGIifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_95d433a6ff1542a4b4de3c75289cde98",
-      "statement": "Multipart callback aggregation state lives in versioned SharedPreferences sets (sms_status_callbacks, keys v2617_<rowId>_sent_parts / dlv_done / dlv_pending / dlv_failed — the version prefix deliberately ignores callback state written by the pre-PDU policies of v2.6.13..16), updated under a process-wide lock with monotonic per-part semantics: DELIVERED is the strongest verdict and can never be downgraded by a duplicate or stale report, TEMPORARY may later advance to FAILED or DELIVERED, and UNKNOWN leaves prior evidence untouched.",
-      "evidence": [
-        {
-          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L135-L196",
-          "version": "repo-lines-v1:sha256:af76b89577ebd1f139dd447da9c19341236ce838b029e567ce00c8f26d7597e4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNGMwMGE5M2I1ZjBiNmMzNDJmMzVkYjk2Zjg2MmMyMjdlZjVjZjM3M2RjZmE0NjFiZDY0NTc3YjY1ZTcyOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhOWY4NmQyOGU3ODRmOWZkMzFmYjcyZDE1ZjYwY2JjZWFhZmRkNjY5Y2JkNWI2ZGE3ODg4YTAyMzMyMWViYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxOWEyNmMzYmZhMjRhZmI5MGYzZTRiYjNjYWI3ZDVhMjg3MTZlYzA1YTFhYTMxNTcyM2M5NTVkYzRmNzcwYjUifQ"
         }
       ]
     },
@@ -397,10 +387,20 @@
           "version": "repo-lines-v1:sha256:8b11e865539689976e6d19aa128070e33d6f5ab90115d1700dffad8dcfed1ffc:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MDEwZjU4ZTYzYzgxNjgzZjYyYTdhYTg1OWY5MTllOTQ5NDQxNjgwYjQ4NDllODhkNDk3YjJlZDk1NjEwNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMzU2ZWM3MzI3ZDhhMWRlYWUwMzMzYzQ0OTgxYjI3N2M1NmY4NmQ1ZDExZTZkYzM4OWE3MGJmZTJmNDRhODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_5a5db91584f2404981f499b78e50c7a0",
+      "statement": "Multipart callback aggregation state lives in versioned SharedPreferences sets (prefs file sms_status_callbacks, keys v2617_<rowId>_sent_parts, v2617_<rowId>_dlv_parts, v2617_<rowId>_dlv_pending, v2617_<rowId>_dlv_failed — the v2617 version prefix deliberately ignores callback state written by the pre-PDU policies of v2.6.13..16), updated under a process-wide lock with monotonic per-part semantics: DELIVERED is the strongest verdict and can never be downgraded by a duplicate or stale report, TEMPORARY may later advance to FAILED or DELIVERED, and UNKNOWN leaves prior evidence untouched.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/main/java/com/autonomousone/messages/sms/SmsStatusReceiver.kt#L135-L196",
+          "version": "repo-lines-v1:sha256:af76b89577ebd1f139dd447da9c19341236ce838b029e567ce00c8f26d7597e4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNGMwMGE5M2I1ZjBiNmMzNDJmMzVkYjk2Zjg2MmMyMjdlZjVjZjM3M2RjZmE0NjFiZDY0NTc3YjY1ZTcyOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhOWY4NmQyOGU3ODRmOWZkMzFmYjcyZDE1ZjYwY2JjZWFhZmRkNjY5Y2JkNWI2ZGE3ODg4YTAyMzMyMWViYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxOWEyNmMzYmZhMjRhZmI5MGYzZTRiYjNjYWI3ZDVhMjg3MTZlYzA1YTFhYTMxNTcyM2M5NTVkYzRmNzcwYjUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

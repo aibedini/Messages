@@ -4,7 +4,7 @@ title: "Gateway service"
 openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-3bfcb28142050978edf94754
     resource: repo://app/build.gradle.kts
@@ -34,9 +34,11 @@ sources:
     resource: repo://app/src/main/java/com/autonomousone/messages/receiver/BootGatewayReceiver.kt
   - id: openwiki-source-1beb8b1c71f48b2b11fd81ce
     resource: repo://app/src/main/java/com/autonomousone/messages/utils/SecureStore.kt
+  - id: openwiki-source-5d9105beecd437514587cd99
+    resource: repo://app/src/test/java/com/autonomousone/messages/EveSmsQueueTest.kt
   - id: openwiki-source-78df0f57b8c1bc78f8110a9d
     resource: repo://app/src/test/java/com/autonomousone/messages/GatewayAccessPolicyTest.kt
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 
@@ -183,7 +185,7 @@ URL configuration is HTTPS-only by construction: the `backendUrl` setter `requir
 
 ## Tests
 
-`GatewayAccessPolicyTest` unit-tests the full truth tables of `canStart` (consent required) and `canTransmit` (consent **and** runtime enabled required). The supervisor and `GatewayServer` are Android-dependent (ServerSocket binding, Keystore, ConnectivityManager) and have no JVM unit tests in this repository; their behavior is exercised on-device through the gateway screen and the log flow.
+The gateway runtime has exactly two JVM unit tests in this repository. `GatewayAccessPolicyTest` covers the full truth tables of `canStart` (consent required) and `canTransmit` (consent **and** runtime enabled required). `EveSmsQueueTest` is a pure-JVM suite (no `@RunWith`/Robolectric) over `EveSmsQueue.MemoryStore` that covers the queue the LAN surface depends on: priority ordering, idempotency keys, the queued→active→sent/failed status flow, cancellation rules, per-priority capacity, and GMweb-compatible verification fields. `ConnectionSupervisor` and `GatewayServer` themselves are Android-dependent (ServerSocket binding, Keystore, ConnectivityManager) and have no JVM unit tests; their behavior is exercised on-device through the gateway screen and the log flow. The `androidTest` source set contains only the stock `ExampleInstrumentedTest`.
 
 ## Related pages
 

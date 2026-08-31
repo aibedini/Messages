@@ -5,7 +5,7 @@ description: "The outbound-only pull transport to a GMweb-API server: long-poll 
 tags: [gmweb, outbox-poller, pull-bridge, eve-sms-queue, long-poll, wake-lock, doze, gateway]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-30T16:24:36.837Z
+    at: 2026-08-31T03:59:24.885Z
 sources:
   - id: openwiki-source-186e96b8d6739f3745947903
     resource: repo://app/src/main/AndroidManifest.xml
@@ -35,7 +35,7 @@ sources:
     resource: repo://docs/release-v2.1.1.md
   - id: openwiki-source-a958e493044f271765938ab2
     resource: repo://docs/release-v2.6.11.md
-generated: { by: "openwiki/0.4.3", at: "2026-08-30T16:24:36.837Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-08-31T03:59:24.885Z" }
 ---
 
 The **GMweb pull bridge** is the phone's outbound-only transport to a GMweb-API server (github.com/aibedini/GMweb-API). Unlike the LAN REST server and the cloud relay, it never exposes the phone's changing LAN IP to the internet: the phone *dials out* over HTTPS to a fixed URL, and the server hands back one queued send at a time. There is **no tunnel, no inbound port, and no static IP** — so changing mobile IPs or firewalls never breaks the link. It is implemented by the single class `com.autonomousone.messages.gateway.OutboxPoller` and started/stopped by `ConnectionSupervisor` exactly like the other gateway components (see [Gateway service](/openwiki/architecture/gateway-service.md)). The alternative push-style outbound bridge is the [Cloud relay](/openwiki/integrations/cloud-relay.md).
@@ -132,6 +132,7 @@ The queue the bridge depends on is unit-tested in `EveSmsQueueTest` (driven dete
 
 - [Gateway service](/openwiki/architecture/gateway-service.md) — the foreground service and `ConnectionSupervisor` that host and supervise the poller.
 - [Outgoing messaging](/openwiki/architecture/outgoing-messaging.md) — `EveSmsQueue` and `SmsSender.sendForResult`, the native send path the bridge feeds.
+- [Send pipeline](/openwiki/workflows/send-pipeline.md) — the end-to-end send trace showing the GMweb pull door feeding the same `SmsSender` funnel as the other entry points.
 - [Cloud relay](/openwiki/integrations/cloud-relay.md) — the alternative push-style outbound bridge.
 - [REST API](/openwiki/integrations/rest-api.md) — the LAN endpoints that share `EveSmsQueue`.
 - [Device operations](/openwiki/operations/device-operations.md) — boot/process/Doze recovery.

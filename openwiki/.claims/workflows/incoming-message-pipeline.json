@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:b3cc1a5e1d573f36b36756882dd0aec8964986af1d285d967c89d81ef5c779a5",
+  "pageVersion": "sha256:22f43375a5fe87ba6c78d5de0d405a9e83f788cd81514da631fc5b97a794eb9e",
   "claims": [
     {
       "id": "claim_f60d229a22284f50a2fa3d50dcb7a4de",
-      "statement": "Every inbound receiver follows the single-source-of-truth ordering: the message is persisted into the Telephony provider first (SmsReceiver INSERTs into Telephony.Sms.Inbox on the default-app path), the row is then read back by id, and IncomingMessageDispatcher.dispatch is called only with the provider-confirmed Sms; a read-back failure degrades to a fallback model built from the broadcast (id set to the PDU timestamp) and delivery continues.",
+      "statement": "Every inbound receiver follows the single-source-of-truth ordering: the message is persisted into the Telephony provider first (SmsReceiver INSERTs into Telephony.Sms.Inbox on the default-app path), the row is then read back by id, and IncomingMessageDispatcher.dispatch is called only with the provider-confirmed Sms; a read-back failure degrades to a fallback model built from the broadcast (id set to the persisted insert id when the INSERT succeeded, otherwise the PDU timestamp) and delivery continues.",
       "evidence": [
         {
           "resource": "repo://app/src/main/java/com/autonomousone/messages/receiver/IncomingMessageDispatcher.kt#L36-L47",
@@ -291,6 +291,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }

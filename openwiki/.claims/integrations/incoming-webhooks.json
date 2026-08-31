@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:441f91234dd40edbfeddd55deeacdf0526e2cd6cff402656a1011b15ac611e83",
+  "pageVersion": "sha256:afa9cbbc1dea667e59c26a1425aeee781fd971291e6feb733095d068d1796cb3",
   "claims": [
     {
       "id": "claim_cd074933190d49c8b5e57ac775c566e0",
@@ -307,10 +307,24 @@
           "version": "repo-lines-v1:sha256:1b67373f052560fa8074420f70922865bf293f8167e556301601795145f57df0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlN2Y0YjM2YWM5Y2UwZDA2ZGNkNzJjY2MyNGViMjkwZWNjYTNkYWRjZWUzNmNkNjQxNjg5YTI4MDQ4Yzg1NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZTZkYTdmZTQ3M2Q0ZDYzNjU1YzE0NjU4OWViMzgyZGIwZWUwZWJkYzQxNjRiZjRiZTEyYjI1NzliYzcwNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlZDYyODNlZmUxMTgwNzgwMDAxOTA1YWNkMzkzZmQ0ZGRiYjUzNzVmMTM1NGQ3MmZiNjY5MTgyYzE4ZTg3MTgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_5564fbb278f54f9ba3f266f1f74bf249",
+      "statement": "The in-repo live smoke script scripts/test-gateway-api.ps1 (referenced from the docs/api tests section) exercises the device's LAN REST API — status probe, auth rejection (401), send SMS, inbox, and filtered query — rather than the inbound webhook or cloud-event upload path, so it does not verify either outbound notification leg.",
+      "evidence": [
+        {
+          "resource": "repo://docs/api/README.md#L128-L144",
+          "version": "repo-lines-v1:sha256:1b67373f052560fa8074420f70922865bf293f8167e556301601795145f57df0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlN2Y0YjM2YWM5Y2UwZDA2ZGNkNzJjY2MyNGViMjkwZWNjYTNkYWRjZWUzNmNkNjQxNjg5YTI4MDQ4Yzg1NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZTZkYTdmZTQ3M2Q0ZDYzNjU1YzE0NjU4OWViMzgyZGIwZWUwZWJkYzQxNjRiZjRiZTEyYjI1NzliYzcwNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlZDYyODNlZmUxMTgwNzgwMDAxOTA1YWNkMzkzZmQ0ZGRiYjUzNzVmMTM1NGQ3MmZiNjY5MTgyYzE4ZTg3MTgifQ"
+        },
+        {
+          "resource": "repo://scripts/test-gateway-api.ps1",
+          "version": "repo-file-v1:sha256:fa6c4c812f5df9532b01c9de0d81601a3c2d5ab0c20dea836a55e26748461468"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-30T16:24:36.837Z"
+    "at": "2026-08-31T03:59:24.885Z"
   }
 }
