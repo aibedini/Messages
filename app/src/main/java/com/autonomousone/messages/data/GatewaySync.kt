@@ -227,6 +227,10 @@ interface RemoteCommandDao {
     @Query("SELECT * FROM remote_commands WHERE commandId = :commandId")
     suspend fun get(commandId: String): RemoteCommandEntity?
 
+    /** Redelivery path for the unified send queue: surface the existing row. */
+    @Query("SELECT * FROM remote_commands WHERE idempotencyKey = :idempotencyKey LIMIT 1")
+    suspend fun getByIdempotencyKey(idempotencyKey: String): RemoteCommandEntity?
+
     @Query("SELECT COUNT(*) FROM remote_commands WHERE state = 'RECEIVED'")
     suspend fun inboxDepth(): Int
 

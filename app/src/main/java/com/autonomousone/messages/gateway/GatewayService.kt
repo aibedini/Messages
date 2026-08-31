@@ -30,6 +30,7 @@ class GatewayService : Service() {
     private lateinit var registrationManager: RegistrationManager
     private lateinit var heartbeatManager: HeartbeatManager
     private lateinit var outboxPoller: OutboxPoller
+    private lateinit var eventUploader: EventUploader
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var supervisor: ConnectionSupervisor
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -140,6 +141,14 @@ class GatewayService : Service() {
             onLog = { msg -> _logFlow.tryEmit(msg) },
             networkMonitor = NetworkMonitor.get(this)
         )
+        // PR-02: durable cloud-event transmitter (gateway_event_outbox worker).
+        eventUploader = EventUploader(
+            context = this,
+            prefs = prefs,
+            client = backendClient,
+            scope = serviceScope,
+            onLog = { msg -> _logFlow.tryEmit(msg) }
+        )
         // Expose poller state app-wide so the Gateway screen can show it live.
         bridgeStateFlow = outboxPoller.stateFlow
 
@@ -163,6 +172,8 @@ class GatewayService : Service() {
                 retryHeartbeat = { heartbeatManager.retryNow() },
                 startPoller = { outboxPoller.start() },
                 stopPoller = { outboxPoller.stop() },
+                startEventUploader = { eventUploader.start() },
+                stopEventUploader = { eventUploader.stop() },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
                         .get(this).ensureLoopRunning()

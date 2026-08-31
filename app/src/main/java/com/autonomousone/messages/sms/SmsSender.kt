@@ -9,10 +9,12 @@ import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
 import android.widget.Toast
+import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
 import com.autonomousone.messages.utils.DiagnosticLog
+import kotlinx.coroutines.launch
 
 /**
  * Sends SMS honouring the user's Messaging preferences:
@@ -46,6 +48,10 @@ class SmsSender(
      *    only (null = fall back to the user's Messaging preference);
      *  - [smscOverride]: explicit SMSC address for this message only
      *    (null/blank = fall back to the user's preference).
+     *
+     * PR-03: delegates to [sendWithOutcome] — the single funnel — so every
+     * send source shares one pipeline; the row id (or fallback timestamp) is
+     * recovered from the outcome.
      */
     fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long {
         // Respect the user's send rate limit (protects the SIM from throttling).
@@ -61,50 +67,101 @@ class SmsSender(
                 com.autonomousone.messages.sms.SendRateLimiter.record()
             }
         }
-        val sentId = persistToSent(phone, text)
-        // Tell the app (Home list) instantly: this thread now has a newer
-        // message. Works even while the chat screen is still on top.
-        SmsEventBus.emitOutgoingSent(
-            threadId = 0L, // resolved by Home via phone match
-            phone = phone,
-            message = text,
-            date = System.currentTimeMillis()
-        )
-        dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = true)
-        return sentId
+        return when (val outcome = sendWithOutcome(phone, text, subscriptionIdOverride, smscOverride, showToast = true)) {
+            is SendOutcome.Accepted -> outcome.rowId
+            is SendOutcome.Rejected -> outcome.rowId ?: -1L
+        }
     }
 
-    /**
-     * v2.6.10: explicit outcome for machine callers (REST gateway).
-     *
-     * The old [send] returned a row id even when `SmsManager.sendTextMessage`
-     * threw — the gateway then answered HTTP 200 "success" for a message that
-     * never reached the modem. [dispatch] returns false on that path (and
-     * marks the row STATUS_FAILED); this API surfaces it so callers can
-     * return 503 instead of lying.
-     *
-     * Note on semantics: `Accepted` still means "handed to telephony", not
-     * "delivered" — SENT/DELIVERED arrive via the status receiver later.
-     */
-    fun sendWithOutcome(
+    /** Legacy direct path: the ONLY place SmsManager is ever touched. */
+    private fun directSend(
         phone: String,
         text: String,
-        subscriptionIdOverride: Int? = null,
-        smscOverride: String? = null
+        subscriptionIdOverride: Int?,
+        smscOverride: String?,
+        showToast: Boolean
     ): SendOutcome {
         val sentId = persistToSent(phone, text)
+        // Tell the app (Home list) instantly: this thread now has a newer
+        // message. Works even while the chat screen is still on top. Emitted
+        // exactly once per executed command (every funnel path runs through
+        // here exactly once).
         SmsEventBus.emitOutgoingSent(
             threadId = 0L, // resolved by Home via phone match
             phone = phone,
             message = text,
             date = System.currentTimeMillis()
         )
-        val dispatched = dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast = false)
+        val dispatched = dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast)
         return if (dispatched) {
             SendOutcome.Accepted(rowId = sentId)
         } else {
             SendOutcome.Rejected(rowId = sentId, reason = "modem rejected send (see message STATUS_FAILED)")
         }
+    }
+
+    /**
+     * v2.6.10: explicit outcome for machine callers (REST gateway).
+     * (Body lives in [directSend]; this is the single-funnel entry.)
+     */
+    fun sendWithOutcome(
+        phone: String,
+        text: String,
+        subscriptionIdOverride: Int? = null,
+        smscOverride: String? = null,
+        showToast: Boolean = false,
+        threadId: Long = 0L
+    ): SendOutcome {
+        val enqueueMode = GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS
+        if (!enqueueMode) {
+            // Direct path (flag off): legacy behaviour, still the ONLY place
+            // SmsManager is ever touched.
+            return directSend(phone, text, subscriptionIdOverride, smscOverride, showToast)
+        }
+        // ── Durable path: remote_commands row → execute → mark ─────────────
+        val idempotencyKey = java.util.UUID.randomUUID().toString()
+        val execScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+        )
+        var outcome: SendOutcome = SendOutcome.Rejected(rowId = null, reason = "queued")
+        val latch = java.util.concurrent.CountDownLatch(1)
+        execScope.launch {
+            try {
+                val plan = GatewayOutgoingPipeline.enqueueSendSms(
+                    phone = phone,
+                    body = text,
+                    threadId = threadId,
+                    subscriptionId = subscriptionIdOverride,
+                    idempotencyKey = idempotencyKey
+                )
+                val repo = com.autonomousone.messages.repository.GatewaySyncRepository(
+                    com.autonomousone.messages.data.MessagesDatabase.get(
+                        com.autonomousone.messages.Holders.appContext
+                    )
+                )
+                if (repo.markCommandAcceptedIfReceived(plan.commandId)) {
+                    outcome = directSend(phone, text, subscriptionIdOverride, smscOverride, showToast)
+                    repo.markCommandState(
+                        plan.commandId,
+                        if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+                        else RemoteCommandEntity.STATE_FAILED,
+                        listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+                    )
+                } else {
+                    // Redelivery of a live idempotency key: do not execute twice.
+                    outcome = SendOutcome.Rejected(rowId = null, reason = "duplicate command")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "pipeline enqueue failed", e)
+                outcome = SendOutcome.Rejected(rowId = null, reason = "enqueue failed")
+            } finally {
+                latch.countDown()
+            }
+        }
+        // Callers expect a synchronous outcome (blocking send semantics with
+        // the rate limiter were already blocking); wait briefly for the IO hop.
+        latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        return outcome
     }
 
     /** Explicit result of a send hand-off to telephony. */
@@ -121,17 +178,14 @@ class SmsSender(
      * persists + dispatches without user-facing toasts.
      * @return persisted row id on successful hand-off to telephony,
      *         or null when dispatch failed.
+     *
+     * PR-03: through the single funnel (durable queue when the flag is on).
      */
-    fun sendForResult(phone: String, text: String): Long? {
-        val sentId = persistToSent(phone, text)
-        SmsEventBus.emitOutgoingSent(
-            threadId = 0L,
-            phone = phone,
-            message = text,
-            date = System.currentTimeMillis()
-        )
-        return if (dispatch(sentId, phone, text, null, null, showToast = false)) sentId else null
-    }
+    fun sendForResult(phone: String, text: String): Long? =
+        when (val outcome = sendWithOutcome(phone, text)) {
+            is SendOutcome.Accepted -> outcome.rowId
+            is SendOutcome.Rejected -> null
+        }
 
     /** Dispatches via the selected SIM/SMSC; updates STATUS on failure. */
     private fun dispatch(
@@ -228,7 +282,7 @@ class SmsSender(
      */
     private fun resolveSmsManager(override: Int? = null): SmsManager {
         val subId = override ?: prefs.sendSubscriptionId
-        val hasSelection = subId != null && subId != MessagingPreferences.SUBSCRIPTION_UNSET
+        val hasSelection = subId != MessagingPreferences.SUBSCRIPTION_UNSET
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val base = context.getSystemService(SmsManager::class.java)
             if (hasSelection) base.createForSubscriptionId(subId) else base

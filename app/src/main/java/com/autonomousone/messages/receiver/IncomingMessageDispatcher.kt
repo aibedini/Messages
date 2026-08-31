@@ -47,6 +47,8 @@ object IncomingMessageDispatcher {
     ) {
         // Always mirror into Room first (blocking is a notification policy,
         // not a sync policy — the row stays persisted either way).
+        // PR-02: the matching cloud event is committed INSIDE the same Room
+        // transaction (coordinator-side) — no more fire-and-forget webhook.
         TelephonySyncCoordinator.get(context).mutate(
             MessageMutation.Upsert(source = source, message = sms)
         )
@@ -65,8 +67,10 @@ object IncomingMessageDispatcher {
         // Conversation ViewModels then reconcile against the provider).
         SmsEventBus.emitSms(sms)
 
-        // Gateway webhook / cloud event (fire-and-forget, consent-gated inside).
-        WebhookEngine.sendIncomingSmsWebhook(context, sms)
+        // PR-02: the LOCAL webhook stays immediate user-configured behaviour
+        // (unchanged, non-critical); the CLOUD event is no longer fired here —
+        // it lives in the durable outbox, committed with the message row.
+        WebhookEngine.sendLocalWebhook(context, sms)
 
         // Notification unless the user is actively viewing this conversation.
         val isViewingThis = ContactRepository.sameConversation(

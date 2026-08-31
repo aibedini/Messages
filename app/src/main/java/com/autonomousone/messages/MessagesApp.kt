@@ -19,6 +19,7 @@ class MessagesApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Holders.init(this)
         DiagnosticLog.initialize(this)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->

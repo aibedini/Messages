@@ -177,13 +177,47 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
                         lastMessageType = entity.type
                     )
+
+                    // ── PR-02: cloud event committed IN THIS TRANSACTION ──
+                    // Rule 4 (no critical fire-and-forget): the outbox row and
+                    // the message it describes live or die together. If the
+                    // process dies here, BOTH are absent → the provider
+                    // reconcile re-mirrors and the event re-enqueues.
+                    if (old == null) {
+                        enqueueCloudEvent {
+                            GatewayEventFactory.messageCreated(
+                                source = m.source,
+                                providerId = entity.providerId,
+                                conversationId = conversationIdFor(entity.threadId),
+                                direction = if (entity.type == 1) "in" else "out",
+                                body = entity.body,
+                                dateMs = entity.date,
+                                status = entity.status
+                            )
+                        }
+                    }
                 }
             }
 
             is MessageMutation.Delete -> {
                 val dao = db.messageDao()
                 val threadId = m.threadId ?: dao.findByKey(m.source, m.providerId)?.threadId
-                dao.deleteBySourceAndId(m.source, m.providerId)
+                // PR-02: capture date BEFORE deleting (the event needs it) and
+                // commit the cloud event in the same transaction as the delete.
+                val deleted = dao.findByKey(m.source, m.providerId)
+                db.withTransaction {
+                    dao.deleteBySourceAndId(m.source, m.providerId)
+                    if (deleted != null) {
+                        enqueueCloudEvent {
+                            GatewayEventFactory.messageDeleted(
+                                source = m.source,
+                                providerId = m.providerId,
+                                conversationId = conversationIdFor(threadId ?: 0L),
+                                dateMs = deleted.date
+                            )
+                        }
+                    }
+                }
                 if (threadId != null && threadId > 0L) {
                     rebuildConversationProjection(threadId, preserveFlags = true)
                 }
@@ -194,15 +228,33 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 if (fresh != null) {
                     val entity = toEntity(fresh, m.source)
                     if (entity != null) {
-                        db.messageDao().upsertAll(listOf(entity))
-                        // Status changes don't affect conversation projection.
+                        // PR-02: status change → cloud event in the same
+                        // transaction (deterministic eventUuid: provider
+                        // re-reports of the same status dedupe for free).
+                        db.withTransaction {
+                            db.messageDao().upsertAll(listOf(entity))
+                            enqueueCloudEvent {
+                                GatewayEventFactory.messageStatusChanged(
+                                    source = m.source,
+                                    providerId = entity.providerId,
+                                    conversationId = conversationIdFor(entity.threadId),
+                                    status = entity.status,
+                                    dateMs = entity.date
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             is MessageMutation.MarkThreadRead -> {
-                db.messageDao().markThreadRead(m.threadId)
-                db.conversationDao().markRead(m.threadId)
+                db.withTransaction {
+                    db.messageDao().markThreadRead(m.threadId)
+                    db.conversationDao().markRead(m.threadId)
+                    enqueueCloudEvent {
+                        GatewayEventFactory.threadRead(conversationIdFor(m.threadId))
+                    }
+                }
             }
 
             is MessageMutation.DeleteThread -> {
@@ -210,6 +262,43 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 db.conversationDao().delete(m.threadId)
             }
         }
+    }
+
+    // ── PR-02: cloud outbox helpers (called INSIDE Room transactions) ──────
+
+    /**
+     * Builds the event row via [build] and inserts it into the durable
+     * outbox (INSERT OR IGNORE). Runs INSIDE the caller's Room transaction:
+     * the event commits atomically with the mutation it describes (Rule 4 —
+     * no critical fire-and-forget). A dropped insert means the SAME
+     * deterministic eventUuid is already queued/ACKed — logged, never doubled.
+     */
+    private suspend fun enqueueCloudEvent(build: suspend () -> GatewayEventOutboxEntity) {
+        try {
+            val row = build()
+            if (db.gatewayEventOutboxDao().insertOrIgnore(row) == -1L) {
+                Log.d(TAG, "cloud event ${row.eventType}/${row.eventUuid} already queued/ACKed — deduped")
+            }
+        } catch (e: Exception) {
+            // Never kill the local mutation over a cloud-row problem; the
+            // provider reconcile re-offers the event on the next pass.
+            Log.e(TAG, "cloud event enqueue failed", e)
+        }
+    }
+
+    /**
+     * Opaque conversation UUID (TechSpec §12) for the thread — created on
+     * first use in remote_conversation_map. Empty string = threadId 0
+     * (unresolvable thread): the event still ships, addressable by its own id.
+     */
+    private suspend fun conversationIdFor(threadId: Long): String {
+        if (threadId <= 0L) return ""
+        val mapDao = db.remoteConversationMapDao()
+        mapDao.getByThreadId(threadId)?.let { return it.conversationId }
+        val uuid = java.util.UUID.randomUUID().toString()
+        mapDao.insertOrIgnore(RemoteConversationMapEntity(uuid, threadId, System.currentTimeMillis()))
+        // Lost an insert race → the winner's row is the mapping.
+        return mapDao.getByThreadId(threadId)?.conversationId ?: uuid
     }
 
     // ── Reconcile path (repair/recovery) ───────────────────────────────────

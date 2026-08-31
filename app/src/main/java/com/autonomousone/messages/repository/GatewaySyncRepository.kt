@@ -74,9 +74,9 @@ class GatewaySyncRepository(
         }
 
     /** Partial ACK support (LOCK 13): each reported eventUuid advances alone. */
-    suspend fun onAcked(eventUuid: String, serverSequence: Long, ackedAt: Long) {
+    /** Partial ACK (LOCK 13): only the reported eventUuid moves to ACKED. */
+    suspend fun onAcked(eventUuid: String, serverSequence: Long, ackedAt: Long): Int =
         outboxDao.markAcked(eventUuid, serverSequence, ackedAt)
-    }
 
     suspend fun onRetry(eventUuid: String, attempt: Int, random: Random, now: Long) {
         outboxDao.markRetry(eventUuid, now + Policy.backoffDelayMs(attempt, random))
@@ -100,6 +100,10 @@ class GatewaySyncRepository(
     suspend fun markCommandAcceptedIfReceived(commandId: String): Boolean =
         commandDao.markAcceptedIfReceived(commandId) == 1
 
+    /** Guarded lifecycle transition used by the send executor (PR-03). */
+    suspend fun markCommandState(commandId: String, state: String, fromStates: List<String>): Boolean =
+        commandDao.markState(commandId, state, fromStates) == 1
+
     suspend fun mapOrGet(threadId: Long, conversationId: String): RemoteConversationMapEntity {
         mapDao.getByThreadId(threadId)?.let { return it }
         mapDao.insertOrIgnore(RemoteConversationMapEntity(conversationId, threadId, System.currentTimeMillis()))
@@ -109,4 +113,20 @@ class GatewaySyncRepository(
     suspend fun cursor(direction: String): SyncCursorEntity? = cursorDao.get(direction)
 
     suspend fun saveCursor(cursor: SyncCursorEntity) = cursorDao.upsert(cursor)
+
+    /**
+     * TechSpec §12: the provider threadId ↔ opaque conversation UUID mapping
+     * lives ONLY on Android (remote_conversation_map). Idempotent — returns
+     * the existing mapping when present.
+     */
+    suspend fun ensureConversationIdForThread(threadId: Long): String {
+        mapDao.getByThreadId(threadId)?.let { return it.conversationId }
+        val conversationId = java.util.UUID.randomUUID().toString()
+        mapDao.insertOrIgnore(
+            RemoteConversationMapEntity(conversationId, threadId, System.currentTimeMillis())
+        )
+        // Lost an insert race? The winner's row is the mapping — read it back.
+        return mapDao.getByThreadId(threadId)?.conversationId ?: conversationId
+    }
 }
+
