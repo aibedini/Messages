@@ -87,7 +87,10 @@ class ConnectionSupervisor private constructor(
         val startSync: () -> Unit,
         /** PR-02: the durable event outbox worker (cloud transmitter). */
         val startEventUploader: () -> Unit = {},
-        val stopEventUploader: () -> Unit = {}
+        val stopEventUploader: () -> Unit = {},
+        /** PR-10: the strategic SecureCommandPoller (/api/v1 agent bridge). */
+        val startCommandPoller: () -> Unit = {},
+        val stopCommandPoller: () -> Unit = {}
     )
 
     enum class State {
@@ -176,6 +179,8 @@ class ConnectionSupervisor private constructor(
         boundIp = null
         components.stopHeartbeat()
         components.stopPoller()
+        components.stopEventUploader()
+        components.stopCommandPoller()
         _stateFlow.value = State.DISABLED
         synchronized(this) { instance = null }
     }
@@ -213,6 +218,7 @@ class ConnectionSupervisor private constructor(
                 components.stopPoller()
                 components.stopHeartbeat()
                 components.stopEventUploader()
+                components.stopCommandPoller()
                 server?.stop()
                 server = null
                 boundIp = null
@@ -259,6 +265,7 @@ class ConnectionSupervisor private constructor(
         // ── Cloud + GMweb + shadow sync (idempotent starts) ────────────────
         components.startHeartbeat()
         components.startEventUploader() // PR-02: durable outbox → GMweb transmitter
+        components.startCommandPoller() // PR-10: strategic /api/v1 agent bridge
         if (prefs.gmwebUrl.isNotBlank()) components.startPoller()
         components.startSync()
 

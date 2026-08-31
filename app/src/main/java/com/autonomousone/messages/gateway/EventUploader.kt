@@ -106,11 +106,15 @@ class EventUploader(
         val now = System.currentTimeMillis()
         val events = JSONArray()
         for (event in batch) {
-            val payloadJson = try {
+            // Envelope self-check: an undecodable/corrupt payload can never
+            // succeed — DEAD_LETTER this row only (health alert surface) and
+            // keep the rest of the batch. NOTE: we do NOT decode-and-rebuild —
+            // the envelope bytes go on the wire verbatim (base64); the server
+            // treats them as opaque (Rule 6, ADR-002). The decode here is a
+            // cheap integrity gate only.
+            try {
                 GatewayEventFactory.decodePayloadEnvelope(event.ciphertext)
             } catch (e: Exception) {
-                // An undecodable payload can never succeed — DEAD_LETTER this
-                // row only (health alert surface), keep the rest of the batch.
                 Log.e(TAG, "payload envelope decode failed for ${event.eventUuid}", e)
                 repo.onDeadLetter(event.eventUuid)
                 continue
@@ -118,12 +122,21 @@ class EventUploader(
             events.put(
                 JSONObject()
                     .put("eventId", event.eventUuid)
-                    .put("localSequence", event.id)
                     .put("type", event.eventType)
                     .put("conversationId", event.aggregateId)
                     .put("encoding", event.encoding)
                     .put("schemaVersion", event.schemaVersion)
-                    .put("payload", JSONObject(payloadJson))
+                    .put("cryptoVersion", event.cryptoVersion)
+                    // Wire contract (GMweb /api/v1/agent/events/batch): payload is
+                    // a base64 STRING of the opaque envelope bytes — the server
+                    // never parses message content (Rule 1/6, ADR-002).
+                    .put(
+                        "payload",
+                        android.util.Base64.encodeToString(
+                            event.ciphertext,
+                            android.util.Base64.NO_WRAP
+                        )
+                    )
             )
         }
         if (events.length() == 0) return Outcome.FATAL

@@ -104,6 +104,9 @@ class GatewaySyncRepository(
     suspend fun markCommandState(commandId: String, state: String, fromStates: List<String>): Boolean =
         commandDao.markState(commandId, state, fromStates) == 1
 
+    /** Durable row lookup for honest redelivery ACKs (PR-10, §58). */
+    suspend fun getCommand(commandId: String): RemoteCommandEntity? = commandDao.get(commandId)
+
     suspend fun mapOrGet(threadId: Long, conversationId: String): RemoteConversationMapEntity {
         mapDao.getByThreadId(threadId)?.let { return it }
         mapDao.insertOrIgnore(RemoteConversationMapEntity(conversationId, threadId, System.currentTimeMillis()))

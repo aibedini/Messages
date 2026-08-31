@@ -96,4 +96,62 @@ object GatewayOutgoingPipeline {
         }
         return Plan(commandId, idempotencyKey, conversationId, messageUuid, body, subscriptionId)
     }
+
+    /**
+     * PR-10: execute a REMOTE-ingested SEND_SMS command (SecureCommandPoller
+     * hands over rows it freshly ingested from GMweb). The command row is
+     * already durable (RECEIVED); this drains it through the SAME guarded
+     * lifecycle the local funnel uses — ACCEPTED → (directSend via the
+     * existing executor path) → COMPLETED/FAILED — and returns true when the
+     * terminal state was reported (the poller then skips its own ack).
+     *
+     * Payload contract (v1, cryptoVersion=0): plain JSON
+     * `{type:"SEND_SMS", phone, body, subscriptionId?}`.
+     */
+    suspend fun executeIngested(
+        cmd: com.autonomousone.messages.data.RemoteCommandEntity,
+        repo: com.autonomousone.messages.repository.GatewaySyncRepository
+    ): Boolean {
+        require(cmd.type == "SEND_SMS") { "executeIngested only drains SEND_SMS" }
+        val accepted = repo.markCommandAcceptedIfReceived(cmd.commandId)
+        if (!accepted) return false // someone else already moved it — not ours
+
+        val payload = try {
+            org.json.JSONObject(String(cmd.ciphertext, Charsets.UTF_8))
+        } catch (e: Exception) {
+            repo.markCommandState(
+                cmd.commandId, RemoteCommandEntity.STATE_FAILED,
+                listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+            )
+            throw IllegalArgumentException("corrupt SEND_SMS payload for ${cmd.commandId}", e)
+        }
+        val phone = payload.optString("phone")
+        val body = payload.optString("body")
+        val subId = if (payload.has("subscriptionId") && !payload.isNull("subscriptionId")) {
+            payload.optInt("subscriptionId")
+        } else null
+        require(phone.isNotBlank() && body.isNotBlank()) {
+            "SEND_SMS payload missing phone/body (${cmd.commandId})"
+        }
+
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+        val smsSender = SmsSender(com.autonomousone.messages.Holders.appContext)
+        val outcome = smsSender.sendWithOutcome(
+            phone = phone,
+            text = body,
+            subscriptionIdOverride = subId,
+            smscOverride = null,
+            showToast = false
+        )
+        val terminal = if (outcome is SmsSender.SendOutcome.Accepted)
+            RemoteCommandEntity.STATE_COMPLETED else RemoteCommandEntity.STATE_FAILED
+        repo.markCommandState(
+            cmd.commandId, terminal,
+            listOf(RemoteCommandEntity.STATE_EXECUTING, RemoteCommandEntity.STATE_ACCEPTED)
+        )
+        return true
+    }
 }
