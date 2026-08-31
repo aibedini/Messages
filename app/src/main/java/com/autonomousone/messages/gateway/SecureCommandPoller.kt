@@ -65,6 +65,13 @@ class SecureCommandPoller(
     private val _stateFlow = MutableStateFlow(State.IDLE)
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
 
+    /** Stable device id — the SAME one sent at registration (PR-05/08b). */
+    private fun deviceId(): String = prefs.gatewayId.ifBlank {
+        android.provider.Settings.Secure.getString(
+            context.contentResolver, android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown-device"
+    }
+
     fun start() {
         if (job?.isActive == true) return
         job = scope.launch {
@@ -117,24 +124,27 @@ class SecureCommandPoller(
     /** POST /api/v1/agent/commands/claim → opaque rows (base64 payloads). */
     private fun claim(): List<RemoteCommandEntity> {
         val base = prefs.gmwebUrl.trimEnd('/')
-        val conn = URL("$base$CLAIM_PATH").openConnection() as HttpURLConnection
+        val path = "/api/v1/agent/commands/claim"
+        val conn = URL("$base$path").openConnection() as HttpURLConnection
         return try {
             conn.apply {
                 requestMethod = "POST"
-                setRequestProperty("X-API-Key", prefs.apiKey)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connectTimeout = 15_000
                 readTimeout = 30_000
                 doOutput = true
             }
-            conn.outputStream.use {
-                it.write(
-                    JSONObject()
-                        .put("agentId", AGENT_ID)
-                        .put("limit", CLAIM_LIMIT)
-                        .toString().toByteArray(Charsets.UTF_8)
-                )
+            val bodyBytes = JSONObject()
+                .put("agentId", AGENT_ID)
+                .put("limit", CLAIM_LIMIT)
+                .toString().toByteArray(Charsets.UTF_8)
+            // PR-08b: per-device signature over the canonical request (ADR-001).
+            // X-API-Key stays as a legacy fallback for older GMweb builds.
+            conn.setRequestProperty("X-API-Key", prefs.apiKey)
+            if (!AgentAuth.sign(conn, deviceId(), path, "POST", bodyBytes)) {
+                throw IllegalStateException("agent signing failed (keystore unavailable)")
             }
+            conn.outputStream.use { it.write(bodyBytes) }
             if (conn.responseCode != 200) {
                 throw IllegalStateException("claim HTTP ${conn.responseCode}")
             }
@@ -203,24 +213,23 @@ class SecureCommandPoller(
     /** Report lifecycle to GMweb (§58); failures are logged, never fatal. */
     private suspend fun ack(commandId: String, state: String, result: String?) {
         val base = prefs.gmwebUrl.trimEnd('/')
-        val conn = URL(base + STATUS_PATH.format(commandId)).openConnection() as HttpURLConnection
+        val path = "/api/v1/agent/commands/$commandId/status"
+        val conn = URL(base + path).openConnection() as HttpURLConnection
         try {
             conn.apply {
                 requestMethod = "POST"
-                setRequestProperty("X-API-Key", prefs.apiKey)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connectTimeout = 10_000
                 readTimeout = 10_000
                 doOutput = true
             }
-            conn.outputStream.use {
-                it.write(
-                    JSONObject()
-                        .put("state", state)
-                        .put("result", result ?: JSONObject.NULL)
-                        .toString().toByteArray(Charsets.UTF_8)
-                )
-            }
+            val bodyBytes = JSONObject()
+                .put("state", state)
+                .put("result", result ?: JSONObject.NULL)
+                .toString().toByteArray(Charsets.UTF_8)
+            conn.setRequestProperty("X-API-Key", prefs.apiKey)
+            AgentAuth.sign(conn, deviceId(), path, "POST", bodyBytes)
+            conn.outputStream.use { it.write(bodyBytes) }
             if (conn.responseCode !in 200..299) {
                 Log.w(TAG, "ack $state for $commandId → HTTP ${conn.responseCode}")
             }
