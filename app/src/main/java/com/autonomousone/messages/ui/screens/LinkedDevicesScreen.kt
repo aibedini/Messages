@@ -105,15 +105,21 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
                         QrCameraView(
                             onQr = { raw ->
+                                android.util.Log.i("QR_SCAN", "payload received: ${raw.take(80)}")
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info != null) {
+                                    android.util.Log.i("QR_SCAN", "parsed OK → CONFIRM (session=${info.pairingSessionId.take(8)})")
                                     scanned = info
                                     step = "CONFIRM"
                                 } else {
+                                    android.util.Log.w("QR_SCAN", "payload did not parse")
                                     cameraError = "Not a Messages pairing QR"
                                 }
                             },
-                            onError = { cameraError = it }
+                            onError = {
+                                android.util.Log.e("QR_SCAN", "camera error: $it")
+                                cameraError = it
+                            }
                         )
                     }
                     cameraError?.let {
@@ -128,15 +134,19 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         step = "LIST"
                         return@Column
                     }
-                    // Metadata fetch runs once on entry.
+                    // Metadata fetch runs once on entry. A failure is VISIBLE
+                    // (was silently bouncing back to LIST before).
                     LaunchedEffect(info.pairingSessionId) {
                         val (meta, err) = PairingClient.fetchSessionMetadata(context, info)
                         if (err != null) {
-                            cameraError = err
+                            cameraError = "Metadata fetch failed: $err"
                             step = "LIST"
                         } else if (meta != null) {
                             scanned = meta
                         }
+                    }
+                    cameraError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     Text("Link new device?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     val display = info.origin.removePrefix("https://").removePrefix("http://")
