@@ -80,19 +80,30 @@ class RegistrationManager(
             // (0x04||X||Y) are Base64 for the wire. Private material NEVER
             // leaves the Keystore (§16/§17/§24).
             val identity = DeviceIdentity.ensureEnrolled()
+            // FIX 4 (review): protocol wire format for public EC keys is
+            // DER SPKI → Base64 (was raw uncompressed point). The server
+            // verifier also tolerates raw points during transition.
+            fun toSpkiB64(rawPoint: ByteArray): String {
+                val kf = java.security.KeyFactory.getInstance("EC")
+                val pub = kf.generatePublic(
+                    java.security.spec.ECPublicKeySpec(
+                        java.security.spec.ECPoint(
+                            java.math.BigInteger(1, rawPoint.copyOfRange(1, 33)),
+                            java.math.BigInteger(1, rawPoint.copyOfRange(33, 65))
+                        ),
+                        java.security.spec.ECGenParameterSpec("secp256r1").let {
+                            java.security.AlgorithmParameters.getInstance("EC").apply {
+                                init(it)
+                            }.getParameterSpec(java.security.spec.ECParameterSpec::class.java)
+                        }
+                    )
+                )
+                return android.util.Base64.encodeToString(pub.encoded, android.util.Base64.NO_WRAP)
+            }
             put("publicKeys", JSONObject().apply {
-                put(
-                    "trustRoot",
-                    android.util.Base64.encodeToString(identity.trustRootPublicPoint, android.util.Base64.NO_WRAP)
-                )
-                put(
-                    "signing",
-                    android.util.Base64.encodeToString(identity.signingPublicPoint, android.util.Base64.NO_WRAP)
-                )
-                put(
-                    "encryption",
-                    android.util.Base64.encodeToString(identity.encryptionPublicPoint, android.util.Base64.NO_WRAP)
-                )
+                put("trustRoot", toSpkiB64(identity.trustRootPublicPoint))
+                put("signing", toSpkiB64(identity.signingPublicPoint))
+                put("encryption", toSpkiB64(identity.encryptionPublicPoint))
             })
         }
     }

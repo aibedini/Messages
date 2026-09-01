@@ -75,13 +75,15 @@ object PairingClient {
      * Fetch live session metadata from GMweb (agent-signed GET). Confirms
      * the session still exists and its transcriptHash matches the QR.
      */
-    fun fetchSessionMetadata(
+    suspend fun fetchSessionMetadata(
         context: Context,
         scanned: SessionInfo
-    ): Pair<SessionInfo?, String?> {
+    ): Pair<SessionInfo?, String?> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val prefs = GatewayPreferences(context)
         val base = prefs.gmwebUrl.trimEnd('/')
-        if (base.isBlank()) return null to "GMweb URL is not configured"
+        if (base.isBlank()) {
+            return@withContext null to "GMweb URL is not configured"
+        }
         val path = "/api/v1/pairing/session/${scanned.pairingSessionId}"
         val result: Pair<SessionInfo?, String?> = try {
             val conn = URL("$base$path").openConnection() as HttpURLConnection
@@ -95,7 +97,7 @@ object PairingClient {
             val code = conn.responseCode
             if (code != 200) {
                 conn.disconnect()
-                return null to "pairing session lookup failed: HTTP $code"
+                return@withContext null to "pairing session lookup failed: HTTP $code"
             }
             val body = conn.inputStream.use { it.bufferedReader().readText() }
             conn.disconnect()
@@ -113,14 +115,14 @@ object PairingClient {
                 info.transcriptHash.isNotBlank() &&
                 info.transcriptHash != scanned.transcriptHash
             ) {
-                return null to "transcript mismatch between QR and server"
+                return@withContext null to "transcript mismatch between QR and server"
             }
             info to null
         } catch (e: Exception) {
             Log.e(TAG, "session metadata fetch failed", e)
             null to (e.message ?: "network error")
         }
-        return result
+        result
     }
 
     /**
@@ -128,12 +130,13 @@ object PairingClient {
      * operational key, and POST it (X-Agent-Auth over the exact body).
      * Returns the signed certificate on success.
      */
-    fun approve(
+    suspend fun approve(
         context: Context,
         info: SessionInfo,
         capabilities: List<String>,
         historyGrant: String
-    ): Result<JSONObject> = runCatching {
+    ): Result<JSONObject> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
         val prefs = GatewayPreferences(context)
         val base = prefs.gmwebUrl.trimEnd('/')
         require(base.isNotBlank()) { "GMweb URL is not configured" }
@@ -191,5 +194,6 @@ object PairingClient {
         }
         conn.disconnect()
         certificate
+        }
     }
 }
