@@ -55,6 +55,8 @@ sealed class Screen(val route: String) {
 
     object MessagingSettings : Screen("messaging_settings")
 
+    object LinkedDevices : Screen("linked_devices")
+
     object AppearanceSettings : Screen("appearance_settings")
 
     object QuickReplies : Screen("quick_replies")

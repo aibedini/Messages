@@ -192,6 +192,13 @@ fun AppNavigation(
             )
         }
 
+        // ADR-007: linked-device pairing (primary trust device screen).
+        composable(Screen.LinkedDevices.route) {
+            com.autonomousone.messages.ui.screens.LinkedDevicesScreen(
+                navController = navController
+            )
+        }
+
         composable(Screen.AppearanceSettings.route) {
             com.autonomousone.messages.ui.screens.AppearanceSettingsScreen(
                 navController = navController
