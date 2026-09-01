@@ -39,6 +39,8 @@ class TelephonySyncCoordinator private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val smsRepository = SmsRepository(appContext)
+    private val messagingPrefs =
+        com.autonomousone.messages.messaging.MessagingPreferences(appContext)
     private val db get() = MessagesDatabase.get(appContext)
 
     /**
@@ -193,7 +195,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                     // process dies here, BOTH are absent → the provider
                     // reconcile re-mirrors and the event re-enqueues.
                     if (old == null) {
-                        enqueueCloudEvent {
+                        enqueueCloudEvent(
+                            source = m.source,
+                            providerId = entity.providerId,
+                            sender = entity.normalizedAddress,
+                            body = entity.body
+                        ) {
                             GatewayEventFactory.messageCreated(
                                 source = m.source,
                                 providerId = entity.providerId,
@@ -217,7 +224,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 db.withTransaction {
                     dao.deleteBySourceAndId(m.source, m.providerId)
                     if (deleted != null) {
-                        enqueueCloudEvent {
+                        enqueueCloudEvent(
+                            source = m.source,
+                            providerId = m.providerId,
+                            sender = deleted.normalizedAddress ?: "",
+                            body = deleted.body ?: ""
+                        ) {
                             GatewayEventFactory.messageDeleted(
                                 source = m.source,
                                 providerId = m.providerId,
@@ -242,7 +254,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                         // re-reports of the same status dedupe for free).
                         db.withTransaction {
                             db.messageDao().upsertAll(listOf(entity))
-                            enqueueCloudEvent {
+                            enqueueCloudEvent(
+                                source = m.source,
+                                providerId = entity.providerId,
+                                sender = entity.normalizedAddress,
+                                body = entity.body
+                            ) {
                                 GatewayEventFactory.messageStatusChanged(
                                     source = m.source,
                                     providerId = entity.providerId,
@@ -260,7 +277,17 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                 db.withTransaction {
                     db.messageDao().markThreadRead(m.threadId)
                     db.conversationDao().markRead(m.threadId)
-                    enqueueCloudEvent {
+                    // Thread-read carries no message content — but if the
+                    // thread CONTAINS a LOCAL_ONLY message, its very existence
+                    // must stay untraceable. Gate on the latest message of the
+                    // thread; content never leaves the device either way.
+                    val latest = db.messageDao().newestWindowForThread(m.threadId, 1).firstOrNull()
+                    enqueueCloudEvent(
+                        source = "sms",
+                        providerId = latest?.providerId ?: 0L,
+                        sender = latest?.normalizedAddress ?: "",
+                        body = latest?.body ?: ""
+                    ) {
                         GatewayEventFactory.threadRead(conversationIdFor(m.threadId))
                     }
                 }
@@ -282,12 +309,36 @@ class TelephonySyncCoordinator private constructor(context: Context) {
      * no critical fire-and-forget). A dropped insert means the SAME
      * deterministic eventUuid is already queued/ACKed — logged, never doubled.
      */
-    private suspend fun enqueueCloudEvent(build: suspend () -> GatewayEventOutboxEntity) {
-        // ADR-006: SyncEligibility gate — the SINGLE choke point for cloud
-        // event creation. A LOCAL_ONLY decision means the event row is never
-        // built/inserted (not "inserted then deleted"). The firewall PR later
-        // fills the classifier behind this same boundary.
-        if (!syncAllowed) return
+    private suspend fun enqueueCloudEvent(
+        source: String,
+        providerId: Long,
+        sender: String,
+        body: String,
+        build: suspend () -> GatewayEventOutboxEntity
+    ) {
+        // ADR-006: SensitiveMessageFirewall — the SINGLE choke point for cloud
+        // event creation, and the ONLY classifier. A LOCAL_ONLY decision means
+        // the event row is never built/inserted (not "inserted then deleted").
+        // Local audit never logs message content (ADR-006 §21).
+        val verdict = com.autonomousone.messages.security.SensitiveMessageFirewall
+            .classify(sender, body)
+        val policy = com.autonomousone.messages.security.SensitiveMessageFirewall
+            .resolvePolicy(
+                verdict = verdict,
+                sender = sender,
+                localOnlySenders = messagingPrefs.localOnlySenders,
+                syncAllowlist = messagingPrefs.syncAllowlistSenders,
+                financialPolicy = messagingPrefs.financialNotificationPolicy,
+                ambiguityMode = messagingPrefs.ambiguityMode
+            )
+        if (policy == com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.LOCAL_ONLY) {
+            android.util.Log.i(
+                TAG,
+                "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +
+                    "policy=LOCAL_ONLY rule=${verdict.rule}"
+            )
+            return
+        }
         try {
             val row = build()
             if (db.gatewayEventOutboxDao().insertOrIgnore(row) == -1L) {

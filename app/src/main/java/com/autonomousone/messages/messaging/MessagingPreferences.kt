@@ -100,8 +100,43 @@ class MessagingPreferences(context: Context) {
         get() = prefs.getInt(KEY_RATE_LIMIT_COUNT, 10)
         set(value) = prefs.edit().putInt(KEY_RATE_LIMIT_COUNT, value.coerceIn(1, 1000)).apply()
 
+    private val KEY_LOCAL_ONLY_SENDERS = "firewall_local_only_senders"
+    private val KEY_SYNC_ALLOWLIST_SENDERS = "firewall_sync_allowlist_senders"
+    private val KEY_FINANCIAL_POLICY = "firewall_financial_policy"
+    private val KEY_AMBIGUITY_MODE = "firewall_ambiguity_mode"
+
     /** Window length in minutes. Default: 1 minute. */
     var rateLimitWindowMin: Int
         get() = prefs.getInt(KEY_RATE_LIMIT_WINDOW_MIN, 1)
         set(value) = prefs.edit().putInt(KEY_RATE_LIMIT_WINDOW_MIN, value.coerceIn(1, 60)).apply()
+
+    // ── ADR-006: Sensitive Message Firewall (Privacy & Security settings) ──
+
+    /** Senders whose messages are ALWAYS kept on-device (never synced). */
+    var localOnlySenders: Set<String>
+        get() = prefs.getStringSet(KEY_LOCAL_ONLY_SENDERS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_LOCAL_ONLY_SENDERS, value).apply()
+
+    /** Senders the user explicitly allows to sync (never overrides OTP/bank codes). */
+    var syncAllowlistSenders: Set<String>
+        get() = prefs.getStringSet(KEY_SYNC_ALLOWLIST_SENDERS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_SYNC_ALLOWLIST_SENDERS, value).apply()
+
+    /** Policy for FINANCIAL_NOTIFICATION (ADR-006 §10: user configurable). */
+    var financialNotificationPolicy: com.autonomousone.messages.security.SensitiveMessageFirewall.Policy
+        get() = runCatching {
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.valueOf(
+                prefs.getString(KEY_FINANCIAL_POLICY, "ASK") ?: "ASK"
+            )
+        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.ASK)
+        set(value) = prefs.edit().putString(KEY_FINANCIAL_POLICY, value.name).apply()
+
+    /** Ambiguity handling (ADR-006 §16). Production default: privacy strict. */
+    var ambiguityMode: com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode
+        get() = runCatching {
+            com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.valueOf(
+                prefs.getString(KEY_AMBIGUITY_MODE, "PRIVACY_STRICT") ?: "PRIVACY_STRICT"
+            )
+        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.PRIVACY_STRICT)
+        set(value) = prefs.edit().putString(KEY_AMBIGUITY_MODE, value.name).apply()
 }

@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -107,6 +108,65 @@ fun MessagingSettingsScreen(navController: NavController) {
                     subtitle = "Request a delivery report for every SMS and show Sent / Delivered / Failed on outgoing messages.",
                     checked = viewModel.deliveryReportsEnabled,
                     onCheckedChange = { viewModel.setDeliveryReports(it) }
+                )
+            }
+
+            // ── ADR-006: Sensitive messages (Privacy & Security) ────────────
+            val context = LocalContext.current
+            var firewall by remember {
+                mutableStateOf(
+                    com.autonomousone.messages.messaging.MessagingPreferences(context)
+                )
+            }
+            SettingsCard(title = "Sensitive messages") {
+                SettingSwitch(
+                    title = "Keep OTP & security codes on this phone",
+                    subtitle = "Verification codes, dynamic bank passwords and password resets never leave this device. Always on for security (ADR-006).",
+                    checked = true,
+                    onCheckedChange = { /* LOCAL_ONLY is a security invariant — not user-removable */ }
+                )
+                SettingSwitch(
+                    title = "Bank security messages — never sync",
+                    subtitle = "Dynamic codes (رمز پویا) and any bank security message are classified on-device and stopped before any cloud event exists.",
+                    checked = true,
+                    onCheckedChange = { /* security invariant */ }
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Regular bank notifications",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                listOf(
+                    "Ask every time" to com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.ASK,
+                    "Sync" to com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.SYNC,
+                    "Keep local" to com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.LOCAL_ONLY
+                ).forEach { (label, policy) ->
+                    SettingSwitch(
+                        title = label,
+                        subtitle = null,
+                        checked = firewall.financialNotificationPolicy == policy,
+                        onCheckedChange = { if (it) firewall.financialNotificationPolicy = policy }
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Password reset & verification codes — never sync",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SenderListEditor(
+                    title = "Always keep these senders on device",
+                    entries = firewall.localOnlySenders,
+                    onAdd = { entry -> firewall.localOnlySenders = firewall.localOnlySenders + entry },
+                    onRemove = { entry -> firewall.localOnlySenders = firewall.localOnlySenders - entry }
+                )
+                SenderListEditor(
+                    title = "Always allow syncing from these senders",
+                    subtitle = "Never applies to OTP, bank security or password reset messages.",
+                    entries = firewall.syncAllowlistSenders,
+                    onAdd = { entry -> firewall.syncAllowlistSenders = firewall.syncAllowlistSenders + entry },
+                    onRemove = { entry -> firewall.syncAllowlistSenders = firewall.syncAllowlistSenders - entry }
                 )
             }
 
@@ -326,7 +386,7 @@ private fun SettingsCard(
 @Composable
 private fun SettingSwitch(
     title: String,
-    subtitle: String,
+    subtitle: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
@@ -340,15 +400,78 @@ private fun SettingSwitch(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-            )
+            if (subtitle != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/**
+ * ADR-006 §12 — per-sender override list editor (+ Add sender / removable rows).
+ * Entries are free-form: phone numbers AND alphanumeric sender IDs.
+ */
+@Composable
+private fun SenderListEditor(
+    title: String,
+    subtitle: String? = null,
+    entries: Set<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit
+) {
+    var input by remember { mutableStateOf("") }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    if (subtitle != null) {
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+        )
+    }
+    entries.sorted().forEach { entry ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = entry,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { onRemove(entry) }) { Text("Remove") }
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            placeholder = { Text("Sender name or number") },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        TextButton(
+            onClick = {
+                val v = input.trim()
+                if (v.isNotEmpty()) {
+                    onAdd(v)
+                    input = ""
+                }
+            },
+            enabled = input.isNotBlank()
+        ) { Text("+ Add sender") }
     }
 }
 
