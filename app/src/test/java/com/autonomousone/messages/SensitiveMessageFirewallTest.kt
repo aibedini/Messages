@@ -102,6 +102,15 @@ class SensitiveMessageFirewallTest {
         assertEquals(Policy.LOCAL_ONLY, policyOf("BANKMELLAT", "مبلغ 500,000 ریال واریز شد", financial = Policy.LOCAL_ONLY))
     }
 
+    @Test fun `ask policy fails closed for financial notifications`() {
+        // ADR-006 §16: an unanswered prompt must keep the message local —
+        // ASK never fails open to SYNC.
+        assertEquals(
+            Policy.LOCAL_ONLY,
+            policyOf("BANKMELLAT", "مبلغ 500,000 ریال واریز شد", financial = Policy.ASK)
+        )
+    }
+
     @Test fun `multiple numbers in financial sms still financial`() {
         val v = SensitiveMessageFirewall.classify(
             "IR-MCI", "قبض شماره 9912345678 به مبلغ 120,000 ریال پرداخت شد"

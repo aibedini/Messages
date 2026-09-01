@@ -164,7 +164,11 @@ object SensitiveMessageFirewall {
             Category.BANK_SECURITY_CODE,
             Category.PASSWORD_RESET_CODE,
             Category.AUTHENTICATION_CODE -> Policy.LOCAL_ONLY
-            Category.FINANCIAL_NOTIFICATION -> financialPolicy
+            // ADR-006 §16 fail-safe: ASK keeps the message LOCAL until the
+            // user actively allows it (per-message prompt ships later). A
+            // policy the user cannot answer yet must never fail open.
+            Category.FINANCIAL_NOTIFICATION ->
+                if (financialPolicy == Policy.ASK) Policy.LOCAL_ONLY else financialPolicy
             Category.NORMAL ->
                 if (s.isNotEmpty() && syncAllowlist.any { s.contains(it.lowercase()) }) Policy.SYNC
                 else ambiguityMode.ambiguousPolicy

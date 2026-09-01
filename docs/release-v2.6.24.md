@@ -44,8 +44,13 @@ invariants (OTP/bank codes), regular-bank-notifications policy
 ### Not in this release (by ADR timing)
 
 Crypto/E2EE (stays out per ADR-005/006 timing), PWA history sync (blocked
-until this firewall was validated), Ask-mode interstitials (ASK currently
-treated as SYNC-pending-UI; safe default pending the settings flow).
+until this firewall was validated), Ask-mode interstitials.
+
+### Follow-up (v2.6.25)
+
+ASK policy resolved FAIL-CLOSED: a FINANCIAL_NOTIFICATION under ASK stays
+LOCAL_ONLY until the user actively allows it (per-message prompt ships
+later). ADR-006 §16 — an unanswered prompt never fails open.
 
 ## Verification
 
