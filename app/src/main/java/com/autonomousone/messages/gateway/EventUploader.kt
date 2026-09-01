@@ -64,6 +64,14 @@ class EventUploader(
                     delay(5_000)
                     continue
                 }
+                // PR-11 hotfix gate: until the device identity is enrolled, a
+                // signed batch is guaranteed 401 (unknown_device) → LOCK 13
+                // would dead-letter it. Hold the outbox instead; the enroll
+                // callback below flips identityRegistered and drains.
+                if (!prefs.identityRegistered) {
+                    delay(5_000)
+                    continue
+                }
                 val claimed = try {
                     repo.claimBatch(System.currentTimeMillis())
                 } catch (e: Exception) {

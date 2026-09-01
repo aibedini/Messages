@@ -136,6 +136,18 @@ class RegistrationManager(
 
                     onLog("✅ Device identity enrolled: $deviceId")
                     Log.i(TAG, "Identity enrolled as $deviceId")
+
+                    // PR-11 hotfix: rescue anything dead-lettered while we were
+                    // mid-enrollment (401 unknown_device from the identity
+                    // race). Requeue with attemptCount intact — the uploader
+                    // (now unblocked) redelivers them in normal order.
+                    val rescued = com.autonomousone.messages.repository
+                        .GatewaySyncRepository(com.autonomousone.messages.data.MessagesDatabase.get(context))
+                        .recoverDeadLetter()
+                    if (rescued > 0) {
+                        onLog("♻️ $rescued dead-lettered event(s) rescued post-enrollment")
+                        Log.i(TAG, "rescued $rescued DEAD_LETTER rows after enrollment")
+                    }
                     true
                 } catch (e: Exception) {
                     onLog("❌ Registration parse error: ${e.message}")

@@ -152,6 +152,16 @@ interface GatewayEventOutboxDao {
     @Query("UPDATE gateway_event_outbox SET state = 'PENDING' WHERE state = 'SENDING'")
     suspend fun resetSendingToPending(): Int
 
+    /**
+     * PR-11 hotfix: rescue rows dead-lettered by an enrollment race — a batch
+     * signed BEFORE /api/v1/agent/identity completed (or while the Keystore
+     * was briefly unavailable) is a 401 the server would accept on retry.
+     * Resets only the current dead-letter cohort back to PENDING with
+     * attemptCount untouched; called once right after a successful enroll.
+     */
+    @Query("UPDATE gateway_event_outbox SET state = 'PENDING' WHERE state = 'DEAD_LETTER'")
+    suspend fun resetDeadLetterToPending(): Int
+
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state IN ('PENDING', 'SENDING')")
     suspend fun pendingDepth(): Int
 

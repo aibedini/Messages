@@ -90,6 +90,9 @@ class GatewaySyncRepository(
     /** Startup recovery for the crash window between claim and ACK. */
     suspend fun recoverSending(): Int = outboxDao.resetSendingToPending()
 
+    /** PR-11 hotfix: rescue dead-letter rows from the enrollment race (see DAO). */
+    suspend fun recoverDeadLetter(): Int = outboxDao.resetDeadLetterToPending()
+
     suspend fun pendingDepth(): Int = outboxDao.pendingDepth()
     suspend fun pendingBytes(): Long = outboxDao.pendingBytes()
 
