@@ -32,7 +32,10 @@ object PairingClient {
         val webDeviceId: String,
         val origin: String,
         val expiresAt: Long,
-        val transcriptHash: String
+        val transcriptHash: String,
+        /** Full server transcript (raw JSON) — carried to approve() so the
+         *  certificate binds the server-verified public keys. */
+        val rawMetadata: JSONObject? = null
     )
 
     /** Parse the scanned QR payload (canonical JSON written by the web app). */
@@ -102,7 +105,8 @@ object PairingClient {
                 webDeviceId = o.getString("webDeviceId"),
                 origin = o.getString("origin"),
                 expiresAt = o.optLong("expiresAt", 0L),
-                transcriptHash = o.optString("transcriptHash", "")
+                transcriptHash = o.optString("transcriptHash", ""),
+                rawMetadata = o
             )
             // P0-8: metadata hash must equal the QR hash — substitution check.
             if (scanned.transcriptHash.isNotBlank() &&
@@ -135,12 +139,15 @@ object PairingClient {
         require(base.isNotBlank()) { "GMweb URL is not configured" }
 
         val deviceId = prefs.agentDeviceId(context)
+        // The server transcript (fetched, hash-verified) carries the web's
+        // REAL public keys — used here, never the opaque deviceId strings.
+        val meta = info.rawMetadata ?: throw IllegalStateException("server transcript metadata missing")
         val certificate = JSONObject().apply {
             put("accountId", "default")
             put("deviceId", info.webDeviceId)
             put("deviceType", "WEB_PWA")
-            put("signingPublicKey", info.webDeviceId) // placeholder — web posts its real key in the transcript; server relays transcript values
-            put("encryptionPublicKey", info.webDeviceId)
+            put("signingPublicKey", meta.optString("webSigningPublicKey", ""))
+            put("encryptionPublicKey", meta.optString("webEncryptionPublicKey", ""))
             put("capabilities", org.json.JSONArray(capabilities))
             put("historyGrant", historyGrant)
             put("trustSequence", System.currentTimeMillis() / 1000)
@@ -150,15 +157,10 @@ object PairingClient {
             put("origin", info.origin)
         }
 
-        // ADR-001/PR-05: the Trust Root signs the canonical certificate —
-        // here via the operational key over the certificate's transcript hash
-        // + body (the full canonical-certificate signing lands with the
-        // Trust Registry relay; the AgentAuth signature already binds this
-        // exact HTTP request to the enrolled device identity).
-        val rootSignature = DeviceIdentity.signWithOperationalKey(
-            info.transcriptHash.toByteArray(Charsets.UTF_8)
-        )
-        certificate.put("rootSignature", android.util.Base64.encodeToString(rootSignature, android.util.Base64.NO_WRAP))
+        // BLOCKER 2: the PrimaryTrustRoot (Keystore, non-exportable, separate
+        // from the AgentAuth HTTP key) signs the canonical certificate bytes.
+        val rootSignature = PrimaryTrustRoot.sign(certificate)
+        certificate.put("rootSignature", rootSignature)
 
         val path = "/api/v1/pairing/approve"
         val body = JSONObject()
@@ -166,6 +168,7 @@ object PairingClient {
             .put("certificate", certificate.toString())
             .put("deviceId", info.webDeviceId)
             .put("transcriptHash", info.transcriptHash)
+            .put("trustRootPublicKey", PrimaryTrustRoot.publicKeyBase64())
 
         val conn = URL("$base$path").openConnection() as HttpURLConnection
         conn.apply {

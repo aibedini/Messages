@@ -66,6 +66,10 @@ class RegistrationManager(
         return JSONObject().apply {
             put("deviceId", deviceId)
             put("protocolVersion", 1)
+            // BLOCKER 3 (ADR-007): this device IS the primary trust device —
+            // the only role allowed to approve web pairings. Explicit, not
+            // implicit: the server's approve gate checks this role.
+            put("role", "PRIMARY_TRUST_AGENT")
             // Extra descriptive fields are tolerated by the schema (it only
             // requires deviceId + publicKeys) and aid server-side diagnostics.
             put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
