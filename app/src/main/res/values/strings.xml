@@ -68,6 +68,15 @@
     <string name="home_confirm_delete_title">Delete this conversation?</string>
     <string name="home_snackbar_blocked">Number blocked</string>
     <string name="home_sent_today_chip">%1$d SMS today</string>
+
+    <!-- ADR-006 §11: per-message financial-sync ASK prompt (content-free) -->
+    <string name="firewall_ask_channel_name">Sensitive message prompts</string>
+    <string name="firewall_ask_channel_desc">Asks whether a financial notification may be synced to your cloud</string>
+    <string name="firewall_ask_title">Sync financial notification?</string>
+    <string name="firewall_ask_text">A financial notification from %1$s arrived. Sync it to your cloud, or keep it only on this phone?</string>
+    <string name="firewall_ask_unknown_sender">an unknown sender</string>
+    <string name="firewall_ask_allow">Sync once</string>
+    <string name="firewall_ask_deny">Keep private</string>
     <string name="home_mark_all_read">Mark all as read</string>
 
     <!-- ══════════ Conversation screen ══════════ -->

@@ -320,18 +320,43 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         // event creation, and the ONLY classifier. A LOCAL_ONLY decision means
         // the event row is never built/inserted (not "inserted then deleted").
         // Local audit never logs message content (ADR-006 §21).
-        val verdict = com.autonomousone.messages.security.SensitiveMessageFirewall
-            .classify(sender, body)
-        val policy = com.autonomousone.messages.security.SensitiveMessageFirewall
-            .resolvePolicy(
-                verdict = verdict,
-                sender = sender,
-                localOnlySenders = messagingPrefs.localOnlySenders,
-                syncAllowlist = messagingPrefs.syncAllowlistSenders,
-                financialPolicy = messagingPrefs.financialNotificationPolicy,
-                ambiguityMode = messagingPrefs.ambiguityMode
-            )
+        val firewall = com.autonomousone.messages.security.SensitiveMessageFirewall
+        val verdict = firewall.classify(sender, body)
+        val policy = firewall.resolvePolicy(
+            verdict = verdict,
+            sender = sender,
+            localOnlySenders = messagingPrefs.localOnlySenders,
+            syncAllowlist = messagingPrefs.syncAllowlistSenders,
+            financialPolicy = messagingPrefs.financialNotificationPolicy,
+            ambiguityMode = messagingPrefs.ambiguityMode
+        )
         if (policy == com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.LOCAL_ONLY) {
+            // ADR-006 §11: when the user's financial policy is ASK, surface a
+            // per-message prompt (Sync once / Keep private) instead of a
+            // silent keep-local. The DEFAULT is still local: until the user
+            // answers (or if they swipe the prompt away) the message never
+            // leaves the device — §16 fail-closed. A prior "Sync once" for
+            // THIS exact message flips it to sync-eligible.
+            if (verdict.category == com.autonomousone.messages.security.SensitiveMessageFirewall.Category.FINANCIAL_NOTIFICATION &&
+                messagingPrefs.financialNotificationPolicy ==
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.ASK
+            ) {
+                if (com.autonomousone.messages.security.AskPolicyLedger
+                        .isSyncAllowed(appContext, source, providerId)
+                ) {
+                    // explicit per-message user grant → fall through to SYNC
+                } else {
+                    com.autonomousone.messages.security.AskPrompt.notifyFinancialAsk(
+                        appContext, source, providerId, sender
+                    )
+                    android.util.Log.i(
+                        TAG,
+                        "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +
+                            "policy=ASK_PENDING rule=${verdict.rule}"
+                    )
+                    return
+                }
+            }
             android.util.Log.i(
                 TAG,
                 "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +

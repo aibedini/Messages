@@ -147,6 +147,13 @@
             android:name=".sms.SmsStatusReceiver"
             android:exported="false" />
 
+        <!-- ADR-006 §11: SensitiveMessageFirewall per-message ASK actions
+             (Sync once / Keep private). Non-exported: only our own
+             notifications target it explicitly. -->
+        <receiver
+            android:name=".security.AskActionReceiver"
+            android:exported="false" />
+
         <!-- Respond-via-message service required for default SMS app -->
         <service
             android:name=".service.HeadlessSmsSendService"

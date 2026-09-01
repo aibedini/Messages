@@ -68,6 +68,15 @@
     <string name="home_confirm_delete_title">این مکالمه حذف شود؟</string>
     <string name="home_snackbar_blocked">شماره مسدود شد</string>
     <string name="home_sent_today_chip">%1$d پیامک امروز</string>
+
+    <!-- ADR-006 §11: پرامپت per-message برای پیام‌های مالی (بدون محتوا) -->
+    <string name="firewall_ask_channel_name">درخواست‌های پیام حساس</string>
+    <string name="firewall_ask_channel_desc">می‌پرسد آیا اعلان مالی به cloud شما sync شود</string>
+    <string name="firewall_ask_title">اعلان مالی sync شود؟</string>
+    <string name="firewall_ask_text">اعلان مالی از %1$s رسید. به cloud شما sync شود، یا فقط روی همین گوشی بماند؟</string>
+    <string name="firewall_ask_unknown_sender">فرستنده ناشناس</string>
+    <string name="firewall_ask_allow">فقط یک‌بار sync</string>
+    <string name="firewall_ask_deny">خصوصی بماند</string>
     <string name="home_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>
 
     <!-- ══════════ صفحه گفتگو ══════════ -->
