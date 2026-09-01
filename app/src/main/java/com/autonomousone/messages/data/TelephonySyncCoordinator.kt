@@ -41,6 +41,15 @@ class TelephonySyncCoordinator private constructor(context: Context) {
     private val smsRepository = SmsRepository(appContext)
     private val db get() = MessagesDatabase.get(appContext)
 
+    /**
+     * ADR-006 SyncEligibility gate (kill-switch + future firewall hook).
+     * Default true = current behaviour (SYNC). The SensitiveMessageFirewall
+     * PR replaces this boolean with the per-message classifier decision;
+     * enqueueCloudEvent remains the single choke point either way.
+     */
+    @Volatile
+    internal var syncAllowed: Boolean = true
+
     // ── Dual channels ──────────────────────────────────────────────────────
 
     /**
@@ -274,6 +283,11 @@ class TelephonySyncCoordinator private constructor(context: Context) {
      * deterministic eventUuid is already queued/ACKed — logged, never doubled.
      */
     private suspend fun enqueueCloudEvent(build: suspend () -> GatewayEventOutboxEntity) {
+        // ADR-006: SyncEligibility gate — the SINGLE choke point for cloud
+        // event creation. A LOCAL_ONLY decision means the event row is never
+        // built/inserted (not "inserted then deleted"). The firewall PR later
+        // fills the classifier behind this same boundary.
+        if (!syncAllowed) return
         try {
             val row = build()
             if (db.gatewayEventOutboxDao().insertOrIgnore(row) == -1L) {
