@@ -2,9 +2,12 @@ name: OpenWiki Update
 
 on:
   workflow_dispatch:
-  schedule:
-    # 06:00 UTC daily (09:30 Tehran) — docs PR when the wiki drifts from code
-    - cron: "0 6 * * *"
+  # NOTE: schedule intentionally removed — OpenWiki's source fingerprint hashes
+  # file bytes, and the local Windows working tree (CRLF, core.autocrlf=true)
+  # can never match a Linux runner checkout (LF). On GH runners every run looks
+  # "source changed" and regenerates all pages (~6h, hits the timeout).
+  # The daily refresh runs on the owner's machine via Hermes cron instead.
+  # This workflow stays as a manual fallback (e.g. after a fork/restore).
 
 permissions:
   contents: write
