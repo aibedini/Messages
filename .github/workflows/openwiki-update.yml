@@ -6,8 +6,12 @@ on:
   # file bytes, and the local Windows working tree (CRLF, core.autocrlf=true)
   # can never match a Linux runner checkout (LF). On GH runners every run looks
   # "source changed" and regenerates all pages (~6h, hits the timeout).
-  # The daily refresh runs on the owner's machine via Hermes cron instead.
-  # This workflow stays as a manual fallback (e.g. after a fork/restore).
+  # The daily refresh runs on the owner's machine via Hermes cron
+  # (openwiki-daily.sh) against the real working tree instead.
+  # WARNING: a manual dispatch here will regenerate ALL pages (~6h) because
+  # the runner's LF checkout can never match the local CRLF fingerprint.
+  # Keep this file as a documented starting point if line endings are ever
+  # normalized (e.g. .gitattributes text=auto eol=lf + renormalize).
 
 permissions:
   contents: write
