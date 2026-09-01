@@ -50,14 +50,19 @@ class SmsStatusReceiver : BroadcastReceiver() {
 
     private suspend fun processStatusIntent(context: Context, intent: Intent, callbackResultCode: Int) {
         val rowId = intent.getLongExtra(EXTRA_ROW_ID, -1L)
-        if (rowId <= 0L) return
-
         val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0).coerceAtLeast(0)
         val partCount = intent.getIntExtra(EXTRA_PART_COUNT, 1).coerceAtLeast(1)
         val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
         val delivered = intent.action == ACTION_SMS_DELIVERED
         val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
         val ok = callbackResultCode == Activity.RESULT_OK
+        // PR-11.2 (v2.6.23): process the SEND-side ledger even when the
+        // provider row id is missing/invalid (persistToSent fallback). The
+        // callback still proves the modem accepted a segment, so the carrier
+        // counter must record it under the synthetic id rather than losing it.
+        val ledgerRowId = if (rowId > 0L) rowId else -System.currentTimeMillis()
+        // Status mutations need a real provider row; skip those only.
+        if (rowId <= 0L) return
         // A SENT callback is the modem's local transport ACK, not a delivery
         // verdict. Affected Samsung/RIL combinations return multiple non-OK
         // codes after the SMSC has accepted and delivered the message. Never
@@ -113,7 +118,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             try {
                 MessagesDatabase.get(appContext).sendSegmentDao().record(
                     SendSegmentEntity(
-                        rowId = rowId,
+                        rowId = ledgerRowId,
                         partIndex = partIndex,
                         partCount = partCount,
                         sentAt = System.currentTimeMillis(),
