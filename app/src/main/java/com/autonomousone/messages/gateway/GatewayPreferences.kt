@@ -36,6 +36,7 @@ class GatewayPreferences(context: Context) {
         // ── Cloud backend keys ──
         private const val KEY_BACKEND_URL = "cloud_backend_url"
         private const val KEY_GATEWAY_ID = "cloud_gateway_id"
+        private const val KEY_IDENTITY_REGISTERED = "cloud_identity_registered"
         private const val KEY_GATEWAY_TOKEN = "cloud_gateway_token"
         private const val KEY_LAST_HEARTBEAT = "cloud_last_heartbeat"
         private const val KEY_IS_REGISTERED = "cloud_is_registered"
@@ -183,6 +184,39 @@ class GatewayPreferences(context: Context) {
     var gatewayId: String
         get() = prefs.getString(KEY_GATEWAY_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_GATEWAY_ID, value).apply()
+
+    /**
+     * True once the device enrolled its PR-05 publicKeys on the ADR-004
+     * control plane (POST /api/v1/agent/identity, PR-11). Unlike the legacy
+     * [isRegistered]/gatewayToken bookkeeping (issued by the retired
+     * /api/gateways/register flow), this is the source of truth for "the
+     * platform knows this device".
+     */
+    var identityRegistered: Boolean
+        get() = prefs.getBoolean(KEY_IDENTITY_REGISTERED, false)
+        set(value) = prefs.edit().putBoolean(KEY_IDENTITY_REGISTERED, value).apply()
+
+    /**
+     * SSOT for the stable per-device identity on the agent bridge (PR-05/08b):
+     * ANDROID_ID when available, else a persisted random hex
+     * ([deviceFallbackId]). Identity enrollment MUST key on this value so the
+     * backend binds exactly one identity per physical device.
+     */
+    fun stableDeviceId(context: Context): String = try {
+        android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID,
+        )?.takeIf { it.isNotBlank() } ?: deviceFallbackId
+    } catch (e: Exception) {
+        deviceFallbackId
+    }
+
+    /**
+     * The wire identity used by agent-bridge callers (command claim, event
+     * upload, X-Agent-Auth signing): the registered [gatewayId], falling back
+     * to [stableDeviceId] before the first successful registration.
+     */
+    fun agentDeviceId(context: Context): String = gatewayId.ifBlank { stableDeviceId(context) }
 
     /** Bearer token issued by the backend. Encrypted at rest with the Android Keystore. */
     var gatewayToken: String

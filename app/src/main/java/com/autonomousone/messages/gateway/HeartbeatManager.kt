@@ -41,6 +41,9 @@ class HeartbeatManager(
         private const val HEARTBEAT_INTERVAL_MS = 60_000L     // 60 seconds
         private const val INITIAL_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 5 * 60_000L        // 5 minutes
+
+        /** PR-11: empty events/batch POST = liveness ping on the control plane. */
+        private const val HEARTBEAT_PATH = "/api/v1/agent/events/batch"
     }
 
     enum class ConnectionState { IDLE, CONNECTING, CONNECTED, DISCONNECTED, ERROR }
@@ -108,14 +111,38 @@ class HeartbeatManager(
 
     private suspend fun sendHeartbeat(): Boolean {
         if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) return false
-        if (!prefs.isRegistered || prefs.gatewayToken.isBlank()) {
+        if (!prefs.isRegistered || (prefs.gatewayToken.isBlank() && !prefs.identityRegistered)) {
             Log.w(TAG, "Not registered — attempting registration before heartbeat")
             val registered = registrationManager.ensureRegistered()
             if (!registered) return false
         }
 
-        val payload = buildHeartbeatPayload()
-        val result = client.post("/api/gateways/heartbeat", payload)
+        val deviceId = prefs.agentDeviceId(context)
+        // v2.6.21 (PR-11): heartbeat targets the ADR-004 control plane liveness
+        // probe instead of the retired /api/gateways/heartbeat. POSTing an
+        // EMPTY batch is a pure liveness ping — eventStore.ingestBatch returns
+        // {accepted:[],duplicates:0} without touching sequences, and the
+        // request is authenticated exactly like the other agent calls
+        // (X-API-Key bootstrap, then X-Agent-Auth per-device signatures).
+        val payload = buildHeartbeatPayload().put(
+            "events",
+            org.json.JSONArray(),
+        ).put("sourceDeviceId", deviceId)
+        // GMweb requires X-Agent-Auth once the deviceId has enrolled; sign the
+        // exact body about to be sent (fail closed when the Keystore is down).
+        val sign: (java.net.HttpURLConnection, ByteArray) -> Boolean = { conn, bodyBytes ->
+            AgentAuth.sign(conn, deviceId, HEARTBEAT_PATH, "POST", bodyBytes)
+        }
+        val result = client.post(
+            HEARTBEAT_PATH,
+            payload,
+            authenticated = false,
+            extraHeaders = mapOf(
+                "X-API-Key" to prefs.apiKey,
+                "X-Agent-Id" to deviceId,
+            ),
+            signer = sign,
+        )
 
         return when (result) {
             is BackendClient.Result.Success -> {
@@ -125,7 +152,8 @@ class HeartbeatManager(
             }
             is BackendClient.Result.Failure -> {
                 if (result.isAuthError) {
-                    // Token rejected → re-register
+                    // Token rejected → re-enroll identity (fail-visible, the
+                    // next successful register() restores the markers).
                     Log.w(TAG, "Heartbeat auth error — clearing credentials, will re-register")
                     onLog("🔄 Auth error — re-registering...")
                     prefs.clearCloudCredentials()

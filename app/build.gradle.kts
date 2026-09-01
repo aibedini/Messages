@@ -35,14 +35,16 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 62
-        versionName = "2.6.20"
+        versionCode = 63
+        versionName = "2.6.21"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Production backend URL — override in local.properties via gradle.properties if needed
+        // Production backend URL — override in local.properties via gradle.properties if needed.
+        // v2.6.21 (PR-11): default now points at the deployed ADR-004 control
+        // plane (GMweb) — the /api/gateways/* v1 backend is retired.
         val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString()
-            ?: "https://gaitway.autonomousone.in"
+            ?: "https://gmweb.46.31.76.103.nip.io"
         buildConfigField("String", "GATEWAY_BACKEND_URL", "\"$backendUrl\"")
         // Single source of truth for the app version.
         buildConfigField("String", "APP_VERSION", "\"$versionName\"")

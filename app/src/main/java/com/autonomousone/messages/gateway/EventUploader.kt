@@ -145,7 +145,15 @@ class EventUploader(
             rows.forEach { repo.onRetry(it.eventUuid, it.attemptCount, Random.Default, now) }
         }
 
-        return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events))) {
+        // PR-11: per-device X-Agent-Auth signature (GMweb requires it once the
+        // deviceId has enrolled). The deviceId bound in the signature MUST be
+        // the same one identity enrollment keyed on (SSOT stableDeviceId).
+        val deviceId = prefs.agentDeviceId(appContext)
+        val sign: (java.net.HttpURLConnection, ByteArray) -> Boolean = { conn, bodyBytes ->
+            AgentAuth.sign(conn, deviceId, EVENTS_PATH, "POST", bodyBytes)
+        }
+
+        return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
             is BackendClient.Result.Success -> {
                 val accepted = runCatching {
                     JSONObject(result.data).optJSONArray("accepted") ?: JSONArray()

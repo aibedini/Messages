@@ -34,12 +34,20 @@ class BackendClient(private val prefs: GatewayPreferences) {
         ) : Result<Nothing>()
     }
 
-    /** POST JSON to the backend. Returns the raw response body on success. */
+    /**
+     * POST JSON to the backend. Returns the raw response body on success.
+     *
+     * [signer] (PR-11): optional per-device request signing callback — invoked
+     * with the open connection and the EXACT body bytes about to be sent, so
+     * X-Agent-Auth signatures cover the real payload (ADR-001). Returning
+     * false aborts the request (fail closed) instead of sending it unsigned.
+     */
     fun post(
         path: String,
         body: JSONObject,
         authenticated: Boolean = true,
         extraHeaders: Map<String, String> = emptyMap(),
+        signer: ((java.net.HttpURLConnection, ByteArray) -> Boolean)? = null,
     ): Result<String> {
         return try {
             // Never send the bearer token (or register payloads) over plaintext HTTP.
@@ -65,6 +73,14 @@ class BackendClient(private val prefs: GatewayPreferences) {
             }
 
             val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
+            // PR-11: per-device signature over the canonical request (ADR-001).
+            // GMweb REQUIRES X-Agent-Auth once the deviceId has enrolled; a
+            // signer returning false aborts here (fail closed) — the request
+            // is never sent unsigned.
+            if (signer != null && !signer(conn, bodyBytes)) {
+                conn.disconnect()
+                return Result.Failure("Request aborted: agent signing failed (keystore unavailable)")
+            }
             conn.outputStream.use { it.write(bodyBytes) }
 
             val status = conn.responseCode
