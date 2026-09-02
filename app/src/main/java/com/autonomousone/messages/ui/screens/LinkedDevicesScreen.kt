@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.security.PairingClient
+import com.autonomousone.messages.security.PairingEndpointResolver
 import com.autonomousone.messages.utils.showBiometricPrompt
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -106,27 +107,32 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                 "SCANNING" -> {
                     Text("Point the camera at the QR code shown in the browser")
                     Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
+                        // REVIEW FIX: onQr returns Boolean — true = accepted
+                        // (scanner stops via clearAnalyzer), false = keep
+                        // scanning. No latch needed at the call site.
                         QrCameraView(
-                            onValidQr = { raw ->
+                            onQr = { raw ->
                                 android.util.Log.i("QR_SCAN", "payload received: ${raw.take(80)}")
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info == null) {
                                     android.util.Log.w("QR_SCAN", "payload did not parse — scanner stays live")
                                     cameraError = "Not a Messages pairing QR"
-                                    return@QrCameraView
+                                    return@QrCameraView false
                                 }
-                                // Valid Messages QR — stop scanning only after
-                                // the origin ALSO matches (invalid → scanner
-                                // stays live for the next frame).
-                                val prefs = com.autonomousone.messages.gateway.GatewayPreferences(context)
-                                if (!PairingClient.originMatches(prefs.gmwebUrl, info)) {
-                                    android.util.Log.w("QR_SCAN", "origin mismatch: ${info.origin} — scanner stays live")
-                                    cameraError = "This QR is not for your GMweb server"
-                                    return@QrCameraView
+                                // PairingEndpointResolver: user setting wins,
+                                // else the build's production URL. Pairing
+                                // never requires manual Gateway setup first.
+                                val trusted = PairingEndpointResolver.trustedServerUrl(context)
+                                if (!PairingEndpointResolver.originMatches(context, info.origin)) {
+                                    android.util.Log.w("QR_SCAN", "origin mismatch: ${info.origin} vs $trusted")
+                                    cameraError = "This QR belongs to ${info.origin}, but this app trusts $trusted"
+                                    return@QrCameraView false
                                 }
-                                android.util.Log.i("QR_SCAN", "parsed OK → CONFIRM (session=${info.pairingSessionId.take(8)})")
+                                cameraError = null
+                                android.util.Log.i("QR_SCAN", "origin verified → CONFIRM (session=${info.pairingSessionId.take(8)})")
                                 scanned = info
                                 step = "CONFIRM"
+                                true
                             },
                             onError = {
                                 android.util.Log.e("QR_SCAN", "camera error: $it")
@@ -134,9 +140,23 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                             }
                         )
                     }
+                    // Errors overlay ABOVE the camera area — clearly visible.
                     cameraError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = { step = "LIST" }) { Text("Back") }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Text(
+                                it,
+                                modifier = Modifier.padding(12.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { step = "LIST"; cameraError = null }) { Text("Back") }
                     }
                 }
 
@@ -234,14 +254,15 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     }
 }
 
-/** CameraX preview + ML Kit QR detection (on-device). Scanner stays live
- *  until the caller reports a VALID QR; resources cleaned up on dispose. */
+/** CameraX preview + ML Kit QR detection (on-device).
+ *  [onQr] returns TRUE when the payload is accepted — the analyzer is then
+ *  cleared so no further frames fire. FALSE/invalid keeps scanning.
+ *  Camera, scanner and executor are cleaned up on dispose. */
 @Composable
-private fun QrCameraView(onValidQr: (String) -> Unit, onError: (String) -> Unit) {
+private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember { Executors.newSingleThreadExecutor() }
-    val handled = remember { mutableStateOf(false) }
     val scannerRef = remember { java.util.concurrent.atomic.AtomicReference<com.google.mlkit.vision.barcode.BarcodeScanner?>(null) }
     val providerRef = remember { java.util.concurrent.atomic.AtomicReference<ProcessCameraProvider?>(null) }
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -287,10 +308,11 @@ private fun QrCameraView(onValidQr: (String) -> Unit, onError: (String) -> Unit)
                         )
                         scanner.process(input)
                             .addOnSuccessListener { codes ->
-                                if (!handled.value) {
-                                    codes.firstOrNull()?.rawValue?.let { raw ->
-                                        onValidQr(raw)
-                                    }
+                                val raw = codes.firstOrNull()?.rawValue
+                                if (raw != null && onQr(raw)) {
+                                    // Accepted — stop the analyzer so this QR
+                                    // is never delivered twice.
+                                    analysis.clearAnalyzer()
                                 }
                             }
                             .addOnCompleteListener { imageProxy.close() }
