@@ -52,6 +52,12 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     var cameraError by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
     var historyFull by remember { mutableStateOf(true) }
+    // ADR-006 Amendment: per-device sensitive grants (privacy-first OFF).
+    var grantOtp by remember { mutableStateOf(false) }
+    var grantBank by remember { mutableStateOf(false) }
+    var grantReset by remember { mutableStateOf(false) }
+    var grantAuth by remember { mutableStateOf(false) }
+    var grantFinancial by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -201,12 +207,21 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         Text("From now on")
                     }
                     Spacer(modifier = Modifier.height(4.dp))
+                    // ADR-006 Amendment: sensitive access is USER-SELECTABLE
+                    // per linked device (privacy-first defaults = OFF). Each
+                    // grant becomes a signed capability in the certificate.
                     Text("Sensitive messages", style = MaterialTheme.typography.labelLarge)
                     Text(
-                        "✓ OTP stays on this phone\n✓ Bank security codes stay on this phone",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "Choose what this device may see. Everything stays on " +
+                            "this phone unless you enable it here.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    SensitiveGrantRow("OTP & login codes", grantOtp) { grantOtp = it }
+                    SensitiveGrantRow("Bank security codes", grantBank) { grantBank = it }
+                    SensitiveGrantRow("Password reset codes", grantReset) { grantReset = it }
+                    SensitiveGrantRow("Authentication / 2FA codes", grantAuth) { grantAuth = it }
+                    SensitiveGrantRow("Bank transaction notifications", grantFinancial) { grantFinancial = it }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = { step = "LIST" }, modifier = Modifier.weight(1f)) {
@@ -228,14 +243,37 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     onSuccess = {
                                         val info0 = scanned
                                         if (info0 != null) {
-                                            val caps = listOf("READ_MESSAGES", "SEND_MESSAGES", "MARK_READ", "RECEIVE_NOTIFICATIONS")
+                                            val caps = buildList {
+                                                add("READ_MESSAGES")
+                                                add("SEND_MESSAGES")
+                                                add("MARK_READ")
+                                                add("RECEIVE_NOTIFICATIONS")
+                                                // ADR-006 Amendment: signed sensitive
+                                                // grants — only what the user enabled.
+                                                if (grantOtp) add("READ_OTP")
+                                                if (grantBank) add("READ_BANK_SECURITY")
+                                                if (grantReset) add("READ_PASSWORD_RESET")
+                                                if (grantAuth) add("READ_AUTH_CODES")
+                                                if (grantFinancial) add("READ_FINANCIAL_NOTIFICATIONS")
+                                            }
                                             val grant = if (historyFull) "FULL_HISTORY" else "FROM_NOW_ON"
                                             // FIX 1: network must leave the UI thread —
                                             // the callback only launches a coroutine.
                                             CoroutineScope(Dispatchers.Main).launch {
                                                 val res = PairingClient.approve(context, info0, caps, grant)
-                                                result = if (res.isSuccess) "✅ Device linked — continue in the browser"
-                                                else "❌ Link failed: ${res.exceptionOrNull()?.message}"
+                                                if (res.isSuccess) {
+                                                    // ADR-006 Amendment: persist the
+                                                    // user's sensitive grants for this
+                                                    // linked device (drives future
+                                                    // DEVICE_CAPABILITIES_CHANGED).
+                                                    com.autonomousone.messages.security
+                                                        .SensitiveGrantStore.savePairingGrants(
+                                                            context, info0.webDeviceId, caps
+                                                        )
+                                                    result = "✅ Device linked — continue in the browser"
+                                                } else {
+                                                    result = "❌ Link failed: ${res.exceptionOrNull()?.message}"
+                                                }
                                                 step = "LIST"
                                             }
                                         }
@@ -329,4 +367,21 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
         },
         modifier = Modifier.fillMaxSize()
     )
+}
+
+/** ADR-006 Amendment: one per-device sensitive grant switch. */
+@Composable
+private fun SensitiveGrantRow(
+    title: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
