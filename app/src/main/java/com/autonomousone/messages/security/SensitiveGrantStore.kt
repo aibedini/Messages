@@ -55,4 +55,11 @@ object SensitiveGrantStore {
         }
         editor.apply()
     }
+
+    /** Remove every grant for a device (unlink/revoke). */
+    fun wipeGrants(context: Context, deviceId: String) {
+        val editor = prefs(context).edit()
+        for (category in CATEGORIES) editor.remove("$deviceId:$category")
+        editor.apply()
+    }
 }

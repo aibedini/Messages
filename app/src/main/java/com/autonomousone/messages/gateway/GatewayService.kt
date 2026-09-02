@@ -33,6 +33,7 @@ class GatewayService : Service() {
     private lateinit var outboxPoller: OutboxPoller
     private lateinit var eventUploader: EventUploader
     private lateinit var commandPoller: SecureCommandPoller
+    private lateinit var trustPublisher: TrustStatementPublisher
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var supervisor: ConnectionSupervisor
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -155,6 +156,14 @@ class GatewayService : Service() {
         // PR-10: strategic command transport (/api/v1 agent bridge). The
         // legacy OutboxPoller above stays as the compatibility transport.
         commandPoller = SecureCommandPoller(
+            context = this,
+            prefs = prefs,
+            scope = serviceScope,
+            onLog = { msg -> _logFlow.tryEmit(msg) }
+        )
+        // LINKED DEVICE CONTROL pt2: publish signed trust statements
+        // (DEVICE_APPROVED/CAPABILITIES_CHANGED/REVOKED) until ACKed.
+        trustPublisher = TrustStatementPublisher(
             context = this,
             prefs = prefs,
             scope = serviceScope,
