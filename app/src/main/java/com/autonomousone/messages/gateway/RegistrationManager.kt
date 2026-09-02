@@ -7,6 +7,7 @@ import com.autonomousone.messages.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.autonomousone.messages.security.PrimaryTrustRoot
 
 /**
  * Handles first-time registration and re-registration with the cloud backend.
@@ -61,7 +62,7 @@ class RegistrationManager(
         register()
     }
 
-    private fun buildRegistrationPayload(): JSONObject {
+    internal fun buildRegistrationPayload(): JSONObject {
         val deviceId = prefs.stableDeviceId(context)
         return JSONObject().apply {
             put("deviceId", deviceId)
@@ -101,15 +102,25 @@ class RegistrationManager(
                 return android.util.Base64.encodeToString(pub.encoded, android.util.Base64.NO_WRAP)
             }
             put("publicKeys", JSONObject().apply {
-                put("trustRoot", toSpkiB64(identity.trustRootPublicPoint))
+                put("trustRoot", PrimaryTrustRoot.publicKeyBase64())
                 put("signing", toSpkiB64(identity.signingPublicPoint))
                 put("encryption", toSpkiB64(identity.encryptionPublicPoint))
             })
         }
     }
 
-    suspend fun register(): Boolean = withContext(Dispatchers.IO) {
-        if (!prefs.hasGatewayConsent) {
+    suspend fun register(): Boolean = registerInternal(requireConsent = true)
+
+    /** Pairing bootstrap is an explicit user action and must precede every
+     * metadata lookup, even when stale local flags claim enrollment. */
+    suspend fun registerForPairing(serverUrl: String): Boolean =
+        registerInternal(requireConsent = false, baseUrlOverride = serverUrl)
+
+    private suspend fun registerInternal(
+        requireConsent: Boolean,
+        baseUrlOverride: String? = null,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (requireConsent && !prefs.hasGatewayConsent) {
             onLog("Cloud registration blocked: gateway consent is required")
             return@withContext false
         }
@@ -129,6 +140,7 @@ class RegistrationManager(
             payload,
             authenticated = false,
             extraHeaders = headers + mapOf("X-API-Key" to prefs.apiKey),
+            baseUrlOverride = baseUrlOverride,
         )
 
         when (result) {
@@ -140,7 +152,9 @@ class RegistrationManager(
                     // stableDeviceId so every agent-bridge caller (command
                     // claim, X-Agent-Auth signing, events) binds the SAME
                     // identity the server just enrolled.
-                    JSONObject(result.data).optBoolean("ok", false)
+                    check(result.httpStatus == 200 && JSONObject(result.data).optBoolean("ok", false)) {
+                        "identity endpoint did not confirm enrollment"
+                    }
                     val deviceId = prefs.stableDeviceId(context)
                     prefs.gatewayId = deviceId
                     prefs.identityRegistered = true
@@ -149,8 +163,8 @@ class RegistrationManager(
                     prefs.gatewayToken = LEGACY_TOKEN_SENTINEL
                     prefs.isRegistered = true
 
-                    onLog("✅ Device identity enrolled: $deviceId")
-                    Log.i(TAG, "Identity enrolled as $deviceId")
+                    onLog("✅ Device identity enrolled: ${deviceId.take(8)}…")
+                    Log.i(TAG, "Identity enrolled as ${deviceId.take(8)}…")
 
                     // PR-11 hotfix: rescue anything dead-lettered while we were
                     // mid-enrollment (401 unknown_device from the identity

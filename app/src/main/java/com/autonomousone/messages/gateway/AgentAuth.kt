@@ -2,7 +2,7 @@ package com.autonomousone.messages.gateway
 
 import java.net.HttpURLConnection
 import java.security.MessageDigest
-import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * PR-08b (TechSpec §57, ADR-001 LOCK 4) — per-device agent authentication.
@@ -27,7 +27,15 @@ object AgentAuth {
 
     private const val TAG = "AGENT_AUTH"
     private const val REPLAY_WINDOW_MS = 90_000L
-    private val random = SecureRandom()
+    private val lastTimestamp = AtomicLong(0L)
+
+    internal fun freshTimestamp(now: Long = System.currentTimeMillis()): Long {
+        while (true) {
+            val previous = lastTimestamp.get()
+            val next = maxOf(now, previous + 1L)
+            if (lastTimestamp.compareAndSet(previous, next)) return next
+        }
+    }
 
     /**
      * Adds X-Agent-Auth + X-Agent-TS headers to [conn]. Returns false (and
@@ -41,7 +49,7 @@ object AgentAuth {
         method: String,
         bodyBytes: ByteArray?
     ): Boolean {
-        val ts = System.currentTimeMillis()
+        val ts = freshTimestamp()
         val bodyHash = sha256Hex(bodyBytes ?: ByteArray(0))
         val canonical = "$method\n$path\n$bodyHash\nX-AGENT-TS:$ts\n"
         val signature = try {

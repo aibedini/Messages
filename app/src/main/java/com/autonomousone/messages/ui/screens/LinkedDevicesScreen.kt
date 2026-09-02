@@ -50,7 +50,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
 
-    var step by remember { mutableStateOf("LIST") } // LIST | SCANNING | CONFIRM | DONE
+    var step by remember { mutableStateOf("LIST") }
     // LINKED DEVICE CONTROL: the local Trust Registry is the source of truth
     // for the list — durable, survives restart, includes revocation state.
     var devices by remember { mutableStateOf<List<TrustedDeviceEntity>>(emptyList()) }
@@ -109,10 +109,20 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     )
                     Button(
                         onClick = {
-                            val granted = ContextCompat.checkSelfPermission(
-                                context, Manifest.permission.CAMERA
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (granted) step = "SCANNING" else permissionLauncher.launch(Manifest.permission.CAMERA)
+                            step = "REGISTERING_IDENTITY"
+                            CoroutineScope(Dispatchers.Main).launch {
+                                val registered = PairingClient.registerIdentity(context)
+                                if (!registered.first) {
+                                    result = "Identity registration failed: ${registered.second}"
+                                    step = "LIST"
+                                    return@launch
+                                }
+                                val granted = ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.CAMERA
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (granted) step = "SCANNING"
+                                else permissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("+ Link new device") }
@@ -204,6 +214,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     }
                 }
 
+                "REGISTERING_IDENTITY" -> Text("Registering Android identity…")
+
                 "SCANNING" -> {
                     Text("Point the camera at the QR code shown in the browser")
                     Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
@@ -229,9 +241,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     return@QrCameraView false
                                 }
                                 cameraError = null
-                                android.util.Log.i("QR_SCAN", "origin verified → CONFIRM (session=${info.pairingSessionId.take(8)})")
+                                android.util.Log.i("QR_SCAN", "origin verified → FETCHING_METADATA (session=${info.pairingSessionId.take(8)})")
                                 scanned = info
-                                step = "CONFIRM"
+                                step = "FETCHING_METADATA"
                                 true
                             },
                             onError = {
@@ -260,22 +272,30 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     }
                 }
 
+                "FETCHING_METADATA" -> {
+                    Text("Fetching pairing metadata…")
+                    val info = scanned
+                    LaunchedEffect(info?.pairingSessionId) {
+                        if (info == null) {
+                            step = "LIST"
+                            return@LaunchedEffect
+                        }
+                        val (meta, err) = PairingClient.fetchSessionMetadata(context, info)
+                        if (err != null || meta == null) {
+                            result = "Metadata fetch failed: ${err ?: "invalid response"}"
+                            step = "LIST"
+                        } else {
+                            scanned = meta
+                            step = "CONFIRM"
+                        }
+                    }
+                }
+
                 "CONFIRM" -> {
                     val info = scanned
                     if (info == null) {
                         step = "LIST"
                         return@Column
-                    }
-                    // Metadata fetch runs once on entry. A failure is VISIBLE
-                    // (was silently bouncing back to LIST before).
-                    LaunchedEffect(info.pairingSessionId) {
-                        val (meta, err) = PairingClient.fetchSessionMetadata(context, info)
-                        if (err != null) {
-                            cameraError = "Metadata fetch failed: $err"
-                            step = "LIST"
-                        } else if (meta != null) {
-                            scanned = meta
-                        }
                     }
                     cameraError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -375,18 +395,27 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                             certificateSignature = "",
                                                             expiresAt = System.currentTimeMillis() + 180L * 24 * 60 * 60 * 1000
                                                         )
+                                                    step = "APPROVING_ON_SERVER"
                                                     val seq = com.autonomousone.messages.security.TrustedDeviceRegistry
-                                                        .beginApproval(context, approved)
+                                                        .nextTrustSequence(context)
                                                     val res = PairingClient.approve(context, info0, caps, grant, seq)
                                                     if (res.isSuccess) {
                                                         val certJson = res.getOrDefault(org.json.JSONObject())
-                                                        com.autonomousone.messages.security.TrustedDeviceRegistry
-                                                            .completeApproval(context, info0.webDeviceId, certJson.toString())
+                                                        com.autonomousone.messages.security.TrustedDeviceRegistry.recordApproval(
+                                                            context,
+                                                            approved.copy(
+                                                                certificateJson = certJson.toString(),
+                                                                certificateSignature = certJson.optString("rootSignature", "")
+                                                            ),
+                                                            trustSequence = seq
+                                                        )
                                                         com.autonomousone.messages.security
                                                             .SensitiveGrantStore.savePairingGrants(context, info0.webDeviceId, caps)
                                                         result = "✅ Device linked — continue in the browser"
+                                                        step = "LINKED"
                                                     } else {
-                                                        result = "❌ Link failed: ${res.exceptionOrNull()?.message} (device saved — will retry publish)"
+                                                        result = "❌ Link failed: ${res.exceptionOrNull()?.message}"
+                                                        step = "LIST"
                                                     }
                                                 } catch (t: Throwable) {
                                                     // P0-7: the UI must never die on post-approval
@@ -394,8 +423,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                     // the safety net. No keys/secrets logged.
                                                     android.util.Log.e("PAIRING", "post approval failed", t)
                                                     result = "Link failed: local trust registration failed"
+                                                    step = "LIST"
                                                 }
-                                                step = "LIST"
                                             }
                                         }
                                     },
@@ -405,6 +434,13 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                             modifier = Modifier.weight(1f)
                         ) { Text("Link device") }
                     }
+                }
+
+                "APPROVING_ON_SERVER" -> Text("Approving on server…")
+
+                "LINKED" -> {
+                    Text("Device linked — continue in the browser")
+                    Button(onClick = { step = "LIST" }) { Text("Done") }
                 }
 
                 "DONE" -> Unit

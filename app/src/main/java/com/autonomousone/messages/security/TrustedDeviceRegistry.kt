@@ -33,6 +33,12 @@ object TrustedDeviceRegistry {
         val expiresAt: Long,
     )
 
+    /** Reserve nothing locally: pairing uses this candidate in the server
+     * certificate, then persists trust only after /pairing/approve returns 200. */
+    suspend fun nextTrustSequence(context: Context): Int =
+        MessagesDatabase.get(context.applicationContext)
+            .trustStatementOutboxDao().maxTrustSequence() + 1
+
     /**
      * Persist the approved device + enqueue the DEVICE_APPROVED statement in
      * ONE Room transaction. Returns the assigned trustSequence.
@@ -126,13 +132,16 @@ object TrustedDeviceRegistry {
         context: Context,
         device: ApprovedDevice,
         accountId: String = "default",
+        trustSequence: Int? = null,
     ): Int {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
         return db.withTransaction {
             // P0-6: ONE authoritative trustSequence from the registry — the
             // certificate and the statement MUST carry the same value.
-            val seq = db.trustStatementOutboxDao().maxTrustSequence() + 1
+            val next = db.trustStatementOutboxDao().maxTrustSequence() + 1
+            val seq = trustSequence ?: next
+            check(seq == next) { "trust sequence changed during server approval" }
             val statementId = java.util.UUID.randomUUID().toString()
             db.trustedDeviceDao().upsert(
                 com.autonomousone.messages.data.TrustedDeviceEntity(

@@ -48,10 +48,11 @@ class BackendClient(private val prefs: GatewayPreferences) {
         authenticated: Boolean = true,
         extraHeaders: Map<String, String> = emptyMap(),
         signer: ((java.net.HttpURLConnection, ByteArray) -> Boolean)? = null,
+        baseUrlOverride: String? = null,
     ): Result<String> {
         return try {
             // Never send the bearer token (or register payloads) over plaintext HTTP.
-            val baseUrl = prefs.backendUrl
+            val baseUrl = baseUrlOverride?.trimEnd('/') ?: prefs.backendUrl
             if (!baseUrl.startsWith("https://")) {
                 return Result.Failure("Insecure backend URL rejected — HTTPS required")
             }
