@@ -144,7 +144,8 @@ object PairingClient {
         context: Context,
         info: SessionInfo,
         capabilities: List<String>,
-        historyGrant: String
+        historyGrant: String,
+        trustSequence: Int? = null
     ): Result<JSONObject> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         runCatching {
         val prefs = GatewayPreferences(context)
@@ -163,7 +164,9 @@ object PairingClient {
             put("encryptionPublicKey", meta.optString("webEncryptionPublicKey", ""))
             put("capabilities", org.json.JSONArray(capabilities))
             put("historyGrant", historyGrant)
-            put("trustSequence", System.currentTimeMillis() / 1000)
+            // P0-6: ONE authoritative trustSequence — allocated by the local
+            // Trust Registry BEFORE signing; clock-derived values are gone.
+            put("trustSequence", trustSequence?.toLong() ?: System.currentTimeMillis() / 1000)
             put("issuedAt", System.currentTimeMillis())
             put("expiresAt", System.currentTimeMillis() + 180L * 24 * 3600 * 1000)
             put("pairingTranscriptHash", info.transcriptHash)

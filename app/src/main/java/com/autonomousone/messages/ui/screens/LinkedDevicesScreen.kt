@@ -354,42 +354,46 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                             // FIX 1: network must leave the UI thread —
                                             // the callback only launches a coroutine.
                                             CoroutineScope(Dispatchers.Main).launch {
-                                                val res = PairingClient.approve(context, info0, caps, grant)
-                                                if (res.isSuccess) {
-                                                    // LINKED DEVICE CONTROL: durable trust
-                                                    // record + DEVICE_APPROVED statement in
-                                                    // ONE Room transaction (Trust Root signed).
-                                                    // Trust state is never RAM-only.
-                                                    val certJson = res.getOrDefault(org.json.JSONObject())
-                                                    val meta = info0.rawMetadata ?: org.json.JSONObject()
-                                                    com.autonomousone.messages.security.TrustedDeviceRegistry
-                                                        .recordApproval(
-                                                            context,
-                                                            com.autonomousone.messages.security
-                                                                .TrustedDeviceRegistry.ApprovedDevice(
-                                                                    deviceId = info0.webDeviceId,
-                                                                    displayName = "Web · ${info0.origin.removePrefix("https://").take(32)}",
-                                                                    origin = info0.origin,
-                                                                    signingPublicKey = meta.optString("webSigningPublicKey", ""),
-                                                                    encryptionPublicKey = meta.optString("webEncryptionPublicKey", ""),
-                                                                    capabilities = caps,
-                                                                    historyGrant = grant,
-                                                                    certificateJson = certJson.toString(),
-                                                                    certificateSignature = certJson.optString("rootSignature", ""),
-                                                                    expiresAt = certJson.optLong("expiresAt")
-                                                                )
+                                                try {
+                                                    // P0-5 ORDER: durable local trust FIRST
+                                                    // (registry allocates the authoritative
+                                                    // trustSequence) → network approve carries
+                                                    // that SAME sequence → attach certificate →
+                                                    // statement outbox. Network failure leaves
+                                                    // PENDING_PUBLICATION — never an orphan.
+                                                    val meta0 = info0.rawMetadata ?: org.json.JSONObject()
+                                                    val approved = com.autonomousone.messages.security
+                                                        .TrustedDeviceRegistry.ApprovedDevice(
+                                                            deviceId = info0.webDeviceId,
+                                                            displayName = "Web · ${info0.origin.removePrefix("https://").take(32)}",
+                                                            origin = info0.origin,
+                                                            signingPublicKey = meta0.optString("webSigningPublicKey", ""),
+                                                            encryptionPublicKey = meta0.optString("webEncryptionPublicKey", ""),
+                                                            capabilities = caps,
+                                                            historyGrant = grant,
+                                                            certificateJson = "",
+                                                            certificateSignature = "",
+                                                            expiresAt = System.currentTimeMillis() + 180L * 24 * 60 * 60 * 1000
                                                         )
-                                                    // ADR-006 Amendment: persist the
-                                                    // user's sensitive grants for this
-                                                    // linked device (drives future
-                                                    // DEVICE_CAPABILITIES_CHANGED).
-                                                    com.autonomousone.messages.security
-                                                        .SensitiveGrantStore.savePairingGrants(
-                                                            context, info0.webDeviceId, caps
-                                                        )
-                                                    result = "✅ Device linked — continue in the browser"
-                                                } else {
-                                                    result = "❌ Link failed: ${res.exceptionOrNull()?.message}"
+                                                    val seq = com.autonomousone.messages.security.TrustedDeviceRegistry
+                                                        .beginApproval(context, approved)
+                                                    val res = PairingClient.approve(context, info0, caps, grant, seq)
+                                                    if (res.isSuccess) {
+                                                        val certJson = res.getOrDefault(org.json.JSONObject())
+                                                        com.autonomousone.messages.security.TrustedDeviceRegistry
+                                                            .completeApproval(context, info0.webDeviceId, certJson.toString())
+                                                        com.autonomousone.messages.security
+                                                            .SensitiveGrantStore.savePairingGrants(context, info0.webDeviceId, caps)
+                                                        result = "✅ Device linked — continue in the browser"
+                                                    } else {
+                                                        result = "❌ Link failed: ${res.exceptionOrNull()?.message} (device saved — will retry publish)"
+                                                    }
+                                                } catch (t: Throwable) {
+                                                    // P0-7: the UI must never die on post-approval
+                                                    // errors; root causes are fixed upstream, this is
+                                                    // the safety net. No keys/secrets logged.
+                                                    android.util.Log.e("PAIRING", "post approval failed", t)
+                                                    result = "Link failed: local trust registration failed"
                                                 }
                                                 step = "LIST"
                                             }

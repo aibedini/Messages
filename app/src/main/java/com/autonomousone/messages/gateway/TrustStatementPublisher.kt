@@ -82,8 +82,15 @@ class TrustStatementPublisher(
                 conn.connectTimeout = 15_000
                 conn.readTimeout = 15_000
                 conn.doOutput = true
-                // Server schema: { statement: {...} }
-                val wrapper = org.json.JSONObject().put("statement", org.json.JSONObject(statement.payload))
+                // Server schema: { statement: {...} } — the persisted payload
+                // ALREADY contains rootSignature + statementId (P0: one
+                // payload persisted==signed==published).
+                val statementObj = org.json.JSONObject(statement.payload)
+                if (!statementObj.has("rootSignature")) {
+                    Log.e(TAG, "statement ${statement.statementId} missing rootSignature — refusing to publish")
+                    continue
+                }
+                val wrapper = org.json.JSONObject().put("statement", statementObj)
                 val bodyBytes = wrapper.toString().toByteArray(Charsets.UTF_8)
                 if (!AgentAuth.sign(conn, deviceId, PATH, "POST", bodyBytes)) {
                     throw IllegalStateException("agent signing failed")

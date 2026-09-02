@@ -63,6 +63,49 @@ object PrimaryTrustRoot {
         return Base64.encodeToString(signature, Base64.NO_WRAP)
     }
 
+    /**
+     * P0 (v2.6.36): TRUST STATEMENT signer — SEPARATE from the certificate
+     * signer. canonicalCertificate() requires certificate-only fields and
+     * crashed on statement payloads (JSONException → Room rollback → empty
+     * Linked Devices list). The statement has its own versioned contract:
+     * sorted capabilities, fixed field set, exact bytes persisted/published.
+     */
+    const val STATEMENT_VERSION = 1
+
+    fun canonicalTrustStatement(st: JSONObject): String {
+        val o = org.json.JSONObject()
+        o.put("version", st.optInt("version", STATEMENT_VERSION))
+        o.put("accountId", st.optString("accountId", "default"))
+        o.put("statementId", st.getString("statementId"))
+        o.put("operation", st.getString("operation"))
+        o.put("deviceId", st.getString("deviceId"))
+        o.put("trustSequence", st.getLong("trustSequence"))
+        val caps = st.optJSONArray("capabilities") ?: org.json.JSONArray()
+        val capsSorted = (0 until caps.length()).map { caps.getString(it) }.sorted()
+        o.put("capabilities", org.json.JSONArray(capsSorted))
+        o.put("historyGrant", st.optString("historyGrant", ""))
+        o.put("issuedAt", st.getLong("issuedAt"))
+        // certificate is an opaque signed blob — hashed, never re-serialized
+        o.put("certificateHash", sha256Hex(st.optString("certificate", "")))
+        return o.toString()
+    }
+
+    /** Sign the canonical statement bytes (the payload persisted/published). */
+    fun signTrustStatement(st: JSONObject): String {
+        val canonical = canonicalTrustStatement(st).toByteArray(Charsets.UTF_8)
+        val privateKey = getOrCreatePrivateKey()
+        val signature = Signature.getInstance("SHA256withECDSA").apply {
+            initSign(privateKey)
+            update(canonical)
+        }.sign()
+        return Base64.encodeToString(signature, Base64.NO_WRAP)
+    }
+
+    private fun sha256Hex(data: String): String {
+        val d = java.security.MessageDigest.getInstance("SHA-256").digest(data.toByteArray(Charsets.UTF_8))
+        return d.joinToString("") { "%02x".format(it) }
+    }
+
     /** Public key (base64 SPKI) so the web can pin/verify the root signature. */
     fun publicKeyBase64(): String {
         val privateKey = getOrCreatePrivateKey()
