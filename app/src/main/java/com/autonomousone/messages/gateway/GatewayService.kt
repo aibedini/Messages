@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonomousone.messages.MainActivity
@@ -273,7 +274,7 @@ class GatewayService : Service() {
                 this, 2002, restart,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val triggerAt = System.currentTimeMillis() + WATCHDOG_DELAY_MS
+            val triggerAt = SystemClock.elapsedRealtime() + WATCHDOG_DELAY_MS
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
                 // Inexact fallback still revives us within Doze-compatible windows.
                 alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
@@ -369,7 +370,6 @@ class GatewayService : Service() {
         // cleared the desired state), arm the alarm watchdog so the pull
         // bridge comes back even under Doze — this is the 503-killer.
         scheduleRestartWatchdog()
-        supervisor.stop()
         shutdownComponents()
         super.onDestroy()
     }

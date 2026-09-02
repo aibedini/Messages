@@ -114,6 +114,11 @@ class SmsSender(
         showToast: Boolean = false,
         threadId: Long = 0L
     ): SendOutcome {
+        if (com.autonomousone.messages.BuildConfig.DEBUG) {
+            check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+                "SmsSender.sendWithOutcome must never run on Main"
+            }
+        }
         val enqueueMode = GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS
         if (!enqueueMode) {
             // Direct path (flag off): legacy behaviour, still the ONLY place

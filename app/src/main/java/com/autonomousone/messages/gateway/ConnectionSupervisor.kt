@@ -55,6 +55,8 @@ class ConnectionSupervisor private constructor(
     private val components: ManagedComponents,
     private val onLog: (String) -> Unit
 ) {
+    enum class DeliveryIntake { LEGACY_PULL, CONTROL_PLANE_COMMANDS }
+
     companion object {
         @Volatile
         private var instance: ConnectionSupervisor? = null
@@ -90,7 +92,8 @@ class ConnectionSupervisor private constructor(
         val stopEventUploader: () -> Unit = {},
         /** PR-10: the strategic SecureCommandPoller (/api/v1 agent bridge). */
         val startCommandPoller: () -> Unit = {},
-        val stopCommandPoller: () -> Unit = {}
+        val stopCommandPoller: () -> Unit = {},
+        val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL
     )
 
     enum class State {
@@ -265,8 +268,18 @@ class ConnectionSupervisor private constructor(
         // ── Cloud + GMweb + shadow sync (idempotent starts) ────────────────
         components.startHeartbeat()
         components.startEventUploader() // PR-02: durable outbox → GMweb transmitter
-        components.startCommandPoller() // PR-10: strategic /api/v1 agent bridge
-        if (prefs.gmwebUrl.isNotBlank()) components.startPoller()
+        // A SEND_SMS command must have exactly one intake owner. Keep the
+        // migration switch explicit; never run both consumers concurrently.
+        when (components.deliveryIntake) {
+            DeliveryIntake.LEGACY_PULL -> {
+                components.stopCommandPoller()
+                if (prefs.gmwebUrl.isNotBlank()) components.startPoller()
+            }
+            DeliveryIntake.CONTROL_PLANE_COMMANDS -> {
+                components.stopPoller()
+                components.startCommandPoller()
+            }
+        }
         components.startSync()
 
         backoffMs = 5_000L

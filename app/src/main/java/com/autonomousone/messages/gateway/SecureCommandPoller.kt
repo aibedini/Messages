@@ -54,8 +54,21 @@ class SecureCommandPoller(
         private const val STATUS_PATH = "/api/v1/agent/commands/%s/status"
         private const val QUIET_MS = 2_000L        // empty-claim cadence (§57)
         private const val ERROR_RETRY_MS = 5_000L
-        private const val AGENT_ID = "android-agent" // PR-08b: per-device identity
         private const val CLAIM_LIMIT = 25
+
+        internal fun buildClaimBody(deviceId: String): ByteArray = JSONObject()
+            .put("agentId", deviceId)
+            .put("limit", CLAIM_LIMIT)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+
+        internal fun decodeCiphertext(command: JSONObject): ByteArray? {
+            val encoded = command.optString("ciphertext")
+            if (encoded.isBlank()) return null
+            return runCatching {
+                java.util.Base64.getDecoder().decode(encoded)
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+        }
     }
 
     enum class State { IDLE, POLLING, INGESTING, ERROR }
@@ -122,7 +135,7 @@ class SecureCommandPoller(
     }
 
     /** POST /api/v1/agent/commands/claim → opaque rows (base64 payloads). */
-    private fun claim(): List<RemoteCommandEntity> {
+    private suspend fun claim(): List<RemoteCommandEntity> {
         val base = prefs.gmwebUrl.trimEnd('/')
         val path = "/api/v1/agent/commands/claim"
         val conn = URL("$base$path").openConnection() as HttpURLConnection
@@ -134,14 +147,12 @@ class SecureCommandPoller(
                 readTimeout = 30_000
                 doOutput = true
             }
-            val bodyBytes = JSONObject()
-                .put("agentId", AGENT_ID)
-                .put("limit", CLAIM_LIMIT)
-                .toString().toByteArray(Charsets.UTF_8)
+            val currentDeviceId = deviceId()
+            val bodyBytes = buildClaimBody(currentDeviceId)
             // PR-08b: per-device signature over the canonical request (ADR-001).
             // X-API-Key stays as a legacy fallback for older GMweb builds.
             conn.setRequestProperty("X-API-Key", prefs.apiKey)
-            if (!AgentAuth.sign(conn, deviceId(), path, "POST", bodyBytes)) {
+            if (!AgentAuth.sign(conn, currentDeviceId, path, "POST", bodyBytes)) {
                 throw IllegalStateException("agent signing failed (keystore unavailable)")
             }
             conn.outputStream.use { it.write(bodyBytes) }
@@ -156,12 +167,16 @@ class SecureCommandPoller(
                 val id = c.optString("id")
                 val idem = c.optString("idempotencyKey")
                 if (id.isBlank() || idem.isBlank()) return@mapNotNull null
+                val ciphertext = decodeCiphertext(c)
+                if (ciphertext == null) {
+                    Log.e(TAG, "protocol_error: command $id has missing or invalid ciphertext")
+                    ack(id, "FAILED", "protocol_error: missing or invalid ciphertext")
+                    return@mapNotNull null
+                }
                 RemoteCommandEntity(
                     commandId = id,
                     type = c.optString("type", "UNKNOWN"),
-                    ciphertext = android.util.Base64.decode(
-                        c.optString("payload"), android.util.Base64.NO_WRAP
-                    ),
+                    ciphertext = ciphertext,
                     encoding = c.optString("encoding", "application/json"),
                     schemaVersion = c.optInt("schemaVersion", 1),
                     cryptoVersion = c.optInt("cryptoVersion", 0),

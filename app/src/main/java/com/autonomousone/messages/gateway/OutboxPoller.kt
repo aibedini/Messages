@@ -179,7 +179,6 @@ class OutboxPoller(
     private suspend fun drainUntilTerminal(requestId: String): Boolean {
         val deadline = System.currentTimeMillis() + 120_000
         while (System.currentTimeMillis() < deadline) {
-            EveSmsQueue.drainOne() // drive the queue even if its worker thread is busy
             val rec = EveSmsQueue.status(requestId)
             if (rec == null || rec.terminal) return rec?.successful == true
             delay(500)
