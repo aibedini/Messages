@@ -24,7 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.TrustedDeviceEntity
 import com.autonomousone.messages.security.PairingClient
+import com.autonomousone.messages.security.TrustedDeviceRegistry
 import com.autonomousone.messages.security.PairingEndpointResolver
 import com.autonomousone.messages.utils.showBiometricPrompt
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
@@ -48,9 +51,17 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     val activity = context as? android.app.Activity
 
     var step by remember { mutableStateOf("LIST") } // LIST | SCANNING | CONFIRM | DONE
+    // LINKED DEVICE CONTROL: the local Trust Registry is the source of truth
+    // for the list — durable, survives restart, includes revocation state.
+    var devices by remember { mutableStateOf<List<TrustedDeviceEntity>>(emptyList()) }
+    var revokeTarget by remember { mutableStateOf<TrustedDeviceEntity?>(null) }
     var scanned by remember { mutableStateOf<PairingClient.SessionInfo?>(null) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
+    suspend fun refreshDevices() {
+        devices = MessagesDatabase.get(context).trustedDeviceDao().all()
+    }
+    LaunchedEffect(step, result) { refreshDevices() }
     var historyFull by remember { mutableStateOf(true) }
     // ADR-006 Amendment: per-device sensitive grants (privacy-first OFF).
     var grantOtp by remember { mutableStateOf(false) }
@@ -107,6 +118,89 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     ) { Text("+ Link new device") }
                     result?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    }
+                    // ── Linked device registry (durable, from Room) ──────────
+                    revokeTarget?.let { target ->
+                        AlertDialog(
+                            onDismissRequest = { revokeTarget = null },
+                            title = { Text("Unlink device?") },
+                            text = {
+                                Text(
+                                    "${target.displayName} will lose access immediately: " +
+                                        "its session is killed, sync and commands are denied, " +
+                                        "and no future key grants are issued. Audit history is kept."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    val t = target
+                                    revokeTarget = null
+                                    showBiometricPrompt(
+                                        context as androidx.appcompat.app.AppCompatActivity,
+                                        title = "Unlink device",
+                                        subtitle = "Authenticate to revoke ${t.displayName}",
+                                        onSuccess = {
+                                            CoroutineScope(Dispatchers.Main).launch {
+                                                TrustedDeviceRegistry.recordRevocation(context, t.deviceId)
+                                                refreshDevices()
+                                                result = "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
+                                            }
+                                        },
+                                        onError = { result = "Revocation cancelled" }
+                                    )
+                                }) { Text("Unlink") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { revokeTarget = null }) { Text("Cancel") }
+                            }
+                        )
+                    }
+                    if (devices.isNotEmpty()) {
+                        Text(
+                            "Linked devices",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                        devices.forEach { d ->
+                            val statusLabel = when (d.status) {
+                                TrustedDeviceEntity.STATUS_ACTIVE -> "Trusted"
+                                TrustedDeviceEntity.STATUS_PENDING_PUBLICATION -> "Trusted · syncing"
+                                TrustedDeviceEntity.STATUS_REVOKE_PENDING -> "Revoking…"
+                                TrustedDeviceEntity.STATUS_REVOKED -> "Revoked"
+                                else -> "Expired"
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(d.displayName, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "$statusLabel · ${d.origin.removePrefix("https://").take(28)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        "Capabilities: ${d.capabilitiesJson}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        "History: ${d.historyGrant}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    if (d.status != TrustedDeviceEntity.STATUS_REVOKED &&
+                                        d.status != TrustedDeviceEntity.STATUS_REVOKE_PENDING
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { revokeTarget = d },
+                                            modifier = Modifier.padding(top = 8.dp)
+                                        ) { Text("Unlink device") }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
