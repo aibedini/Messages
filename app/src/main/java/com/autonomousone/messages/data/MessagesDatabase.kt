@@ -40,9 +40,12 @@ import com.autonomousone.messages.BuildConfig
         GatewayEventOutboxEntity::class,
         RemoteCommandEntity::class,
         RemoteCommandExecutionEntity::class,
-        SyncCursorEntity::class
+        SyncCursorEntity::class,
+        TrustedDeviceEntity::class,
+        TrustStatementOutboxEntity::class,
+        DeviceTelemetryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -57,6 +60,9 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun remoteCommandDao(): RemoteCommandDao
     abstract fun remoteCommandExecutionDao(): RemoteCommandExecutionDao
     abstract fun syncCursorDao(): SyncCursorDao
+    abstract fun trustedDeviceDao(): TrustedDeviceDao
+    abstract fun trustStatementOutboxDao(): TrustStatementOutboxDao
+    abstract fun deviceTelemetryDao(): DeviceTelemetryDao
 
     companion object {
         @Volatile
@@ -261,6 +267,60 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 — LINKED DEVICE CONTROL: Android's local Trust Registry.
+         * New tables only; no existing data touched.
+         */
+        private val UPGRADE_TO_V8_SQL = listOf(
+            """CREATE TABLE IF NOT EXISTS trusted_devices (
+                deviceId TEXT NOT NULL PRIMARY KEY,
+                accountId TEXT NOT NULL,
+                displayName TEXT NOT NULL,
+                deviceType TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                signingPublicKey TEXT NOT NULL,
+                encryptionPublicKey TEXT NOT NULL,
+                capabilitiesJson TEXT NOT NULL,
+                historyGrant TEXT NOT NULL,
+                certificateJson TEXT NOT NULL,
+                certificateSignature TEXT NOT NULL,
+                trustSequence INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                approvedAt INTEGER NOT NULL,
+                expiresAt INTEGER NOT NULL,
+                revokedAt INTEGER,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS trust_statement_outbox (
+                statementId TEXT NOT NULL PRIMARY KEY,
+                trustSequence INTEGER NOT NULL,
+                operation TEXT NOT NULL,
+                deviceId TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                rootSignature TEXT NOT NULL,
+                state TEXT NOT NULL,
+                attemptCount INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL,
+                ackedAt INTEGER
+            )""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_trust_statement_outbox_trustSequence ON trust_statement_outbox(trustSequence)",
+            """CREATE TABLE IF NOT EXISTS device_telemetry (
+                deviceId TEXT NOT NULL PRIMARY KEY,
+                sessionActive INTEGER NOT NULL,
+                lastSeenAt INTEGER,
+                sessionExpiresAt INTEGER,
+                onlineNow INTEGER NOT NULL,
+                telemetryFetchedAt INTEGER NOT NULL
+            )"""
+        )
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V8_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -272,7 +332,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

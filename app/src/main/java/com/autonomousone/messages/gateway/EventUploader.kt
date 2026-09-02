@@ -35,7 +35,9 @@ import kotlin.random.Random
 class EventUploader(
     context: Context,
     private val prefs: GatewayPreferences,
-    private val client: BackendClient,
+    // P0 (control-plane SSOT): events go to GMweb (gmwebUrl), never the
+    // legacy cloud backendUrl.
+    private val client: ControlPlaneClient,
     private val scope: CoroutineScope,
     private val onLog: (String) -> Unit
 ) {
@@ -162,7 +164,7 @@ class EventUploader(
         }
 
         return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
-            is BackendClient.Result.Success -> {
+            is ControlPlaneClient.Result.Success -> {
                 val accepted = runCatching {
                     JSONObject(result.data).optJSONArray("accepted") ?: JSONArray()
                 }.getOrDefault(JSONArray())
@@ -185,7 +187,7 @@ class EventUploader(
                 if (acked == batch.size) Outcome.ALL_ACKED
                 else Outcome.PARTIAL
             }
-            is BackendClient.Result.Failure -> {
+            is ControlPlaneClient.Result.Failure -> {
                 val status = result.httpStatus
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +

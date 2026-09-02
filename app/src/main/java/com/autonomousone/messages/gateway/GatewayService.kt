@@ -143,11 +143,12 @@ class GatewayService : Service() {
             onLog = { msg -> _logFlow.tryEmit(msg) },
             networkMonitor = NetworkMonitor.get(this)
         )
-        // PR-02: durable cloud-event transmitter (gateway_event_outbox worker).
+        // PR-02 + P0 control-plane SSOT: events → GMweb (gmwebUrl), NOT the
+        // legacy cloud backendUrl (BackendClient stays for legacy heartbeat).
         eventUploader = EventUploader(
             context = this,
             prefs = prefs,
-            client = backendClient,
+            client = ControlPlaneClient(prefs),
             scope = serviceScope,
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )

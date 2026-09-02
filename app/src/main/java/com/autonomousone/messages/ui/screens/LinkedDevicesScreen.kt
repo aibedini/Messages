@@ -262,6 +262,29 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                             CoroutineScope(Dispatchers.Main).launch {
                                                 val res = PairingClient.approve(context, info0, caps, grant)
                                                 if (res.isSuccess) {
+                                                    // LINKED DEVICE CONTROL: durable trust
+                                                    // record + DEVICE_APPROVED statement in
+                                                    // ONE Room transaction (Trust Root signed).
+                                                    // Trust state is never RAM-only.
+                                                    val certJson = res.getOrDefault(org.json.JSONObject())
+                                                    val meta = info0.rawMetadata ?: org.json.JSONObject()
+                                                    com.autonomousone.messages.security.TrustedDeviceRegistry
+                                                        .recordApproval(
+                                                            context,
+                                                            com.autonomousone.messages.security
+                                                                .TrustedDeviceRegistry.ApprovedDevice(
+                                                                    deviceId = info0.webDeviceId,
+                                                                    displayName = "Web · ${info0.origin.removePrefix("https://").take(32)}",
+                                                                    origin = info0.origin,
+                                                                    signingPublicKey = meta.optString("webSigningPublicKey", ""),
+                                                                    encryptionPublicKey = meta.optString("webEncryptionPublicKey", ""),
+                                                                    capabilities = caps,
+                                                                    historyGrant = grant,
+                                                                    certificateJson = certJson.toString(),
+                                                                    certificateSignature = certJson.optString("rootSignature", ""),
+                                                                    expiresAt = certJson.optLong("expiresAt")
+                                                                )
+                                                        )
                                                     // ADR-006 Amendment: persist the
                                                     // user's sensitive grants for this
                                                     // linked device (drives future
