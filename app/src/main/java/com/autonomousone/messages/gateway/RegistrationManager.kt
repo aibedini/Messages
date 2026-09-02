@@ -28,6 +28,9 @@ class RegistrationManager(
     private val client: BackendClient,
     private val onLog: (String) -> Unit = {},
 ) {
+    @Volatile
+    var lastFailureReason: String? = null
+        private set
 
     companion object {
         private const val TAG = "REGISTRATION_MGR"
@@ -162,6 +165,7 @@ class RegistrationManager(
                     // no server-issued token (marked with the v2 sentinel).
                     prefs.gatewayToken = LEGACY_TOKEN_SENTINEL
                     prefs.isRegistered = true
+                    lastFailureReason = null
 
                     onLog("✅ Device identity enrolled: ${deviceId.take(8)}…")
                     Log.i(TAG, "Identity enrolled as ${deviceId.take(8)}…")
@@ -185,6 +189,7 @@ class RegistrationManager(
                 }
             }
             is BackendClient.Result.Failure -> {
+                lastFailureReason = result.error
                 val msg = "Registration failed: ${result.error}"
                 onLog("❌ $msg")
                 Log.e(TAG, msg)

@@ -71,9 +71,10 @@ object PairingClient {
         val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
         val deviceId = prefs.stableDeviceId(context)
         Log.i(TAG, "stage=REGISTERING_IDENTITY endpoint=/api/v1/agent/identity device=${short(deviceId)}")
-        val ok = RegistrationManager(context, prefs, BackendClient(prefs)).registerForPairing(base)
+        val manager = RegistrationManager(context, prefs, BackendClient(prefs))
+        val ok = manager.registerForPairing(base)
         Log.i(TAG, "identity registration status=${if (ok) "success" else "failed"} device=${short(deviceId)}")
-        ok to if (ok) null else "identity registration failed"
+        ok to if (ok) null else (manager.lastFailureReason ?: "identity registration failed")
     }
 
     suspend fun fetchSessionMetadata(

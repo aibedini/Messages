@@ -23,6 +23,13 @@ class BackendClient(private val prefs: GatewayPreferences) {
         private const val TAG = "BACKEND_CLIENT"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 30_000
+
+        internal fun safeAuthError(responseBody: String): String = runCatching {
+            val json = JSONObject(responseBody)
+            val reason = json.optString("reason", "unauthorized")
+            val preview = json.optString("expectedKeyPreview", "")
+            if (preview.isBlank()) reason else "$reason (server key $preview)"
+        }.getOrDefault("unauthorized")
     }
 
     sealed class Result<out T> {
@@ -96,11 +103,10 @@ class BackendClient(private val prefs: GatewayPreferences) {
 
             when {
                 status in 200..299 -> Result.Success(responseBody, status)
-                status == 401 || status == 403 -> Result.Failure(
-                    "Auth error: HTTP $status",
-                    status,
-                    isAuthError = true,
-                )
+                status == 401 || status == 403 -> {
+                    val safe = safeAuthError(responseBody)
+                    Result.Failure("Auth error: HTTP $status reason=$safe", status, isAuthError = true)
+                }
                 else -> Result.Failure("HTTP $status: $responseBody", status)
             }
         } catch (e: Exception) {
