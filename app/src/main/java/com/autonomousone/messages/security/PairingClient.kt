@@ -96,8 +96,18 @@ object PairingClient {
             conn.setRequestProperty("X-API-Key", prefs.apiKey)
             val code = conn.responseCode
             if (code != 200) {
+                // Diagnostic: surface the server's safe reason (unknown_device,
+                // signature_mismatch, timestamp_out_of_window) — never echo
+                // keys/signatures. Read at most 300 chars.
+                val errBody = try {
+                    conn.errorStream?.use { it.bufferedReader().readText() }?.take(300) ?: ""
+                } catch (_: Exception) { "" }
                 conn.disconnect()
-                return@withContext null to "pairing session lookup failed: HTTP $code"
+                val reason = try {
+                    org.json.JSONObject(errBody).optString("reason", "")
+                } catch (_: Exception) { "" }
+                val detail = if (reason.isNotBlank()) "reason=$reason" else ""
+                return@withContext null to "pairing session lookup failed: HTTP $code $detail"
             }
             val body = conn.inputStream.use { it.bufferedReader().readText() }
             conn.disconnect()
