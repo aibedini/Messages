@@ -43,6 +43,8 @@ class GatewayPreferences(context: Context) {
         private const val KEY_DEVICE_FALLBACK_ID = "cloud_device_fallback_id"
         private const val KEY_REGISTRATION_SECRET = "cloud_registration_secret"
         // ── GMweb pull bridge (outbound-only; no tunnel needed) ──
+        const val DEFAULT_CONTROL_PLANE_SENDS = false
+        private const val KEY_CP_SENDS = "gateway_control_plane_sends_enabled"
         private const val KEY_GMWEB_URL = "gmweb_url"
         // ── Idempotency store ──
         private const val KEY_SENT_EVENT_IDS = "cloud_sent_event_ids"
@@ -289,6 +291,16 @@ class GatewayPreferences(context: Context) {
             require(v.isEmpty() || v.startsWith("https://")) { "GMweb URL must use HTTPS" }
             prefs.edit().putString(KEY_GMWEB_URL, v).apply()
         }
+
+    /**
+     * Intake ownership for SEND_SMS (no-dual-execution P0): when false
+     * (default) the legacy pull bridge exclusively owns SMS delivery and
+     * strategic control-plane SEND_SMS commands are ingested but deferred.
+     * Flip ON only after strategic command E2E is proven on a real device.
+     */
+    var controlPlaneSendsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CP_SENDS, DEFAULT_CONTROL_PLANE_SENDS)
+        set(value) = prefs.edit().putBoolean(KEY_CP_SENDS, value).apply()
 
     // ── Idempotency: track sent event IDs (insertion-ordered FIFO trim) ──
 

@@ -38,4 +38,12 @@ class SecureCommandPollerContractTest {
         assertNull(SecureCommandPoller.decodeCiphertext(JSONObject()))
         assertNull(SecureCommandPoller.decodeCiphertext(JSONObject().put("ciphertext", "%%%")))
     }
+
+    @Test
+    fun `intake default is legacy pull ownership`() {
+        // No-dual-execution P0: SEND_SMS intake is owned by the legacy pull
+        // bridge by default; strategic control-plane sends are OFF until
+        // real-device E2E proves them.
+        org.junit.Assert.assertFalse(GatewayPreferences.DEFAULT_CONTROL_PLANE_SENDS)
+    }
 }

@@ -205,6 +205,15 @@ class SecureCommandPoller(
     /** SEND_SMS executes immediately through the single funnel (§19/§20). */
     private suspend fun executeIfSendSms(cmd: RemoteCommandEntity) {
         if (cmd.type != "SEND_SMS") return
+        // Intake ownership (P0, no-dual-execution): SEND_SMS is owned by
+        // exactly ONE transport. Until the strategic command path passes
+        // real-device E2E, the legacy pull bridge owns delivery — strategic
+        // SEND_SMS commands are ingested + ACKed but NOT executed here, so
+        // a backlog can never run twice through two channels.
+        if (!prefs.controlPlaneSendsEnabled) {
+            ack(cmd.commandId, "FAILED", "deferred: SEND_SMS owned by legacy pull intake")
+            return
+        }
         scope.launch {
             try {
                 val done = withContext(Dispatchers.IO) {
