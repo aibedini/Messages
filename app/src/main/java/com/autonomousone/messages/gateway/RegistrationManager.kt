@@ -45,6 +45,22 @@ class RegistrationManager(
          * (harmless); v2 callers ignore it entirely.
          */
         private const val LEGACY_TOKEN_SENTINEL = "identity-enrolled-v2"
+
+        internal fun registrationHeaders(
+            identityRegistered: Boolean,
+            apiKey: String,
+            registrationSecret: String,
+            pairingSessionId: String?,
+            pairingBootstrapToken: String?,
+        ): Map<String, String> = buildMap {
+            if (registrationSecret.isNotBlank()) put("X-Registration-Secret", registrationSecret)
+            if (!pairingSessionId.isNullOrBlank() && !pairingBootstrapToken.isNullOrBlank()) {
+                put("X-Pairing-Session", pairingSessionId)
+                put("X-Pairing-Bootstrap", pairingBootstrapToken)
+            } else if (!identityRegistered) {
+                put("X-API-Key", apiKey)
+            }
+        }
     }
 
     /**
@@ -116,12 +132,22 @@ class RegistrationManager(
 
     /** Pairing bootstrap is an explicit user action and must precede every
      * metadata lookup, even when stale local flags claim enrollment. */
-    suspend fun registerForPairing(serverUrl: String): Boolean =
-        registerInternal(requireConsent = false, baseUrlOverride = serverUrl)
+    suspend fun registerForPairing(
+        serverUrl: String,
+        pairingSessionId: String? = null,
+        pairingBootstrapToken: String? = null,
+    ): Boolean = registerInternal(
+        requireConsent = false,
+        baseUrlOverride = serverUrl,
+        pairingSessionId = pairingSessionId,
+        pairingBootstrapToken = pairingBootstrapToken,
+    )
 
     private suspend fun registerInternal(
         requireConsent: Boolean,
         baseUrlOverride: String? = null,
+        pairingSessionId: String? = null,
+        pairingBootstrapToken: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         if (requireConsent && !prefs.hasGatewayConsent) {
             onLog("Cloud registration blocked: gateway consent is required")
@@ -131,18 +157,36 @@ class RegistrationManager(
         Log.d(TAG, "Enrolling identity with ${prefs.backendUrl}")
 
         val payload = buildRegistrationPayload()
-        // PR-08b bootstrap: /api/v1/agent/identity is device-key authenticated.
-        // The shared device key (X-API-Key) is the bootstrap credential accepted
-        // until this device enrolls; X-Agent-Auth signing then takes over.
-        val headers = buildMap {
-            val secret = prefs.registrationSecret
-            if (secret.isNotBlank()) put("X-Registration-Secret", secret)
-        }
+        // A dashboard-authorized pairing QR carries a short-lived, session-bound
+        // enrollment token. Normal background enrollment keeps the legacy
+        // configured device-key path. Trust-sensitive pairing routes still use
+        // per-device X-Agent-Auth signatures after this bootstrap.
+        val hasPairingBootstrap =
+            !pairingSessionId.isNullOrBlank() && !pairingBootstrapToken.isNullOrBlank()
+        val headers = registrationHeaders(
+            identityRegistered = prefs.identityRegistered,
+            apiKey = prefs.apiKey,
+            registrationSecret = prefs.registrationSecret,
+            pairingSessionId = pairingSessionId,
+            pairingBootstrapToken = pairingBootstrapToken,
+        )
+        val signer = if (!hasPairingBootstrap && prefs.identityRegistered) {
+            { conn: java.net.HttpURLConnection, bodyBytes: ByteArray ->
+                AgentAuth.sign(
+                    conn,
+                    prefs.stableDeviceId(context),
+                    IDENTITY_PATH,
+                    "POST",
+                    bodyBytes,
+                )
+            }
+        } else null
         val result = client.post(
             IDENTITY_PATH,
             payload,
             authenticated = false,
-            extraHeaders = headers + mapOf("X-API-Key" to prefs.apiKey),
+            extraHeaders = headers,
+            signer = signer,
             baseUrlOverride = baseUrlOverride,
         )
 

@@ -43,6 +43,7 @@ object PairingClient {
         val origin: String,
         val expiresAt: Long,
         val transcriptHash: String,
+        val identityBootstrapToken: String = "",
         val rawMetadata: JSONObject? = null
     )
 
@@ -53,7 +54,8 @@ object PairingClient {
         ) null else SessionInfo(
             o.getString("pairingSessionId"), o.getString("webDeviceId"),
             o.getString("origin"), o.optLong("expiresAt", 0L),
-            o.optString("transcriptHash", "")
+            o.optString("transcriptHash", ""),
+            o.optString("identityBootstrapToken", "")
         )
     } catch (e: Exception) {
         Log.w(TAG, "QR payload parse failed", e)
@@ -66,15 +68,29 @@ object PairingClient {
         return a.isNotEmpty() && a.equals(b, ignoreCase = true)
     }
 
-    suspend fun registerIdentity(context: Context): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+    suspend fun registerIdentity(
+        context: Context,
+        session: SessionInfo? = null
+    ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
         val prefs = GatewayPreferences(context)
         val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
         val deviceId = prefs.stableDeviceId(context)
         Log.i(TAG, "stage=REGISTERING_IDENTITY endpoint=/api/v1/agent/identity device=${short(deviceId)}")
         val manager = RegistrationManager(context, prefs, BackendClient(prefs))
-        val ok = manager.registerForPairing(base)
+        val ok = manager.registerForPairing(
+            base,
+            session?.pairingSessionId,
+            session?.identityBootstrapToken,
+        )
         Log.i(TAG, "identity registration status=${if (ok) "success" else "failed"} device=${short(deviceId)}")
-        ok to if (ok) null else (manager.lastFailureReason ?: "identity registration failed")
+        val failure = manager.lastFailureReason ?: "identity registration failed"
+        val actionableFailure = if (
+            session?.identityBootstrapToken.isNullOrBlank() &&
+            (failure.contains("device_key_mismatch") || failure.contains("unknown_device"))
+        ) {
+            "Sign in to the GMweb dashboard, open /web there, and scan a fresh QR"
+        } else failure
+        ok to if (ok) null else actionableFailure
     }
 
     suspend fun fetchSessionMetadata(
@@ -109,11 +125,9 @@ object PairingClient {
         }
 
         try {
-            val registration = registerIdentity(context)
-            if (!registration.first) return@withContext null to registration.second
             var response = request()
             if (shouldRetryMetadata(response.first, response.second, false)) {
-                val refreshed = registerIdentity(context)
+                val refreshed = registerIdentity(context, scanned)
                 if (!refreshed.first) return@withContext null to "identity re-registration failed after unknown_device"
                 response = request()
             }
@@ -128,7 +142,7 @@ object PairingClient {
             val info = SessionInfo(
                 o.getString("pairingSessionId"), o.getString("webDeviceId"),
                 o.getString("origin"), o.optLong("expiresAt", 0L),
-                o.optString("transcriptHash", ""), o
+                o.optString("transcriptHash", ""), scanned.identityBootstrapToken, o
             )
             if (scanned.transcriptHash.isNotBlank() && info.transcriptHash.isNotBlank() &&
                 info.transcriptHash != scanned.transcriptHash

@@ -72,7 +72,10 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) step = "SCANNING" else cameraError = "Camera permission is required to scan the QR" }
+    ) { granted ->
+        if (granted) step = "SCANNING"
+        else result = "Camera permission is required to scan the QR"
+    }
 
     Scaffold(
         topBar = {
@@ -109,20 +112,11 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     )
                     Button(
                         onClick = {
-                            step = "REGISTERING_IDENTITY"
-                            CoroutineScope(Dispatchers.Main).launch {
-                                val registered = PairingClient.registerIdentity(context)
-                                if (!registered.first) {
-                                    result = "Identity registration failed: ${registered.second}"
-                                    step = "LIST"
-                                    return@launch
-                                }
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context, Manifest.permission.CAMERA
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (granted) step = "SCANNING"
-                                else permissionLauncher.launch(Manifest.permission.CAMERA)
-                            }
+                            val granted = ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) step = "SCANNING"
+                            else permissionLauncher.launch(Manifest.permission.CAMERA)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("+ Link new device") }
@@ -214,7 +208,23 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     }
                 }
 
-                "REGISTERING_IDENTITY" -> Text("Registering Android identity…")
+                "REGISTERING_IDENTITY" -> {
+                    Text("Registering Android identity…")
+                    val info = scanned
+                    LaunchedEffect(info?.pairingSessionId) {
+                        if (info == null) {
+                            step = "LIST"
+                            return@LaunchedEffect
+                        }
+                        val registered = PairingClient.registerIdentity(context, info)
+                        if (!registered.first) {
+                            result = "Identity registration failed: ${registered.second}"
+                            step = "LIST"
+                        } else {
+                            step = "FETCHING_METADATA"
+                        }
+                    }
+                }
 
                 "SCANNING" -> {
                     Text("Point the camera at the QR code shown in the browser")
@@ -224,7 +234,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         // scanning. No latch needed at the call site.
                         QrCameraView(
                             onQr = { raw ->
-                                android.util.Log.i("QR_SCAN", "payload received: ${raw.take(80)}")
+                                // Never log the QR: authenticated sessions contain a
+                                // short-lived identity bootstrap capability.
+                                android.util.Log.i("QR_SCAN", "pairing payload received")
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info == null) {
                                     android.util.Log.w("QR_SCAN", "payload did not parse — scanner stays live")
@@ -241,9 +253,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     return@QrCameraView false
                                 }
                                 cameraError = null
-                                android.util.Log.i("QR_SCAN", "origin verified → FETCHING_METADATA (session=${info.pairingSessionId.take(8)})")
+                                android.util.Log.i("QR_SCAN", "origin verified → REGISTERING_IDENTITY (session=${info.pairingSessionId.take(8)})")
                                 scanned = info
-                                step = "FETCHING_METADATA"
+                                step = "REGISTERING_IDENTITY"
                                 true
                             },
                             onError = {
