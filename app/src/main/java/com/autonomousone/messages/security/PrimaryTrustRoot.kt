@@ -32,24 +32,14 @@ object PrimaryTrustRoot {
     private const val CERT_VERSION = 1
 
     /** Canonical certificate serialization — MUST match web/src/lib/certVerify.ts. */
-    fun canonicalCertificate(c: JSONObject): String {
-        val o = org.json.JSONObject()
-        o.put("accountId", c.getString("accountId"))
-        o.put("deviceId", c.getString("deviceId"))
-        o.put("deviceType", c.getString("deviceType"))
-        o.put("signingPublicKey", c.getString("signingPublicKey"))
-        o.put("encryptionPublicKey", c.getString("encryptionPublicKey"))
-        // capabilities: fixed order, comma-joined inside the canonical string
-        val caps = c.getJSONArray("capabilities")
-        val capsSorted = (0 until caps.length()).map { caps.getString(it) }.sorted()
-        o.put("capabilities", org.json.JSONArray(capsSorted))
-        o.put("historyGrant", c.getString("historyGrant"))
-        o.put("trustSequence", c.getLong("trustSequence"))
-        o.put("issuedAt", c.getLong("issuedAt"))
-        o.put("expiresAt", c.getLong("expiresAt"))
-        o.put("pairingTranscriptHash", c.getString("pairingTranscriptHash"))
-        o.put("origin", c.getString("origin"))
-        return o.toString() // org.json is compact & insertion-ordered
+    fun canonicalCertificate(c: JSONObject): String = PairingProtocol.certificate(c)
+
+    fun signBytes(bytes: ByteArray): String {
+        val signature = Signature.getInstance("SHA256withECDSA").apply {
+            initSign(getOrCreatePrivateKey())
+            update(bytes)
+        }.sign()
+        return Base64.encodeToString(signature, Base64.NO_WRAP)
     }
 
     /** ECDSA-P256/SHA-256 signature over the canonical certificate bytes. */

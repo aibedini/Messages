@@ -1,3 +1,11 @@
+> Updated by Messages 2.7.0 / GMweb 0.14.0: ordinary QR pairing no longer
+> registers the phone. Use Linked devices -> Enroll this phone as Primary with
+> the dashboard phone setup QR first. Pairing Protocol v1 uses fixed UTF-8
+> netstrings in PairingProtocol.kt; JSON serialization is not signed.
+> The identical shared vectors are in protocol/pairing-protocol-v1.json.
+> Both apiOrigin and webOrigin are signed. Physical-device E2E must pass the
+> matrix in GMweb docs/PAIRING-E2E.md before coordinated deployment.
+
 # ADR-007 — Primary-Device QR Pairing (Linked-Device Trust Model)
 
 **Status:** Accepted (authoritative over any earlier passkey-first first-run

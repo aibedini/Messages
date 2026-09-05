@@ -3,9 +3,7 @@ package com.autonomousone.messages.security
 import android.content.Context
 import android.util.Log
 import com.autonomousone.messages.gateway.AgentAuth
-import com.autonomousone.messages.gateway.BackendClient
 import com.autonomousone.messages.gateway.GatewayPreferences
-import com.autonomousone.messages.gateway.RegistrationManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -21,9 +19,6 @@ object PairingClient {
         "signature_mismatch", "timestamp_out_of_window", "replayed_timestamp",
         "missing_agent_auth_header", "malformed_agent_auth_header"
     )
-
-    internal fun shouldRetryMetadata(status: Int, reason: String, alreadyRetried: Boolean): Boolean =
-        status == 401 && reason == "unknown_device" && !alreadyRetried
 
     internal fun approveMakesLinked(status: Int): Boolean = status == 200
 
@@ -43,55 +38,22 @@ object PairingClient {
         val origin: String,
         val expiresAt: Long,
         val transcriptHash: String,
-        val identityBootstrapToken: String = "",
+        val apiOrigin: String = "",
         val rawMetadata: JSONObject? = null
     )
 
-    fun parseQrPayload(raw: String): SessionInfo? = try {
+    fun parseQrPayload(raw: String): SessionInfo? = runCatching {
         val o = JSONObject(raw)
-        if (o.optString("pairingSessionId").isBlank() ||
-            o.optString("webDeviceId").isBlank() || o.optString("origin").isBlank()
-        ) null else SessionInfo(
-            o.getString("pairingSessionId"), o.getString("webDeviceId"),
-            o.getString("origin"), o.optLong("expiresAt", 0L),
-            o.optString("transcriptHash", ""),
-            o.optString("identityBootstrapToken", "")
-        )
-    } catch (e: Exception) {
-        Log.w(TAG, "QR payload parse failed", e)
-        null
-    }
+        require(o.getString("protocol") == PairingProtocol.PROTOCOL)
+        require(o.getLong("expiresAt") > System.currentTimeMillis())
+        require(PairingProtocol.transcriptHash(o) == o.getString("transcriptHash"))
+        SessionInfo(o.getString("pairingSessionId"), o.getString("webDeviceId"),
+            o.getString("webOrigin"), o.getLong("expiresAt"), o.getString("transcriptHash"),
+            o.getString("apiOrigin"), o)
+    }.getOrNull()
 
-    fun originMatches(serverOrigin: String, scanned: SessionInfo): Boolean {
-        val a = serverOrigin.trimEnd('/')
-        val b = scanned.origin.trimEnd('/')
-        return a.isNotEmpty() && a.equals(b, ignoreCase = true)
-    }
-
-    suspend fun registerIdentity(
-        context: Context,
-        session: SessionInfo? = null
-    ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
-        val prefs = GatewayPreferences(context)
-        val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
-        val deviceId = prefs.stableDeviceId(context)
-        Log.i(TAG, "stage=REGISTERING_IDENTITY endpoint=/api/v1/agent/identity device=${short(deviceId)}")
-        val manager = RegistrationManager(context, prefs, BackendClient(prefs))
-        val ok = manager.registerForPairing(
-            base,
-            session?.pairingSessionId,
-            session?.identityBootstrapToken,
-        )
-        Log.i(TAG, "identity registration status=${if (ok) "success" else "failed"} device=${short(deviceId)}")
-        val failure = manager.lastFailureReason ?: "identity registration failed"
-        val actionableFailure = if (
-            session?.identityBootstrapToken.isNullOrBlank() &&
-            (failure.contains("device_key_mismatch") || failure.contains("unknown_device"))
-        ) {
-            "Sign in to the GMweb dashboard, open /web there, and scan a fresh QR"
-        } else failure
-        ok to if (ok) null else actionableFailure
-    }
+    fun originMatches(serverOrigin: String, scanned: SessionInfo): Boolean =
+        serverOrigin.trimEnd('/') == scanned.apiOrigin
 
     suspend fun fetchSessionMetadata(
         context: Context,
@@ -125,14 +87,11 @@ object PairingClient {
         }
 
         try {
-            var response = request()
-            if (shouldRetryMetadata(response.first, response.second, false)) {
-                val refreshed = registerIdentity(context, scanned)
-                if (!refreshed.first) return@withContext null to "identity re-registration failed after unknown_device"
-                response = request()
-            }
+            val response = request()
             val (status, reason, body) = response
             if (status != 200) {
+                if (reason == "unknown_device" || reason == "primary_enrollment_required")
+                    return@withContext null to "First use Enroll this phone as Primary with a phone setup QR from the dashboard"
                 val safeReason = reason.takeIf {
                     it in nonRetryableAuthReasons || it == "unknown_device" || it == "signing_failed"
                 } ?: "request_failed"
@@ -141,12 +100,15 @@ object PairingClient {
             val o = JSONObject(body)
             val info = SessionInfo(
                 o.getString("pairingSessionId"), o.getString("webDeviceId"),
-                o.getString("origin"), o.optLong("expiresAt", 0L),
-                o.optString("transcriptHash", ""), scanned.identityBootstrapToken, o
+                o.getString("webOrigin"), o.optLong("expiresAt", 0L),
+                o.optString("transcriptHash", ""), o.getString("apiOrigin"), o
             )
-            if (scanned.transcriptHash.isNotBlank() && info.transcriptHash.isNotBlank() &&
-                info.transcriptHash != scanned.transcriptHash
-            ) return@withContext null to "transcript mismatch between QR and server"
+            if (info.transcriptHash != scanned.transcriptHash ||
+                PairingProtocol.transcriptHash(o) != scanned.transcriptHash ||
+                info.apiOrigin != scanned.apiOrigin || info.origin != scanned.origin ||
+                info.webDeviceId != scanned.webDeviceId || info.pairingSessionId != scanned.pairingSessionId ||
+                info.expiresAt <= System.currentTimeMillis())
+                return@withContext null to "transcript mismatch or expired QR"
             info to null
         } catch (e: Exception) {
             Log.e(TAG, "session metadata fetch failed", e)
@@ -166,7 +128,12 @@ object PairingClient {
             val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
             val deviceId = prefs.agentDeviceId(context)
             val meta = info.rawMetadata ?: error("server transcript metadata missing")
+            val issuedAt = System.currentTimeMillis()
             val certificate = JSONObject().apply {
+                put("protocol", PairingProtocol.PROTOCOL)
+                put("pairingSessionId", info.pairingSessionId)
+                put("apiOrigin", info.apiOrigin)
+                put("webOrigin", info.origin)
                 put("accountId", "default")
                 put("deviceId", info.webDeviceId)
                 put("deviceType", "WEB_PWA")
@@ -175,10 +142,9 @@ object PairingClient {
                 put("capabilities", JSONArray(capabilities))
                 put("historyGrant", historyGrant)
                 put("trustSequence", trustSequence.toLong())
-                put("issuedAt", System.currentTimeMillis())
-                put("expiresAt", System.currentTimeMillis() + 180L * 24 * 3600 * 1000)
+                put("issuedAt", issuedAt)
+                put("expiresAt", issuedAt + 180L * 24 * 3600 * 1000)
                 put("pairingTranscriptHash", info.transcriptHash)
-                put("origin", info.origin)
             }
             certificate.put("rootSignature", PrimaryTrustRoot.sign(certificate))
             val path = "/api/v1/pairing/approve"

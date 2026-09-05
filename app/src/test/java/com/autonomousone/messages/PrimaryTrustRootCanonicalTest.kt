@@ -1,80 +1,37 @@
 package com.autonomousone.messages
 
-import com.autonomousone.messages.security.PrimaryTrustRoot
-import org.json.JSONArray
+import com.autonomousone.messages.security.PairingProtocol
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.KeyFactory
 import java.security.MessageDigest
+import java.security.Signature
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
 
-/**
- * ADR-007 BLOCKER 2 — Android side of the shared serialization vectors.
- * Mirrors test/pairingTranscriptVectors.test.js on the GMweb side: the
- * canonical bytes must be IDENTICAL to the web fixture (byte-for-byte).
- */
 class PrimaryTrustRootCanonicalTest {
-
-    private fun fixture(): JSONObject = JSONObject().apply {
-        put("accountId", "default")
-        put("deviceId", "web-device-42")
-        put("deviceType", "WEB_PWA")
-        put("signingPublicKey", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAETESTSIGINGPUBKEY0000000000=")
-        put("encryptionPublicKey", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAETESTENCPUBKEY00000000000=")
-        put("capabilities", JSONArray(listOf("SEND_MESSAGES", "READ_MESSAGES", "MARK_READ")))
-        put("historyGrant", "FULL_HISTORY")
-        put("trustSequence", 7)
-        put("issuedAt", 1788300000000L)
-        put("expiresAt", 1791000000000L)
-        put("pairingTranscriptHash", "a".repeat(64))
-        put("origin", "https://messages.example.com")
-    }
-
-    /** Same expected canonical JSON as the GMweb vector (fixed key order). */
-    private fun expectedCanonical(): String {
-        val o = JSONObject()
-        o.put("accountId", "default")
-        o.put("deviceId", "web-device-42")
-        o.put("deviceType", "WEB_PWA")
-        o.put("signingPublicKey", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAETESTSIGINGPUBKEY0000000000=")
-        o.put("encryptionPublicKey", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAETESTENCPUBKEY00000000000=")
-        // capabilities SORTED (MARK_READ, READ_MESSAGES, SEND_MESSAGES)
-        o.put("capabilities", JSONArray(listOf("MARK_READ", "READ_MESSAGES", "SEND_MESSAGES")))
-        o.put("historyGrant", "FULL_HISTORY")
-        o.put("trustSequence", 7)
-        o.put("issuedAt", 1788300000000L)
-        o.put("expiresAt", 1791000000000L)
-        o.put("pairingTranscriptHash", "a".repeat(64))
-        o.put("origin", "https://messages.example.com")
-        return o.toString()
-    }
-
-    @Test
-    fun `canonical certificate matches the shared web fixture byte-for-byte`() {
-        val canonical = PrimaryTrustRoot.canonicalCertificate(fixture())
-        assertEquals(expectedCanonical(), canonical)
-    }
-
-    @Test
-    fun `canonical SHA-256 matches the shared web fixture`() {
-        val canonical = PrimaryTrustRoot.canonicalCertificate(fixture())
-        val hash = MessageDigest.getInstance("SHA-256")
-            .digest(canonical.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
-        // Same value the GMweb vector computes (crypto sha256 of expectedCanonical)
-        assertEquals(expectedCanonical(), canonical) // sanity
-        assertTrue(hash.length == 64)
-        // Cross-check: hash of the web-side expected bytes
-        val webHash = MessageDigest.getInstance("SHA-256")
-            .digest(expectedCanonical().toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
-        assertEquals(webHash, hash)
-    }
-
-    @Test
-    fun `canonical output is compact (no whitespace)`() {
-        val canonical = PrimaryTrustRoot.canonicalCertificate(fixture())
-        assertTrue(!canonical.contains(" "))
-        assertTrue(!canonical.contains("\n"))
+    @Test fun sharedFixedBytesHashesAndSignatures() {
+        val raw = checkNotNull(javaClass.classLoader?.getResourceAsStream("pairing-protocol-v1.json"))
+            .bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val fixture = JSONObject(raw)
+        val key = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(
+            Base64.getDecoder().decode(fixture.getString("trustRootPublicKey"))))
+        val vectors = fixture.getJSONArray("vectors")
+        for (i in 0 until vectors.length()) {
+            val v = vectors.getJSONObject(i)
+            val input = v.getJSONObject("input")
+            val canonical = when (v.getString("kind")) {
+                "certificate" -> PairingProtocol.certificate(input)
+                "transcript" -> PairingProtocol.transcript(input)
+                "challenge" -> PairingProtocol.challenge(input)
+                else -> PairingProtocol.enrollment(input)
+            }.toByteArray(Charsets.UTF_8)
+            assertEquals(v.getString("canonicalBase64"), Base64.getEncoder().encodeToString(canonical))
+            assertEquals(v.getString("sha256"), MessageDigest.getInstance("SHA-256").digest(canonical).joinToString("") { "%02x".format(it) })
+            assertTrue(Signature.getInstance("SHA256withECDSA").apply { initVerify(key); update(canonical) }
+                .verify(Base64.getDecoder().decode(v.getString("signature"))))
+        }
     }
 }

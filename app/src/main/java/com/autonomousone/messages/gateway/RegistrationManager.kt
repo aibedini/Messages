@@ -46,20 +46,9 @@ class RegistrationManager(
          */
         private const val LEGACY_TOKEN_SENTINEL = "identity-enrolled-v2"
 
-        internal fun registrationHeaders(
-            identityRegistered: Boolean,
-            apiKey: String,
-            registrationSecret: String,
-            pairingSessionId: String?,
-            pairingBootstrapToken: String?,
-        ): Map<String, String> = buildMap {
+        internal fun registrationHeaders(identityRegistered: Boolean, apiKey: String, registrationSecret: String): Map<String, String> = buildMap {
             if (registrationSecret.isNotBlank()) put("X-Registration-Secret", registrationSecret)
-            if (!pairingSessionId.isNullOrBlank() && !pairingBootstrapToken.isNullOrBlank()) {
-                put("X-Pairing-Session", pairingSessionId)
-                put("X-Pairing-Bootstrap", pairingBootstrapToken)
-            } else if (!identityRegistered) {
-                put("X-API-Key", apiKey)
-            }
+            if (!identityRegistered) put("X-API-Key", apiKey)
         }
     }
 
@@ -89,7 +78,6 @@ class RegistrationManager(
             // BLOCKER 3 (ADR-007): this device IS the primary trust device —
             // the only role allowed to approve web pairings. Explicit, not
             // implicit: the server's approve gate checks this role.
-            put("role", "PRIMARY_TRUST_AGENT")
             // Extra descriptive fields are tolerated by the schema (it only
             // requires deviceId + publicKeys) and aid server-side diagnostics.
             put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
@@ -130,24 +118,17 @@ class RegistrationManager(
 
     suspend fun register(): Boolean = registerInternal(requireConsent = true)
 
-    /** Pairing bootstrap is an explicit user action and must precede every
-     * metadata lookup, even when stale local flags claim enrollment. */
-    suspend fun registerForPairing(
-        serverUrl: String,
-        pairingSessionId: String? = null,
-        pairingBootstrapToken: String? = null,
-    ): Boolean = registerInternal(
+    /** Explicit phone onboarding; independent of browser pairing. */
+    suspend fun enrollPrimary(claim: JSONObject): Boolean = registerInternal(
         requireConsent = false,
-        baseUrlOverride = serverUrl,
-        pairingSessionId = pairingSessionId,
-        pairingBootstrapToken = pairingBootstrapToken,
+        baseUrlOverride = claim.getString("apiOrigin"),
+        setupClaim = claim,
     )
 
     private suspend fun registerInternal(
         requireConsent: Boolean,
         baseUrlOverride: String? = null,
-        pairingSessionId: String? = null,
-        pairingBootstrapToken: String? = null,
+        setupClaim: JSONObject? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         if (requireConsent && !prefs.hasGatewayConsent) {
             onLog("Cloud registration blocked: gateway consent is required")
@@ -157,32 +138,26 @@ class RegistrationManager(
         Log.d(TAG, "Enrolling identity with ${prefs.backendUrl}")
 
         val payload = buildRegistrationPayload()
-        // A dashboard-authorized pairing QR carries a short-lived, session-bound
-        // enrollment token. Normal background enrollment keeps the legacy
-        // configured device-key path. Trust-sensitive pairing routes still use
-        // per-device X-Agent-Auth signatures after this bootstrap.
-        val hasPairingBootstrap =
-            !pairingSessionId.isNullOrBlank() && !pairingBootstrapToken.isNullOrBlank()
-        val headers = registrationHeaders(
-            identityRegistered = prefs.identityRegistered,
-            apiKey = prefs.apiKey,
-            registrationSecret = prefs.registrationSecret,
-            pairingSessionId = pairingSessionId,
-            pairingBootstrapToken = pairingBootstrapToken,
-        )
-        val signer = if (!hasPairingBootstrap && prefs.identityRegistered) {
+        val path = if (setupClaim != null) "/api/v1/primary-enrollment" else IDENTITY_PATH
+        if (setupClaim != null) {
+            require(setupClaim.getString("protocol") == com.autonomousone.messages.security.PairingProtocol.PROTOCOL)
+            require(setupClaim.getString("kind") == "PRIMARY_SETUP")
+            require(setupClaim.getLong("expiresAt") > System.currentTimeMillis())
+            require(com.autonomousone.messages.security.PairingEndpointResolver.originMatches(context, setupClaim.getString("apiOrigin")))
+            payload.put("claim", setupClaim.getString("claim"))
+            payload.put("apiOrigin", setupClaim.getString("apiOrigin"))
+            val bytes = com.autonomousone.messages.security.PairingProtocol.enrollment(payload).toByteArray(Charsets.UTF_8)
+            payload.put("signature", android.util.Base64.encodeToString(DeviceIdentity.signWithOperationalKey(bytes), android.util.Base64.NO_WRAP))
+            payload.put("rootSignature", PrimaryTrustRoot.signBytes(bytes))
+        }
+        val headers = if (setupClaim != null) emptyMap() else registrationHeaders(prefs.identityRegistered, prefs.apiKey, prefs.registrationSecret)
+        val signer = if (setupClaim == null && prefs.identityRegistered) {
             { conn: java.net.HttpURLConnection, bodyBytes: ByteArray ->
-                AgentAuth.sign(
-                    conn,
-                    prefs.stableDeviceId(context),
-                    IDENTITY_PATH,
-                    "POST",
-                    bodyBytes,
-                )
+                AgentAuth.sign(conn, prefs.stableDeviceId(context), path, "POST", bodyBytes)
             }
         } else null
         val result = client.post(
-            IDENTITY_PATH,
+            path,
             payload,
             authenticated = false,
             extraHeaders = headers,
@@ -202,6 +177,7 @@ class RegistrationManager(
                     check(result.httpStatus == 200 && JSONObject(result.data).optBoolean("ok", false)) {
                         "identity endpoint did not confirm enrollment"
                     }
+                    if (setupClaim != null) check(JSONObject(result.data).optString("role") == "PRIMARY_TRUST_AGENT")
                     val deviceId = prefs.stableDeviceId(context)
                     prefs.gatewayId = deviceId
                     prefs.identityRegistered = true

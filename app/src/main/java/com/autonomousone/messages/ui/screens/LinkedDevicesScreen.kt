@@ -50,6 +50,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
 
+    var setupMode by remember { mutableStateOf(false) }
+    var setupClaim by remember { mutableStateOf<org.json.JSONObject?>(null) }
     var step by remember { mutableStateOf("LIST") }
     // LINKED DEVICE CONTROL: the local Trust Registry is the source of truth
     // for the list — durable, survives restart, includes revocation state.
@@ -110,8 +112,13 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    OutlinedButton(onClick = {
+                        setupMode = true
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }) { Text("Enroll this phone as Primary") }
                     Button(
                         onClick = {
+                            setupMode = false
                             val granted = ContextCompat.checkSelfPermission(
                                 context, Manifest.permission.CAMERA
                             ) == PackageManager.PERMISSION_GRANTED
@@ -208,26 +215,27 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     }
                 }
 
-                "REGISTERING_IDENTITY" -> {
-                    Text("Registering Android identity…")
-                    val info = scanned
-                    LaunchedEffect(info?.pairingSessionId) {
-                        if (info == null) {
-                            step = "LIST"
-                            return@LaunchedEffect
-                        }
-                        val registered = PairingClient.registerIdentity(context, info)
-                        if (!registered.first) {
-                            result = "Identity registration failed: ${registered.second}"
-                            step = "LIST"
-                        } else {
-                            step = "FETCHING_METADATA"
-                        }
+                "SETUP_CONFIRM" -> {
+                    Text("Enroll this phone as the primary device for ${setupClaim?.optString("apiOrigin")}? Existing browser links will be signed out.")
+                    Button(onClick = { step = "ENROLLING_PRIMARY" }) { Text("Enroll this phone as Primary") }
+                    OutlinedButton(onClick = { setupClaim = null; step = "LIST" }) { Text("Cancel") }
+                }
+                "ENROLLING_PRIMARY" -> {
+                    Text("Enrolling this phone...")
+                    LaunchedEffect(Unit) {
+                        val ok = runCatching {
+                            val prefs = com.autonomousone.messages.gateway.GatewayPreferences(context)
+                            com.autonomousone.messages.gateway.RegistrationManager(context, prefs,
+                                com.autonomousone.messages.gateway.BackendClient(prefs)).enrollPrimary(checkNotNull(setupClaim))
+                        }.getOrDefault(false)
+                        setupClaim = null
+                        result = if (ok) "Primary enrollment complete. You can now scan a browser pairing QR." else "Enrollment failed. Create a new phone setup QR in the dashboard."
+                        step = "LIST"
                     }
                 }
 
                 "SCANNING" -> {
-                    Text("Point the camera at the QR code shown in the browser")
+                    Text(if (setupMode) "Scan the phone setup QR from the dashboard" else "Scan the browser pairing QR")
                     Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
                         // REVIEW FIX: onQr returns Boolean — true = accepted
                         // (scanner stops via clearAnalyzer), false = keep
@@ -237,6 +245,19 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 // Never log the QR: authenticated sessions contain a
                                 // short-lived identity bootstrap capability.
                                 android.util.Log.i("QR_SCAN", "pairing payload received")
+                                if (setupMode) {
+                                    val claim = runCatching { org.json.JSONObject(raw) }.getOrNull()
+                                    if (claim == null || claim.optString("kind") != "PRIMARY_SETUP" ||
+                                        claim.optString("protocol") != com.autonomousone.messages.security.PairingProtocol.PROTOCOL ||
+                                        claim.optLong("expiresAt") <= System.currentTimeMillis() ||
+                                        !PairingEndpointResolver.originMatches(context, claim.optString("apiOrigin"))) {
+                                        cameraError = "Scan a current phone setup QR from your GMweb dashboard"
+                                        return@QrCameraView false
+                                    }
+                                    setupClaim = claim
+                                    step = "SETUP_CONFIRM"
+                                    return@QrCameraView true
+                                }
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info == null) {
                                     android.util.Log.w("QR_SCAN", "payload did not parse — scanner stays live")
@@ -247,15 +268,15 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 // else the build's production URL. Pairing
                                 // never requires manual Gateway setup first.
                                 val trusted = PairingEndpointResolver.trustedServerUrl(context)
-                                if (!PairingEndpointResolver.originMatches(context, info.origin)) {
-                                    android.util.Log.w("QR_SCAN", "origin mismatch: ${info.origin} vs $trusted")
-                                    cameraError = "This QR belongs to ${info.origin}, but this app trusts $trusted"
+                                if (!PairingEndpointResolver.originMatches(context, info.apiOrigin)) {
+                                    android.util.Log.w("QR_SCAN", "origin mismatch: ${info.apiOrigin} vs $trusted")
+                                    cameraError = "This QR uses API ${info.apiOrigin}, but this app trusts $trusted"
                                     return@QrCameraView false
                                 }
                                 cameraError = null
-                                android.util.Log.i("QR_SCAN", "origin verified → REGISTERING_IDENTITY (session=${info.pairingSessionId.take(8)})")
+                                android.util.Log.i("QR_SCAN", "origin verified → FETCHING_METADATA (session=${info.pairingSessionId.take(8)})")
                                 scanned = info
-                                step = "REGISTERING_IDENTITY"
+                                step = "FETCHING_METADATA"
                                 true
                             },
                             onError = {
