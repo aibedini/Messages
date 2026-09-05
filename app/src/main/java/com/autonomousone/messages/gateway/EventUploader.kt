@@ -75,6 +75,7 @@ class EventUploader(
                     continue
                 }
                 val claimed = try {
+                    com.autonomousone.messages.security.ConversationKeyRepository(MessagesDatabase.get(appContext)).drainHistoryGrants()
                     repo.claimBatch(System.currentTimeMillis())
                 } catch (e: Exception) {
                     Log.e(TAG, "outbox claim failed", e)
@@ -121,9 +122,10 @@ class EventUploader(
             // keep the rest of the batch. NOTE: we do NOT decode-and-rebuild —
             // the envelope bytes go on the wire verbatim (base64); the server
             // treats them as opaque (Rule 6, ADR-002). The decode here is a
-            // cheap integrity gate only.
+            // transport metadata gate only for encrypted versions. Legacy v0
+            // is additionally checked with its JSON decoder.
             try {
-                GatewayEventFactory.decodePayloadEnvelope(event.ciphertext)
+                GatewayEventFactory.validateForTransport(event)
             } catch (e: Exception) {
                 Log.e(TAG, "payload envelope decode failed for ${event.eventUuid}", e)
                 repo.onDeadLetter(event.eventUuid)
@@ -168,16 +170,17 @@ class EventUploader(
                 val accepted = runCatching {
                     JSONObject(result.data).optJSONArray("accepted") ?: JSONArray()
                 }.getOrDefault(JSONArray())
-                val ackedUuids = HashSet<String>(accepted.length())
+                val ackedUuids = HashMap<String, Long>(accepted.length())
                 for (i in 0 until accepted.length()) {
                     val a = accepted.optJSONObject(i) ?: continue
                     val eventId = a.optString("eventId")
-                    if (eventId.isNotEmpty()) ackedUuids.add(eventId)
+                    val sequence = a.optLong("serverSequence", 0L)
+                    if (eventId.isNotEmpty() && sequence > 0) ackedUuids[eventId] = sequence
                 }
                 var acked = 0
                 for (event in batch) {
                     if (event.eventUuid in ackedUuids) {
-                        val rows = repo.onAcked(event.eventUuid, 0, now)
+                        val rows = repo.onAcked(event.eventUuid, ackedUuids.getValue(event.eventUuid), now)
                         if (rows > 0) acked++
                     } else {
                         repo.onRetry(event.eventUuid, event.attemptCount, Random.Default, now)

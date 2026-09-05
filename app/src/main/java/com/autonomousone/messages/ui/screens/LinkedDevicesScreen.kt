@@ -57,6 +57,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     // for the list — durable, survives restart, includes revocation state.
     var devices by remember { mutableStateOf<List<TrustedDeviceEntity>>(emptyList()) }
     var revokeTarget by remember { mutableStateOf<TrustedDeviceEntity?>(null) }
+    var manageTarget by remember { mutableStateOf<TrustedDeviceEntity?>(null) }
+    var editedCapabilities by remember { mutableStateOf(setOf<String>()) }
+    val uiScope = rememberCoroutineScope()
     var scanned by remember { mutableStateOf<PairingClient.SessionInfo?>(null) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
@@ -64,6 +67,12 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
         devices = MessagesDatabase.get(context).trustedDeviceDao().all()
     }
     LaunchedEffect(step, result) { refreshDevices() }
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshDevices()
+            delay(2_000)
+        }
+    }
     var historyFull by remember { mutableStateOf(true) }
     // ADR-006 Amendment: per-device sensitive grants (privacy-first OFF).
     var grantOtp by remember { mutableStateOf(false) }
@@ -137,9 +146,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                             title = { Text("Unlink device?") },
                             text = {
                                 Text(
-                                    "${target.displayName} will lose access immediately: " +
-                                        "its session is killed, sync and commands are denied, " +
-                                        "and no future key grants are issued. Audit history is kept."
+                                    "Access will end when this phone publishes the revocation. " +
+                                        "Publication retries while offline. Messages already downloaded " +
+                                        "or decrypted on that device cannot be erased remotely."
                                 )
                             },
                             confirmButton = {
@@ -151,10 +160,14 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         title = "Unlink device",
                                         subtitle = "Authenticate to revoke ${t.displayName}",
                                         onSuccess = {
-                                            CoroutineScope(Dispatchers.Main).launch {
+                                            uiScope.launch {
+                                              try {
                                                 TrustedDeviceRegistry.recordRevocation(context, t.deviceId)
                                                 refreshDevices()
                                                 result = "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
+                                              } catch (e: Exception) {
+                                                result = "Could not save revocation: ${e.message}"
+                                              }
                                             }
                                         },
                                         onError = { result = "Revocation cancelled" }
@@ -164,6 +177,45 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                             dismissButton = {
                                 TextButton(onClick = { revokeTarget = null }) { Text("Cancel") }
                             }
+                        )
+                    }
+                    manageTarget?.let { target ->
+                        AlertDialog(
+                            onDismissRequest = { manageTarget = null },
+                            title = { Text(target.displayName) },
+                            text = {
+                                Column(Modifier.verticalScroll(rememberScrollState())) {
+                                    Text(target.origin)
+                                    Text("Updated: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(target.updatedAt)))
+                                    Text("Message access", fontWeight = FontWeight.SemiBold)
+                                    deviceCapabilityLabels.forEach { (capability, label) ->
+                                        SensitiveGrantRow(label, capability in editedCapabilities) { enabled ->
+                                            editedCapabilities = if (enabled) editedCapabilities + capability else editedCapabilities - capability
+                                        }
+                                    }
+                                    Text("Sensitive access also requires permission in this phone's privacy settings. Previously downloaded messages cannot be erased remotely.")
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    val caps = editedCapabilities.toList()
+                                    showBiometricPrompt(
+                                        context as androidx.appcompat.app.AppCompatActivity,
+                                        title = "Change device access", subtitle = target.displayName,
+                                        onSuccess = {
+                                            uiScope.launch {
+                                                try {
+                                                    TrustedDeviceRegistry.recordCapabilityChange(context, target.deviceId, caps)
+                                                    result = "Access change saved; awaiting server publication"
+                                                    manageTarget = null
+                                                    refreshDevices()
+                                                } catch (e: Exception) { result = "Access change failed: ${e.message}" }
+                                            }
+                                        }, onError = { result = "Access change cancelled" }
+                                    )
+                                }) { Text("Save access") }
+                            },
+                            dismissButton = { TextButton(onClick = { manageTarget = null }) { Text("Cancel") } }
                         )
                     }
                     if (devices.isNotEmpty()) {
@@ -194,16 +246,22 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        "Capabilities: ${d.capabilitiesJson}",
+                                        deviceCapabilities(d.capabilitiesJson).joinToString(" · ") { deviceCapabilityLabels[it] ?: it.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase) },
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Text(
-                                        "History: ${d.historyGrant}",
+                                        "History requested: " + if (d.historyGrant == "FULL_HISTORY") "Full history" else "From now on",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     if (d.status != TrustedDeviceEntity.STATUS_REVOKED &&
                                         d.status != TrustedDeviceEntity.STATUS_REVOKE_PENDING
                                     ) {
+                                        if (d.status == TrustedDeviceEntity.STATUS_ACTIVE) {
+                                            OutlinedButton(onClick = {
+                                                editedCapabilities = deviceCapabilities(d.capabilitiesJson)
+                                                manageTarget = d
+                                            }) { Text("Manage") }
+                                        }
                                         OutlinedButton(
                                             onClick = { revokeTarget = d },
                                             modifier = Modifier.padding(top = 8.dp)
@@ -344,7 +402,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     Text("Requested access", style = MaterialTheme.typography.labelLarge)
                     Text("✓ Read messages\n✓ Send messages\n✓ Receive notifications", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("History", style = MaterialTheme.typography.labelLarge)
+                    Text("Requested history access", style = MaterialTheme.typography.labelLarge)
+                    Text("This choice controls encrypted history keys. Previously uploaded legacy plaintext messages cannot be protected retroactively.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = historyFull, onClick = { historyFull = true })
                         Text("Full history")
@@ -431,9 +491,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                     step = "APPROVING_ON_SERVER"
                                                     val seq = com.autonomousone.messages.security.TrustedDeviceRegistry
                                                         .nextTrustSequence(context)
-                                                    val res = PairingClient.approve(context, info0, caps, grant, seq)
-                                                    if (res.isSuccess) {
-                                                        val certJson = res.getOrDefault(org.json.JSONObject())
+                                                    val res = PairingClient.approve(context, info0, caps, grant, seq) { certJson ->
                                                         com.autonomousone.messages.security.TrustedDeviceRegistry.recordApproval(
                                                             context,
                                                             approved.copy(
@@ -444,6 +502,9 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                         )
                                                         com.autonomousone.messages.security
                                                             .SensitiveGrantStore.savePairingGrants(context, info0.webDeviceId, caps)
+                                                    }
+                                                    if (res.isSuccess) {
+                                                        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context).requestSync()
                                                         result = "✅ Device linked — continue in the browser"
                                                         step = "LINKED"
                                                     } else {
@@ -558,6 +619,19 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
         modifier = Modifier.fillMaxSize()
     )
 }
+
+private val deviceCapabilityLabels = linkedMapOf(
+    "READ_MESSAGES" to "Read messages", "SEND_MESSAGES" to "Send messages",
+    "MARK_READ" to "Mark messages read", "RECEIVE_NOTIFICATIONS" to "Notifications",
+    "READ_OTP" to "OTP and login codes", "READ_BANK_SECURITY" to "Bank security codes",
+    "READ_PASSWORD_RESET" to "Password reset codes", "READ_AUTH_CODES" to "Authentication codes",
+    "READ_FINANCIAL_NOTIFICATIONS" to "Bank transaction notifications"
+)
+
+private fun deviceCapabilities(json: String): Set<String> = runCatching {
+    val values = org.json.JSONArray(json)
+    (0 until values.length()).map { values.getString(it) }.toSet()
+}.getOrDefault(emptySet())
 
 /** ADR-006 Amendment: one per-device sensitive grant switch. */
 @Composable

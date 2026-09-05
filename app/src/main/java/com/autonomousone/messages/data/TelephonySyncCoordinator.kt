@@ -35,13 +35,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * No full scan. No rebuildConversations(). No countUnread(10K rows).
  */
-class TelephonySyncCoordinator private constructor(context: Context) {
+class TelephonySyncCoordinator internal constructor(context: Context, private val databaseOverride: MessagesDatabase? = null) {
 
     private val appContext = context.applicationContext
     private val smsRepository = SmsRepository(appContext)
     private val messagingPrefs =
         com.autonomousone.messages.messaging.MessagingPreferences(appContext)
-    private val db get() = MessagesDatabase.get(appContext)
+    private val db get() = databaseOverride ?: MessagesDatabase.get(appContext)
 
     /**
      * ADR-006 SyncEligibility gate (kill-switch + future firewall hook).
@@ -194,14 +194,14 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                     // the message it describes live or die together. If the
                     // process dies here, BOTH are absent → the provider
                     // reconcile re-mirrors and the event re-enqueues.
-                    if (old == null) {
+                    run {
                         enqueueCloudEvent(
                             source = m.source,
                             providerId = entity.providerId,
                             sender = entity.normalizedAddress,
                             body = entity.body
                         ) {
-                            GatewayEventFactory.messageCreated(
+                            val created = GatewayEventFactory.messageCreated(
                                 source = m.source,
                                 providerId = entity.providerId,
                                 conversationId = conversationIdFor(entity.threadId),
@@ -211,6 +211,10 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                                 status = entity.status,
                                 address = entity.normalizedAddress
                             )
+                            if (old != null && (old.body != entity.body || old.type != entity.type || old.normalizedAddress != entity.normalizedAddress)) {
+                                created.copy(eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
+                                    eventUuid = java.util.UUID.nameUUIDFromBytes("update:${created.eventUuid}:".toByteArray(Charsets.UTF_8) + created.ciphertext).toString())
+                            } else created
                         }
                     }
                 }
@@ -317,6 +321,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
         body: String,
         build: suspend () -> GatewayEventOutboxEntity
     ) {
+        if (!syncAllowed) return
         // ADR-006: SensitiveMessageFirewall — the SINGLE choke point for cloud
         // event creation, and the ONLY classifier. A LOCAL_ONLY decision means
         // the event row is never built/inserted (not "inserted then deleted").
@@ -365,15 +370,23 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             )
             return
         }
-        try {
+        run {
             val row = build()
-            if (db.gatewayEventOutboxDao().insertOrIgnore(row) == -1L) {
+            if (db.gatewayEventOutboxDao().idOf(row.eventUuid) != null) return
+            val payload = org.json.JSONObject(GatewayEventFactory.decodePayloadEnvelope(row.ciphertext))
+            val at = payload.optLong("dateMs", db.messageDao().findByKey(source, providerId)?.date ?: 0L)
+            val category = when (verdict.category) {
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.NORMAL -> ""
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.OTP_SECURITY_CODE -> "READ_OTP"
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.BANK_SECURITY_CODE -> "READ_BANK_SECURITY"
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.PASSWORD_RESET_CODE -> "READ_PASSWORD_RESET"
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.AUTHENTICATION_CODE -> "READ_AUTH_CODES"
+                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.FINANCIAL_NOTIFICATION -> "READ_FINANCIAL_NOTIFICATIONS"
+            }
+            val encrypted = com.autonomousone.messages.security.ConversationKeyRepository(db).encrypt(row, at, category)
+            if (db.gatewayEventOutboxDao().insertOrIgnore(encrypted) == -1L) {
                 Log.d(TAG, "cloud event ${row.eventType}/${row.eventUuid} already queued/ACKed — deduped")
             }
-        } catch (e: Exception) {
-            // Never kill the local mutation over a cloud-row problem; the
-            // provider reconcile re-offers the event on the next pass.
-            Log.e(TAG, "cloud event enqueue failed", e)
         }
     }
 
@@ -490,6 +503,35 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             // double Home churn mid-sync. (fullRebuildConversations hops to
             // IO internally; we are already a single sequential crawl.)
             if (didWork) fullRebuildConversations()
+            // Also repairs installations whose provider history was already
+            // mirrored before cloud history production existed.
+            backfillCloudHistory()
+        }
+    }
+
+    internal suspend fun enqueueHistorical(entity: MessageEntity) {
+        enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
+            GatewayEventFactory.messageCreated(entity.source, entity.providerId,
+                conversationIdFor(entity.threadId), if (entity.type == 1) "in" else "out",
+                entity.body, entity.date, entity.status, entity.normalizedAddress)
+        }
+    }
+
+    private suspend fun backfillCloudHistory() {
+        for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
+            val direction = "encrypted-history-v1:$source"
+            while (syncAllowed) {
+                val count = db.withTransaction {
+                    val cursor = db.syncCursorDao().get(direction)?.lastSequence ?: 0L
+                    val page = db.messageDao().cloudHistoryPage(source, cursor, 100)
+                    page.forEach { enqueueHistorical(it) }
+                    if (page.isNotEmpty()) db.syncCursorDao().upsert(SyncCursorEntity(direction,
+                        lastSequence = page.last().providerId, updatedAt = System.currentTimeMillis()))
+                    page.size
+                }
+                if (count < 100) break
+                yield()
+            }
         }
     }
 
@@ -518,12 +560,16 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             // sentinel (everything is older than MAX_VALUE), persist the
             // watermarks, then continue the history backfill durably.
             val batch = reader(Long.MAX_VALUE, Long.MAX_VALUE, FIRST_BATCH)
-            dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
+            db.withTransaction {
+                val entities = batch.mapNotNull { toEntity(it, source) }
+                dao.insertOrIgnore(entities)
+                entities.forEach { enqueueHistorical(it) }
+            }
             val now = System.currentTimeMillis()
             if (batch.isNotEmpty()) {
-                val newest = batch.maxByOrNull { it.date }!!
+                val newest = batch.maxWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
                 stateDao.advanceNewest(source, newest.date, providerId(newest), now)
-                val oldest = batch.minByOrNull { it.date }!!
+                val oldest = batch.minWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
                 stateDao.advanceOldest(source, oldest.date, providerId(oldest), now)
             }
             // Do NOT mark initialWindowReady here — the caller flips it only
@@ -538,8 +584,12 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             // resume an interrupted history backfill if one is still pending.
             val fresh = readNewerThan(source, state.newestDate, state.newestId)
             if (fresh.isNotEmpty()) {
-                dao.upsertAll(fresh.mapNotNull { toEntity(it, source) })
-                val newest = fresh.maxByOrNull { it.date }!!
+                db.withTransaction {
+                    val entities = fresh.mapNotNull { toEntity(it, source) }
+                    dao.upsertAll(entities)
+                    entities.forEach { enqueueHistorical(it) }
+                }
+                val newest = fresh.maxWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
                 stateDao.advanceNewest(source, newest.date, providerId(newest), System.currentTimeMillis())
             } else {
                 stateDao.touchReconcile(source, System.currentTimeMillis())
@@ -583,10 +633,14 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             val batch = reader(cursor.oldestDate, cursor.oldestId, BACKFILL_BATCH)
             if (batch.isEmpty()) break
 
-            dao.insertOrIgnore(batch.mapNotNull { toEntity(it, source) })
+            db.withTransaction {
+                val entities = batch.mapNotNull { toEntity(it, source) }
+                dao.insertOrIgnore(entities)
+                entities.forEach { enqueueHistorical(it) }
+            }
             insertedAny = true
 
-            val oldest = batch.minByOrNull { it.date }!!
+            val oldest = batch.minWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
             stateDao.advanceOldest(source, oldest.date, providerId(oldest), System.currentTimeMillis())
 
             if (batch.size < BACKFILL_BATCH) break
@@ -638,7 +692,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
             smsRepository.querySmsRaw(
                 selection = "(${Telephony.Sms.DATE} > ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} > ?)",
                 selectionArgs = arrayOf(newestMs.toString(), newestMs.toString(), newestId.toString()),
-                sortOrder = "${Telephony.Sms.DATE} ASC",
+                sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
                 limit = 500
             )
         } else {
@@ -652,7 +706,7 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                     (newestMs / 1000L).toString(),
                     newestId.toString()
                 ),
-                sortOrder = "${Telephony.Mms.DATE} ASC",
+                sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
                 limit = 500
             )
         }

@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MessageDao {
 
+    @Query("SELECT * FROM messages WHERE source = :source AND providerId > :after ORDER BY providerId LIMIT :limit")
+    suspend fun cloudHistoryPage(source: String, after: Long, limit: Int): List<MessageEntity>
+
     /** Newest-first window of one conversation (the hot read path). */
     @Query(
         """

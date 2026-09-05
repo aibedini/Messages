@@ -121,7 +121,8 @@ object PairingClient {
         info: SessionInfo,
         capabilities: List<String>,
         historyGrant: String,
-        trustSequence: Int
+        trustSequence: Int,
+        persistApproval: suspend (JSONObject) -> Unit
     ): Result<JSONObject> = withContext(Dispatchers.IO) {
         runCatching {
             val prefs = GatewayPreferences(context)
@@ -147,6 +148,10 @@ object PairingClient {
                 put("pairingTranscriptHash", info.transcriptHash)
             }
             certificate.put("rootSignature", PrimaryTrustRoot.sign(certificate))
+            require(info.expiresAt > System.currentTimeMillis()) { "stage=PREPARING_APPROVAL reason=qr_expired" }
+            // The certificate, device and signed publication outbox must be
+            // durable before the browser can observe a successful approval.
+            persistApproval(certificate)
             val path = "/api/v1/pairing/approve"
             val exactBody = ExactBody.utf8(JSONObject()
                 .put("pairingSessionId", info.pairingSessionId)

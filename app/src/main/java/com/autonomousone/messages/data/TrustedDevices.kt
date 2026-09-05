@@ -104,6 +104,9 @@ interface TrustedDeviceDao {
     @Query("UPDATE trusted_devices SET status = :status, updatedAt = :now WHERE deviceId = :deviceId")
     suspend fun setStatus(deviceId: String, status: String, now: Long)
 
+    @Query("UPDATE trusted_devices SET status = :status, updatedAt = :now WHERE deviceId = :deviceId AND trustSequence = :sequence")
+    suspend fun setStatusForSequence(deviceId: String, sequence: Int, status: String, now: Long)
+
     @Query("SELECT COUNT(*) FROM trusted_devices WHERE status IN ('ACTIVE','PENDING_PUBLICATION')")
     suspend fun countTrusted(): Int
 }

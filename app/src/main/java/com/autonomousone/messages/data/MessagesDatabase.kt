@@ -43,9 +43,10 @@ import com.autonomousone.messages.BuildConfig
         SyncCursorEntity::class,
         TrustedDeviceEntity::class,
         TrustStatementOutboxEntity::class,
-        DeviceTelemetryEntity::class
+        DeviceTelemetryEntity::class,
+        ConversationKeyEpochEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -63,6 +64,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun trustedDeviceDao(): TrustedDeviceDao
     abstract fun trustStatementOutboxDao(): TrustStatementOutboxDao
     abstract fun deviceTelemetryDao(): DeviceTelemetryDao
+    abstract fun conversationKeyDao(): ConversationKeyDao
 
     companion object {
         @Volatile
@@ -321,6 +323,14 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        internal val UPGRADE_TO_V9_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS conversation_key_epochs (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, epochId TEXT NOT NULL, conversationId TEXT NOT NULL, generation INTEGER NOT NULL, historyFloor INTEGER NOT NULL, category TEXT NOT NULL, wrappedKey BLOB NOT NULL, createdAt INTEGER NOT NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_conversation_key_epochs_conversationId_generation_historyFloor_category ON conversation_key_epochs(conversationId, generation, historyFloor, category)"
+        )
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V9_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -332,7 +342,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

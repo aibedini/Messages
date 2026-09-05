@@ -33,8 +33,7 @@ object TrustedDeviceRegistry {
         val expiresAt: Long,
     )
 
-    /** Reserve nothing locally: pairing uses this candidate in the server
-     * certificate, then persists trust only after /pairing/approve returns 200. */
+    /** Candidate only: recordApproval rechecks it transactionally before any HTTP approval. */
     suspend fun nextTrustSequence(context: Context): Int =
         MessagesDatabase.get(context.applicationContext)
             .trustStatementOutboxDao().maxTrustSequence() + 1
@@ -201,13 +200,17 @@ object TrustedDeviceRegistry {
     ): Int? {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
-        val device = db.trustedDeviceDao().byId(deviceId) ?: return null
         return db.withTransaction {
+            val device = db.trustedDeviceDao().byId(deviceId) ?: return@withTransaction null
+            check(device.status == TrustedDeviceEntity.STATUS_ACTIVE && device.expiresAt > now) {
+                "Only an active, unexpired device can change capabilities"
+            }
             val seq = db.trustStatementOutboxDao().maxTrustSequence() + 1
             db.trustedDeviceDao().update(
                 device.copy(
                     capabilitiesJson = capabilitiesJson(capabilities),
                     trustSequence = seq,
+                    status = TrustedDeviceEntity.STATUS_PENDING_PUBLICATION,
                     updatedAt = now
                 )
             )
@@ -243,12 +246,15 @@ object TrustedDeviceRegistry {
     suspend fun recordRevocation(context: Context, deviceId: String): Int? {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
-        val device = db.trustedDeviceDao().byId(deviceId) ?: return null
         return db.withTransaction {
+            val device = db.trustedDeviceDao().byId(deviceId) ?: return@withTransaction null
+            if (device.status == TrustedDeviceEntity.STATUS_REVOKED ||
+                device.status == TrustedDeviceEntity.STATUS_REVOKE_PENDING) return@withTransaction null
             val seq = db.trustStatementOutboxDao().maxTrustSequence() + 1
             db.trustedDeviceDao().update(
                 device.copy(
                     status = TrustedDeviceEntity.STATUS_REVOKE_PENDING,
+                    trustSequence = seq,
                     revokedAt = now,
                     updatedAt = now
                 )

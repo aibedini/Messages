@@ -2,6 +2,7 @@ package com.autonomousone.messages.gateway
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustStatementOutboxEntity
 import com.autonomousone.messages.data.TrustedDeviceEntity
@@ -36,7 +37,6 @@ class TrustStatementPublisher(
         private const val TAG = "TRUST_PUBLISHER"
         private const val PATH = "/api/v1/agent/trust/statements"
         private const val QUIET_MS = 5_000L
-        private const val MAX_ATTEMPTS = 40
     }
 
     private val appContext = context.applicationContext
@@ -71,12 +71,9 @@ class TrustStatementPublisher(
         if (base.isBlank()) return 0
         val deviceId = prefs.agentDeviceId(appContext)
         for (statement in batch) {
-            if (statement.attemptCount > MAX_ATTEMPTS) {
-                Log.e(TAG, "statement ${statement.statementId} dead-lettered after $MAX_ATTEMPTS attempts")
-                continue
-            }
+            var conn: java.net.HttpURLConnection? = null
             try {
-                val conn = java.net.URL(base + PATH).openConnection() as java.net.HttpURLConnection
+                conn = java.net.URL(base + PATH).openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 conn.connectTimeout = 15_000
@@ -88,7 +85,7 @@ class TrustStatementPublisher(
                 val statementObj = org.json.JSONObject(statement.payload)
                 if (!statementObj.has("rootSignature")) {
                     Log.e(TAG, "statement ${statement.statementId} missing rootSignature — refusing to publish")
-                    continue
+                    break
                 }
                 val wrapper = org.json.JSONObject().put("statement", statementObj)
                 val bodyBytes = wrapper.toString().toByteArray(Charsets.UTF_8)
@@ -98,29 +95,38 @@ class TrustStatementPublisher(
                 conn.outputStream.use { it.write(bodyBytes) }
                 val code = conn.responseCode
                 if (code in 200..299) {
-                    db.trustStatementOutboxDao().markPublished(statement.statementId, System.currentTimeMillis())
-                    when (statement.operation) {
-                        TrustStatementOutboxEntity.OP_DEVICE_APPROVED ->
-                            db.trustedDeviceDao().setStatus(
-                                statement.deviceId, TrustedDeviceEntity.STATUS_ACTIVE, System.currentTimeMillis()
+                    db.withTransaction {
+                      db.trustStatementOutboxDao().markPublished(statement.statementId, System.currentTimeMillis())
+                      when (statement.operation) {
+                        TrustStatementOutboxEntity.OP_DEVICE_APPROVED,
+                        TrustStatementOutboxEntity.OP_DEVICE_CAPABILITIES_CHANGED ->
+                            db.trustedDeviceDao().setStatusForSequence(
+                                statement.deviceId, statement.trustSequence, TrustedDeviceEntity.STATUS_ACTIVE, System.currentTimeMillis()
                             )
                         TrustStatementOutboxEntity.OP_DEVICE_REVOKED -> {
-                            db.trustedDeviceDao().setStatus(
-                                statement.deviceId, TrustedDeviceEntity.STATUS_REVOKED, System.currentTimeMillis()
+                            db.trustedDeviceDao().setStatusForSequence(
+                                statement.deviceId, statement.trustSequence, TrustedDeviceEntity.STATUS_REVOKED, System.currentTimeMillis()
                             )
                             // Local sensitive grants die with the trust record.
-                            SensitiveGrantStore.wipeGrants(appContext, statement.deviceId)
+                            if (db.trustedDeviceDao().byId(statement.deviceId)?.trustSequence == statement.trustSequence) {
+                                SensitiveGrantStore.wipeGrants(appContext, statement.deviceId)
+                            }
                         }
+                    }
                     }
                     acked++
                     onLog("🛡 Trust statement ${statement.operation} published (seq ${statement.trustSequence})")
                 } else {
                     Log.w(TAG, "publish ${statement.operation} → HTTP $code")
                     db.trustStatementOutboxDao().markRetry(statement.statementId)
+                    break // Do not publish a later trust sequence past a failed predecessor.
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "publish ${statement.operation} failed: ${e.message}")
                 db.trustStatementOutboxDao().markRetry(statement.statementId)
+                break
+            } finally {
+                conn?.disconnect()
             }
         }
         return acked

@@ -35,8 +35,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 83
-        versionName = "2.7.0"
+        versionCode = 84
+        versionName = "2.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -81,6 +81,7 @@ android {
     sourceSets {
         getByName("test").resources.srcDir(rootProject.file("protocol"))
         getByName("androidTest").assets.srcDir(rootProject.file("protocol"))
+        getByName("androidTest").assets.srcDir(project.file("schemas"))
     }
 
     testOptions {
@@ -102,6 +103,7 @@ ksp {
 }
 
 dependencies {
+    implementation("com.google.crypto.tink:tink-android:1.18.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -120,6 +122,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation("androidx.compose.material:material-icons-extended")

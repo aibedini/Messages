@@ -17,6 +17,18 @@ import kotlin.random.Random
 class GatewayEventFactoryTest {
 
     @Test
+    fun `encrypted transport does not invoke legacy JSON decoder`() {
+        val row = GatewayEventOutboxEntity(eventUuid = "encrypted", eventType = "MESSAGE_CREATED",
+            aggregateId = "conversation", ciphertext = byteArrayOf(1, 2, 3, 4),
+            encoding = "envelope.v1", schemaVersion = 1, cryptoVersion = 1, createdAt = 1)
+        GatewayEventFactory.validateForTransport(row)
+        try {
+            GatewayEventFactory.validateForTransport(row.copy(ciphertext = byteArrayOf()))
+            org.junit.Assert.fail("Empty ciphertext must fail closed")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test
     fun `message identity is stable for the same provider row and never body-derived`() {
         val a = GatewayEventFactory.messageIdFor("sms", 18472, 1700000000000L)
         val b = GatewayEventFactory.messageIdFor("sms", 18472, 1700000000000L)
