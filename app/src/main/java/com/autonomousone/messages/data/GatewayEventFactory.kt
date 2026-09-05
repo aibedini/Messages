@@ -108,7 +108,8 @@ object GatewayEventFactory {
         direction: String,
         body: String,
         dateMs: Long,
-        status: Int
+        status: Int,
+        address: String = ""
     ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
@@ -116,6 +117,7 @@ object GatewayEventFactory {
             .put("body", body)
             .put("dateMs", dateMs)
             .put("status", status)
+            .put("address", address)
         return outboxRow(
             eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs),
             Types.MESSAGE_CREATED,

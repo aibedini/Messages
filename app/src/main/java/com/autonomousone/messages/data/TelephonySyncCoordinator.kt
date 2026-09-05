@@ -208,7 +208,8 @@ class TelephonySyncCoordinator private constructor(context: Context) {
                                 direction = if (entity.type == 1) "in" else "out",
                                 body = entity.body,
                                 dateMs = entity.date,
-                                status = entity.status
+                                status = entity.status,
+                                address = entity.normalizedAddress
                             )
                         }
                     }

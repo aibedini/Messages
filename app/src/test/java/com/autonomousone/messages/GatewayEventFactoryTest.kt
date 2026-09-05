@@ -47,7 +47,8 @@ class GatewayEventFactoryTest {
             direction = "in",
             body = "سلام این یک پیام آزمایشی است",
             dateMs = 1700000000000L,
-            status = -1
+            status = -1,
+            address = "+989121234567"
         )
         assertEquals("envelope.v1", row.encoding)
         assertEquals(0, row.cryptoVersion)
@@ -55,6 +56,7 @@ class GatewayEventFactoryTest {
         val decoded = GatewayEventFactory.decodePayloadEnvelope(row.ciphertext)
         assertTrue(decoded.contains("\"body\":\"سلام این یک پیام آزمایشی است\""))
         assertTrue(decoded.contains("\"direction\":\"in\""))
+        assertTrue(decoded.contains("\"address\":\"+989121234567\""))
     }
 
     @Test
