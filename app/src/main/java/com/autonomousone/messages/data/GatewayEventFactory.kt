@@ -117,7 +117,8 @@ object GatewayEventFactory {
         body: String,
         dateMs: Long,
         status: Int,
-        address: String = ""
+        address: String = "",
+        contactName: String? = null
     ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
@@ -126,6 +127,7 @@ object GatewayEventFactory {
             .put("dateMs", dateMs)
             .put("status", status)
             .put("address", address)
+        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
         return outboxRow(
             eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs),
             Types.MESSAGE_CREATED,

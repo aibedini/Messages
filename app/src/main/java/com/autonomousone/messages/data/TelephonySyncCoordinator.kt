@@ -209,7 +209,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                 body = entity.body,
                                 dateMs = entity.date,
                                 status = entity.status,
-                                address = entity.normalizedAddress
+                                address = entity.normalizedAddress,
+                                contactName = contactNameFor(entity.normalizedAddress)
                             )
                             if (old != null && (old.body != entity.body || old.type != entity.type || old.normalizedAddress != entity.normalizedAddress)) {
                                 created.copy(eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
@@ -314,6 +315,21 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * no critical fire-and-forget). A dropped insert means the SAME
      * deterministic eventUuid is already queued/ACKed — logged, never doubled.
      */
+    /**
+     * Best-effort contact name for an address. Returns null when READ_CONTACTS
+     * is missing or the contact map is empty — the PWA then falls back to the
+     * phone number. ContactRepository keeps a process-wide cache (one provider
+     * scan at most); resolution is additive to the envelope payload only.
+     */
+    private fun contactNameFor(address: String?): String? {
+        val phone = address ?: return null
+        val contacts = ContactRepository(appContext).getContactNameMap()
+        if (contacts.isEmpty()) return null
+        val normalized = ContactRepository.normalizePhone(phone)
+        return contacts[normalized] ?: contacts[phone]
+    }
+
+
     private suspend fun enqueueCloudEvent(
         source: String,
         providerId: Long,
@@ -511,9 +527,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     internal suspend fun enqueueHistorical(entity: MessageEntity) {
         enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
-            GatewayEventFactory.messageCreated(entity.source, entity.providerId,
-                conversationIdFor(entity.threadId), if (entity.type == 1) "in" else "out",
-                entity.body, entity.date, entity.status, entity.normalizedAddress)
+            GatewayEventFactory.messageCreated(
+                source = entity.source,
+                providerId = entity.providerId,
+                conversationId = conversationIdFor(entity.threadId),
+                direction = if (entity.type == 1) "in" else "out",
+                body = entity.body,
+                dateMs = entity.date,
+                status = entity.status,
+                address = entity.normalizedAddress,
+                contactName = contactNameFor(entity.normalizedAddress)
+            )
         }
     }
 
