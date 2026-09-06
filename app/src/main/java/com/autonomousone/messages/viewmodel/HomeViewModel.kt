@@ -226,7 +226,6 @@ class HomeViewModel(
         }
         if (roomReadEnabled && !hasLoadedOnce) {
             val roomList = kotlin.runCatching {
-                coordinator.syncNow()
                 roomConversations()
             }.getOrNull()
             if (roomList != null) {

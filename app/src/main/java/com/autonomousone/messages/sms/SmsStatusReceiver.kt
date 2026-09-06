@@ -53,6 +53,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0).coerceAtLeast(0)
         val partCount = intent.getIntExtra(EXTRA_PART_COUNT, 1).coerceAtLeast(1)
         val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
+        val sendAttemptId = intent.getLongExtra(EXTRA_SEND_ATTEMPT_ID, rowId)
         val delivered = intent.action == ACTION_SMS_DELIVERED
         val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
         val ok = callbackResultCode == Activity.RESULT_OK
@@ -60,9 +61,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // provider row id is missing/invalid (persistToSent fallback). The
         // callback still proves the modem accepted a segment, so the carrier
         // counter must record it under the synthetic id rather than losing it.
-        val ledgerRowId = if (rowId > 0L) rowId else -System.currentTimeMillis()
-        // Status mutations need a real provider row; skip those only.
-        if (rowId <= 0L) return
+        val ledgerRowId = if (rowId > 0L) rowId else sendAttemptId
         // A SENT callback is the modem's local transport ACK, not a delivery
         // verdict. Affected Samsung/RIL combinations return multiple non-OK
         // codes after the SMSC has accepted and delivered the message. Never
@@ -136,6 +135,10 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 )
             }
         }
+
+        // Provider status mutations require a real provider row. The ledger
+        // above remains valid when Telephony failed to return one.
+        if (rowId <= 0L) return
 
         val nextStatus = synchronized(LOCK) {
             // SENT transport results never poison provider delivery state. A
@@ -287,6 +290,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
         const val EXTRA_PART_INDEX = "part_index"
         const val EXTRA_PART_COUNT = "part_count"
         const val EXTRA_SUBSCRIPTION_ID = "subscription_id"
+        const val EXTRA_SEND_ATTEMPT_ID = "send_attempt_id"
 
         private const val PREFS = "sms_status_callbacks"
         private const val TAG = "SMS_STATUS"

@@ -16,6 +16,9 @@ import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
 import com.autonomousone.messages.utils.DiagnosticLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -227,13 +230,7 @@ class SmsSender(
                     "sub=$effectiveSubId parts=${parts.size} reports=$wantReports " +
                     "smsc=${if (scAddress == null) "sim-default" else "manual"}"
             )
-            // PR-11.2 (v2.6.23): carrier-billable segment rows are written NOW,
-            // before any callback exists, from the SAME parts the modem splits.
-            // Success flips per part in the SENT callback; the Home counter
-            // therefore reflects the carrier's character-based billing even
-            // when a broadcast is lost (Doze, crash, receiver gap) — the
-            // counter can no longer sit at 0 while sends went out.
-            recordSegmentParts(sentId, parts.size, effectiveSubId)
+            // Use the exact modem split for both callbacks and accounting.
             // A SENT callback resolves local hand-off telemetry. Delivery
             // callbacks request the network SMS-STATUS-REPORT PDU and are ON by
             // default; the user may opt out in Messaging settings.
@@ -296,53 +293,16 @@ class SmsSender(
     }
 
     /**
-     * PR-11.2 (v2.6.23): optimistic per-segment ledger rows.
-     *
-     * One row per carrier-billable part, written at dispatch time with
-     * success=false. Two resolution paths flip it to success=true:
-     *  1. the SENT modem callback (normal path, per part);
-     *  2. [markSegmentsSuccessful] immediately after a successful synchronous
-     *     dispatch — the send reached the radio, so the segments are billable
-     *     even if the callback never fires.
-     * Insert is REPLACE on (rowId, partIndex): a later callback simply
-     * overwrites the optimistic row — idempotent, no double counting.
-     */
-    private fun recordSegmentParts(rowId: Long, partCount: Int, subId: Int?) {
-        if (rowId <= 0L || partCount <= 0) return
-        try {
-            val dao = MessagesDatabase.get(context.applicationContext).sendSegmentDao()
-            val now = System.currentTimeMillis()
-            kotlinx.coroutines.runBlocking {
-                for (part in 0 until partCount) {
-                    dao.record(
-                        SendSegmentEntity(
-                            rowId = rowId,
-                            partIndex = part,
-                            partCount = partCount,
-                            sentAt = now,
-                            subscriptionId = subId ?: -1,
-                            success = false
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            // Telemetry must never break dispatch.
-            Log.w(TAG, "segment ledger pre-write failed id=$rowId", e)
-        }
-    }
-
-    /**
      * PR-11.2 (v2.6.23): flip this message's optimistic segment rows to
      * success after the radio accepted the send — the callback remains the
      * authoritative per-part verdict but must not gate carrier counting.
      */
     private fun markSegmentsSuccessful(rowId: Long, partCount: Int, subId: Int?) {
         if (rowId <= 0L || partCount <= 0) return
-        try {
-            val dao = MessagesDatabase.get(context.applicationContext).sendSegmentDao()
-            val now = System.currentTimeMillis()
-            kotlinx.coroutines.runBlocking {
+        ledgerScope.launch {
+            try {
+                val dao = MessagesDatabase.get(context.applicationContext).sendSegmentDao()
+                val now = System.currentTimeMillis()
                 for (part in 0 until partCount) {
                     dao.record(
                         SendSegmentEntity(
@@ -355,9 +315,9 @@ class SmsSender(
                         )
                     )
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "segment ledger success-write failed id=$rowId", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "segment ledger success-write failed id=$rowId", e)
         }
     }
 
@@ -393,6 +353,7 @@ class SmsSender(
             .putExtra(SmsStatusReceiver.EXTRA_ROW_ID, rowId)
             .putExtra(SmsStatusReceiver.EXTRA_PART_INDEX, partIndex)
             .putExtra(SmsStatusReceiver.EXTRA_PART_COUNT, partCount)
+            .putExtra(SmsStatusReceiver.EXTRA_SEND_ATTEMPT_ID, rowId)
             // Which SIM actually carried this part — feeds the per-SIM send
             // ledger (null = platform default; recorded as -1/unknown).
             .putExtra(SmsStatusReceiver.EXTRA_SUBSCRIPTION_ID, subscriptionId ?: -1)
@@ -485,5 +446,6 @@ class SmsSender(
 
     companion object {
         private const val TAG = "SMS_SENDER"
+        private val ledgerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
