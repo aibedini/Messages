@@ -1,0 +1,45 @@
+name: Pairing Protocol Contract
+
+# PREVENT FUTURE CONTRACT DRIFT (ADR-007 / P0).
+# Messages and GMweb-API each keep a byte-identical copy of the pairing
+# protocol fixture (protocol/pairing-protocol-v1.json). The pairing
+# capability contract lives in that file under `capability_definitions`.
+# This job fails the build the moment the two repositories drift:
+#   - protocol fixture bytes must match GMweb's copy exactly;
+#   - Android's runtime contract object must cover every schema capability.
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout GMweb-API (canonical pairing protocol peer)
+        uses: actions/checkout@v4
+        with:
+          repository: aibedini/GMweb-API
+          ref: main
+          path: gmweb-api
+      - name: Pairing protocol fixture must be byte-identical across repositories
+        run: |
+          cmp protocol/pairing-protocol-v1.json gmweb-api/shared/pairing-protocol-v1.json
+          echo "Messages protocol/pairing-protocol-v1.json == GMweb shared/pairing-protocol-v1.json"
+      - name: Android contract must cover every schema capability
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const schema = JSON.parse(fs.readFileSync("protocol/pairing-protocol-v1.json", "utf8"));
+            const kt = fs.readFileSync("app/src/main/java/com/autonomousone/messages/security/PairingCapabilityContract.kt", "utf8");
+            for (const cap of [...schema.capability_definitions.base, ...schema.capability_definitions.sensitive]) {
+              if (!kt.includes(`"${cap}"`)) {
+                console.error(`capability ${cap} is missing from PairingCapabilityContract.kt`);
+                process.exit(1);
+              }
+            }
+            console.log("PairingCapabilityContract covers every schema capability");
+          '

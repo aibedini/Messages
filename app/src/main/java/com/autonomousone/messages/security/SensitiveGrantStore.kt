@@ -18,14 +18,8 @@ object SensitiveGrantStore {
 
     private const val PREFS = "sensitive_device_grants"
 
-    /** Categories exactly matching certificate capabilities. */
-    val CATEGORIES = listOf(
-        "READ_OTP",
-        "READ_BANK_SECURITY",
-        "READ_PASSWORD_RESET",
-        "READ_AUTH_CODES",
-        "READ_FINANCIAL_NOTIFICATIONS"
-    )
+    /** Categories exactly matching certificate capabilities (schema-driven). */
+    val CATEGORIES: List<String> = PairingCapabilityContract.SENSITIVE_CAPABILITIES
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

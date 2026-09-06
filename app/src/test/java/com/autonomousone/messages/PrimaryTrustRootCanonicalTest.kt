@@ -30,8 +30,12 @@ class PrimaryTrustRootCanonicalTest {
             }.toByteArray(Charsets.UTF_8)
             assertEquals(v.getString("canonicalBase64"), Base64.getEncoder().encodeToString(canonical))
             assertEquals(v.getString("sha256"), MessageDigest.getInstance("SHA-256").digest(canonical).joinToString("") { "%02x".format(it) })
-            assertTrue(Signature.getInstance("SHA256withECDSA").apply { initVerify(key); update(canonical) }
-                .verify(Base64.getDecoder().decode(v.getString("signature"))))
+            // The android_linked_browser_default vector is intentionally unsigned
+            // (root signatures require the enrolled phone's keystore key).
+            if (v.has("signature")) {
+                assertTrue(Signature.getInstance("SHA256withECDSA").apply { initVerify(key); update(canonical) }
+                    .verify(Base64.getDecoder().decode(v.getString("signature"))))
+            }
         }
     }
 }

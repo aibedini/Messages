@@ -34,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustedDeviceEntity
+import com.autonomousone.messages.security.PairingCapabilityContract
 import com.autonomousone.messages.security.PairingClient
 import com.autonomousone.messages.security.TrustedDeviceRegistry
 import com.autonomousone.messages.security.PairingEndpointResolver
@@ -643,17 +644,16 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         val info0 = scanned
                                         if (info0 != null) {
                                             val caps = buildList {
-                                                add("READ_MESSAGES")
-                                                add("SEND_MESSAGES")
-                                                add("MARK_READ")
-                                                add("RECEIVE_NOTIFICATIONS")
-                                                // ADR-006 Amendment: signed sensitive
-                                                // grants — only what the user enabled.
-                                                if (grantOtp) add("READ_OTP")
-                                                if (grantBank) add("READ_BANK_SECURITY")
-                                                if (grantReset) add("READ_PASSWORD_RESET")
-                                                if (grantAuth) add("READ_AUTH_CODES")
-                                                if (grantFinancial) add("READ_FINANCIAL_NOTIFICATIONS")
+                                                // Capability contract is schema-driven
+                                                // (protocol/pairing-protocol-v1.json): the base
+                                                // set is always granted; sensitive grants only
+                                                // when the user enabled that row.
+                                                addAll(PairingCapabilityContract.BASE_CAPABILITIES)
+                                                val grants = arrayOf(grantOtp, grantBank, grantReset, grantAuth, grantFinancial)
+                                                PairingCapabilityContract.SENSITIVE_CAPABILITIES
+                                                    .forEachIndexed { index, capability ->
+                                                        if (grants[index]) add(capability)
+                                                    }
                                             }
                                             val grant = if (historyFull) "FULL_HISTORY" else "FROM_NOW_ON"
                                             // FIX 1: network must leave the UI thread —
@@ -884,13 +884,21 @@ private class QrBoundsView(context: android.content.Context) : android.view.View
     }
 }
 
-private val deviceCapabilityLabels = linkedMapOf(
+internal val capabilityLabel: Map<String, String> = mapOf(
     "READ_MESSAGES" to "Read messages", "SEND_MESSAGES" to "Send messages",
     "MARK_READ" to "Mark messages read", "RECEIVE_NOTIFICATIONS" to "Notifications",
     "READ_OTP" to "OTP and login codes", "READ_BANK_SECURITY" to "Bank security codes",
     "READ_PASSWORD_RESET" to "Password reset codes", "READ_AUTH_CODES" to "Authentication codes",
     "READ_FINANCIAL_NOTIFICATIONS" to "Bank transaction notifications"
 )
+
+
+/** Membership and display order follow the shared capability contract. */
+internal val deviceCapabilityLabels: Map<String, String> = linkedMapOf<String, String>().apply {
+    for (capability in PairingCapabilityContract.ALLOWLISTED_BY_ANDROID) {
+        put(capability, capabilityLabel[capability] ?: capability)
+    }
+}
 
 private fun deviceCapabilities(json: String): Set<String> = runCatching {
     val values = org.json.JSONArray(json)
