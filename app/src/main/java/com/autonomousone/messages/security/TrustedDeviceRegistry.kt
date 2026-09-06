@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustStatementOutboxEntity
 import com.autonomousone.messages.data.TrustedDeviceEntity
+import com.autonomousone.messages.gateway.TrustStatementPublisher
 import java.util.UUID
 
 /**
@@ -135,7 +136,7 @@ object TrustedDeviceRegistry {
     ): Int {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
-        return db.withTransaction {
+        val sequence = db.withTransaction {
             // P0-6: ONE authoritative trustSequence from the registry — the
             // certificate and the statement MUST carry the same value.
             val next = db.trustStatementOutboxDao().maxTrustSequence() + 1
@@ -156,7 +157,7 @@ object TrustedDeviceRegistry {
                     certificateJson = device.certificateJson,
                     certificateSignature = device.certificateSignature,
                     trustSequence = seq,
-                    status = TrustedDeviceEntity.STATUS_PENDING_PUBLICATION,
+                    status = TrustedDeviceEntity.STATUS_PENDING_SERVER_APPROVAL,
                     approvedAt = now,
                     expiresAt = device.expiresAt,
                     revokedAt = null,
@@ -182,13 +183,41 @@ object TrustedDeviceRegistry {
                     deviceId = device.deviceId,
                     payload = statement.toString(),
                     rootSignature = statement.optString("rootSignature", ""),
-                    state = TrustStatementOutboxEntity.STATE_PENDING,
+                    state = TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL,
                     attemptCount = 0,
                     createdAt = now,
                     ackedAt = null
                 )
             )
             seq
+        }
+        return sequence
+    }
+
+    /** Server accepted the pairing; only now may DEVICE_APPROVED be published. */
+    suspend fun activateApproval(context: Context, deviceId: String, trustSequence: Int) {
+        val db = MessagesDatabase.get(context.applicationContext)
+        val now = System.currentTimeMillis()
+        db.withTransaction {
+            check(db.trustStatementOutboxDao().activateApproval(deviceId, trustSequence) == 1) {
+                "pending server approval not found"
+            }
+            db.trustedDeviceDao().setStatusForSequence(
+                deviceId, trustSequence, TrustedDeviceEntity.STATUS_PENDING_PUBLICATION, now,
+            )
+        }
+        TrustStatementPublisher.nudge()
+    }
+
+    /** A rejected or expired approval can never become a usable trust statement. */
+    suspend fun failApproval(context: Context, deviceId: String, trustSequence: Int) {
+        val db = MessagesDatabase.get(context.applicationContext)
+        val now = System.currentTimeMillis()
+        db.withTransaction {
+            db.trustStatementOutboxDao().discardWaitingApproval(deviceId, trustSequence)
+            db.trustedDeviceDao().setStatusForSequence(
+                deviceId, trustSequence, TrustedDeviceEntity.STATUS_FAILED, now,
+            )
         }
     }
 
@@ -200,7 +229,7 @@ object TrustedDeviceRegistry {
     ): Int? {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
-        return db.withTransaction {
+        val sequence = db.withTransaction {
             val device = db.trustedDeviceDao().byId(deviceId) ?: return@withTransaction null
             check(device.status == TrustedDeviceEntity.STATUS_ACTIVE && device.expiresAt > now) {
                 "Only an active, unexpired device can change capabilities"
@@ -240,13 +269,15 @@ object TrustedDeviceRegistry {
             )
             seq
         }
+        TrustStatementPublisher.nudge()
+        return sequence
     }
 
     /** Biometric-confirmed unlink: REVOKE_PENDING + DEVICE_REVOKED outbox. */
     suspend fun recordRevocation(context: Context, deviceId: String): Int? {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
-        return db.withTransaction {
+        val sequence = db.withTransaction {
             val device = db.trustedDeviceDao().byId(deviceId) ?: return@withTransaction null
             if (device.status == TrustedDeviceEntity.STATUS_REVOKED ||
                 device.status == TrustedDeviceEntity.STATUS_REVOKE_PENDING) return@withTransaction null
@@ -285,6 +316,8 @@ object TrustedDeviceRegistry {
             )
             seq
         }
+        TrustStatementPublisher.nudge()
+        return sequence
     }
 
     private fun buildStatement(

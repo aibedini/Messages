@@ -11,6 +11,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.min
@@ -44,6 +46,8 @@ class EventUploader(
     companion object {
         private const val TAG = "EVENT_UPLOADER"
         private const val EVENTS_PATH = "/api/v1/agent/events/batch"
+        private val _running = MutableStateFlow(false)
+        val running = _running.asStateFlow()
     }
 
     private val appContext = context.applicationContext
@@ -52,6 +56,7 @@ class EventUploader(
 
     fun start() {
         if (job?.isActive == true) return
+        _running.value = true
         job = scope.launch {
             // Process-death recovery FIRST: a crash between claim and upload
             // leaves SENDING rows behind — requeue them before claiming.
@@ -98,11 +103,13 @@ class EventUploader(
                 }
             }
         }
+        job?.invokeOnCompletion { _running.value = false }
     }
 
     fun stop() {
         job?.cancel()
         job = null
+        _running.value = false
     }
 
     private enum class Outcome { ALL_ACKED, PARTIAL, TRANSPORT_FAILURE, FATAL }

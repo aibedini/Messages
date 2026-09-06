@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import com.autonomousone.messages.security.PrimaryTrustRoot
+import java.security.MessageDigest
 
 /**
  * Handles first-time registration and re-registration with the cloud backend.
@@ -28,6 +29,15 @@ class RegistrationManager(
     private val client: BackendClient,
     private val onLog: (String) -> Unit = {},
 ) {
+    data class PrimaryStatus(
+        val state: State,
+        val deviceId: String? = null,
+        val trustRootFingerprint: String? = null,
+        val lastVerifiedAt: Long? = null,
+        val reason: String? = null,
+    ) {
+        enum class State { VERIFIED, NOT_ENROLLED, MISMATCH, OFFLINE }
+    }
     @Volatile
     var lastFailureReason: String? = null
         private set
@@ -119,11 +129,61 @@ class RegistrationManager(
     suspend fun register(): Boolean = registerInternal(requireConsent = true)
 
     /** Explicit phone onboarding; independent of browser pairing. */
-    suspend fun enrollPrimary(claim: JSONObject): Boolean = registerInternal(
-        requireConsent = false,
-        baseUrlOverride = claim.getString("apiOrigin"),
-        setupClaim = claim,
-    )
+    suspend fun enrollPrimary(claim: JSONObject): Boolean {
+        val origin = claim.getString("apiOrigin")
+        if (!registerInternal(requireConsent = false, baseUrlOverride = origin, setupClaim = claim)) return false
+        return verifyPrimaryStatus(origin).state == PrimaryStatus.State.VERIFIED
+    }
+
+    suspend fun verifyPrimaryStatus(baseUrlOverride: String? = null): PrimaryStatus = withContext(Dispatchers.IO) {
+        if (!prefs.identityRegistered) return@withContext PrimaryStatus(
+            PrimaryStatus.State.NOT_ENROLLED, reason = "local_identity_not_enrolled",
+        )
+        val path = "/api/v1/agent/status"
+        val deviceId = prefs.stableDeviceId(context)
+        val base = (baseUrlOverride ?: prefs.gmwebUrl).trimEnd('/')
+        if (!base.startsWith("https://")) return@withContext PrimaryStatus(
+            PrimaryStatus.State.OFFLINE, reason = "trusted_https_origin_required",
+        )
+        var conn: java.net.HttpURLConnection? = null
+        try {
+            conn = java.net.URL(base + path).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 15_000
+            check(AgentAuth.sign(conn, deviceId, path, "GET", ByteArray(0))) { "agent_signing_failed" }
+            val status = conn.responseCode
+            if (status == 404) return@withContext PrimaryStatus(PrimaryStatus.State.NOT_ENROLLED, reason = "identity_not_found")
+            if (status !in 200..299) return@withContext PrimaryStatus(
+                PrimaryStatus.State.OFFLINE, reason = "http_$status",
+            )
+            val response = conn.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+            if (!response.optBoolean("enrolled")) return@withContext PrimaryStatus(
+                PrimaryStatus.State.NOT_ENROLLED, reason = "identity_not_enrolled",
+            )
+            val serverDeviceId = response.optString("deviceId")
+            val serverRoot = response.optString("trustRootFingerprint")
+            val localRoot = fingerprint(PrimaryTrustRoot.publicKeyBase64())
+            val verified = response.optString("role") == "PRIMARY_TRUST_AGENT" &&
+                response.optBoolean("isPrimary") && serverDeviceId == deviceId && serverRoot == localRoot
+            PrimaryStatus(
+                state = if (verified) PrimaryStatus.State.VERIFIED else PrimaryStatus.State.MISMATCH,
+                deviceId = serverDeviceId,
+                trustRootFingerprint = serverRoot,
+                lastVerifiedAt = System.currentTimeMillis(),
+                reason = if (verified) null else "server_identity_or_trust_root_mismatch",
+            )
+        } catch (error: Exception) {
+            PrimaryStatus(PrimaryStatus.State.OFFLINE, reason = error.javaClass.simpleName)
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    private fun fingerprint(base64Spki: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(android.util.Base64.decode(base64Spki, android.util.Base64.DEFAULT))
+            .joinToString("") { "%02x".format(it) }
 
     private suspend fun registerInternal(
         requireConsent: Boolean,

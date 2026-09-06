@@ -55,6 +55,36 @@ object PairingClient {
     fun originMatches(serverOrigin: String, scanned: SessionInfo): Boolean =
         serverOrigin.trimEnd('/') == scanned.apiOrigin
 
+    suspend fun resolvePairingCode(context: Context, code: String): Pair<SessionInfo?, String?> = withContext(Dispatchers.IO) {
+        val normalized = code.filter(Char::isLetterOrDigit).uppercase()
+        if (normalized.length != 10) return@withContext null to "Pairing code must contain 10 letters or numbers"
+        val prefs = GatewayPreferences(context)
+        val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
+        val path = "/api/v1/agent/pairing-code/$normalized"
+        val conn = URL("$base$path").openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 15_000
+            if (!AgentAuth.sign(conn, prefs.agentDeviceId(context), path, "GET", ByteArray(0))) {
+                return@withContext null to "Agent signing key unavailable"
+            }
+            val status = conn.responseCode
+            val body = (if (status == 200) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText().take(8_192) }.orEmpty()
+            if (status != 200) return@withContext null to if (status == 404) "Pairing code is invalid or expired" else "Pairing code lookup failed: HTTP $status"
+            val info = parseQrPayload(body) ?: return@withContext null to "Server returned an invalid pairing transcript"
+            if (!PairingEndpointResolver.originMatches(context, info.apiOrigin)) {
+                return@withContext null to "Pairing code belongs to another GMweb origin"
+            }
+            info to null
+        } catch (error: Exception) {
+            null to (error.message ?: "Network error")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     suspend fun fetchSessionMetadata(
         context: Context,
         scanned: SessionInfo
@@ -122,9 +152,12 @@ object PairingClient {
         capabilities: List<String>,
         historyGrant: String,
         trustSequence: Int,
-        persistApproval: suspend (JSONObject) -> Unit
+        persistApproval: suspend (JSONObject) -> Unit,
+        activateApproval: suspend () -> Unit,
+        failApproval: suspend () -> Unit,
     ): Result<JSONObject> = withContext(Dispatchers.IO) {
-        runCatching {
+        var persisted = false
+        val outcome = runCatching {
             val prefs = GatewayPreferences(context)
             val base = PairingEndpointResolver.trustedServerUrl(context).trimEnd('/')
             val deviceId = prefs.agentDeviceId(context)
@@ -149,9 +182,10 @@ object PairingClient {
             }
             certificate.put("rootSignature", PrimaryTrustRoot.sign(certificate))
             require(info.expiresAt > System.currentTimeMillis()) { "stage=PREPARING_APPROVAL reason=qr_expired" }
-            // The certificate, device and signed publication outbox must be
-            // durable before the browser can observe a successful approval.
+            // Durable before networking, but blocked from publication until
+            // the server accepts this exact pairing session.
             persistApproval(certificate)
+            persisted = true
             val path = "/api/v1/pairing/approve"
             val exactBody = ExactBody.utf8(JSONObject()
                 .put("pairingSessionId", info.pairingSessionId)
@@ -177,11 +211,14 @@ object PairingClient {
                     Log.w(TAG, "stage=APPROVING_ON_SERVER endpoint=$path status=$status reason=${reason.ifBlank { "none" }} session=${short(info.pairingSessionId)} device=${short(deviceId)}")
                     error("approve failed: HTTP $status reason=${reason.ifBlank { "request_failed" }}")
                 }
+                activateApproval()
                 Log.i(TAG, "stage=LINKED endpoint=$path status=$status session=${short(info.pairingSessionId)} device=${short(deviceId)}")
                 certificate
             } finally {
                 conn.disconnect()
             }
         }
+        if (outcome.isFailure && persisted) runCatching { failApproval() }
+        outcome
     }
 }

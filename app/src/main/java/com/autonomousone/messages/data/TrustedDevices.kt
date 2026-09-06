@@ -30,7 +30,7 @@ data class TrustedDeviceEntity(
     val certificateJson: String,      // full signed DeviceCertificate
     val certificateSignature: String, // root signature (Base64)
     val trustSequence: Int,
-    /** PENDING_PUBLICATION | ACTIVE | REVOKE_PENDING | REVOKED | EXPIRED */
+    /** PENDING_SERVER_APPROVAL | PENDING_PUBLICATION | ACTIVE | REVOKE_PENDING | REVOKED | FAILED | EXPIRED */
     val status: String,
     val approvedAt: Long,
     val expiresAt: Long,
@@ -39,10 +39,12 @@ data class TrustedDeviceEntity(
     val updatedAt: Long
 ) {
     companion object {
+        const val STATUS_PENDING_SERVER_APPROVAL = "PENDING_SERVER_APPROVAL"
         const val STATUS_PENDING_PUBLICATION = "PENDING_PUBLICATION"
         const val STATUS_ACTIVE = "ACTIVE"
         const val STATUS_REVOKE_PENDING = "REVOKE_PENDING"
         const val STATUS_REVOKED = "REVOKED"
+        const val STATUS_FAILED = "FAILED"
         const val STATUS_EXPIRED = "EXPIRED"
     }
 }
@@ -60,12 +62,13 @@ data class TrustStatementOutboxEntity(
     val deviceId: String,
     val payload: String,                   // canonical statement JSON
     val rootSignature: String,             // Trust Root signature over payload
-    val state: String,                     // PENDING | PUBLISHED | FAILED
+    val state: String,                     // WAITING_SERVER_APPROVAL | PENDING | PUBLISHED | FAILED
     val attemptCount: Int,
     val createdAt: Long,
     val ackedAt: Long?
 ) {
     companion object {
+        const val STATE_WAITING_SERVER_APPROVAL = "WAITING_SERVER_APPROVAL"
         const val STATE_PENDING = "PENDING"
         const val STATE_PUBLISHED = "PUBLISHED"
         const val STATE_FAILED = "FAILED"
@@ -119,11 +122,23 @@ interface TrustStatementOutboxDao {
     @Query("SELECT * FROM trust_statement_outbox WHERE state = 'PENDING' ORDER BY trustSequence ASC LIMIT 50")
     suspend fun pendingBatch(): List<TrustStatementOutboxEntity>
 
+    @Query("SELECT COUNT(*) FROM trust_statement_outbox WHERE state = 'PENDING'")
+    suspend fun pendingCount(): Int
+
+    @Query("SELECT MIN(trustSequence) FROM trust_statement_outbox WHERE state = 'PENDING'")
+    suspend fun oldestPendingSequence(): Int?
+
     @Query("UPDATE trust_statement_outbox SET state = 'PUBLISHED', ackedAt = :at WHERE statementId = :id")
     suspend fun markPublished(id: String, at: Long)
 
     @Query("UPDATE trust_statement_outbox SET state = 'PENDING', attemptCount = attemptCount + 1 WHERE statementId = :id")
     suspend fun markRetry(id: String)
+
+    @Query("UPDATE trust_statement_outbox SET state = 'PENDING' WHERE deviceId = :deviceId AND trustSequence = :sequence AND state = 'WAITING_SERVER_APPROVAL'")
+    suspend fun activateApproval(deviceId: String, sequence: Int): Int
+
+    @Query("DELETE FROM trust_statement_outbox WHERE deviceId = :deviceId AND trustSequence = :sequence AND state = 'WAITING_SERVER_APPROVAL'")
+    suspend fun discardWaitingApproval(deviceId: String, sequence: Int): Int
 
     @Query("SELECT COALESCE(MAX(trustSequence), 0) FROM trust_statement_outbox")
     suspend fun maxTrustSequence(): Int

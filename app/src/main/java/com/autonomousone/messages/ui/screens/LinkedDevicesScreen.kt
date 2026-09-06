@@ -3,6 +3,12 @@ package com.autonomousone.messages.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.view.ViewGroup
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.view.HapticFeedbackConstants
+import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -19,7 +25,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -29,6 +37,9 @@ import com.autonomousone.messages.data.TrustedDeviceEntity
 import com.autonomousone.messages.security.PairingClient
 import com.autonomousone.messages.security.TrustedDeviceRegistry
 import com.autonomousone.messages.security.PairingEndpointResolver
+import com.autonomousone.messages.gateway.TrustStatementPublisher
+import com.autonomousone.messages.gateway.RegistrationManager
+import com.autonomousone.messages.gateway.ConnectionDiagnostics
 import com.autonomousone.messages.utils.showBiometricPrompt
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -52,6 +63,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
 
     var setupMode by remember { mutableStateOf(false) }
     var setupClaim by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var manualSetupCode by remember { mutableStateOf("") }
+    var manualPairingCode by remember { mutableStateOf("") }
     var step by remember { mutableStateOf("LIST") }
     // LINKED DEVICE CONTROL: the local Trust Registry is the source of truth
     // for the list — durable, survives restart, includes revocation state.
@@ -62,12 +75,30 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     val uiScope = rememberCoroutineScope()
     var scanned by remember { mutableStateOf<PairingClient.SessionInfo?>(null) }
     var cameraError by remember { mutableStateOf<String?>(null) }
+    var qrStage by remember { mutableStateOf("Camera ready · Searching for QR…") }
+    var cameraGeneration by remember { mutableIntStateOf(0) }
     var result by remember { mutableStateOf<String?>(null) }
+    var diagnosticToken by remember { mutableStateOf("") }
+    var diagnosticReport by remember { mutableStateOf<ConnectionDiagnostics.Report?>(null) }
+    var diagnosticRunning by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val trustHealth by TrustStatementPublisher.health.collectAsState()
+    var primaryStatus by remember { mutableStateOf<RegistrationManager.PrimaryStatus?>(null) }
+    var primaryChecking by remember { mutableStateOf(false) }
+    suspend fun verifyPrimary() {
+        primaryChecking = true
+        val prefs = com.autonomousone.messages.gateway.GatewayPreferences(context)
+        primaryStatus = RegistrationManager(
+            context, prefs, com.autonomousone.messages.gateway.BackendClient(prefs),
+        ).verifyPrimaryStatus()
+        primaryChecking = false
+    }
     suspend fun refreshDevices() {
         devices = MessagesDatabase.get(context).trustedDeviceDao().all()
     }
     LaunchedEffect(step, result) { refreshDevices() }
     LaunchedEffect(Unit) {
+        verifyPrimary()
         while (true) {
             refreshDevices()
             delay(2_000)
@@ -121,10 +152,38 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(onClick = {
-                        setupMode = true
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }) { Text("Enroll this phone as Primary") }
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Primary device", fontWeight = FontWeight.Bold)
+                            when (primaryStatus?.state) {
+                                RegistrationManager.PrimaryStatus.State.VERIFIED -> {
+                                    Text("✓ This phone is Primary · GMweb verified")
+                                    Text(
+                                        "Device ${primaryStatus?.deviceId?.take(8)}… · trust root ${primaryStatus?.trustRootFingerprint?.take(12)}…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                RegistrationManager.PrimaryStatus.State.MISMATCH -> Text("GMweb has another Primary identity or trust key", color = MaterialTheme.colorScheme.error)
+                                RegistrationManager.PrimaryStatus.State.NOT_ENROLLED -> Text("This phone has not been enrolled as Primary")
+                                RegistrationManager.PrimaryStatus.State.OFFLINE -> Text("Local identity could not be verified with GMweb")
+                                null -> Text(if (primaryChecking) "Checking GMweb…" else "Primary status unavailable")
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { uiScope.launch { verifyPrimary() } }, enabled = !primaryChecking) {
+                                    Text("Re-check")
+                                }
+                                if (primaryStatus?.state != RegistrationManager.PrimaryStatus.State.VERIFIED) {
+                                    Button(onClick = {
+                                        setupMode = true
+                                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                                    }) { Text(if (primaryStatus?.state == RegistrationManager.PrimaryStatus.State.MISMATCH) "Repair / Replace Primary" else "Set up Primary") }
+                                    TextButton(onClick = { manualSetupCode = ""; step = "ENTER_SETUP_CODE" }) {
+                                        Text("Enter setup code")
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Button(
                         onClick = {
                             setupMode = false
@@ -136,8 +195,69 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("+ Link new device") }
+                    OutlinedButton(
+                        onClick = { manualPairingCode = ""; step = "ENTER_PAIRING_CODE" },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Enter pairing code") }
                     result?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    }
+                    if (trustHealth.pendingCount > 0 || trustHealth.lastFailureReason != null) {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Trust changes waiting for GMweb", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${trustHealth.pendingCount} pending" +
+                                        (trustHealth.oldestPendingSequence?.let { " · oldest sequence $it" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                trustHealth.lastAttemptAt?.let {
+                                    Text("Last attempt: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))}")
+                                }
+                                trustHealth.lastFailureReason?.let { reason ->
+                                    Text(
+                                        "${trustHealth.lastHttpStatus?.let { "HTTP $it · " } ?: ""}$reason",
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                OutlinedButton(onClick = { TrustStatementPublisher.nudge() }) { Text("Retry now") }
+                            }
+                        }
+                    }
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Connection diagnostics", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Paste the short-lived diagnostic-only token from the GMweb dashboard. The token stays in memory and is discarded when the test starts.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedTextField(
+                                value = diagnosticToken,
+                                onValueChange = { diagnosticToken = it.trim() },
+                                label = { Text("gmwd_…") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(
+                                enabled = diagnosticToken.startsWith("gmwd_") && !diagnosticRunning,
+                                onClick = {
+                                    val oneUseInput = diagnosticToken
+                                    diagnosticToken = ""
+                                    diagnosticRunning = true
+                                    diagnosticReport = null
+                                    uiScope.launch {
+                                        diagnosticReport = ConnectionDiagnostics.run(context, oneUseInput)
+                                        diagnosticRunning = false
+                                    }
+                                },
+                            ) { Text(if (diagnosticRunning) "Running…" else "Run full test") }
+                            diagnosticReport?.let { report ->
+                                Text(report.asText(), style = MaterialTheme.typography.bodySmall)
+                                OutlinedButton(onClick = {
+                                    clipboard.setText(AnnotatedString(report.asText()))
+                                }) { Text("Copy diagnostic report") }
+                            }
+                        }
                     }
                     // ── Linked device registry (durable, from Room) ──────────
                     revokeTarget?.let { target ->
@@ -228,9 +348,11 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         devices.forEach { d ->
                             val statusLabel = when (d.status) {
                                 TrustedDeviceEntity.STATUS_ACTIVE -> "Trusted"
+                                TrustedDeviceEntity.STATUS_PENDING_SERVER_APPROVAL -> "Waiting for server approval"
                                 TrustedDeviceEntity.STATUS_PENDING_PUBLICATION -> "Trusted · syncing"
                                 TrustedDeviceEntity.STATUS_REVOKE_PENDING -> "Revoking…"
                                 TrustedDeviceEntity.STATUS_REVOKED -> "Revoked"
+                                TrustedDeviceEntity.STATUS_FAILED -> "Link failed · scan a new QR/code"
                                 else -> "Expired"
                             }
                             Card(
@@ -278,6 +400,61 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     Button(onClick = { step = "ENROLLING_PRIMARY" }) { Text("Enroll this phone as Primary") }
                     OutlinedButton(onClick = { setupClaim = null; step = "LIST" }) { Text("Cancel") }
                 }
+                "ENTER_SETUP_CODE" -> {
+                    Text("Enter Primary setup code", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Paste the one-use setup value shown by the GMweb dashboard. It is not saved on this phone.")
+                    OutlinedTextField(
+                        value = manualSetupCode,
+                        onValueChange = { manualSetupCode = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Setup code") },
+                        minLines = 3,
+                    )
+                    Button(onClick = {
+                        val claim = runCatching { org.json.JSONObject(manualSetupCode.trim()) }.getOrNull()
+                        val valid = claim != null && claim.optString("kind") == "PRIMARY_SETUP" &&
+                            claim.optString("protocol") == com.autonomousone.messages.security.PairingProtocol.PROTOCOL &&
+                            claim.optLong("expiresAt") > System.currentTimeMillis() &&
+                            PairingEndpointResolver.originMatches(context, claim.optString("apiOrigin"))
+                        if (valid) {
+                            setupClaim = claim
+                            manualSetupCode = ""
+                            step = "SETUP_CONFIRM"
+                        } else {
+                            manualSetupCode = ""
+                            result = "Setup code is invalid, expired, or belongs to another GMweb origin."
+                            step = "LIST"
+                        }
+                    }, enabled = manualSetupCode.isNotBlank()) { Text("Continue") }
+                    OutlinedButton(onClick = { manualSetupCode = ""; step = "LIST" }) { Text("Cancel") }
+                }
+                "ENTER_PAIRING_CODE" -> {
+                    Text("Enter browser pairing code", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("This resolves the same browser session; confirmation, biometric approval and certificate checks still apply.")
+                    OutlinedTextField(
+                        value = manualPairingCode,
+                        onValueChange = { manualPairingCode = it.filter(Char::isLetterOrDigit).uppercase().take(10) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("XXXXX XXXXX") },
+                        singleLine = true,
+                    )
+                    Button(onClick = { step = "RESOLVING_PAIRING_CODE" }, enabled = manualPairingCode.length == 10) { Text("Continue") }
+                    OutlinedButton(onClick = { manualPairingCode = ""; step = "LIST" }) { Text("Cancel") }
+                }
+                "RESOLVING_PAIRING_CODE" -> {
+                    Text("Resolving pairing code…")
+                    LaunchedEffect(manualPairingCode) {
+                        val (info, error) = PairingClient.resolvePairingCode(context, manualPairingCode)
+                        manualPairingCode = ""
+                        if (info == null) {
+                            result = error ?: "Pairing code could not be resolved"
+                            step = "LIST"
+                        } else {
+                            scanned = info
+                            step = "CONFIRM"
+                        }
+                    }
+                }
                 "ENROLLING_PRIMARY" -> {
                     Text("Enrolling this phone...")
                     LaunchedEffect(Unit) {
@@ -287,19 +464,22 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 com.autonomousone.messages.gateway.BackendClient(prefs)).enrollPrimary(checkNotNull(setupClaim))
                         }.getOrDefault(false)
                         setupClaim = null
-                        result = if (ok) "Primary enrollment complete. You can now scan a browser pairing QR." else "Enrollment failed. Create a new phone setup QR in the dashboard."
+                        if (ok) verifyPrimary()
+                        result = if (ok) "Primary enrollment complete — GMweb verified." else "Enrollment failed or server identity did not match. Create a new setup claim and retry."
                         step = "LIST"
                     }
                 }
 
                 "SCANNING" -> {
                     Text(if (setupMode) "Scan the phone setup QR from the dashboard" else "Scan the browser pairing QR")
+                    Text(qrStage, style = MaterialTheme.typography.labelLarge)
                     Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
                         // REVIEW FIX: onQr returns Boolean — true = accepted
                         // (scanner stops via clearAnalyzer), false = keep
                         // scanning. No latch needed at the call site.
-                        QrCameraView(
+                        key(cameraGeneration) { QrCameraView(
                             onQr = { raw ->
+                                qrStage = "QR detected · Validating…"
                                 // Never log the QR: authenticated sessions contain a
                                 // short-lived identity bootstrap capability.
                                 android.util.Log.i("QR_SCAN", "pairing payload received")
@@ -310,16 +490,19 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         claim.optLong("expiresAt") <= System.currentTimeMillis() ||
                                         !PairingEndpointResolver.originMatches(context, claim.optString("apiOrigin"))) {
                                         cameraError = "Scan a current phone setup QR from your GMweb dashboard"
+                                        qrStage = "Invalid or expired setup QR"
                                         return@QrCameraView false
                                     }
                                     setupClaim = claim
                                     step = "SETUP_CONFIRM"
+                                    qrStage = "Valid GMweb setup QR"
                                     return@QrCameraView true
                                 }
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info == null) {
                                     android.util.Log.w("QR_SCAN", "payload did not parse — scanner stays live")
                                     cameraError = "Not a Messages pairing QR"
+                                    qrStage = "QR detected, but it is not a Messages/GMweb pairing QR"
                                     return@QrCameraView false
                                 }
                                 // PairingEndpointResolver: user setting wins,
@@ -329,19 +512,21 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 if (!PairingEndpointResolver.originMatches(context, info.apiOrigin)) {
                                     android.util.Log.w("QR_SCAN", "origin mismatch: ${info.apiOrigin} vs $trusted")
                                     cameraError = "This QR uses API ${info.apiOrigin}, but this app trusts $trusted"
+                                    qrStage = "QR detected · Origin mismatch"
                                     return@QrCameraView false
                                 }
                                 cameraError = null
                                 android.util.Log.i("QR_SCAN", "origin verified → FETCHING_METADATA (session=${info.pairingSessionId.take(8)})")
                                 scanned = info
                                 step = "FETCHING_METADATA"
+                                qrStage = "Valid GMweb pairing QR · Fetching device information"
                                 true
                             },
                             onError = {
                                 android.util.Log.e("QR_SCAN", "camera error: $it")
                                 cameraError = it
                             }
-                        )
+                        ) }
                     }
                     // Errors overlay ABOVE the camera area — clearly visible.
                     cameraError?.let {
@@ -359,7 +544,14 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { step = "LIST"; cameraError = null }) { Text("Back") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                cameraError = null
+                                qrStage = "Camera ready · Searching for QR…"
+                                cameraGeneration++
+                            }) { Text("Retry camera") }
+                            OutlinedButton(onClick = { step = "LIST"; cameraError = null }) { Text("Back") }
+                        }
                     }
                 }
 
@@ -491,8 +683,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                     step = "APPROVING_ON_SERVER"
                                                     val seq = com.autonomousone.messages.security.TrustedDeviceRegistry
                                                         .nextTrustSequence(context)
-                                                    val res = PairingClient.approve(context, info0, caps, grant, seq) { certJson ->
-                                                        com.autonomousone.messages.security.TrustedDeviceRegistry.recordApproval(
+                                                    val res = PairingClient.approve(context, info0, caps, grant, seq, persistApproval = { certJson ->
+                                                        TrustedDeviceRegistry.recordApproval(
                                                             context,
                                                             approved.copy(
                                                                 certificateJson = certJson.toString(),
@@ -502,7 +694,11 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                         )
                                                         com.autonomousone.messages.security
                                                             .SensitiveGrantStore.savePairingGrants(context, info0.webDeviceId, caps)
-                                                    }
+                                                    }, activateApproval = {
+                                                        TrustedDeviceRegistry.activateApproval(context, info0.webDeviceId, seq)
+                                                    }, failApproval = {
+                                                        TrustedDeviceRegistry.failApproval(context, info0.webDeviceId, seq)
+                                                    })
                                                     if (res.isSuccess) {
                                                         com.autonomousone.messages.data.TelephonySyncCoordinator.get(context).requestSync()
                                                         result = "✅ Device linked — continue in the browser"
@@ -554,6 +750,8 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
     val executor = remember { Executors.newSingleThreadExecutor() }
     val scannerRef = remember { java.util.concurrent.atomic.AtomicReference<com.google.mlkit.vision.barcode.BarcodeScanner?>(null) }
     val providerRef = remember { java.util.concurrent.atomic.AtomicReference<ProcessCameraProvider?>(null) }
+    var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    var torchOn by remember { mutableStateOf(false) }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
             try { scannerRef.get()?.close() } catch (_: Exception) {}
@@ -562,12 +760,31 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
         }
     }
 
-    AndroidView(
+    Box(Modifier.fillMaxSize()) {
+      AndroidView(
         factory = { ctx ->
             val previewView = PreviewView(ctx).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                 )
+                setOnTouchListener { _, event ->
+                    if (event.action == android.view.MotionEvent.ACTION_UP) {
+                        val point = meteringPointFactory.createPoint(event.x, event.y)
+                        val action = androidx.camera.core.FocusMeteringAction.Builder(
+                            point,
+                            androidx.camera.core.FocusMeteringAction.FLAG_AF or
+                                androidx.camera.core.FocusMeteringAction.FLAG_AE,
+                        ).setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS).build()
+                        camera?.cameraControl?.startFocusAndMetering(action)
+                        performClick()
+                    }
+                    true
+                }
+            }
+            val overlay = QrBoundsView(ctx)
+            val container = FrameLayout(ctx).apply {
+                addView(previewView, FrameLayout.LayoutParams(-1, -1))
+                addView(overlay, FrameLayout.LayoutParams(-1, -1))
             }
             val scanner = BarcodeScanning.getClient(
                 BarcodeScannerOptions.Builder()
@@ -597,27 +814,74 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
                         )
                         scanner.process(input)
                             .addOnSuccessListener { codes ->
-                                val raw = codes.firstOrNull()?.rawValue
-                                if (raw != null && onQr(raw)) {
-                                    // Accepted — stop the analyzer so this QR
-                                    // is never delivered twice.
-                                    analysis.clearAnalyzer()
+                                val detected = codes.firstOrNull { it.rawValue != null }
+                                if (detected != null) {
+                                    detected.boundingBox?.let { box ->
+                                        val source = androidx.camera.view.transform.ImageProxyTransformFactory().apply {
+                                            isUsingCropRect = true
+                                            isUsingRotationDegrees = true
+                                        }.getOutputTransform(imageProxy)
+                                        val target = previewView.outputTransform
+                                        if (target != null) {
+                                            val mapped = RectF(box)
+                                            androidx.camera.view.transform.CoordinateTransform(source, target).mapRect(mapped)
+                                            overlay.show(mapped)
+                                        }
+                                    }
+                                    previewView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                    for (code in codes) {
+                                        val raw = code.rawValue ?: continue
+                                        if (onQr(raw)) {
+                                            analysis.clearAnalyzer()
+                                            break
+                                        }
+                                    }
                                 }
                             }
                             .addOnCompleteListener { imageProxy.close() }
                     }
                     provider.unbindAll()
-                    provider.bindToLifecycle(
+                    camera = provider.bindToLifecycle(
                         lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
                     )
                 } catch (e: Exception) {
                     onError(e.message ?: "camera failed")
                 }
             }, ContextCompat.getMainExecutor(ctx))
-            previewView
+            container
         },
         modifier = Modifier.fillMaxSize()
-    )
+      )
+      if (camera?.cameraInfo?.hasFlashUnit() == true) {
+          FilledTonalButton(
+              onClick = {
+                  torchOn = !torchOn
+                  camera?.cameraControl?.enableTorch(torchOn)
+              },
+              modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+          ) { Text(if (torchOn) "Torch off" else "Torch on") }
+      }
+    }
+}
+
+private class QrBoundsView(context: android.content.Context) : android.view.View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(55, 220, 145)
+        style = Paint.Style.STROKE
+        strokeWidth = resources.displayMetrics.density * 3f
+    }
+    private var bounds: RectF? = null
+
+    fun show(value: RectF) {
+        bounds = RectF(value)
+        invalidate()
+        postDelayed({ bounds = null; invalidate() }, 1_200)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        bounds?.let { canvas.drawRoundRect(it, 12f, 12f, paint) }
+    }
 }
 
 private val deviceCapabilityLabels = linkedMapOf(

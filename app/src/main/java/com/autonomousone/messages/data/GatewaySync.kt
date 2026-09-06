@@ -165,6 +165,9 @@ interface GatewayEventOutboxDao {
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state IN ('PENDING', 'SENDING')")
     suspend fun pendingDepth(): Int
 
+    @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
+    suspend fun deadLetterDepth(): Int
+
     @Query(
         "SELECT COALESCE(SUM(LENGTH(ciphertext)), 0) FROM gateway_event_outbox " +
             "WHERE state IN ('PENDING', 'SENDING')"

@@ -90,6 +90,9 @@ class ConnectionSupervisor private constructor(
         /** PR-02: the durable event outbox worker (cloud transmitter). */
         val startEventUploader: () -> Unit = {},
         val stopEventUploader: () -> Unit = {},
+        val startTrustPublisher: () -> Unit = {},
+        val stopTrustPublisher: () -> Unit = {},
+        val retryTrustPublisher: () -> Unit = {},
         /** PR-10: the strategic SecureCommandPoller (/api/v1 agent bridge). */
         val startCommandPoller: () -> Unit = {},
         val stopCommandPoller: () -> Unit = {},
@@ -170,6 +173,7 @@ class ConnectionSupervisor private constructor(
         // pending backoff sleep; start() alone no-ops while the job is
         // alive, which silently kept the old backoff in force.
         components.retryHeartbeat()
+        components.retryTrustPublisher()
         reconcileNow()
     }
 
@@ -183,6 +187,7 @@ class ConnectionSupervisor private constructor(
         components.stopHeartbeat()
         components.stopPoller()
         components.stopEventUploader()
+        components.stopTrustPublisher()
         components.stopCommandPoller()
         _stateFlow.value = State.DISABLED
         synchronized(this) { instance = null }
@@ -221,6 +226,7 @@ class ConnectionSupervisor private constructor(
                 components.stopPoller()
                 components.stopHeartbeat()
                 components.stopEventUploader()
+                components.stopTrustPublisher()
                 components.stopCommandPoller()
                 server?.stop()
                 server = null
@@ -237,6 +243,7 @@ class ConnectionSupervisor private constructor(
                 prefs.isEnabled = false // gate transmission while offline (poller/heartbeat stop below)
                 components.stopPoller()   // gate: ZERO HTTP requests while offline
                 components.stopHeartbeat()
+                components.stopTrustPublisher()
                 onLog("📴 Gateway waiting for network…")
             }
             _stateFlow.value = State.WAITING_FOR_NETWORK
@@ -268,6 +275,7 @@ class ConnectionSupervisor private constructor(
         // ── Cloud + GMweb + shadow sync (idempotent starts) ────────────────
         components.startHeartbeat()
         components.startEventUploader() // PR-02: durable outbox → GMweb transmitter
+        components.startTrustPublisher()
         // A SEND_SMS command must have exactly one intake owner. Keep the
         // migration switch explicit; never run both consumers concurrently.
         when (components.deliveryIntake) {

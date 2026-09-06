@@ -194,6 +194,9 @@ class GatewayService : Service() {
                 stopPoller = { outboxPoller.stop() },
                 startEventUploader = { eventUploader.start() },
                 stopEventUploader = { eventUploader.stop() },
+                startTrustPublisher = { trustPublisher.start() },
+                stopTrustPublisher = { trustPublisher.stop() },
+                retryTrustPublisher = { trustPublisher.retryNow() },
                 startCommandPoller = { commandPoller.start() },
                 stopCommandPoller = { commandPoller.stop() },
                 startSync = {
