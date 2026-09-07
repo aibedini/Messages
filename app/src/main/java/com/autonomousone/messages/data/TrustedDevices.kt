@@ -112,6 +112,10 @@ interface TrustedDeviceDao {
 
     @Query("SELECT COUNT(*) FROM trusted_devices WHERE status IN ('ACTIVE','PENDING_PUBLICATION')")
     suspend fun countTrusted(): Int
+
+    /** FIX 1 (primary unlink): remove every linked device row. */
+    @Query("DELETE FROM trusted_devices")
+    suspend fun deleteAll(): Int
 }
 
 @Dao
@@ -154,4 +158,8 @@ interface DeviceTelemetryDao {
 
     @Query("DELETE FROM device_telemetry WHERE deviceId = :deviceId")
     suspend fun delete(deviceId: String)
+
+    /** FIX 1 (primary unlink): clear the telemetry cache. */
+    @Query("DELETE FROM device_telemetry")
+    suspend fun deleteAll(): Int
 }

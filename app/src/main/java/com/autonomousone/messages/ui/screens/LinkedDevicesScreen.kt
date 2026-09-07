@@ -86,6 +86,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     val trustHealth by TrustStatementPublisher.health.collectAsState()
     var primaryStatus by remember { mutableStateOf<RegistrationManager.PrimaryStatus?>(null) }
     var primaryChecking by remember { mutableStateOf(false) }
+    // FIX 1: primary-device unlink confirmation dialog.
+    var primaryRevokeDialog by remember { mutableStateOf(false) }
     suspend fun verifyPrimary() {
         primaryChecking = true
         val prefs = com.autonomousone.messages.gateway.GatewayPreferences(context)
@@ -173,6 +175,12 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 OutlinedButton(onClick = { uiScope.launch { verifyPrimary() } }, enabled = !primaryChecking) {
                                     Text("Re-check")
                                 }
+                                if (primaryStatus?.state == RegistrationManager.PrimaryStatus.State.VERIFIED) {
+                                    OutlinedButton(
+                                        onClick = { primaryRevokeDialog = true },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                    ) { Text("Unlink this primary…") }
+                                }
                                 if (primaryStatus?.state != RegistrationManager.PrimaryStatus.State.VERIFIED) {
                                     Button(onClick = {
                                         setupMode = true
@@ -184,6 +192,63 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 }
                             }
                         }
+                    }
+                    if (primaryStatus?.state == RegistrationManager.PrimaryStatus.State.VERIFIED && primaryRevokeDialog) {
+                        AlertDialog(
+                            onDismissRequest = { primaryRevokeDialog = false },
+                            title = { Text("Unlink this primary device?") },
+                            text = {
+                                Text(
+                                    "Revoke this device as Primary?\n\n" +
+                                        "This will:\n" +
+                                        "· Remove the device from the trust registry\n" +
+                                        "· Unlink all connected browsers\n" +
+                                        "· Require a new Primary enrollment to restore sync\n\n" +
+                                        "Messages already downloaded on linked browsers cannot be erased remotely."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    primaryRevokeDialog = false
+                                    val act = context as? androidx.appcompat.app.AppCompatActivity
+                                    if (act == null) {
+                                        result = "Activity unavailable"
+                                        return@TextButton
+                                    }
+                                    showBiometricPrompt(
+                                        act,
+                                        title = "Unlink primary device",
+                                        subtitle = "Authenticate to revoke this phone as Primary",
+                                        onSuccess = {
+                                            uiScope.launch {
+                                                try {
+                                                    val prefs = com.autonomousone.messages.gateway.GatewayPreferences(context)
+                                                    val deviceId = primaryStatus?.deviceId
+                                                        ?: prefs.stableDeviceId(context)
+                                                    com.autonomousone.messages.security.PrimaryDeviceController
+                                                        .unlinkPrimary(context, deviceId)
+                                                    android.util.Log.i(
+                                                        "PRIMARY_REVOKE",
+                                                        "primary_device_revoked deviceId=$deviceId"
+                                                    )
+                                                    primaryStatus = null
+                                                    result = "🛡 Primary device unlinked — re-enroll to restore sync"
+                                                    refreshDevices()
+                                                    verifyPrimary()
+                                                } catch (e: Exception) {
+                                                    android.util.Log.e("PRIMARY_REVOKE", "primary_revoke_failed", e)
+                                                    result = "Could not unlink primary device: ${e.message}"
+                                                }
+                                            }
+                                        },
+                                        onError = { result = "Unlink cancelled" }
+                                    )
+                                }) { Text("Unlink primary") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { primaryRevokeDialog = false }) { Text("Cancel") }
+                            }
+                        )
                     }
                     Button(
                         onClick = {

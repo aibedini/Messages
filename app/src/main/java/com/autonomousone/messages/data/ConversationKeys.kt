@@ -22,4 +22,8 @@ interface ConversationKeyDao {
     suspend fun current(conversationId: String, generation: Int, floor: Long, category: String): ConversationKeyEpochEntity?
     @Query("SELECT * FROM conversation_key_epochs WHERE id > :after ORDER BY id LIMIT :limit")
     suspend fun page(after: Long, limit: Int): List<ConversationKeyEpochEntity>
+
+    /** FIX 1 (primary unlink): drop every conversation key on this device. */
+    @Query("DELETE FROM conversation_key_epochs")
+    suspend fun deleteAllEpochs(): Int
 }

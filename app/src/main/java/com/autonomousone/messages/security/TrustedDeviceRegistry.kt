@@ -320,7 +320,7 @@ object TrustedDeviceRegistry {
         return sequence
     }
 
-    private fun buildStatement(
+    internal fun buildStatement(
         op: String,
         statementId: String,
         deviceId: String,

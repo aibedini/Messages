@@ -212,6 +212,17 @@ object PairingClient {
                     error("approve failed: HTTP $status reason=${reason.ifBlank { "request_failed" }}")
                 }
                 activateApproval()
+                // FIX 2/3 (single choke point): EVERY successful approve — QR scan
+                // OR "Enter pairing code" — triggers the encrypted cloud-history
+                // backfill + key-grant drain in the coordinator. Idempotent.
+                try {
+                    com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+                        .requestCloudBackfillForLinkedDevice(info.webDeviceId)
+                    Log.i(TAG, "backfill_triggered_after_approve webDeviceId=${short(info.webDeviceId)}")
+                } catch (t: Throwable) {
+                    Log.w(TAG, "post-approve backfill scheduling failed", t)
+                }
+
                 Log.i(TAG, "stage=LINKED endpoint=$path status=$status session=${short(info.pairingSessionId)} device=${short(deviceId)}")
                 certificate
             } finally {
