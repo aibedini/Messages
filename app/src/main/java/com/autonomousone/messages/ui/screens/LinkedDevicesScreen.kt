@@ -283,11 +283,20 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         onSuccess = {
                                             uiScope.launch {
                                               try {
-                                                TrustedDeviceRegistry.recordRevocation(context, t.deviceId)
-                                                refreshDevices()
-                                                result = "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
+                                                  android.util.Log.i(
+                                                      "Revocation",
+                                                      "revoke_initiated deviceId=${t.deviceId} display=${t.displayName}"
+                                                  )
+                                                  val sequence = TrustedDeviceRegistry.recordRevocation(context, t.deviceId)
+                                                  android.util.Log.i(
+                                                      "Revocation",
+                                                      "revoke_committed deviceId=${t.deviceId} sequence=${sequence ?: "pending"} — awaiting DEVICE_REVOKED publication"
+                                                  )
+                                                  refreshDevices()
+                                                  result = "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
                                               } catch (e: Exception) {
-                                                result = "Could not save revocation: ${e.message}"
+                                                  android.util.Log.e("Revocation", "revoke_failed deviceId=${t.deviceId}", e)
+                                                  result = "Could not save revocation: ${e.message}"
                                               }
                                             }
                                         },

@@ -400,8 +400,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 com.autonomousone.messages.security.SensitiveMessageFirewall.Category.FINANCIAL_NOTIFICATION -> "READ_FINANCIAL_NOTIFICATIONS"
             }
             val encrypted = com.autonomousone.messages.security.ConversationKeyRepository(db).encrypt(row, at, category)
-            if (db.gatewayEventOutboxDao().insertOrIgnore(encrypted) == -1L) {
+            val direction = payload.optString("direction", "unknown")
+            val inserted = db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
+            if (inserted == -1L) {
                 Log.d(TAG, "cloud event ${row.eventType}/${row.eventUuid} already queued/ACKed — deduped")
+            } else {
+                Log.i(
+                    TAG,
+                    "cloud_event_queued eventId=${row.eventUuid} type=${row.eventType} direction=$direction " +
+                        "conversationId=${row.aggregateId} source=$source providerId=$providerId"
+                )
             }
         }
     }

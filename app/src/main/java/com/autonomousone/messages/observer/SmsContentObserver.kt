@@ -50,7 +50,12 @@ class SmsContentObserver(
 
     private fun dispatch(uri: Uri?) {
         val now = System.currentTimeMillis()
-        if (now - lastFiredAt >= COALESCE_MS) {
+        val wasLeading = now - lastFiredAt >= COALESCE_MS
+        android.util.Log.i(
+            "SmsObserver",
+            "observer_fired uri=${uri ?: "<unknown>"} leading=$wasLeading now=$now"
+        )
+        if (wasLeading) {
             // Leading edge: no waiting at all.
             lastFiredAt = now
             handler.removeCallbacks(trailingRunnable)

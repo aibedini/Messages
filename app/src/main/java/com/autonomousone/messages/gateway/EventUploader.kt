@@ -172,10 +172,13 @@ class EventUploader(
             AgentAuth.sign(conn, deviceId, EVENTS_PATH, "POST", bodyBytes)
         }
 
+        Log.i(TAG, "batch_upload_attempt events=${events.length()} sourceDeviceId=$deviceId")
+
         return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
             is ControlPlaneClient.Result.Success -> {
+                val responseJson = runCatching { JSONObject(result.data) }.getOrNull()
                 val accepted = runCatching {
-                    JSONObject(result.data).optJSONArray("accepted") ?: JSONArray()
+                    responseJson?.optJSONArray("accepted") ?: JSONArray()
                 }.getOrDefault(JSONArray())
                 val ackedUuids = HashMap<String, Long>(accepted.length())
                 for (i in 0 until accepted.length()) {
@@ -193,12 +196,19 @@ class EventUploader(
                         repo.onRetry(event.eventUuid, event.attemptCount, Random.Default, now)
                     }
                 }
+                val duplicates = responseJson?.optInt("duplicates", 0) ?: 0
+                val failed = batch.size - acked
+                Log.i(
+                    TAG,
+                    "batch_upload_result events=${batch.size} accepted=$acked duplicates=$duplicates failed=$failed"
+                )
                 if (acked > 0) onLog("📤 $acked/${batch.size} event(s) ACKed by GMweb")
                 if (acked == batch.size) Outcome.ALL_ACKED
                 else Outcome.PARTIAL
             }
             is ControlPlaneClient.Result.Failure -> {
                 val status = result.httpStatus
+                Log.e(TAG, "batch_upload_http_error status=${status ?: "n/a"} reason=${result.error}")
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
                     // visible health signal, never a silent drop.

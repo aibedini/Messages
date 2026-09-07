@@ -58,7 +58,10 @@ class SmsReceiver : BroadcastReceiver() {
 
     private fun processIntent(context: Context, intent: Intent) {
         val pdus = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-        if (pdus.isNullOrEmpty()) return
+        if (pdus.isNullOrEmpty()) {
+            Log.w(TAG, "incoming_sms_received from=unknown length=0 — no PDUs in ${intent.action}")
+            return
+        }
 
         val sender = pdus.first().originatingAddress ?: return
         val timestamp = pdus.first().timestampMillis.takeIf { it > 0 }
@@ -68,9 +71,12 @@ class SmsReceiver : BroadcastReceiver() {
         val body = buildString {
             for (msg in pdus) msg.messageBody?.let { append(it) }
         }
-        if (body.isBlank()) return
+        if (body.isBlank()) {
+            Log.w(TAG, "incoming_sms_received from=$sender length=0 — blank multipart body, ignoring")
+            return
+        }
 
-        Log.d(TAG, "Incoming SMS [action=${intent.action}] from $sender (${body.length} chars)")
+        Log.i(TAG, "incoming_sms_received from=$sender length=${body.length} action=${intent.action}")
 
         // ── 1. Persist FIRST (default-app path). Non-default apps never get
         //       SMS_DELIVER; the system default app writes the row instead and
