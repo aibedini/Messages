@@ -51,6 +51,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     @Volatile
     internal var syncAllowed: Boolean = true
+        set(value) {
+            if (field != value) {
+                Log.i(TAG, "sync_allowed_changed previous=$field new=$value")
+            }
+            field = value
+        }
 
     // ── Dual channels ──────────────────────────────────────────────────────
 
@@ -67,6 +73,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     /** Reconcile requests: CONFLATED — N nudges collapse into 1. */
     private val reconciles = Channel<ReconcileRequest>(Channel.CONFLATED)
+
+    /**
+     * FIX 2/3: one-shot cloud-history backfill requests — fired after a web
+     * device is approved and once at startup for an enrolled-but-never-linked
+     * install. CONFLATED (N approvals collapse into 1 pass — the runs are
+     * idempotent: per-event cursors + eventUuid dedupe).
+     */
+    private val cloudBackfills = Channel<String>(Channel.CONFLATED)
 
     private val started = AtomicBoolean(false)
 
@@ -108,6 +122,19 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     /** Backward compat during migration. */
     fun requestSync() = reconcile(ReconcileRequest.FullSync)
 
+    /**
+     * FIX 2 (auto-backfill on first real approve): re-runs the durable
+     * encrypted cloud-history production for BOTH sources
+     * (`encrypted-history-v1:<source>` cursors) and then drains KEY_GRANT
+     * emission for every approved device — so the E2EE uploader gate is no
+     * longer the ONLY trigger for grants (FIX 3). Idempotent and cheap when
+     * there is nothing new: the cursor page is empty and the run returns.
+     */
+    fun requestCloudBackfillForLinkedDevice(deviceId: String) {
+        ensureLoop()
+        cloudBackfills.trySend(deviceId)
+    }
+
     /** Suspends until one full sync cycle completes. */
     suspend fun syncNow() = applyReconcile(ReconcileRequest.FullSync)
 
@@ -135,6 +162,29 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         applyMutation(mutation)
                     } catch (e: Exception) {
                         Log.e(TAG, "mutation failed: $mutation", e)
+                    }
+                }
+            }
+            // FIX 2/3 consumer: cloud-history backfill + key-grant drain after a
+            // device approval (or an enrolled app start). Lives on the SAME
+            // coroutine as reconciles so Room write transactions stay ordered.
+            launch {
+                for (deviceId in cloudBackfills) {
+                    try {
+                        val startedAt = System.currentTimeMillis()
+                        Log.i(TAG, "backfill_triggered_after_approve deviceId=$deviceId")
+                        val before = db.gatewayEventOutboxDao().pendingDepth()
+                        backfillCloudHistory()
+                        com.autonomousone.messages.security.ConversationKeyRepository(db)
+                            .drainHistoryGrants()
+                        val queued = (db.gatewayEventOutboxDao().pendingDepth() - before).coerceAtLeast(0)
+                        Log.i(
+                            TAG,
+                            "history_backfill_progress deviceId=$deviceId queued=$queued " +
+                                "durationMs=${System.currentTimeMillis() - startedAt}"
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "cloud backfill after link failed deviceId=$deviceId", e)
                     }
                 }
             }
@@ -379,6 +429,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     return
                 }
             }
+            android.util.Log.w(
+                TAG,
+                "MESSAGE_BLOCKED_BY_FIREWALL source=$source providerId=$providerId " +
+                    "category=${verdict.category} rule=${verdict.rule}"
+            )
             android.util.Log.i(
                 TAG,
                 "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +

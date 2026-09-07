@@ -40,6 +40,12 @@ class MessagesApp : Application() {
         // on device" causes for the SMS pipeline. Log both at process start.
         logMissingRuntimePermissions()
         maybeWarnBatteryRestriction()
+        // FIX 2: an install that enrolled its agent identity but never
+        // completed a real browser approve would otherwise never produce the
+        // encrypted cloud history the PWA needs. Fire the idempotent backfill
+        // once at startup (throttled to 7 days) so the history is waiting in
+        // the outbox when the user finally links a browser.
+        maybeTriggerStartupCloudBackfill()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
@@ -54,6 +60,34 @@ class MessagesApp : Application() {
                 // Logging must never mask the original crash.
             }
             previous?.uncaughtException(thread, error)
+        }
+    }
+
+    /**
+     * FIX 2 startup trigger (enrolled but never linked / long-idle installs).
+     * Runs at most once per 7 days. The actual crawl is idempotent and
+     * executes on the coordinator's IO scope; this call only enqueues it.
+     * Log tags match the FIX 2 logcat grep: `backfill_triggered_after_*`.
+     */
+    private fun maybeTriggerStartupCloudBackfill() {
+        try {
+            val prefs = com.autonomousone.messages.gateway.GatewayPreferences(this)
+            if (!prefs.identityRegistered) {
+                Log.d("SYNC_COORD", "startup cloud backfill skipped — identity not enrolled")
+                return
+            }
+            val now = System.currentTimeMillis()
+            val last = prefs.lastCloudBackfillRunAt
+            if (last != 0L && now - last < 7L * 24 * 60 * 60 * 1000) {
+                Log.d("SYNC_COORD", "startup cloud backfill skipped — ran ${now - last} ms ago")
+                return
+            }
+            prefs.lastCloudBackfillRunAt = now
+            Log.i("SYNC_COORD", "backfill_triggered_after_startup deviceId=app-start")
+            com.autonomousone.messages.data.TelephonySyncCoordinator.get(this)
+                .requestCloudBackfillForLinkedDevice("app-start")
+        } catch (e: Throwable) {
+            Log.w("SYNC_COORD", "startup cloud backfill schedule failed", e)
         }
     }
 

@@ -49,6 +49,8 @@ class GatewayPreferences(context: Context) {
         // ── Idempotency store ──
         private const val KEY_SENT_EVENT_IDS = "cloud_sent_event_ids"
         private const val MAX_EVENT_IDS = 500
+        // ── FIX 2: startup cloud-backfill throttle ──
+        private const val KEY_CLOUD_BACKFILL_LAST_RUN_AT = "cloud_backfill_last_run_at"
 
         const val DEFAULT_PORT = 8080
         const val CURRENT_CONSENT_VERSION = 1
@@ -197,6 +199,15 @@ class GatewayPreferences(context: Context) {
     var identityRegistered: Boolean
         get() = prefs.getBoolean(KEY_IDENTITY_REGISTERED, false)
         set(value) = prefs.edit().putBoolean(KEY_IDENTITY_REGISTERED, value).apply()
+
+    /**
+     * FIX 2: when the startup one-shot cloud-history backfill last ran.
+     * Throttles the app-start trigger to once per 7 days; the post-approve
+     * trigger is NOT throttled (it is the primary path and is idempotent).
+     */
+    var lastCloudBackfillRunAt: Long
+        get() = prefs.getLong(KEY_CLOUD_BACKFILL_LAST_RUN_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_CLOUD_BACKFILL_LAST_RUN_AT, value).apply()
 
     /**
      * SSOT for the stable per-device identity on the agent bridge (PR-05/08b):
