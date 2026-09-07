@@ -181,6 +181,8 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        const val TAG = "SMS_RECEIVER"
+        // PascalCase to match the receiver class name for case-sensitive logcat
+        // filters (`adb logcat -s SmsReceiver:I`) and source greps.
+        const val TAG = "SmsReceiver"
     }
 }

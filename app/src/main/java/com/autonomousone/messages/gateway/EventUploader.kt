@@ -19,6 +19,27 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /**
+ * Why the outbox worker is holding still instead of uploading (Issue 2).
+ * Pure decision so it can be unit-tested on the JVM without Android.
+ */
+internal enum class UploadGate(val tag: String) {
+    ENABLED("enabled"),
+    GATEWAY_DISABLED("gateway_disabled"),
+    URL_NOT_CONFIGURED("gmweb_url_not_configured"),
+    DEVICE_NOT_ENROLLED("device_not_enrolled");
+
+    companion object {
+        internal fun reason(enabled: Boolean, urlBlank: Boolean, registered: Boolean): UploadGate =
+            when {
+                !enabled -> GATEWAY_DISABLED
+                urlBlank -> URL_NOT_CONFIGURED
+                !registered -> DEVICE_NOT_ENROLLED
+                else -> ENABLED
+            }
+    }
+}
+
+/**
  * PR-02: the durable outbox worker (TechSpec §11/§55, LOCK 13).
  *
  * Replaces the WebhookEngine cloud path (deleted): cloud events are COMMITTED
@@ -53,6 +74,8 @@ class EventUploader(
     private val appContext = context.applicationContext
     private val repo = GatewaySyncRepository(MessagesDatabase.get(appContext))
     private var job: Job? = null
+    /** Last blocked-gate state so the worker logs only on change. */
+    private var lastGate: UploadGate? = null
 
     fun start() {
         if (job?.isActive == true) return
@@ -65,22 +88,38 @@ class EventUploader(
 
             var attempt = 0
             while (isActive) {
-                if (!prefs.isEnabled || prefs.gmwebUrl.isBlank()) {
-                    // Runtime gate (same semantics as the poller): zero HTTP
-                    // while the supervisor has not declared us enabled.
-                    delay(5_000)
+                val gate = UploadGate.reason(
+                    enabled = prefs.isEnabled,
+                    urlBlank = prefs.gmwebUrl.isBlank(),
+                    registered = prefs.identityRegistered
+                )
+                if (gate != UploadGate.ENABLED) {
+                    // Log loudly on every state CHANGE, then wait in the
+                    // background — never spam at 5 s cadence.
+                    if (lastGate != gate) {
+                        lastGate = gate
+                        Log.w(TAG, "UPLOAD_BLOCKED_GATE: ${gate.tag}")
+                        onLog("⛔ Event upload paused: ${gate.tag}")
+                    }
+                    delay(30_000)
                     continue
                 }
-                // PR-11 hotfix gate: until the device identity is enrolled, a
-                // signed batch is guaranteed 401 (unknown_device) → LOCK 13
-                // would dead-letter it. Hold the outbox instead; the enroll
-                // callback below flips identityRegistered and drains.
-                if (!prefs.identityRegistered) {
-                    delay(5_000)
-                    continue
+                val previouslyBlocked = lastGate
+                if (previouslyBlocked != null) {
+                    Log.i(TAG, "upload gate cleared: ${previouslyBlocked.tag} → ENABLED")
+                    onLog("📤 Event upload resumed")
+                    lastGate = null
+                }
+                // Key-grant drain is best-effort and MUST NOT block the event
+                // upload: a failure here (DB lock/corruption) would otherwise
+                // silently freeze the whole outbox (Issue 4).
+                try {
+                    com.autonomousone.messages.security.ConversationKeyRepository(MessagesDatabase.get(appContext))
+                        .drainHistoryGrants()
+                } catch (e: Exception) {
+                    Log.e(TAG, "drainHistoryGrants failed, continuing with upload", e)
                 }
                 val claimed = try {
-                    com.autonomousone.messages.security.ConversationKeyRepository(MessagesDatabase.get(appContext)).drainHistoryGrants()
                     repo.claimBatch(System.currentTimeMillis())
                 } catch (e: Exception) {
                     Log.e(TAG, "outbox claim failed", e)
