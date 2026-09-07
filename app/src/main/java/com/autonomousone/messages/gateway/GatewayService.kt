@@ -34,6 +34,7 @@ class GatewayService : Service() {
     private lateinit var eventUploader: EventUploader
     private lateinit var commandPoller: SecureCommandPoller
     private lateinit var trustPublisher: TrustStatementPublisher
+    private lateinit var deviceTelemetry: DeviceTelemetry
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var supervisor: ConnectionSupervisor
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -169,6 +170,8 @@ class GatewayService : Service() {
             scope = serviceScope,
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
+        deviceTelemetry = DeviceTelemetry(this, prefs, ControlPlaneClient(prefs), serviceScope)
+        deviceTelemetry.start()
         // Expose poller state app-wide so the Gateway screen can show it live.
         bridgeStateFlow = outboxPoller.stateFlow
 
@@ -383,6 +386,7 @@ class GatewayService : Service() {
         // cleared the desired state), arm the alarm watchdog so the pull
         // bridge comes back even under Doze — this is the 503-killer.
         scheduleRestartWatchdog()
+        deviceTelemetry.stop()
         shutdownComponents()
         super.onDestroy()
     }
