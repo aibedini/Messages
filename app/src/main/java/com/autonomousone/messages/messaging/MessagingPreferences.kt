@@ -131,12 +131,18 @@ class MessagingPreferences(context: Context) {
         }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.ASK)
         set(value) = prefs.edit().putString(KEY_FINANCIAL_POLICY, value.name).apply()
 
-    /** Ambiguity handling (ADR-006 §16). Production default: privacy strict. */
+    /**
+     * Ambiguity handling for messages that matched no sensitive-data rule.
+     *
+     * Regular messages must sync by default for the web companion to work.
+     * Explicit OTP, authentication, password-reset and bank-code matches remain
+     * LOCAL_ONLY regardless of this setting.
+     */
     var ambiguityMode: com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode
         get() = runCatching {
             com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.valueOf(
-                prefs.getString(KEY_AMBIGUITY_MODE, "PRIVACY_STRICT") ?: "PRIVACY_STRICT"
+                prefs.getString(KEY_AMBIGUITY_MODE, "BALANCED") ?: "BALANCED"
             )
-        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.PRIVACY_STRICT)
+        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.BALANCED)
         set(value) = prefs.edit().putString(KEY_AMBIGUITY_MODE, value.name).apply()
 }

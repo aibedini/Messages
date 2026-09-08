@@ -155,7 +155,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     /**
      * FIX 2 (auto-backfill on first real approve): re-runs the durable
      * encrypted cloud-history production for BOTH sources
-     * (`encrypted-history-v1:<source>` cursors) and then drains KEY_GRANT
+     * (`encrypted-history-v2:<source>` cursors) and then drains KEY_GRANT
      * emission for every approved device — so the E2EE uploader gate is no
      * longer the ONLY trigger for grants (FIX 3). Idempotent and cheap when
      * there is nothing new: the cursor page is empty and the run returns.
@@ -678,7 +678,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         var eligible = 0
         var queued = 0
         for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
-            val direction = "encrypted-history-v1:$source"
+            // v2 intentionally starts a fresh cursor. v1 advanced its cursor
+            // even when the old privacy-strict default rejected every normal
+            // message, permanently skipping those rows on later retries.
+            val direction = "encrypted-history-v2:$source"
             while (syncAllowed) {
                 val count = db.withTransaction {
                     val cursor = db.syncCursorDao().get(direction)?.lastSequence ?: 0L

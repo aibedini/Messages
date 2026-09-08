@@ -50,7 +50,9 @@ class GatewayPreferences(context: Context) {
         private const val KEY_SENT_EVENT_IDS = "cloud_sent_event_ids"
         private const val MAX_EVENT_IDS = 500
         // ── FIX 2: startup cloud-backfill throttle ──
-        private const val KEY_CLOUD_BACKFILL_LAST_RUN_AT = "cloud_backfill_last_run_at"
+        // Versioned with the encrypted-history cursor. This makes an upgrade
+        // schedule the v2 repair immediately even if v1 ran within 7 days.
+        private const val KEY_CLOUD_BACKFILL_LAST_RUN_AT = "cloud_backfill_last_run_at_v2"
 
         const val DEFAULT_PORT = 8080
         const val CURRENT_CONSENT_VERSION = 1
