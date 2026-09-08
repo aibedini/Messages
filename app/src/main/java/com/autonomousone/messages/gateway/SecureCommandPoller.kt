@@ -110,7 +110,7 @@ class SecureCommandPoller(
                         if (accepted) {
                             fresh++
                             ack(cmd.commandId, "ACCEPTED", null)
-                            executeIfSendSms(cmd)
+                            execute(cmd)
                         } else {
                             // Redelivery of an already-ingested command: it is
                             // EITHER completed (durable state) or executing —
@@ -203,24 +203,42 @@ class SecureCommandPoller(
         withContext(Dispatchers.IO) { repo.ingestCommand(cmd) }
 
     /** SEND_SMS executes immediately through the single funnel (§19/§20). */
-    private suspend fun executeIfSendSms(cmd: RemoteCommandEntity) {
-        if (cmd.type != "SEND_SMS") return
+    private suspend fun execute(cmd: RemoteCommandEntity) {
+        if (cmd.type !in setOf("SEND_SMS", "MARK_THREAD_READ")) return
         // Intake ownership (P0, no-dual-execution): SEND_SMS is owned by
         // exactly ONE transport. Until the strategic command path passes
         // real-device E2E, the legacy pull bridge owns delivery — strategic
         // SEND_SMS commands are ingested + ACKed but NOT executed here, so
         // a backlog can never run twice through two channels.
-        if (!prefs.controlPlaneSendsEnabled) {
+        if (cmd.type == "SEND_SMS" && !prefs.controlPlaneSendsEnabled) {
             ack(cmd.commandId, "FAILED", "deferred: SEND_SMS owned by legacy pull intake")
             return
         }
         scope.launch {
             try {
-                val done = withContext(Dispatchers.IO) {
-                    GatewayOutgoingPipeline.executeIngested(cmd, repo)
-                }
-                // executeIngested reports terminal state itself (COMPLETED/FAILED)
-                if (!done) ackIfTerminal(cmd.commandId)
+                if (cmd.cryptoVersion != 1) error("remote command must use cryptoVersion=1")
+                val plaintext = CommandCrypto.decrypt(cmd.ciphertext, cmd.type, cmd.idempotencyKey)
+                try {
+                    ack(cmd.commandId, "EXECUTING", null)
+                    if (cmd.type == "MARK_THREAD_READ") {
+                        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+                        repo.markCommandState(cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+                            listOf(RemoteCommandEntity.STATE_ACCEPTED))
+                        val payload = JSONObject(String(plaintext, Charsets.UTF_8))
+                        val mapping = MessagesDatabase.get(context).remoteConversationMapDao()
+                            .getByConversationId(payload.getString("conversationId"))
+                            ?: error("unknown conversation")
+                        com.autonomousone.messages.repository.SmsRepository(context)
+                            .markThreadAsRead(mapping.threadId)
+                        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+                            .markThreadReadAndPublish(mapping.threadId)
+                        repo.markCommandState(cmd.commandId, RemoteCommandEntity.STATE_COMPLETED,
+                            listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING))
+                    } else withContext(Dispatchers.IO) {
+                        GatewayOutgoingPipeline.executeIngested(cmd.copy(ciphertext = plaintext, cryptoVersion = 0), repo)
+                    }
+                } finally { plaintext.fill(0) }
+                ackIfTerminal(cmd.commandId)
             } catch (e: Exception) {
                 Log.e(TAG, "SEND_SMS execution failed for ${cmd.commandId}", e)
                 runCatching {

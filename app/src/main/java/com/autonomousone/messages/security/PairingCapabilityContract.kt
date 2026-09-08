@@ -25,6 +25,7 @@ object PairingCapabilityContract {
     )
 
     val SENSITIVE_CAPABILITIES: List<String> = listOf(
+        "CONTACTS_READ",
         "READ_OTP",
         "READ_BANK_SECURITY",
         "READ_PASSWORD_RESET",

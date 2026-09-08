@@ -94,10 +94,10 @@ class PairingCapabilityContractTest {
         )
 
         // The vector input is exactly what the current UI builder produces:
-        // all base capabilities + one enabled sensitive grant (READ_OTP).
+        // all base capabilities + enabled CONTACTS_READ and READ_OTP grants.
         val capsArray = vector.getJSONObject("input").getJSONArray("capabilities")
         val actualCaps = (0 until capsArray.length()).map { capsArray.getString(it) }.sorted()
-        val expectedCaps = (PairingCapabilityContract.BASE_CAPABILITIES + "READ_OTP").sorted()
+        val expectedCaps = (PairingCapabilityContract.BASE_CAPABILITIES + listOf("CONTACTS_READ", "READ_OTP")).sorted()
         assertEquals(expectedCaps, actualCaps)
     }
 }

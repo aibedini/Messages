@@ -63,21 +63,30 @@ object PrimaryTrustRoot {
     const val STATEMENT_VERSION = 1
 
     fun canonicalTrustStatement(st: JSONObject): String {
-        val o = org.json.JSONObject()
-        o.put("version", st.optInt("version", STATEMENT_VERSION))
-        o.put("accountId", st.optString("accountId", "default"))
-        o.put("statementId", st.getString("statementId"))
-        o.put("operation", st.getString("operation"))
-        o.put("deviceId", st.getString("deviceId"))
-        o.put("trustSequence", st.getLong("trustSequence"))
         val caps = st.optJSONArray("capabilities") ?: org.json.JSONArray()
         val capsSorted = (0 until caps.length()).map { caps.getString(it) }.sorted()
-        o.put("capabilities", org.json.JSONArray(capsSorted))
-        o.put("historyGrant", st.optString("historyGrant", ""))
-        o.put("issuedAt", st.getLong("issuedAt"))
-        // certificate is an opaque signed blob — hashed, never re-serialized
-        o.put("certificateHash", sha256Hex(st.optString("certificate", "")))
-        return o.toString()
+        fun q(value: String): String = JSONObject.quote(value)
+        // Fixed field order. JSONObject's backing map order differs between
+        // Android and JVM runtimes, so its toString() cannot define signed bytes.
+        return buildString {
+            append("{\"version\":").append(st.optInt("version", STATEMENT_VERSION))
+            append(",\"accountId\":").append(q(st.optString("accountId", "default")))
+            append(",\"statementId\":").append(q(st.getString("statementId")))
+            append(",\"operation\":").append(q(st.getString("operation")))
+            append(",\"deviceId\":").append(q(st.getString("deviceId")))
+            append(",\"trustSequence\":").append(st.getLong("trustSequence"))
+            append(",\"capabilities\":[")
+            capsSorted.forEachIndexed { index, capability ->
+                if (index > 0) append(',')
+                append(q(capability))
+            }
+            append(']')
+            append(",\"historyGrant\":").append(q(st.optString("historyGrant", "")))
+            append(",\"issuedAt\":").append(st.getLong("issuedAt"))
+            // certificate is an opaque signed blob — hashed, never re-serialized
+            append(",\"certificateHash\":").append(q(sha256Hex(st.optString("certificate", ""))))
+            append('}')
+        }
     }
 
     /** Sign the canonical statement bytes (the payload persisted/published). */

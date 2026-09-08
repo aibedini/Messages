@@ -109,6 +109,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     }
     var historyFull by remember { mutableStateOf(true) }
     // ADR-006 Amendment: per-device sensitive grants (privacy-first OFF).
+    var grantContacts by remember { mutableStateOf(true) }
     var grantOtp by remember { mutableStateOf(false) }
     var grantBank by remember { mutableStateOf(false) }
     var grantReset by remember { mutableStateOf(false) }
@@ -691,6 +692,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    SensitiveGrantRow("Contacts", grantContacts) { grantContacts = it }
                     SensitiveGrantRow("OTP & login codes", grantOtp) { grantOtp = it }
                     SensitiveGrantRow("Bank security codes", grantBank) { grantBank = it }
                     SensitiveGrantRow("Password reset codes", grantReset) { grantReset = it }
@@ -723,7 +725,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                 // set is always granted; sensitive grants only
                                                 // when the user enabled that row.
                                                 addAll(PairingCapabilityContract.BASE_CAPABILITIES)
-                                                val grants = arrayOf(grantOtp, grantBank, grantReset, grantAuth, grantFinancial)
+                                                val grants = arrayOf(grantContacts, grantOtp, grantBank, grantReset, grantAuth, grantFinancial)
                                                 PairingCapabilityContract.SENSITIVE_CAPABILITIES
                                                     .forEachIndexed { index, capability ->
                                                         if (grants[index]) add(capability)
@@ -966,6 +968,7 @@ private class QrBoundsView(context: android.content.Context) : android.view.View
 internal val capabilityLabel: Map<String, String> = mapOf(
     "READ_MESSAGES" to "Read messages", "SEND_MESSAGES" to "Send messages",
     "MARK_READ" to "Mark messages read", "RECEIVE_NOTIFICATIONS" to "Notifications",
+    "CONTACTS_READ" to "Contacts",
     "READ_OTP" to "OTP and login codes", "READ_BANK_SECURITY" to "Bank security codes",
     "READ_PASSWORD_RESET" to "Password reset codes", "READ_AUTH_CODES" to "Authentication codes",
     "READ_FINANCIAL_NOTIFICATIONS" to "Bank transaction notifications"

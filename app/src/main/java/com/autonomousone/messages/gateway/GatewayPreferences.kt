@@ -43,7 +43,7 @@ class GatewayPreferences(context: Context) {
         private const val KEY_DEVICE_FALLBACK_ID = "cloud_device_fallback_id"
         private const val KEY_REGISTRATION_SECRET = "cloud_registration_secret"
         // ── GMweb pull bridge (outbound-only; no tunnel needed) ──
-        const val DEFAULT_CONTROL_PLANE_SENDS = false
+        const val DEFAULT_CONTROL_PLANE_SENDS = true
         private const val KEY_CP_SENDS = "gateway_control_plane_sends_enabled"
         private const val KEY_GMWEB_URL = "gmweb_url"
         // ── Idempotency store ──

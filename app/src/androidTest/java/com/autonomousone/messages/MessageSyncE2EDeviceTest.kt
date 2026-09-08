@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import androidx.test.platform.app.InstrumentationRegistry
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.TrustedDeviceEntity
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.security.ConversationKeyRepository
@@ -12,7 +13,9 @@ import java.security.KeyPairGenerator
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -77,7 +80,16 @@ class MessageSyncE2EDeviceTest {
                 String(outboxBeforeApprove.single().ciphertext).contains("hello e2e")
             )
 
-            // 2) Approve a FULL_HISTORY browser device.
+            val outgoing = MessageEntity(
+                "sms", 50_002L, 80_001L, "+15551230000", "+15551230000",
+                "reply e2e", now + 1, 2, read = true
+            )
+            db.withTransaction {
+                db.messageDao().upsertAll(listOf(outgoing))
+                coordinator.enqueueHistorical(outgoing)
+            }
+
+            // 2) Approve a FULL_HISTORY browser device with contacts access.
             db.trustedDeviceDao().upsert(
                 TrustedDeviceEntity(
                     deviceId = "web-e2e-device",
@@ -87,7 +99,7 @@ class MessageSyncE2EDeviceTest {
                     origin = "https://gmweb.example",
                     signingPublicKey = "",
                     encryptionPublicKey = rawUncompressedPointBase64(),
-                    capabilitiesJson = "[\"READ_MESSAGES\"]",
+                    capabilitiesJson = "[\"READ_MESSAGES\",\"CONTACTS_READ\"]",
                     historyGrant = "FULL_HISTORY",
                     certificateJson = "{}",
                     certificateSignature = "",
@@ -101,9 +113,32 @@ class MessageSyncE2EDeviceTest {
                 )
             )
 
-            // 3) Post-approve drain (the FIX 2/3 trigger body) emits the grant.
+            // 3) A contact snapshot is encrypted and grants its separate key.
+            db.withTransaction {
+                val plain = GatewayEventFactory.outboxRow(
+                    eventUuid = UUID.randomUUID().toString(),
+                    eventType = "CONTACTS_SNAPSHOT",
+                    conversationId = "contacts",
+                    payloadJson = JSONObject()
+                        .put("snapshotId", "device-test")
+                        .put("chunkIndex", 0)
+                        .put("chunkCount", 1)
+                        .put("replaceAll", true)
+                        .put("contacts", org.json.JSONArray())
+                        .put("deleted", org.json.JSONArray())
+                        .toString(),
+                )
+                val encrypted = ConversationKeyRepository(db).encrypt(plain, now, "CONTACTS_READ")
+                db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
+            }
+
+            // 4) Post-approve drain emits message-history grants too.
             ConversationKeyRepository(db).drainHistoryGrants()
-            val grants = db.gatewayEventOutboxDao().claimable(Long.MAX_VALUE, 50)
+            val allRows = db.gatewayEventOutboxDao().claimable(Long.MAX_VALUE, 50)
+            assertEquals(2, allRows.count { it.eventType == "MESSAGE_CREATED" })
+            assertTrue(allRows.any { it.eventType == "CONTACTS_SNAPSHOT" && it.cryptoVersion == 1 })
+            assertTrue(allRows.any { it.eventType == "CONTACTS_KEY_GRANT" })
+            val grants = allRows
                 .filter { it.eventType == "KEY_GRANT" }
             assertTrue("KEY_GRANT must exist for the newly approved device", grants.isNotEmpty())
             assertTrue(grants.all { String(it.ciphertext).contains("web-e2e-device") })

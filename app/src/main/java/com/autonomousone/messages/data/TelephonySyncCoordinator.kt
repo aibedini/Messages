@@ -260,7 +260,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                 dateMs = entity.date,
                                 status = entity.status,
                                 address = entity.normalizedAddress,
-                                contactName = contactNameFor(entity.normalizedAddress)
+                                contactName = contactNameFor(entity.normalizedAddress),
+                                read = entity.read,
                             )
                             if (old != null && (old.body != entity.body || old.type != entity.type || old.normalizedAddress != entity.normalizedAddress)) {
                                 created.copy(eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
@@ -599,19 +600,24 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 dateMs = entity.date,
                 status = entity.status,
                 address = entity.normalizedAddress,
-                contactName = contactNameFor(entity.normalizedAddress)
+                contactName = contactNameFor(entity.normalizedAddress),
+                read = entity.read,
             )
         }
     }
 
     private suspend fun backfillCloudHistory() {
+        var eligible = 0
+        var queued = 0
         for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
             val direction = "encrypted-history-v1:$source"
             while (syncAllowed) {
                 val count = db.withTransaction {
                     val cursor = db.syncCursorDao().get(direction)?.lastSequence ?: 0L
                     val page = db.messageDao().cloudHistoryPage(source, cursor, 100)
+                    eligible += page.size
                     page.forEach { enqueueHistorical(it) }
+                    queued += page.size
                     if (page.isNotEmpty()) db.syncCursorDao().upsert(SyncCursorEntity(direction,
                         lastSequence = page.last().providerId, updatedAt = System.currentTimeMillis()))
                     page.size
@@ -620,6 +626,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 yield()
             }
         }
+        Log.i(TAG, "SYNC_REPORT eligible=$eligible queued=$queued directions=in,out sources=sms,mms")
     }
 
     /** What a per-source sync pass achieved this reconcile. */
@@ -839,6 +846,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         if (threadId <= 0L) return@withContext
         db.messageDao().markThreadRead(threadId)
         db.conversationDao().markRead(threadId)
+    }
+
+    /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
+    suspend fun markThreadReadAndPublish(threadId: Long) {
+        if (threadId > 0L) applyMutation(MessageMutation.MarkThreadRead(threadId))
     }
 
     /**

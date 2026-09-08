@@ -57,8 +57,9 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
             .put("category", epoch.category).put("historyFloor", epoch.historyFloor)
             .put("wrappedCke", wrapped).put("rootSignature", PrimaryTrustRoot.signBytes(
                 MessageCrypto.binding("GMweb-CKE-signature-v1", *fields, wrapped)))
+        val grantType = if (epoch.category == "CONTACTS_READ") "CONTACTS_KEY_GRANT" else "KEY_GRANT"
         db.gatewayEventOutboxDao().insertOrIgnore(GatewayEventOutboxEntity(eventUuid = eventId,
-            eventType = "KEY_GRANT", aggregateId = epoch.conversationId, ciphertext = payload.toString().toByteArray(Charsets.UTF_8),
+            eventType = grantType, aggregateId = epoch.conversationId, ciphertext = payload.toString().toByteArray(Charsets.UTF_8),
             encoding = "envelope.v1", schemaVersion = 1, cryptoVersion = 1, createdAt = System.currentTimeMillis()))
     }
 
