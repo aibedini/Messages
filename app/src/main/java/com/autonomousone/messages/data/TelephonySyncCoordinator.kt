@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import androidx.room.withTransaction
@@ -84,6 +86,18 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     private val started = AtomicBoolean(false)
 
+    /** P0: exactly ONE gateway-bootstrap FullSync per process lifecycle. */
+    private val startupReconcileRequested = AtomicBoolean(false)
+
+    /**
+     * P0: single-flight boundary for reconciliation. syncNow() (manual) and the
+     * CONFLATED reconciles consumer must never run applyReconcile concurrently
+     * (that caused race windows and duplicate projection rebuilds). Ordinary
+     * O(1) message mutations stay on their own channel and are NOT serialized
+     * behind a full history crawl.
+     */
+    private val reconcileMutex = Mutex()
+
     /** Long-running work scope (mutations, reconcile, detached backfill). */
     private val syncScope = CoroutineScope(Dispatchers.IO)
 
@@ -119,6 +133,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      *  Called by ConnectionSupervisor once the gateway is online. */
     fun ensureLoopRunning() = ensureLoop()
 
+    /**
+     * P0 gateway bootstrap: starts the loop and queues exactly ONE
+     * ReconcileRequest.FullSync per process lifecycle. ConnectionSupervisor
+     * calls startSync() on every periodic reconcile — the AtomicBoolean
+     * collapses all of them into that single initial mirror. A fresh process
+     * gets a fresh FullSync so provider changes that happened while the
+     * process was dead are re-mirrored and re-committed as durable events.
+     */
+    fun startGatewaySync() {
+        ensureLoop()
+        if (startupReconcileRequested.compareAndSet(false, true)) {
+            Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH")
+            reconciles.trySend(ReconcileRequest.FullSync)
+        }
+    }
+
     /** Backward compat during migration. */
     fun requestSync() = reconcile(ReconcileRequest.FullSync)
 
@@ -135,8 +165,43 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         cloudBackfills.trySend(deviceId)
     }
 
-    /** Suspends until one full sync cycle completes. */
-    suspend fun syncNow() = applyReconcile(ReconcileRequest.FullSync)
+    /** Suspends until one full sync cycle completes (serialized). */
+    suspend fun syncNow() = runReconcile(ReconcileRequest.FullSync)
+
+    /**
+     * P0: single-flight reconcile boundary. Both [syncNow] (manual) and the
+     * CONFLATED `reconciles` consumer execute through here so two
+     * reconciliations can never overlap (no double provider scans, no doubled
+     * projection rebuilds). Mutations are untouched — they keep their own
+     * exact, never-conflated channel.
+     */
+    private suspend fun runReconcile(request: ReconcileRequest) =
+        reconcileMutex.withLock {
+            applyReconcile(request)
+        }
+
+    /**
+     * P0 local mirror bootstrap (used by the post-pairing flow): guarantees the
+     * Room shadow has its initial window BEFORE cloud-history backfill is asked
+     * to enqueue durable events — backfill must never run against an empty
+     * mirror. Deliberately does NOT wait for the full historical crawl: the
+     * initial window (FIRST_BATCH per source) lands synchronously here, older
+     * history continues asynchronously on the detached low-priority crawl, and
+     * each batch mirrored later enqueues its own durable events.
+     */
+    suspend fun ensureLocalMirrorReady() {
+        val wasReady = withContext(Dispatchers.IO) {
+            val stateDao = db.syncStateDao()
+            listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS).all {
+                stateDao.forSource(it)?.initialWindowReady == true
+            }
+        }
+        if (!wasReady) {
+            Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms reason=ensureLocalMirrorReady firstBatch=$FIRST_BATCH")
+        }
+        // Bounded initial window when not ready; steady-state catch-up when ready.
+        runReconcile(ReconcileRequest.FullSync)
+    }
 
     /**
      * Read-cutover gate: Room may serve the UI only once BOTH sources have
@@ -173,6 +238,9 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     try {
                         val startedAt = System.currentTimeMillis()
                         Log.i(TAG, "backfill_triggered_after_approve deviceId=$deviceId")
+                        // P0: never backfill cloud history against an empty mirror —
+                        // land the local initial window / catch up first.
+                        ensureLocalMirrorReady()
                         val before = db.gatewayEventOutboxDao().pendingDepth()
                         backfillCloudHistory()
                         com.autonomousone.messages.security.ConversationKeyRepository(db)
@@ -191,7 +259,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // Reconcile requests: conflated, only the latest matters.
             for (request in reconciles) {
                 try {
-                    applyReconcile(request)
+                    runReconcile(request)
                 } catch (e: Exception) {
                     Log.e(TAG, "reconcile failed", e)
                 }

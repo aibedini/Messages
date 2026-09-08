@@ -207,7 +207,7 @@ class GatewayService : Service() {
                 stopCommandPoller = { commandPoller.stop() },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
-                        .get(this).ensureLoopRunning()
+                        .get(this).startGatewaySync()
                 }
             ),
             onLog = { msg -> _logFlow.tryEmit(msg) }
