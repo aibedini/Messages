@@ -108,6 +108,9 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun count(): Int
 
+    @Query("SELECT COUNT(*) FROM messages WHERE source = :source")
+    suspend fun countBySource(source: String): Int
+
     @Query("DELETE FROM messages WHERE threadId = :threadId")
     suspend fun deleteThread(threadId: Long)
 

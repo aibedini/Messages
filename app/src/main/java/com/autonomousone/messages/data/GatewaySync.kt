@@ -1,6 +1,7 @@
 package com.autonomousone.messages.data
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -108,6 +109,13 @@ data class GatewayEventOutboxEntity(
     override fun hashCode(): Int = id.hashCode()
 }
 
+data class GatewayEventDiagnosticCount(
+    val eventType: String,
+    val state: String,
+    val cryptoVersion: Int,
+    @ColumnInfo(name = "count") val count: Int
+)
+
 @Dao
 interface GatewayEventOutboxDao {
     /** IGNORE: re-enqueueing a committed eventUuid is a no-op, not a duplicate. */
@@ -167,6 +175,15 @@ interface GatewayEventOutboxDao {
 
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
     suspend fun deadLetterDepth(): Int
+
+    @Query(
+        "SELECT eventType, state, cryptoVersion, COUNT(*) AS count FROM gateway_event_outbox " +
+            "GROUP BY eventType, state, cryptoVersion ORDER BY eventType, state, cryptoVersion"
+    )
+    suspend fun diagnosticCounts(): List<GatewayEventDiagnosticCount>
+
+    @Query("SELECT COALESCE(MAX(serverSequence), 0) FROM gateway_event_outbox WHERE state = 'ACKED'")
+    suspend fun maxAckedServerSequence(): Long
 
     @Query(
         "SELECT COALESCE(SUM(LENGTH(ciphertext)), 0) FROM gateway_event_outbox " +

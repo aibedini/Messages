@@ -1,8 +1,15 @@
 package com.autonomousone.messages.gateway
 
 import android.content.Context
+import android.net.Uri
+import android.provider.BaseColumns
+import android.provider.Telephony
 import android.util.Base64
+import com.autonomousone.messages.data.GatewayEventDiagnosticCount
+import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.SyncStateEntity
+import com.autonomousone.messages.security.PairingEndpointResolver
 import com.autonomousone.messages.security.PrimaryTrustRoot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,7 +38,8 @@ object ConnectionDiagnostics {
         val prefs = GatewayPreferences(app)
         val supervisor = ConnectionSupervisor.peek()
         val trust = TrustStatementPublisher.health.value
-        val eventDao = MessagesDatabase.get(app).gatewayEventOutboxDao()
+        val database = MessagesDatabase.get(app)
+        val eventDao = database.gatewayEventOutboxDao()
         val local = mutableListOf<Check>()
         val deviceId = prefs.stableDeviceId(app)
         local += Check("Android stable device ID", deviceId.isNotBlank(), deviceId.take(8) + "…")
@@ -55,6 +63,36 @@ object ConnectionDiagnostics {
             "oldest ${trust.oldestPendingSequence ?: "none"}" +
                 (trust.lastFailureReason?.let { " · $it" } ?: ""))
 
+        val smsProviderCount = providerCount(app, Telephony.Sms.CONTENT_URI)
+        val mmsProviderCount = providerCount(app, Telephony.Mms.CONTENT_URI)
+        val roomTotal = database.messageDao().count()
+        val roomSms = database.messageDao().countBySource(MessageEntity.SOURCE_SMS)
+        val roomMms = database.messageDao().countBySource(MessageEntity.SOURCE_MMS)
+        val smsState = database.syncStateDao().forSource(MessageEntity.SOURCE_SMS)
+        val mmsState = database.syncStateDao().forSource(MessageEntity.SOURCE_MMS)
+        val eventCounts = eventDao.diagnosticCounts()
+        val maxAckedSequence = eventDao.maxAckedServerSequence()
+
+        local += providerCheck("Telephony SMS rows", smsProviderCount)
+        local += providerCheck("Telephony MMS rows", mmsProviderCount)
+        local += Check("Room message rows", roomTotal == roomSms + roomMms,
+            "$roomTotal total · $roomSms SMS · $roomMms MMS")
+        local += Check("Room SMS rows", smsProviderCount != null && roomSms == smsProviderCount,
+            roomSms.toString())
+        local += Check("Room MMS rows", mmsProviderCount != null && roomMms == mmsProviderCount,
+            roomMms.toString())
+        local += mirrorCheck("SMS initial mirror", smsState, initial = true)
+        local += mirrorCheck("SMS history backfill", smsState, initial = false)
+        local += watermarkCheck("SMS provider watermarks", smsState)
+        local += mirrorCheck("MMS initial mirror", mmsState, initial = true)
+        local += mirrorCheck("MMS history backfill", mmsState, initial = false)
+        local += watermarkCheck("MMS provider watermarks", mmsState)
+        local += eventSummaryCheck("Cloud MESSAGE_CREATED", "MESSAGE_CREATED", eventCounts)
+        local += eventSummaryCheck("Cloud KEY_GRANT", "KEY_GRANT", eventCounts)
+        local += Check("Cloud event groups", eventCounts.none { it.state == "DEAD_LETTER" },
+            eventCounts.joinToString(" · ").ifBlank { "none" })
+        local += Check("Last Android server sequence", maxAckedSequence > 0, maxAckedSequence.toString())
+
         if (token.isBlank() || trustRoot.isFailure) return@withContext Report(local)
         val path = "/api/v1/agent/diagnostics"
         val body = JSONObject()
@@ -63,7 +101,7 @@ object ConnectionDiagnostics {
             .toString().toByteArray(Charsets.UTF_8)
         var conn: HttpURLConnection? = null
         try {
-            val base = prefs.gmwebUrl.trimEnd('/')
+            val base = PairingEndpointResolver.trustedServerUrl(app).trimEnd('/')
             require(base.startsWith("https://")) { "trusted_https_origin_required" }
             conn = URL(base + path).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
@@ -78,11 +116,14 @@ object ConnectionDiagnostics {
             if (status !in 200..299) return@withContext Report(local)
             val response = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val checks = response.getJSONObject("checks")
-            val configuredOrigin = com.autonomousone.messages.security.PairingEndpointResolver
-                .canonicalOrigin(prefs.gmwebUrl)
-            val serverOrigin = checks.optString("publicApiOrigin").takeIf { it.isNotBlank() }
-            local += Check("PUBLIC_API_ORIGIN", serverOrigin == configuredOrigin,
-                serverOrigin ?: "not configured")
+            val configuredOrigin = PairingEndpointResolver.canonicalOrigin(
+                PairingEndpointResolver.trustedServerUrl(app)
+            )
+            val serverOriginRaw = checks.optString("publicApiOrigin").takeIf { it.isNotBlank() }
+            val serverOrigin = serverOriginRaw?.let(PairingEndpointResolver::canonicalOrigin)
+            local += Check("PUBLIC_API_ORIGIN",
+                configuredOrigin != null && serverOrigin != null && configuredOrigin == serverOrigin,
+                serverOriginRaw ?: "not configured")
             local += Check("Agent signature", checks.optBoolean("agentSignatureAccepted"))
             local += Check("Android identity", checks.optBoolean("identityEnrolled"))
             local += Check("Primary role", checks.optBoolean("isPrimary"), checks.optString("role"))
@@ -92,6 +133,17 @@ object ConnectionDiagnostics {
             local += Check("Server trust registry", true, "sequence ${checks.optLong("serverTrustSequence")}")
             local += Check("Server linked devices", true,
                 "${checks.optInt("linkedDeviceCount")} devices · ${checks.optInt("activeLinkedSessionCount")} sessions")
+            response.optJSONObject("sync")?.let { sync ->
+                sync.optJSONObject("account")?.let { addServerSyncChecks(local, "GMweb", it) }
+                sync.optJSONObject("sourceDevice")?.let { source ->
+                    addServerSyncChecks(local, "This Android on GMweb", source)
+                    local += Check(
+                        "Android ↔ GMweb sequence",
+                        maxAckedSequence > 0 && maxAckedSequence == source.optLong("maxSequence"),
+                        "$maxAckedSequence Android · ${source.optLong("maxSequence")} GMweb"
+                    )
+                }
+            }
         } catch (error: Exception) {
             local += Check("GMweb API", false, error.javaClass.simpleName)
         } finally {
@@ -104,4 +156,58 @@ object ConnectionDiagnostics {
         MessageDigest.getInstance("SHA-256")
             .digest(Base64.decode(base64Spki, Base64.DEFAULT))
             .joinToString("") { "%02x".format(it) }
+
+    private fun providerCount(context: Context, uri: Uri): Int? = runCatching {
+        context.contentResolver.query(uri, arrayOf(BaseColumns._ID), null, null, null)
+            ?.use { it.count }
+    }.getOrNull()
+
+    private fun providerCheck(name: String, count: Int?): Check =
+        Check(name, count != null, count?.toString() ?: "unavailable")
+
+    private fun mirrorCheck(name: String, state: SyncStateEntity?, initial: Boolean): Check {
+        val ready = if (initial) state?.initialWindowReady == true else state?.historyBackfillComplete == true
+        return Check(name, ready, if (ready) if (initial) "ready" else "complete" else "not ready")
+    }
+
+    private fun watermarkCheck(name: String, state: SyncStateEntity?): Check = Check(
+        name,
+        state != null && state.newestId > 0 && state.oldestId != Long.MAX_VALUE,
+        state?.let { "newest ${it.newestDate}/${it.newestId} · oldest ${it.oldestDate}/${it.oldestId}" }
+            ?: "missing"
+    )
+
+    private fun eventSummaryCheck(
+        name: String,
+        eventType: String,
+        counts: List<GatewayEventDiagnosticCount>
+    ): Check {
+        fun state(value: String) = counts.filter { it.eventType == eventType && it.state == value }.sumOf { it.count }
+        val pending = state("PENDING")
+        val sending = state("SENDING")
+        val acked = state("ACKED")
+        val dead = state("DEAD_LETTER")
+        return Check(name, acked > 0 && dead == 0,
+            "$pending pending · $sending sending · $acked ACKed · $dead dead letter")
+    }
+
+    private fun addServerSyncChecks(target: MutableList<Check>, prefix: String, stats: JSONObject) {
+        val total = stats.optLong("total")
+        target += Check("$prefix sync_events", total > 0, total.toString())
+        target += Check("$prefix MESSAGE_CREATED", stats.optLong("messageCreated") > 0,
+            stats.optLong("messageCreated").toString())
+        target += Check("$prefix MESSAGE_UPDATED", true, stats.optLong("messageUpdated").toString())
+        target += Check("$prefix KEY_GRANT", stats.optLong("keyGrant") > 0,
+            stats.optLong("keyGrant").toString())
+        val crypto = stats.optJSONArray("byCryptoVersion")
+        val cryptoDetail = buildList {
+            if (crypto != null) for (index in 0 until crypto.length()) {
+                val row = crypto.getJSONObject(index)
+                add("v${row.optInt("value")}:${row.optLong("count")}")
+            }
+        }.joinToString(" · ").ifBlank { "none" }
+        target += Check("$prefix crypto versions", true, cryptoDetail)
+        target += Check("$prefix max sequence", stats.optLong("maxSequence") > 0,
+            stats.optLong("maxSequence").toString())
+    }
 }

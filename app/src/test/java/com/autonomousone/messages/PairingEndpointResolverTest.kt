@@ -17,6 +17,14 @@ class PairingEndpointResolverTest {
 
     @Test
     fun `canonical origin normalizes host, default port and trailing slash`() {
+        val expected = "https://example.com:443"
+        listOf(
+            "https://example.com",
+            "https://example.com/",
+            "https://EXAMPLE.com",
+            "https://example.com:443"
+        ).forEach { assertEquals(expected, PairingEndpointResolver.canonicalOrigin(it)) }
+
         assertEquals(
             "https://gmweb.example.com:443",
             PairingEndpointResolver.canonicalOrigin("https://gmweb.example.com/")
@@ -48,6 +56,14 @@ class PairingEndpointResolverTest {
         val good = PairingEndpointResolver.canonicalOrigin("https://gmweb.example.com")!!
         val evil = PairingEndpointResolver.canonicalOrigin("https://evil.example.com")!!
         assertFalse(good == evil)
+    }
+
+    @Test
+    fun `custom port other host and http are not equivalent`() {
+        val expected = PairingEndpointResolver.canonicalOrigin("https://example.com")
+        assertFalse(expected == PairingEndpointResolver.canonicalOrigin("https://example.com:444"))
+        assertFalse(expected == PairingEndpointResolver.canonicalOrigin("https://other.example.com"))
+        assertFalse(expected == PairingEndpointResolver.canonicalOrigin("http://example.com"))
     }
 
     @Test
