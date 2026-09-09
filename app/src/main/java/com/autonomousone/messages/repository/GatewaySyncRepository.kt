@@ -93,6 +93,9 @@ class GatewaySyncRepository(
     /** PR-11 hotfix: rescue dead-letter rows from the enrollment race (see DAO). */
     suspend fun recoverDeadLetter(): Int = outboxDao.resetDeadLetterToPending()
 
+    suspend fun recoverCryptoDeadLetter(minCryptoVersion: Int): Int =
+        outboxDao.resetCryptoDeadLetterToPending(minCryptoVersion)
+
     suspend fun pendingDepth(): Int = outboxDao.pendingDepth()
     suspend fun pendingBytes(): Long = outboxDao.pendingBytes()
 
@@ -135,4 +138,3 @@ class GatewaySyncRepository(
         return mapDao.getByThreadId(threadId)?.conversationId ?: conversationId
     }
 }
-

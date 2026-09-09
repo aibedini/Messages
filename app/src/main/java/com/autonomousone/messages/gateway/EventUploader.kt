@@ -86,6 +86,17 @@ class EventUploader(
             val recovered = repo.recoverSending()
             if (recovered > 0) onLog("📤 Outbox recovery: $recovered in-flight event(s) requeued")
 
+            // v3 was briefly emitted before the matching server contract was
+            // live. Requeue that rollout cohort once; normal retries take over.
+            if (!prefs.cryptoV3DeadLettersRecovered) {
+                val rescued = repo.recoverCryptoDeadLetter(minCryptoVersion = 2)
+                prefs.cryptoV3DeadLettersRecovered = true
+                if (rescued > 0) {
+                    onLog("♻️ Outbox recovery: $rescued v2/v3 event(s) requeued")
+                    Log.i(TAG, "requeued $rescued v2/v3 DEAD_LETTER rows")
+                }
+            }
+
             var attempt = 0
             while (isActive) {
                 val gate = UploadGate.reason(

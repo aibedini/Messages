@@ -53,6 +53,8 @@ class GatewayPreferences(context: Context) {
         // Versioned with the encrypted-history cursor. This makes an upgrade
         // schedule the v2 repair immediately even if v1 ran within 7 days.
         private const val KEY_CLOUD_BACKFILL_LAST_RUN_AT = "cloud_backfill_last_run_at_v2"
+        private const val KEY_CRYPTO_V3_DEAD_LETTERS_RECOVERED =
+            "crypto_v3_dead_letters_recovered"
 
         const val DEFAULT_PORT = 8080
         const val CURRENT_CONSENT_VERSION = 1
@@ -210,6 +212,10 @@ class GatewayPreferences(context: Context) {
     var lastCloudBackfillRunAt: Long
         get() = prefs.getLong(KEY_CLOUD_BACKFILL_LAST_RUN_AT, 0L)
         set(value) = prefs.edit().putLong(KEY_CLOUD_BACKFILL_LAST_RUN_AT, value).apply()
+
+    var cryptoV3DeadLettersRecovered: Boolean
+        get() = prefs.getBoolean(KEY_CRYPTO_V3_DEAD_LETTERS_RECOVERED, false)
+        set(value) = prefs.edit().putBoolean(KEY_CRYPTO_V3_DEAD_LETTERS_RECOVERED, value).apply()
 
     /**
      * SSOT for the stable per-device identity on the agent bridge (PR-05/08b):

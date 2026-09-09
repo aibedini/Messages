@@ -170,6 +170,13 @@ interface GatewayEventOutboxDao {
     @Query("UPDATE gateway_event_outbox SET state = 'PENDING' WHERE state = 'DEAD_LETTER'")
     suspend fun resetDeadLetterToPending(): Int
 
+    /** One-time v3 rollout recovery; retry only events emitted by the new protocol. */
+    @Query(
+        "UPDATE gateway_event_outbox SET state = 'PENDING', nextAttemptAt = 0 " +
+            "WHERE state = 'DEAD_LETTER' AND cryptoVersion >= :minCryptoVersion"
+    )
+    suspend fun resetCryptoDeadLetterToPending(minCryptoVersion: Int): Int
+
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state IN ('PENDING', 'SENDING')")
     suspend fun pendingDepth(): Int
 

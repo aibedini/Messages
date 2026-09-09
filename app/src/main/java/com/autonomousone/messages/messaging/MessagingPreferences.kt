@@ -12,6 +12,19 @@ class MessagingPreferences(context: Context) {
 
     private val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
+    init {
+        // v3.0.1: Full History is automatic. Migrate the old ASK default once,
+        // while still allowing the user to select ASK again afterwards.
+        if (!prefs.getBoolean(KEY_AUTOMATIC_FINANCIAL_SYNC_MIGRATED, false)) {
+            val editor = prefs.edit()
+            if (prefs.getString(KEY_FINANCIAL_POLICY, "ASK") == "ASK") {
+                editor.putString(KEY_FINANCIAL_POLICY, "SYNC")
+            }
+            editor.putBoolean(KEY_AUTOMATIC_FINANCIAL_SYNC_MIGRATED, true).apply()
+            com.autonomousone.messages.security.AskPrompt.dismissAll(context)
+        }
+    }
+
     /**
      * v2.6.13: escape hatch for feature-local keys that don't deserve a
      * full property (currently: per-SIM SMSC seeds "smsc_sim_<subId>").
@@ -48,6 +61,9 @@ class MessagingPreferences(context: Context) {
         private const val KEY_RATE_LIMIT_ENABLED = "send_rate_limit_enabled"
         private const val KEY_RATE_LIMIT_COUNT = "send_rate_limit_count"
         private const val KEY_RATE_LIMIT_WINDOW_MIN = "send_rate_limit_window_min"
+        private const val KEY_FINANCIAL_POLICY = "firewall_financial_policy"
+        private const val KEY_AUTOMATIC_FINANCIAL_SYNC_MIGRATED =
+            "automatic_financial_sync_migrated_v3"
 
         /** Sentinel meaning "the user has not picked a SIM line yet". */
         const val SUBSCRIPTION_UNSET = -1
@@ -102,7 +118,6 @@ class MessagingPreferences(context: Context) {
 
     private val KEY_LOCAL_ONLY_SENDERS = "firewall_local_only_senders"
     private val KEY_SYNC_ALLOWLIST_SENDERS = "firewall_sync_allowlist_senders"
-    private val KEY_FINANCIAL_POLICY = "firewall_financial_policy"
     private val KEY_AMBIGUITY_MODE = "firewall_ambiguity_mode"
 
     /** Window length in minutes. Default: 1 minute. */
@@ -126,9 +141,9 @@ class MessagingPreferences(context: Context) {
     var financialNotificationPolicy: com.autonomousone.messages.security.SensitiveMessageFirewall.Policy
         get() = runCatching {
             com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.valueOf(
-                prefs.getString(KEY_FINANCIAL_POLICY, "ASK") ?: "ASK"
+                prefs.getString(KEY_FINANCIAL_POLICY, "SYNC") ?: "SYNC"
             )
-        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.ASK)
+        }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.SYNC)
         set(value) = prefs.edit().putString(KEY_FINANCIAL_POLICY, value.name).apply()
 
     /**

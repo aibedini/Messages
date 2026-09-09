@@ -34,6 +34,14 @@ object AskPrompt {
     const val EXTRA_PROVIDER_ID = "extra_ask_provider_id"
     const val EXTRA_NOTIF_ID = "extra_ask_notif_id"
 
+    /** Removes prompts left by the pre-v3 automatic-sync default. */
+    fun dismissAll(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .deleteNotificationChannel(CHANNEL_ID)
+        }
+    }
+
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
