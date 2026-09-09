@@ -32,6 +32,12 @@ object PairingClient {
 
     private fun short(value: String): String = value.take(8)
 
+    private val compactPairingQr = Regex("^GMWEB:PAIR:1:([A-Z0-9]{10})$", RegexOption.IGNORE_CASE)
+
+    /** Pairing QR v1 carries only a one-time lookup code; no secrets or keys. */
+    fun parsePairingCodeQr(raw: String): String? =
+        compactPairingQr.matchEntire(raw.trim())?.groupValues?.get(1)?.uppercase()
+
     data class SessionInfo(
         val pairingSessionId: String,
         val webDeviceId: String,

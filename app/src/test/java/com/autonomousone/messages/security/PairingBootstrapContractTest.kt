@@ -9,6 +9,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PairingBootstrapContractTest {
+    @Test
+    fun compactQrCarriesResolvableOneTimeCode() {
+        assertEquals("ABC12DEF34", PairingClient.parsePairingCodeQr("GMWEB:PAIR:1:abc12def34"))
+        assertEquals(null, PairingClient.parsePairingCodeQr("GMWEB:PAIR:2:ABC12DEF34"))
+        assertEquals(null, PairingClient.parsePairingCodeQr("GMWEB:PAIR:1:TOO-SHORT"))
+    }
+
     private fun validQr(): JSONObject {
         val raw = checkNotNull(javaClass.classLoader?.getResourceAsStream("pairing-protocol-v1.json"))
             .bufferedReader(Charsets.UTF_8).use { it.readText() }

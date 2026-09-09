@@ -574,6 +574,15 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     qrStage = "Valid GMweb setup QR"
                                     return@QrCameraView true
                                 }
+                                val compactCode = PairingClient.parsePairingCodeQr(raw)
+                                if (compactCode != null) {
+                                    manualPairingCode = compactCode
+                                    step = "RESOLVING_PAIRING_CODE"
+                                    qrStage = "Valid GMweb pairing QR · Resolving secure transcript"
+                                    return@QrCameraView true
+                                }
+                                // Backward compatibility for QR codes generated
+                                // by older GMweb builds with the full transcript.
                                 val info = PairingClient.parseQrPayload(raw)
                                 if (info == null) {
                                     android.util.Log.w("QR_SCAN", "payload did not parse — scanner stays live")
