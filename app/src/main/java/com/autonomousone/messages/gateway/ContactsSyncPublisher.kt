@@ -126,7 +126,7 @@ class ContactsSyncPublisher(
                     payloadJson = payload.toString(),
                 )
                 val encrypted = ConversationKeyRepository(db).encrypt(
-                    plain, System.currentTimeMillis(), CONTACTS_CAPABILITY
+                    plain, CONTACTS_CAPABILITY
                 )
                 db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
             }

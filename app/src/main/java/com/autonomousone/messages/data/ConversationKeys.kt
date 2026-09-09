@@ -20,8 +20,8 @@ interface ConversationKeyDao {
     @Insert suspend fun insert(epoch: ConversationKeyEpochEntity): Long
     @Query("SELECT * FROM conversation_key_epochs WHERE conversationId = :conversationId AND generation = :generation AND historyFloor = :floor AND category = :category LIMIT 1")
     suspend fun current(conversationId: String, generation: Int, floor: Long, category: String): ConversationKeyEpochEntity?
-    @Query("SELECT * FROM conversation_key_epochs WHERE id > :after ORDER BY id LIMIT :limit")
-    suspend fun page(after: Long, limit: Int): List<ConversationKeyEpochEntity>
+    @Query("SELECT * FROM conversation_key_epochs WHERE conversationId = '__account_keyring__' ORDER BY id")
+    suspend fun accountKeyring(): List<ConversationKeyEpochEntity>
 
     /** FIX 1 (primary unlink): drop every conversation key on this device. */
     @Query("DELETE FROM conversation_key_epochs")

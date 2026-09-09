@@ -44,6 +44,8 @@ object GatewayEventFactory {
     object Encoding {
         const val JSON = "application/json"
         const val ENVELOPE_V1 = "envelope.v1"
+        const val ENVELOPE_V2 = "envelope.v2"
+        const val ENVELOPE_V3 = "envelope.v3"
     }
 
     /** Stable message identity shared by every event of one provider row. */
@@ -52,7 +54,7 @@ object GatewayEventFactory {
 
     /** Deterministic per-event UUID — dedupes redelivery of the SAME event. */
     fun eventUuidFor(eventType: String, source: String, providerId: Long, dateMs: Long): String =
-        UUID.nameUUIDFromBytes("evt:$eventType:$source:$providerId:$dateMs".toByteArray()).toString()
+        UUID.nameUUIDFromBytes("evt:v3:$eventType:$source:$providerId:$dateMs".toByteArray()).toString()
 
     /**
      * Build an outbox row whose `ciphertext` column holds the envelope JSON:

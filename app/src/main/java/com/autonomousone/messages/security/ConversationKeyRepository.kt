@@ -1,83 +1,326 @@
 package com.autonomousone.messages.security
 
 import androidx.room.withTransaction
-import com.autonomousone.messages.data.*
+import com.autonomousone.messages.data.ConversationKeyEpochEntity
+import com.autonomousone.messages.data.GatewayEventFactory
+import com.autonomousone.messages.data.GatewayEventOutboxEntity
+import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.TrustedDeviceEntity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** Runs within the same Room transaction as the canonical message/outbox row. */
+/**
+ * Encrypts cloud payloads and publishes browser-readable key material.
+ *
+ * v3 gives FULL_HISTORY browsers one origin-bound History Master Key. Normal
+ * messages also keep one rotating live wrap for FROM_NOW_ON browsers.
+ * Sensitive capability domains remain isolated in the small v2 keyring.
+ */
 class ConversationKeyRepository(private val db: MessagesDatabase) {
     companion object {
-        fun eligible(device: TrustedDeviceEntity, floor: Long, category: String, now: Long): Boolean {
-            if (device.status !in setOf(TrustedDeviceEntity.STATUS_ACTIVE, TrustedDeviceEntity.STATUS_PENDING_PUBLICATION) ||
-                device.certificateJson.isBlank() || device.expiresAt <= now || device.revokedAt != null) return false
-            val arr = JSONArray(device.capabilitiesJson)
-            val caps = (0 until arr.length()).map { arr.getString(it) }
-            return "READ_MESSAGES" in caps && (category.isBlank() || category in caps) &&
-                (device.historyGrant == "FULL_HISTORY" || (device.historyGrant == "FROM_NOW_ON" && floor >= device.approvedAt))
+        const val ACCOUNT_KEYRING_AGGREGATE = "__account_keyring__"
+        const val HISTORY_MASTER_AGGREGATE = "__history_master__"
+        const val KEYRING_ENTRY = "KEYRING_ENTRY"
+        const val HISTORY_KEY_GRANT = "HISTORY_KEY_GRANT"
+        const val MESSAGE_DOMAIN = "READ_MESSAGES"
+
+        val KEYRING_DOMAINS = setOf(
+            MESSAGE_DOMAIN,
+            "CONTACTS_READ",
+            "READ_OTP",
+            "READ_BANK_SECURITY",
+            "READ_PASSWORD_RESET",
+            "READ_AUTH_CODES",
+            "READ_FINANCIAL_NOTIFICATIONS"
+        )
+
+        private fun capabilities(device: TrustedDeviceEntity): Set<String> {
+            val values = JSONArray(device.capabilitiesJson)
+            return (0 until values.length()).mapTo(mutableSetOf()) { values.getString(it) }
         }
+
+        private fun trusted(device: TrustedDeviceEntity, now: Long): Boolean =
+            device.status in setOf(
+                TrustedDeviceEntity.STATUS_ACTIVE,
+                TrustedDeviceEntity.STATUS_PENDING_PUBLICATION
+            ) && device.certificateJson.isNotBlank() && device.expiresAt > now && device.revokedAt == null
+
+        fun domainFor(category: String): String = category.ifBlank { MESSAGE_DOMAIN }
+
+        private fun eligibleForAccountKey(
+            device: TrustedDeviceEntity,
+            epoch: ConversationKeyEpochEntity,
+            now: Long
+        ): Boolean {
+            if (!trusted(device, now)) return false
+            val caps = capabilities(device)
+            if (MESSAGE_DOMAIN !in caps || epoch.category !in caps) return false
+            if (epoch.category == MESSAGE_DOMAIN && device.historyGrant == "FULL_HISTORY") return false
+            return device.historyGrant == "FULL_HISTORY" || epoch.createdAt >= device.approvedAt
+        }
+
+        private fun eligibleForHistoryKey(device: TrustedDeviceEntity, now: Long): Boolean =
+            trusted(device, now) && device.historyGrant == "FULL_HISTORY" &&
+                MESSAGE_DOMAIN in capabilities(device)
     }
-    suspend fun encrypt(row: GatewayEventOutboxEntity, messageAt: Long, category: String): GatewayEventOutboxEntity {
+
+    suspend fun encrypt(
+        row: GatewayEventOutboxEntity,
+        category: String
+    ): GatewayEventOutboxEntity {
         val now = System.currentTimeMillis()
         val devices = db.trustedDeviceDao().all()
         val generation = db.trustStatementOutboxDao().maxTrustSequence()
-        // Time partitions prevent a historical backfill from reusing an epoch
-        // already granted to a device which selected FROM_NOW_ON.
-        val floor = devices.map { it.approvedAt }.filter { it <= messageAt }.maxOrNull() ?: 0L
-        var epoch = db.conversationKeyDao().current(row.aggregateId, generation, floor, category)
-        if (epoch == null) {
-            val id = UUID.randomUUID().toString()
-            val raw = MessageCrypto.randomKey()
-            try {
-                epoch = ConversationKeyEpochEntity(epochId = id, conversationId = row.aggregateId,
-                    generation = generation, historyFloor = floor, category = category,
-                    wrappedKey = ConversationKeyVault.wrap(id, raw), createdAt = now)
-                db.conversationKeyDao().insert(epoch)
-            } finally { raw.fill(0) }
-        }
-        val cke = ConversationKeyVault.unwrap(epoch.epochId, epoch.wrappedKey)
+        val domain = domainFor(category)
+        val epoch = accountEpoch(generation, domain, now)
+        val accountKey = ConversationKeyVault.unwrap(epoch.epochId, epoch.wrappedKey)
         try {
-            for (device in devices) if (eligible(device, floor, category, now)) grant(epoch, device, cke)
-            val payload = GatewayEventFactory.decodePayloadEnvelope(row.ciphertext).toByteArray(Charsets.UTF_8)
-            return row.copy(cryptoVersion = 1, ciphertext = MessageCrypto.encryptMessage(cke, epoch.epochId,
-                row.eventUuid, row.eventType, row.aggregateId, payload))
-        } finally { cke.fill(0) }
+            for (device in devices) {
+                if (eligibleForAccountKey(device, epoch, now)) publishKeyringEntry(epoch, device, accountKey)
+            }
+            val payload = GatewayEventFactory.decodePayloadEnvelope(row.ciphertext)
+                .toByteArray(Charsets.UTF_8)
+            if (domain == MESSAGE_DOMAIN) {
+                val history = historyMaster(now)
+                val historyKey = ConversationKeyVault.unwrap(history.epochId, history.wrappedKey)
+                try {
+                    for (device in devices) {
+                        if (eligibleForHistoryKey(device, now)) publishHistoryGrant(history, device, historyKey)
+                    }
+                    return row.copy(
+                        encoding = "envelope.v3",
+                        cryptoVersion = 3,
+                        ciphertext = MessageCrypto.encryptMessageV3(
+                            historyKey,
+                            history.epochId,
+                            accountKey,
+                            epoch.epochId,
+                            row.eventUuid,
+                            row.eventType,
+                            row.aggregateId,
+                            payload
+                        )
+                    )
+                } finally {
+                    historyKey.fill(0)
+                }
+            }
+            return row.copy(
+                encoding = "envelope.v2",
+                cryptoVersion = 2,
+                ciphertext = MessageCrypto.encryptMessageV2(
+                    accountKey,
+                    epoch.epochId,
+                    domain,
+                    row.eventUuid,
+                    row.eventType,
+                    row.aggregateId,
+                    payload
+                )
+            )
+        } finally {
+            accountKey.fill(0)
+        }
     }
 
-    private suspend fun grant(epoch: ConversationKeyEpochEntity, device: TrustedDeviceEntity, raw: ByteArray) {
-        val eventId = UUID.nameUUIDFromBytes("grant:${epoch.epochId}:${device.deviceId}:${device.encryptionPublicKey}"
-            .toByteArray(Charsets.UTF_8)).toString()
+    private suspend fun historyMaster(now: Long): ConversationKeyEpochEntity {
+        db.conversationKeyDao().current(
+            HISTORY_MASTER_AGGREGATE, 0, 0L, MESSAGE_DOMAIN
+        )?.let { return it }
+        val keyId = UUID.randomUUID().toString()
+        val raw = MessageCrypto.randomKey()
+        try {
+            db.conversationKeyDao().insert(
+                ConversationKeyEpochEntity(
+                    epochId = keyId,
+                    conversationId = HISTORY_MASTER_AGGREGATE,
+                    generation = 0,
+                    historyFloor = 0L,
+                    category = MESSAGE_DOMAIN,
+                    wrappedKey = ConversationKeyVault.wrap(keyId, raw),
+                    createdAt = now
+                )
+            )
+            return db.conversationKeyDao().current(
+                HISTORY_MASTER_AGGREGATE, 0, 0L, MESSAGE_DOMAIN
+            )!!
+        } finally {
+            raw.fill(0)
+        }
+    }
+
+    private suspend fun accountEpoch(
+        generation: Int,
+        domain: String,
+        now: Long
+    ): ConversationKeyEpochEntity {
+        require(domain in KEYRING_DOMAINS) { "Unsupported keyring domain" }
+        db.conversationKeyDao().current(ACCOUNT_KEYRING_AGGREGATE, generation, 0L, domain)?.let {
+            return it
+        }
+        val keyId = UUID.randomUUID().toString()
+        val raw = MessageCrypto.randomKey()
+        try {
+            val epoch = ConversationKeyEpochEntity(
+                epochId = keyId,
+                conversationId = ACCOUNT_KEYRING_AGGREGATE,
+                generation = generation,
+                historyFloor = 0L,
+                category = domain,
+                wrappedKey = ConversationKeyVault.wrap(keyId, raw),
+                createdAt = now
+            )
+            db.conversationKeyDao().insert(epoch)
+            return db.conversationKeyDao()
+                .current(ACCOUNT_KEYRING_AGGREGATE, generation, 0L, domain)!!
+        } finally {
+            raw.fill(0)
+        }
+    }
+
+    private suspend fun publishKeyringEntry(
+        epoch: ConversationKeyEpochEntity,
+        device: TrustedDeviceEntity,
+        raw: ByteArray
+    ) {
+        val eventId = UUID.nameUUIDFromBytes(
+            "keyring:${epoch.epochId}:${device.deviceId}:${device.encryptionPublicKey}"
+                .toByteArray(Charsets.UTF_8)
+        ).toString()
         if (db.gatewayEventOutboxDao().idOf(eventId) != null) return
-        val fields = arrayOf(epoch.epochId, epoch.conversationId, device.deviceId, epoch.category, epoch.historyFloor.toString())
-        val wrapped = MessageCrypto.b64(MessageCrypto.wrapForDevice(MessageCrypto.unb64(device.encryptionPublicKey), raw,
-            MessageCrypto.binding("GMweb-CKE-v1", *fields)))
-        val payload = JSONObject().put("v", 1).put("kind", "key-grant").put("epochId", epoch.epochId)
-            .put("conversationId", epoch.conversationId).put("deviceId", device.deviceId)
-            .put("category", epoch.category).put("historyFloor", epoch.historyFloor)
-            .put("wrappedCke", wrapped).put("rootSignature", PrimaryTrustRoot.signBytes(
-                MessageCrypto.binding("GMweb-CKE-signature-v1", *fields, wrapped)))
-        val grantType = if (epoch.category == "CONTACTS_READ") "CONTACTS_KEY_GRANT" else "KEY_GRANT"
-        db.gatewayEventOutboxDao().insertOrIgnore(GatewayEventOutboxEntity(eventUuid = eventId,
-            eventType = grantType, aggregateId = epoch.conversationId, ciphertext = payload.toString().toByteArray(Charsets.UTF_8),
-            encoding = "envelope.v1", schemaVersion = 1, cryptoVersion = 1, createdAt = System.currentTimeMillis()))
+        val fields = arrayOf(
+            epoch.epochId,
+            epoch.category,
+            device.deviceId,
+            epoch.generation.toString()
+        )
+        val wrapped = MessageCrypto.b64(
+            MessageCrypto.wrapForDevice(
+                MessageCrypto.unb64(device.encryptionPublicKey),
+                raw,
+                MessageCrypto.binding("GMweb-account-key-v2", *fields)
+            )
+        )
+        val payload = JSONObject()
+            .put("v", 2)
+            .put("kind", "keyring-entry")
+            .put("keyId", epoch.epochId)
+            .put("domain", epoch.category)
+            .put("deviceId", device.deviceId)
+            .put("generation", epoch.generation)
+            .put("wrappedKey", wrapped)
+            .put(
+                "rootSignature",
+                PrimaryTrustRoot.signBytes(
+                    MessageCrypto.binding("GMweb-account-key-signature-v2", *fields, wrapped)
+                )
+            )
+        db.gatewayEventOutboxDao().insertOrIgnore(
+            GatewayEventOutboxEntity(
+                eventUuid = eventId,
+                eventType = KEYRING_ENTRY,
+                aggregateId = ACCOUNT_KEYRING_AGGREGATE,
+                ciphertext = payload.toString().toByteArray(Charsets.UTF_8),
+                encoding = "envelope.v2",
+                schemaVersion = 1,
+                cryptoVersion = 2,
+                createdAt = System.currentTimeMillis()
+            )
+        )
     }
 
-    /** Implicit durable job per signed trust revision; pages and emitted grants commit together. */
+    private suspend fun publishHistoryGrant(
+        epoch: ConversationKeyEpochEntity,
+        device: TrustedDeviceEntity,
+        raw: ByteArray
+    ) {
+        val certificate = JSONObject(device.certificateJson)
+        val origin = certificate.getString("webOrigin")
+        val transcriptHash = certificate.getString("pairingTranscriptHash")
+        val fields = arrayOf(
+            epoch.epochId,
+            device.deviceId,
+            origin,
+            device.trustSequence.toString(),
+            transcriptHash,
+            device.encryptionPublicKey
+        )
+        val eventId = UUID.nameUUIDFromBytes(
+            (listOf("history-key-v3") + fields).joinToString(":").toByteArray(Charsets.UTF_8)
+        ).toString()
+        if (db.gatewayEventOutboxDao().idOf(eventId) != null) return
+        val wrapped = MessageCrypto.b64(
+            MessageCrypto.wrapForDevice(
+                MessageCrypto.unb64(device.encryptionPublicKey),
+                raw,
+                MessageCrypto.binding("GMweb-history-key-v3", *fields)
+            )
+        )
+        val payload = JSONObject()
+            .put("v", 3)
+            .put("kind", "history-key-grant")
+            .put("keyId", epoch.epochId)
+            .put("deviceId", device.deviceId)
+            .put("origin", origin)
+            .put("trustSequence", device.trustSequence)
+            .put("pairingTranscriptHash", transcriptHash)
+            .put("encryptionPublicKey", device.encryptionPublicKey)
+            .put("wrappedKey", wrapped)
+            .put(
+                "rootSignature",
+                PrimaryTrustRoot.signBytes(
+                    MessageCrypto.binding("GMweb-history-key-signature-v3", *fields, wrapped)
+                )
+            )
+        db.gatewayEventOutboxDao().insertOrIgnore(
+            GatewayEventOutboxEntity(
+                eventUuid = eventId,
+                eventType = HISTORY_KEY_GRANT,
+                aggregateId = HISTORY_MASTER_AGGREGATE,
+                ciphertext = payload.toString().toByteArray(Charsets.UTF_8),
+                encoding = "envelope.v3",
+                schemaVersion = 1,
+                cryptoVersion = 3,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    /**
+     * Publishes the one v3 history grant plus any capability-domain keys.
+     */
     suspend fun drainHistoryGrants() {
+        val now = System.currentTimeMillis()
         for (candidate in db.trustedDeviceDao().all()) {
             db.withTransaction {
                 val device = db.trustedDeviceDao().byId(candidate.deviceId) ?: return@withTransaction
-                if (device.status !in setOf(TrustedDeviceEntity.STATUS_ACTIVE, TrustedDeviceEntity.STATUS_PENDING_PUBLICATION)) return@withTransaction
-                val direction = "cke-grants:${device.deviceId}:${device.trustSequence}"
-                val cursor = db.syncCursorDao().get(direction)?.lastSequence ?: 0L
-                val page = db.conversationKeyDao().page(cursor, 25)
-                for (epoch in page) if (eligible(device, epoch.historyFloor, epoch.category, System.currentTimeMillis())) {
-                    val raw = ConversationKeyVault.unwrap(epoch.epochId, epoch.wrappedKey)
-                    try { grant(epoch, device, raw) } finally { raw.fill(0) }
+                if (!trusted(device, now)) return@withTransaction
+
+                val generation = db.trustStatementOutboxDao().maxTrustSequence()
+                capabilities(device).filterTo(mutableSetOf()) {
+                    it in KEYRING_DOMAINS && !(it == MESSAGE_DOMAIN && device.historyGrant == "FULL_HISTORY")
                 }
-                if (page.isNotEmpty()) db.syncCursorDao().upsert(SyncCursorEntity(direction,
-                    lastSequence = page.last().id, updatedAt = System.currentTimeMillis()))
+                    .forEach { accountEpoch(generation, it, now) }
+                if (eligibleForHistoryKey(device, now)) {
+                    val history = historyMaster(now)
+                    val raw = ConversationKeyVault.unwrap(history.epochId, history.wrappedKey)
+                    try {
+                        publishHistoryGrant(history, device, raw)
+                    } finally {
+                        raw.fill(0)
+                    }
+                }
+                for (epoch in db.conversationKeyDao().accountKeyring()) {
+                    if (!eligibleForAccountKey(device, epoch, now)) continue
+                    val raw = ConversationKeyVault.unwrap(epoch.epochId, epoch.wrappedKey)
+                    try {
+                        publishKeyringEntry(epoch, device, raw)
+                    } finally {
+                        raw.fill(0)
+                    }
+                }
+
             }
         }
     }

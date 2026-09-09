@@ -88,7 +88,10 @@ object ConnectionDiagnostics {
         local += mirrorCheck("MMS history backfill", mmsState, initial = false)
         local += watermarkCheck("MMS provider watermarks", mmsState)
         local += eventSummaryCheck("Cloud MESSAGE_CREATED", "MESSAGE_CREATED", eventCounts)
-        local += eventSummaryCheck("Cloud KEY_GRANT", "KEY_GRANT", eventCounts)
+        val cloudKeyType = listOf("HISTORY_KEY_GRANT", "KEYRING_ENTRY", "KEY_GRANT")
+            .firstOrNull { type -> eventCounts.any { it.eventType == type && it.state == "ACKED" } }
+            ?: "HISTORY_KEY_GRANT"
+        local += eventSummaryCheck("Cloud message key", cloudKeyType, eventCounts)
         local += Check("Cloud event groups", eventCounts.none { it.state == "DEAD_LETTER" },
             eventCounts.joinToString(" · ").ifBlank { "none" })
         local += Check("Last Android server sequence", maxAckedSequence > 0, maxAckedSequence.toString())

@@ -787,7 +787,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                     if (res.isSuccess) {
                                                         com.autonomousone.messages.data.TelephonySyncCoordinator.get(context).requestSync()
                                                         // FIX 2: a REAL approve happened — auto-backfill the encrypted
-                                                        // cloud history (SMS+MMS) and emit KEY_GRANTs for this device
+                                                            // cloud history and emit one v3 history key for this device
                                                         // instead of waiting for the uploader's own drain cycle.
                                                         com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
                                                             .requestCloudBackfillForLinkedDevice(info0.webDeviceId)

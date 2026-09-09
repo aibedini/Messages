@@ -27,7 +27,7 @@ import org.junit.Test
  *   1. An inbound message is mirrored → an encrypted MESSAGE_CREATED row is
  *      committed to the durable outbox (body never leaves as plaintext).
  *   2. A browser is approved (trusted device, FULL_HISTORY).
- *   3. The post-approve key-grant drain emits a KEY_GRANT for that device.
+ *   3. The post-approve keyring drain emits one HISTORY_KEY_GRANT for that device.
  *
  * The network hops (batch upload + PWA decrypt) require a real gateway and a
  * linked browser; this test pins every device-side precondition instead.
@@ -74,7 +74,7 @@ class MessageSyncE2EDeviceTest {
             val outboxBeforeApprove = db.gatewayEventOutboxDao().claimable(Long.MAX_VALUE, 10)
             assertEquals(1, outboxBeforeApprove.size)
             assertEquals("MESSAGE_CREATED", outboxBeforeApprove.single().eventType)
-            assertEquals(1, outboxBeforeApprove.single().cryptoVersion)
+            assertEquals(3, outboxBeforeApprove.single().cryptoVersion)
             assertFalse(
                 "ciphertext must not contain the plaintext body",
                 String(outboxBeforeApprove.single().ciphertext).contains("hello e2e")
@@ -101,7 +101,10 @@ class MessageSyncE2EDeviceTest {
                     encryptionPublicKey = rawUncompressedPointBase64(),
                     capabilitiesJson = "[\"READ_MESSAGES\",\"CONTACTS_READ\"]",
                     historyGrant = "FULL_HISTORY",
-                    certificateJson = "{}",
+                    certificateJson = JSONObject()
+                        .put("webOrigin", "https://gmweb.example")
+                        .put("pairingTranscriptHash", "device-test-transcript")
+                        .toString(),
                     certificateSignature = "",
                     trustSequence = 1,
                     status = TrustedDeviceEntity.STATUS_ACTIVE,
@@ -113,7 +116,7 @@ class MessageSyncE2EDeviceTest {
                 )
             )
 
-            // 3) A contact snapshot is encrypted and grants its separate key.
+            // 3) A contact snapshot uses its separate account-key domain.
             db.withTransaction {
                 val plain = GatewayEventFactory.outboxRow(
                     eventUuid = UUID.randomUUID().toString(),
@@ -128,20 +131,19 @@ class MessageSyncE2EDeviceTest {
                         .put("deleted", org.json.JSONArray())
                         .toString(),
                 )
-                val encrypted = ConversationKeyRepository(db).encrypt(plain, now, "CONTACTS_READ")
+                val encrypted = ConversationKeyRepository(db).encrypt(plain, "CONTACTS_READ")
                 db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
             }
 
-            // 4) Post-approve drain emits message-history grants too.
+            // 4) Post-approve drain emits the bounded account keyring.
             ConversationKeyRepository(db).drainHistoryGrants()
             val allRows = db.gatewayEventOutboxDao().claimable(Long.MAX_VALUE, 50)
             assertEquals(2, allRows.count { it.eventType == "MESSAGE_CREATED" })
-            assertTrue(allRows.any { it.eventType == "CONTACTS_SNAPSHOT" && it.cryptoVersion == 1 })
-            assertTrue(allRows.any { it.eventType == "CONTACTS_KEY_GRANT" })
-            val grants = allRows
-                .filter { it.eventType == "KEY_GRANT" }
-            assertTrue("KEY_GRANT must exist for the newly approved device", grants.isNotEmpty())
-            assertTrue(grants.all { String(it.ciphertext).contains("web-e2e-device") })
+            assertTrue(allRows.any { it.eventType == "CONTACTS_SNAPSHOT" && it.cryptoVersion == 2 })
+            val entries = allRows.filter { it.eventType == "HISTORY_KEY_GRANT" }
+            assertEquals("FULL_HISTORY must issue exactly one history key", 1, entries.size)
+            assertTrue(entries.all { String(it.ciphertext).contains("web-e2e-device") })
+            assertFalse("v3 must not regenerate per-conversation grants", allRows.any { it.eventType == "KEY_GRANT" })
         } finally {
             db.close()
         }

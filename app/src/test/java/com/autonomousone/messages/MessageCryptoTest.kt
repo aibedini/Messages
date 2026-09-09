@@ -2,7 +2,6 @@ package com.autonomousone.messages
 
 import com.autonomousone.messages.security.MessageCrypto
 import com.autonomousone.messages.security.ConversationKeyRepository
-import com.autonomousone.messages.data.TrustedDeviceEntity
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -52,17 +51,73 @@ class MessageCryptoTest {
         } catch (_: javax.crypto.AEADBadTagException) { }
     }
 
-    @Test fun historyAndSensitiveGrantsRespectTrustBoundary() {
-        val d = TrustedDeviceEntity("device", "default", "Web", "WEB_PWA", "https://example.test", "sign", "encrypt",
-            "[\"READ_MESSAGES\"]", "FROM_NOW_ON", "certificate", "sig", 1, "ACTIVE", 100, 1000, null, 100, 100)
-        assertFalse(ConversationKeyRepository.eligible(d, 0, "", 200))
-        assertFalse(ConversationKeyRepository.eligible(d, 99, "", 200))
-        assertTrue(ConversationKeyRepository.eligible(d, 100, "", 200))
-        assertTrue(ConversationKeyRepository.eligible(d.copy(historyGrant = "FULL_HISTORY"), 0, "", 200))
-        assertFalse(ConversationKeyRepository.eligible(d.copy(status = "REVOKE_PENDING"), 100, "", 200))
-        assertFalse(ConversationKeyRepository.eligible(d, 100, "READ_OTP", 200))
-        assertTrue(ConversationKeyRepository.eligible(d.copy(capabilitiesJson = "[\"READ_MESSAGES\",\"READ_OTP\"]"), 100, "READ_OTP", 200))
-        assertFalse(ConversationKeyRepository.eligible(d, 100, "", 1000))
+    @Test fun v2AccountKeyringUsesCapabilityDomainsAndRoundTrips() {
+        assertEquals("READ_MESSAGES", ConversationKeyRepository.domainFor(""))
+        assertEquals("CONTACTS_READ", ConversationKeyRepository.domainFor("CONTACTS_READ"))
+        assertEquals(7, ConversationKeyRepository.KEYRING_DOMAINS.size)
+
+        val accountKey = MessageCrypto.randomKey()
+        val payload = """{"messageId":"m1","body":"hello"}""".toByteArray()
+        val envelope = JSONObject(String(MessageCrypto.encryptMessageV2(
+            accountKey, "key-1", "READ_MESSAGES", "event-1", "MESSAGE_CREATED", "thread-1", payload
+        )))
+        val fields = arrayOf("key-1", "READ_MESSAGES", "event-1", "MESSAGE_CREATED", "thread-1")
+        val dek = MessageCrypto.open(
+            accountKey,
+            MessageCrypto.Sealed(
+                MessageCrypto.unb64(envelope.getString("wrapIv")),
+                MessageCrypto.unb64(envelope.getString("wrappedDek"))
+            ),
+            MessageCrypto.binding("GMweb-DEK-v2", *fields)
+        )
+        val opened = MessageCrypto.open(
+            dek,
+            MessageCrypto.Sealed(
+                MessageCrypto.unb64(envelope.getString("iv")),
+                MessageCrypto.unb64(envelope.getString("ciphertext"))
+            ),
+            MessageCrypto.binding("GMweb-message-v2", *fields)
+        )
+        assertArrayEquals(payload, opened)
+        dek.fill(0)
+        accountKey.fill(0)
+    }
+
+    @Test fun v3FullHistoryAndFromNowOnWrapsOpenTheSameMessage() {
+        val historyKey = MessageCrypto.randomKey()
+        val liveKey = MessageCrypto.randomKey()
+        val payload = """{"messageId":"m3","body":"full history"}""".toByteArray()
+        val envelope = JSONObject(String(MessageCrypto.encryptMessageV3(
+            historyKey, "history-1", liveKey, "live-1",
+            "event-3", "MESSAGE_CREATED", "thread-3", payload
+        )))
+        val fields = arrayOf(
+            "history-1", "live-1", "READ_MESSAGES", "event-3", "MESSAGE_CREATED", "thread-3"
+        )
+        fun open(wrappingKey: ByteArray, prefix: String, aad: String): ByteArray {
+            val dek = MessageCrypto.open(
+                wrappingKey,
+                MessageCrypto.Sealed(
+                    MessageCrypto.unb64(envelope.getString("${prefix}WrapIv")),
+                    MessageCrypto.unb64(envelope.getString("${prefix}WrappedDek"))
+                ),
+                MessageCrypto.binding(aad, *fields)
+            )
+            return try {
+                MessageCrypto.open(
+                    dek,
+                    MessageCrypto.Sealed(
+                        MessageCrypto.unb64(envelope.getString("iv")),
+                        MessageCrypto.unb64(envelope.getString("ciphertext"))
+                    ),
+                    MessageCrypto.binding("GMweb-message-v3", *fields)
+                )
+            } finally { dek.fill(0) }
+        }
+        assertArrayEquals(payload, open(historyKey, "history", "GMweb-history-DEK-v3"))
+        assertArrayEquals(payload, open(liveKey, "live", "GMweb-live-DEK-v3"))
+        historyKey.fill(0)
+        liveKey.fill(0)
     }
 
     /** Generated artifact contains ONLY fresh throwaway test keys, never Android identities. */
