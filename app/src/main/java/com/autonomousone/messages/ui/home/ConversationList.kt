@@ -38,6 +38,7 @@ import com.autonomousone.messages.ui.components.SmsItem
  */
 data class HomeRow(
     val sms: Sms,
+    val displayName: String,
     val draftKey: String,
     val draftText: String,
     val isPinned: Boolean,
@@ -68,8 +69,8 @@ fun ConversationList(
     directNumber: String,
     onDirectSend: () -> Unit,
     globalHeaderText: String,
-    globalHits: List<Sms>,
-    onGlobalHitClick: (Sms) -> Unit,
+    globalHits: List<HomeRow>,
+    onGlobalHitClick: (HomeRow) -> Unit,
     onRowClick: (HomeRow) -> Unit,
     onRowPin: (HomeRow) -> Unit,
     onRowBlock: (HomeRow) -> Unit,
@@ -142,12 +143,13 @@ fun ConversationList(
                 }
                 items(
                     items = globalHits,
-                    key = { "global_${it.id}" }
+                    key = { "global_${it.sms.id}" }
                 ) { hit ->
                     SmsItem(
-                        sms = hit.copy(
-                            message = "🔎 ${hit.message.take(80)}"
+                        sms = hit.sms.copy(
+                            message = "🔎 ${hit.sms.message.take(80)}"
                         ),
+                        displayName = hit.displayName,
                         onClick = { onGlobalHitClick(hit) }
                     )
                 }
@@ -160,6 +162,7 @@ fun ConversationList(
             ) { row ->
                 SmsItem(
                     sms = row.sms,
+                    displayName = row.displayName,
                     modifier = Modifier.animateItem(
                         fadeInSpec = androidx.compose.animation.core.tween(durationMillis = 220),
                         placementSpec = androidx.compose.animation.core.spring(

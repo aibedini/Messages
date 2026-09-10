@@ -49,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,7 +57,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.autonomousone.messages.R
 import com.autonomousone.messages.model.Sms
-import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.ui.theme.StatusError
 import com.autonomousone.messages.ui.theme.UnreadBadgeColor
 import com.autonomousone.messages.utils.formatConversationDate
@@ -67,6 +65,9 @@ import com.autonomousone.messages.utils.formatConversationDate
 @Composable
 fun SmsItem(
     sms: Sms,
+    /** Resolved display name (contact lookup is done in the ViewModel/caller,
+     *  never inside composition — RFP §8). */
+    displayName: String,
     onClick: () -> Unit,
     onArchive: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
@@ -84,10 +85,6 @@ fun SmsItem(
     isArchived: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val displayName = remember(sms.sender) {
-        ContactRepository(context).getCachedDisplayName(sms.sender)
-    }
     var menuOpen by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
@@ -258,7 +255,7 @@ fun SmsItem(
                                 Text(
                                     text = displayName,
                                     fontWeight = if (sms.unread) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    fontSize = 16.sp,
+                                    style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -273,7 +270,7 @@ fun SmsItem(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = stringResource(R.string.list_draft_label),
-                                        fontSize = 14.sp,
+                                        style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.error,
                                         maxLines = 1
@@ -281,7 +278,7 @@ fun SmsItem(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = draftText,
-                                        fontSize = 14.sp,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         fontStyle = FontStyle.Italic,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -291,7 +288,7 @@ fun SmsItem(
                             } else {
                                 Text(
                                     text = sms.message,
-                                    fontSize = 14.sp,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (sms.unread) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (sms.unread) {
                                         MaterialTheme.colorScheme.onSurface
@@ -312,7 +309,7 @@ fun SmsItem(
                         ) {
                             Text(
                                 text = formatConversationDate(sms.date),
-                                fontSize = 12.sp,
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (sms.unread) FontWeight.Bold else FontWeight.Medium,
                                 color = if (sms.unread) {
                                     MaterialTheme.colorScheme.primary
@@ -326,7 +323,7 @@ fun SmsItem(
                             if (showYouMarker && sms.type == 2) {
                                 Text(
                                     text = "you",
-                                    fontSize = 10.sp,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                                 )

@@ -267,8 +267,12 @@ fun HomeScreen(
                 // composition of the list item (RFP §8/§9). No I/O here.
                 val blockedMsg = stringResource(R.string.home_snackbar_blocked)
                 val rows = filteredList.map { sms ->
+                    val displayName = viewModel.contactNames[
+                        ContactRepository.normalizePhone(sms.sender)
+                    ] ?: sms.sender
                     HomeRow(
                         sms = sms,
+                        displayName = displayName,
                         draftKey = DraftRepository.keyFor(sms.threadId, sms.sender),
                         draftText = draftMap[DraftRepository.keyFor(sms.threadId, sms.sender)].orEmpty(),
                         isPinned = sms.threadId in viewModel.pinnedIds,
@@ -295,11 +299,23 @@ fun HomeScreen(
                         )
                     },
                     globalHeaderText = stringResource(R.string.home_search_global_header),
-                    globalHits = viewModel.globalResults.map { it.sms },
-                    onGlobalHitClick = { hit ->
+                    globalHits = viewModel.globalResults.map { hit ->
                         val displayName = viewModel.contactNames[
-                            ContactRepository.normalizePhone(hit.sender)
-                        ] ?: hit.sender
+                            ContactRepository.normalizePhone(hit.sms.sender)
+                        ] ?: hit.sms.sender
+                        HomeRow(
+                            sms = hit.sms,
+                            displayName = displayName,
+                            draftKey = "",
+                            draftText = "",
+                            isPinned = false,
+                            isArchived = false,
+                            showYouMarker = false,
+                        )
+                    },
+                    onGlobalHitClick = { row ->
+                        val hit = row.sms
+                        val displayName = row.displayName
                         ConversationLaunchStore.put(
                             ConversationLaunchStore.Snapshot(
                                 threadId = hit.threadId,
