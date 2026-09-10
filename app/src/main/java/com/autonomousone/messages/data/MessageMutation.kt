@@ -15,7 +15,9 @@ sealed interface MessageMutation {
     /** Insert or update a single message by exact identity. */
     data class Upsert(
         val source: String,
-        val message: com.autonomousone.messages.model.Sms
+        val message: com.autonomousone.messages.model.Sms,
+        val originCommandId: String? = null,
+        val clientMessageId: String? = null,
     ) : MessageMutation
 
     /** Delete a single message by exact identity. */

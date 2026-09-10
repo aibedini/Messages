@@ -46,7 +46,7 @@ import com.autonomousone.messages.BuildConfig
         DeviceTelemetryEntity::class,
         ConversationKeyEpochEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -331,6 +331,17 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V9_SQL.forEach(db::execSQL) }
         }
 
+        internal val UPGRADE_TO_V10_SQL = listOf(
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `messageId` TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `revision` INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `sortKey` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `priority` TEXT NOT NULL DEFAULT 'REALTIME'",
+            "CREATE INDEX IF NOT EXISTS `index_gateway_event_outbox_state_priority_nextAttemptAt` ON `gateway_event_outbox` (`state`, `priority`, `nextAttemptAt`)"
+        )
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V10_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -342,7 +353,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

@@ -15,6 +15,19 @@ import kotlin.random.Random
  * the batch policy boundary values (LOCK 13).
  */
 class GatewayEventFactoryTest {
+    @Test
+    fun `history event exposes only opaque state metadata and stays low priority`() {
+        val row = GatewayEventFactory.messageCreated(
+            source = "sms", providerId = 42, conversationId = "opaque-conversation",
+            direction = "in", body = "secret", dateMs = 1234, status = 0,
+            revision = 1, priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL,
+        )
+        assertEquals(GatewayEventFactory.messageIdFor("sms", 42, 1234), row.messageId)
+        assertEquals(1, row.revision)
+        assertEquals(1234, row.sortKey)
+        assertEquals(GatewayEventOutboxEntity.PRIORITY_BACKFILL, row.priority)
+        assertTrue(row.messageId.contains("secret").not())
+    }
 
     @Test
     fun `encrypted transport does not invoke legacy JSON decoder`() {

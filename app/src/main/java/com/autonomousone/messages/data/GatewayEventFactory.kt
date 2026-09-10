@@ -32,6 +32,7 @@ object GatewayEventFactory {
     /** Wire event type constants (TechSpec §67). */
     object Types {
         const val CONVERSATION_UPSERTED = "CONVERSATION_UPSERTED"
+        const val CONVERSATION_DELETED = "CONVERSATION_DELETED"
         const val MESSAGE_CREATED = "MESSAGE_CREATED"
         const val MESSAGE_UPDATED = "MESSAGE_UPDATED"
         const val MESSAGE_STATUS_CHANGED = "MESSAGE_STATUS_CHANGED"
@@ -122,6 +123,10 @@ object GatewayEventFactory {
         address: String = "",
         contactName: String? = null,
         read: Boolean = false,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
+        revision: Long = System.currentTimeMillis(),
+        priority: String = GatewayEventOutboxEntity.PRIORITY_REALTIME,
     ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
@@ -132,11 +137,21 @@ object GatewayEventFactory {
             .put("address", address)
             .put("read", read)
         if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
+        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
+        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
+        val eventId = if (priority == GatewayEventOutboxEntity.PRIORITY_BACKFILL)
+            UUID.nameUUIDFromBytes("evt:replica-v4:$source:$providerId:$dateMs".toByteArray()).toString()
+        else eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs)
         return outboxRow(
-            eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs),
+            eventId,
             Types.MESSAGE_CREATED,
             conversationId,
             payload.toString()
+        ).copy(
+            messageId = messageIdFor(source, providerId, dateMs),
+            revision = revision,
+            sortKey = dateMs,
+            priority = priority,
         )
     }
 
@@ -145,16 +160,31 @@ object GatewayEventFactory {
         providerId: Long,
         conversationId: String,
         status: Int,
-        dateMs: Long
+        dateMs: Long,
+        direction: String? = null,
+        body: String? = null,
+        address: String? = null,
+        contactName: String? = null,
+        read: Boolean = false,
     ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
             .put("status", status)
+            .put("dateMs", dateMs)
+            .put("read", read)
+        if (direction != null) payload.put("direction", direction)
+        if (body != null) payload.put("body", body)
+        if (address != null) payload.put("address", address)
+        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
         return outboxRow(
             eventUuidFor("${Types.MESSAGE_STATUS_CHANGED}:$status", source, providerId, dateMs),
             Types.MESSAGE_STATUS_CHANGED,
             conversationId,
             payload.toString()
+        ).copy(
+            messageId = messageIdFor(source, providerId, dateMs),
+            revision = System.currentTimeMillis(),
+            sortKey = dateMs,
         )
     }
 
@@ -170,6 +200,10 @@ object GatewayEventFactory {
             Types.MESSAGE_DELETED,
             conversationId,
             payload.toString()
+        ).copy(
+            messageId = messageIdFor(source, providerId, dateMs),
+            revision = System.currentTimeMillis(),
+            sortKey = dateMs,
         )
     }
 
@@ -184,4 +218,43 @@ object GatewayEventFactory {
             payload.toString()
         )
     }
+
+    fun conversationUpserted(
+        conversationId: String,
+        displayName: String?,
+        address: String,
+        lastMessagePreview: String,
+        lastMessageDirection: String,
+        lastMessageAt: Long,
+        unreadCount: Int,
+        pinned: Boolean,
+        archived: Boolean,
+        revision: Long = System.currentTimeMillis(),
+        priority: String = GatewayEventOutboxEntity.PRIORITY_REALTIME,
+    ): GatewayEventOutboxEntity {
+        val payload = JSONObject()
+            .put("conversationId", conversationId)
+            .put("displayName", displayName ?: address)
+            .put("address", address)
+            .put("lastMessagePreview", lastMessagePreview)
+            .put("lastMessageDirection", lastMessageDirection)
+            .put("lastMessageAt", lastMessageAt)
+            .put("unreadCount", unreadCount)
+            .put("pinned", pinned)
+            .put("archived", archived)
+        return outboxRow(
+            UUID.nameUUIDFromBytes("conversation:$conversationId:$revision".toByteArray()).toString(),
+            Types.CONVERSATION_UPSERTED,
+            conversationId,
+            payload.toString(),
+        ).copy(revision = revision, sortKey = lastMessageAt, priority = priority)
+    }
+
+    fun conversationDeleted(conversationId: String, revision: Long = System.currentTimeMillis()) =
+        outboxRow(
+            UUID.nameUUIDFromBytes("conversation-delete:$conversationId:$revision".toByteArray()).toString(),
+            Types.CONVERSATION_DELETED,
+            conversationId,
+            JSONObject().put("conversationId", conversationId).toString(),
+        ).copy(revision = revision, sortKey = revision)
 }

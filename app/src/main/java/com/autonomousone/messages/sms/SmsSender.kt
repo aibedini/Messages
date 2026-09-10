@@ -84,9 +84,13 @@ class SmsSender(
         text: String,
         subscriptionIdOverride: Int?,
         smscOverride: String?,
-        showToast: Boolean
+        showToast: Boolean,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
     ): SendOutcome {
         val sentId = persistToSent(phone, text)
+        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+            .providerRowChanged("sms", sentId, originCommandId, clientMessageId)
         // Tell the app (Home list) instantly: this thread now has a newer
         // message. Works even while the chat screen is still on top. Emitted
         // exactly once per executed command (every funnel path runs through
@@ -115,7 +119,9 @@ class SmsSender(
         subscriptionIdOverride: Int? = null,
         smscOverride: String? = null,
         showToast: Boolean = false,
-        threadId: Long = 0L
+        threadId: Long = 0L,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
     ): SendOutcome {
         if (com.autonomousone.messages.BuildConfig.DEBUG) {
             check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
@@ -126,7 +132,10 @@ class SmsSender(
         if (!enqueueMode) {
             // Direct path (flag off): legacy behaviour, still the ONLY place
             // SmsManager is ever touched.
-            return directSend(phone, text, subscriptionIdOverride, smscOverride, showToast)
+            return directSend(
+                phone, text, subscriptionIdOverride, smscOverride, showToast,
+                originCommandId, clientMessageId
+            )
         }
         // ── Durable path: remote_commands row → execute → mark ─────────────
         val idempotencyKey = java.util.UUID.randomUUID().toString()
@@ -150,7 +159,10 @@ class SmsSender(
                     )
                 )
                 if (repo.markCommandAcceptedIfReceived(plan.commandId)) {
-                    outcome = directSend(phone, text, subscriptionIdOverride, smscOverride, showToast)
+                    outcome = directSend(
+                        phone, text, subscriptionIdOverride, smscOverride, showToast,
+                        plan.commandId, idempotencyKey
+                    )
                     repo.markCommandState(
                         plan.commandId,
                         if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED

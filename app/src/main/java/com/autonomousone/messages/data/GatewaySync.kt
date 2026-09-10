@@ -73,6 +73,7 @@ interface RemoteConversationMapDao {
         Index(value = ["eventUuid"], unique = true),
         // Claim query shape: due rows first, FIFO within a state.
         Index("state", "nextAttemptAt"),
+        Index("state", "priority", "nextAttemptAt"),
         Index("aggregateId")
     ]
 )
@@ -82,6 +83,11 @@ data class GatewayEventOutboxEntity(
     val eventType: String,
     /** Opaque aggregate reference (conversation UUID / message UUID). */
     val aggregateId: String,
+    /** Opaque state identity and ordering metadata; never contains provider IDs or PII. */
+    val messageId: String = "",
+    val revision: Long = 1,
+    val sortKey: Long = 0,
+    val priority: String = PRIORITY_REALTIME,
     /** Device-local monotonic queue order (= insert order via autoincrement id). */
     val sequenceLocal: Long = 0,
     /** Opaque payload bytes — NEVER parsed by business code (see file KDoc). */
@@ -98,6 +104,8 @@ data class GatewayEventOutboxEntity(
     val ackedAt: Long = 0
 ) {
     companion object {
+        const val PRIORITY_REALTIME = "REALTIME"
+        const val PRIORITY_BACKFILL = "BACKFILL"
         const val STATE_PENDING = "PENDING"
         const val STATE_SENDING = "SENDING"
         const val STATE_ACKED = "ACKED"
@@ -128,7 +136,7 @@ interface GatewayEventOutboxDao {
     @Query(
         "SELECT * FROM gateway_event_outbox " +
             "WHERE state IN ('PENDING', 'SENDING') AND nextAttemptAt <= :now " +
-            "ORDER BY id LIMIT :limit"
+            "ORDER BY CASE priority WHEN 'REALTIME' THEN 0 ELSE 1 END, id LIMIT :limit"
     )
     suspend fun claimable(now: Long, limit: Int): List<GatewayEventOutboxEntity>
 
@@ -179,6 +187,9 @@ interface GatewayEventOutboxDao {
 
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state IN ('PENDING', 'SENDING')")
     suspend fun pendingDepth(): Int
+
+    @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE priority = 'BACKFILL' AND state IN ('PENDING', 'SENDING')")
+    suspend fun pendingBackfillDepth(): Int
 
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
     suspend fun deadLetterDepth(): Int

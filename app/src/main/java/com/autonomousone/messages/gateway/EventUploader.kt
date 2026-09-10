@@ -143,7 +143,13 @@ class EventUploader(
                     continue
                 }
                 when (uploadBatch(claimed)) {
-                    Outcome.ALL_ACKED -> attempt = 0
+                    Outcome.ALL_ACKED -> {
+                        attempt = 0
+                        if (claimed.any { it.priority == GatewayEventOutboxEntity.PRIORITY_BACKFILL }) {
+                            com.autonomousone.messages.data.TelephonySyncCoordinator.get(appContext)
+                                .requestCloudBackfillForLinkedDevice("outbox-drain")
+                        }
+                    }
                     Outcome.PARTIAL -> attempt = 0 // un-ACKed rows retry on their own backoff
                     Outcome.TRANSPORT_FAILURE -> {
                         attempt = min(attempt + 1, 20)
@@ -193,6 +199,9 @@ class EventUploader(
                     .put("eventId", event.eventUuid)
                     .put("type", event.eventType)
                     .put("conversationId", event.aggregateId)
+                    .put("messageId", event.messageId.takeIf { it.isNotBlank() })
+                    .put("revision", event.revision)
+                    .put("sortKey", event.sortKey)
                     .put("encoding", event.encoding)
                     .put("schemaVersion", event.schemaVersion)
                     .put("cryptoVersion", event.cryptoVersion)

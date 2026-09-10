@@ -144,7 +144,9 @@ object GatewayOutgoingPipeline {
             text = body,
             subscriptionIdOverride = subId,
             smscOverride = null,
-            showToast = false
+            showToast = false,
+            originCommandId = cmd.commandId,
+            clientMessageId = payload.optString("clientMessageId").takeIf { it.isNotBlank() },
         )
         val terminal = if (outcome is SmsSender.SendOutcome.Accepted)
             RemoteCommandEntity.STATE_COMPLETED else RemoteCommandEntity.STATE_FAILED

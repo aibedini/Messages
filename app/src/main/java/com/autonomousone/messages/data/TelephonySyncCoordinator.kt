@@ -18,6 +18,15 @@ import kotlinx.coroutines.yield
 import androidx.room.withTransaction
 import java.util.concurrent.atomic.AtomicBoolean
 
+internal fun cloudMessageDirection(type: Int): String? = when (type) {
+    Telephony.Sms.MESSAGE_TYPE_INBOX -> "in"
+    Telephony.Sms.MESSAGE_TYPE_SENT,
+    Telephony.Sms.MESSAGE_TYPE_OUTBOX,
+    Telephony.Sms.MESSAGE_TYPE_FAILED,
+    Telephony.Sms.MESSAGE_TYPE_QUEUED -> "out"
+    else -> null
+}
+
 /**
  * The SINGLE writer into Room. Two completely separate channels:
  *
@@ -121,6 +130,21 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     fun mutate(mutation: MessageMutation) {
         ensureLoop()
         mutations.trySend(mutation)
+    }
+
+    /** Exact O(1) provider-row nudge used immediately after an outgoing insert. */
+    fun providerRowChanged(
+        source: String,
+        providerId: Long,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
+    ) {
+        ensureLoop()
+        syncScope.launch {
+            readExactMessage(source, providerId)?.let {
+                mutations.send(MessageMutation.Upsert(source, it, originCommandId, clientMessageId))
+            }
+        }
     }
 
     /** Queue a bounded reconcile (conflated). */
@@ -239,9 +263,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         Log.i(TAG, "backfill_triggered_after_approve deviceId=$deviceId")
                         // P0: never backfill cloud history against an empty mirror —
                         // land the local initial window / catch up first.
-                        ensureLocalMirrorReady()
-                        val before = db.gatewayEventOutboxDao().pendingDepth()
-                        backfillCloudHistory()
+                    ensureLocalMirrorReady()
+                    val before = db.gatewayEventOutboxDao().pendingDepth()
+                    if (deviceId != "outbox-drain") publishHistoricalConversationSnapshots()
+                    backfillCloudHistory()
                         com.autonomousone.messages.security.ConversationKeyRepository(db)
                             .drainHistoryGrants()
                         val queued = (db.gatewayEventOutboxDao().pendingDepth() - before).coerceAtLeast(0)
@@ -311,7 +336,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // the message it describes live or die together. If the
                     // process dies here, BOTH are absent → the provider
                     // reconcile re-mirrors and the event re-enqueues.
-                    run {
+                    cloudMessageDirection(entity.type)?.let { direction ->
                         enqueueCloudEvent(
                             source = m.source,
                             providerId = entity.providerId,
@@ -322,18 +347,43 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                 source = m.source,
                                 providerId = entity.providerId,
                                 conversationId = conversationIdFor(entity.threadId),
-                                direction = if (entity.type == 1) "in" else "out",
+                                direction = direction,
                                 body = entity.body,
                                 dateMs = entity.date,
                                 status = entity.status,
                                 address = entity.normalizedAddress,
                                 contactName = contactNameFor(entity.normalizedAddress),
                                 read = entity.read,
+                                originCommandId = m.originCommandId,
+                                clientMessageId = m.clientMessageId,
                             )
-                            if (old != null && (old.body != entity.body || old.type != entity.type || old.normalizedAddress != entity.normalizedAddress)) {
+                            if (old != null && (
+                                    old.body != entity.body || old.type != entity.type ||
+                                        old.normalizedAddress != entity.normalizedAddress ||
+                                        m.originCommandId != null || m.clientMessageId != null
+                                    )) {
                                 created.copy(eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
                                     eventUuid = java.util.UUID.nameUUIDFromBytes("update:${created.eventUuid}:".toByteArray(Charsets.UTF_8) + created.ciphertext).toString())
                             } else created
+                        }
+                        val conversationId = conversationIdFor(entity.threadId)
+                        enqueueCloudEvent(
+                            source = m.source,
+                            providerId = entity.providerId,
+                            sender = entity.normalizedAddress,
+                            body = entity.body,
+                        ) {
+                            GatewayEventFactory.conversationUpserted(
+                                conversationId = conversationId,
+                                displayName = contactNameFor(entity.normalizedAddress),
+                                address = entity.normalizedAddress,
+                                lastMessagePreview = entity.body,
+                                lastMessageDirection = direction,
+                                lastMessageAt = entity.date,
+                                unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
+                                pinned = existing?.pinned ?: false,
+                                archived = existing?.archived ?: false,
+                            )
                         }
                     }
                 }
@@ -365,6 +415,29 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 }
                 if (threadId != null && threadId > 0L) {
                     rebuildConversationProjection(threadId, preserveFlags = true)
+                    val latest = dao.newestForThread(threadId)
+                    val conversationId = conversationIdFor(threadId)
+                    if (latest == null && deleted != null) {
+                        db.withTransaction {
+                            enqueueCloudEvent(m.source, m.providerId,
+                                deleted.normalizedAddress, deleted.body) {
+                                GatewayEventFactory.conversationDeleted(conversationId)
+                            }
+                        }
+                    } else if (latest != null) {
+                        val conversation = db.conversationDao().byThread(threadId)
+                        val direction = cloudMessageDirection(latest.type)
+                        if (conversation != null && direction != null) db.withTransaction {
+                            enqueueCloudEvent(latest.source, latest.providerId,
+                                latest.normalizedAddress, latest.body) {
+                                GatewayEventFactory.conversationUpserted(
+                                    conversationId, contactNameFor(latest.normalizedAddress),
+                                    latest.normalizedAddress, latest.body, direction, latest.date,
+                                    conversation.unreadCount, conversation.pinned, conversation.archived,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -389,7 +462,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                     providerId = entity.providerId,
                                     conversationId = conversationIdFor(entity.threadId),
                                     status = entity.status,
-                                    dateMs = entity.date
+                                    dateMs = entity.date,
+                                    direction = cloudMessageDirection(entity.type),
+                                    body = entity.body,
+                                    address = entity.normalizedAddress,
+                                    contactName = contactNameFor(entity.normalizedAddress),
+                                    read = entity.read,
                                 )
                             }
                         }
@@ -413,6 +491,28 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         body = latest?.body ?: ""
                     ) {
                         GatewayEventFactory.threadRead(conversationIdFor(m.threadId))
+                    }
+                    if (latest != null) {
+                        val conversation = db.conversationDao().byThread(m.threadId) ?: return@withTransaction
+                        val direction = cloudMessageDirection(latest.type) ?: return@withTransaction
+                        enqueueCloudEvent(
+                            source = latest.source,
+                            providerId = latest.providerId,
+                            sender = latest.normalizedAddress,
+                            body = latest.body,
+                        ) {
+                            GatewayEventFactory.conversationUpserted(
+                                conversationId = conversationIdFor(m.threadId),
+                                displayName = contactNameFor(latest.normalizedAddress),
+                                address = latest.normalizedAddress,
+                                lastMessagePreview = latest.body,
+                                lastMessageDirection = direction,
+                                lastMessageAt = latest.date,
+                                unreadCount = 0,
+                                pinned = conversation.pinned,
+                                archived = conversation.archived,
+                            )
+                        }
                     }
                 }
             }
@@ -650,6 +750,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // double Home churn mid-sync. (fullRebuildConversations hops to
             // IO internally; we are already a single sequential crawl.)
             if (didWork) fullRebuildConversations()
+            publishHistoricalConversationSnapshots()
             // Also repairs installations whose provider history was already
             // mirrored before cloud history production existed.
             backfillCloudHistory()
@@ -657,23 +758,56 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     internal suspend fun enqueueHistorical(entity: MessageEntity) {
+        val direction = cloudMessageDirection(entity.type) ?: return
         enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
             GatewayEventFactory.messageCreated(
                 source = entity.source,
                 providerId = entity.providerId,
                 conversationId = conversationIdFor(entity.threadId),
-                direction = if (entity.type == 1) "in" else "out",
+                direction = direction,
                 body = entity.body,
                 dateMs = entity.date,
                 status = entity.status,
                 address = entity.normalizedAddress,
                 contactName = contactNameFor(entity.normalizedAddress),
                 read = entity.read,
+                revision = 1,
+                priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL,
             )
         }
     }
 
+    private suspend fun publishHistoricalConversationSnapshots() {
+        var available = 2_000 - db.gatewayEventOutboxDao().pendingBackfillDepth()
+        if (available <= 0) return
+        for (conversation in db.conversationDao().all()) {
+            if (available-- <= 0) break
+            val direction = cloudMessageDirection(conversation.lastMessageType) ?: continue
+            enqueueCloudEvent(
+                source = MessageEntity.SOURCE_SMS,
+                providerId = 0,
+                sender = conversation.normalizedAddress,
+                body = conversation.snippet,
+            ) {
+                GatewayEventFactory.conversationUpserted(
+                    conversationId = conversationIdFor(conversation.threadId),
+                    displayName = contactNameFor(conversation.normalizedAddress),
+                    address = conversation.normalizedAddress,
+                    lastMessagePreview = conversation.snippet,
+                    lastMessageDirection = direction,
+                    lastMessageAt = conversation.lastMessageDate,
+                    unreadCount = conversation.unreadCount,
+                    pinned = conversation.pinned,
+                    archived = conversation.archived,
+                    revision = 1,
+                    priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL,
+                )
+            }
+        }
+    }
+
     private suspend fun backfillCloudHistory() {
+        val maxPendingBackfill = 2_000
         var eligible = 0
         var queued = 0
         for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
@@ -683,19 +817,25 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // v3 replays the phone source-of-truth with v3 event identities and
             // one full-history key. Run the server reset migration before
             // deploying this Android build so old and replacement events do not coexist.
-            val direction = "encrypted-history-v3:$source"
+            val direction = "encrypted-history-v4:$source"
             while (syncAllowed) {
+                val available = maxPendingBackfill - db.gatewayEventOutboxDao().pendingBackfillDepth()
+                if (available <= 0) break
                 val count = db.withTransaction {
-                    val cursor = db.syncCursorDao().get(direction)?.lastSequence ?: 0L
-                    val page = db.messageDao().cloudHistoryPage(source, cursor, 100)
+                    val cursor = db.syncCursorDao().get(direction)
+                    val beforeDate = cursor?.lastSequence ?: Long.MAX_VALUE
+                    val beforeId = cursor?.lastServerAck ?: Long.MAX_VALUE
+                    val page = db.messageDao().cloudHistoryPage(source, beforeDate, beforeId, minOf(100, available))
                     eligible += page.size
                     page.forEach { enqueueHistorical(it) }
                     queued += page.size
                     if (page.isNotEmpty()) db.syncCursorDao().upsert(SyncCursorEntity(direction,
-                        lastSequence = page.last().providerId, updatedAt = System.currentTimeMillis()))
+                        lastSequence = page.last().date,
+                        lastServerAck = page.last().providerId,
+                        updatedAt = System.currentTimeMillis()))
                     page.size
                 }
-                if (count < 100) break
+                if (count < minOf(100, available)) break
                 yield()
             }
         }

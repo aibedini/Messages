@@ -98,6 +98,7 @@ class GatewaySyncRepository(
 
     suspend fun pendingDepth(): Int = outboxDao.pendingDepth()
     suspend fun pendingBytes(): Long = outboxDao.pendingBytes()
+    suspend fun pendingBackfillDepth(): Int = outboxDao.pendingBackfillDepth()
 
     /** True = newly ingested; false = redelivery (exactly-once by unique index). */
     suspend fun ingestCommand(command: RemoteCommandEntity): Boolean =
