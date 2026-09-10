@@ -1,58 +1,30 @@
 package com.autonomousone.messages.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,29 +36,32 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.R
+import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.ConversationLaunchStore
 import com.autonomousone.messages.navigation.Screen
+import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.DraftRepository
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
-import com.autonomousone.messages.ui.components.SmsItem
-import com.autonomousone.messages.ui.theme.StatusError
+import com.autonomousone.messages.ui.home.ConversationFilter
+import com.autonomousone.messages.ui.home.ConversationList
+import com.autonomousone.messages.ui.home.ConversationListSkeleton
+import com.autonomousone.messages.ui.home.DefaultSmsAppBanner
+import com.autonomousone.messages.ui.home.HomeConfirmDialog
+import com.autonomousone.messages.ui.home.HomeFab
+import com.autonomousone.messages.ui.home.HomeFilterBar
+import com.autonomousone.messages.ui.home.HomeRow
+import com.autonomousone.messages.ui.home.HomeSearch
+import com.autonomousone.messages.ui.home.SentTodayChip
+import com.autonomousone.messages.ui.home.SyncBanner
 import com.autonomousone.messages.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
-import java.util.Calendar
-
-enum class ConversationFilter(val labelRes: Int) {
-    All(R.string.home_tab_all),
-    Unread(R.string.home_tab_unread),
-    Archived(R.string.home_tab_archived)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,8 +82,8 @@ fun HomeScreen(
     // v2.6.19: swipe no longer mutates anything on its own. It parks the
     // row here and Home asks for confirmation first — a thumb grazing
     // the edge while scrolling must never archive or delete.
-    var pendingArchive by remember { mutableStateOf<com.autonomousone.messages.model.Sms?>(null) }
-    var pendingDelete by remember { mutableStateOf<com.autonomousone.messages.model.Sms?>(null) }
+    var pendingArchive by remember { mutableStateOf<Sms?>(null) }
+    var pendingDelete by remember { mutableStateOf<Sms?>(null) }
 
     // Global (all-messages) search: debounce 400 ms after typing stops.
     LaunchedEffect(search) {
@@ -138,7 +113,7 @@ fun HomeScreen(
     // screen saves a draft, no refresh signal needed.
     val draftMap by viewModel.drafts.collectAsState()
 
-    // The base list to filter from depends on the selected tab
+    // The base list to filter from depends on the selected tab.
     val sourceList by remember(selectedFilter) {
         derivedStateOf {
             if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
@@ -148,7 +123,7 @@ fun HomeScreen(
     val filteredList by remember(search, selectedFilter, smsList, archivedList) {
         derivedStateOf {
             sourceList.filter { sms ->
-                val searchMatch = matchesSearch(sms, search, viewModel.contactNames)
+                val searchMatch = HomeSearch.matches(sms, search, viewModel.contactNames)
                 val filterMatch = when (selectedFilter) {
                     ConversationFilter.All -> true
                     ConversationFilter.Unread -> sms.unread
@@ -159,13 +134,7 @@ fun HomeScreen(
         }
     }
 
-    // Best-practice search UX:
-    //  - number-like queries get a direct "Send to …" row (Google Messages style)
-    //  - a results counter shows how many conversations matched
-    val searchLooksLikeNumber = remember(search) {
-        val digits = search.filter { it.isDigit() }
-        search.isNotBlank() && digits.length >= 3 && digits.length >= search.length - 2
-    }
+    val searchLooksLikeNumber = remember(search) { HomeSearch.looksLikeNumber(search) }
 
     Scaffold(
         snackbarHost = {
@@ -196,30 +165,14 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            HomeFab(
+                expanded = isExpanded,
                 onClick = {
                     // v2.6.12: baseRoute, NOT route — the route pattern carries
                     // literal "{forward}/{draft}" placeholders which the nav
-                    // library then delivered AS the argument value, showing
-                    // "{forward}" in the forward banner on a plain new chat.
+                    // library then delivered AS the argument value.
                     navController.navigate(Screen.NewConversation.baseRoute)
-                },
-                expanded = isExpanded,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "New Conversation"
-                    )
-                },
-                text = {
-                    Text(
-                        text = "Start chat",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(20.dp)
+                }
             )
         }
     ) { padding ->
@@ -261,42 +214,7 @@ fun HomeScreen(
                 placeholderText = stringResource(R.string.home_search_hint)
             )
 
-            // Filter chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ConversationFilter.values().forEach { filter ->
-                                    FilterChip(
-                                        selected = selectedFilter == filter,
-                                        onClick = { selectedFilter = filter },
-                                        label = {
-                                            Text(
-                                                text = stringResource(filter.labelRes),
-                                                fontSize = 13.sp,
-                                                fontWeight = if (selectedFilter == filter) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                        leadingIcon = if (filter == ConversationFilter.Archived) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Archive,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        } else null,
-                        shape = RoundedCornerShape(16.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    )
-                }
-            }
+            HomeFilterBar(selected = selectedFilter, onSelect = { selectedFilter = it })
 
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -345,451 +263,163 @@ fun HomeScreen(
                     )
                 }
             } else {
-                // ── Pull-to-refresh on the Home list: silent provider
-                // reconcile (same path as resume), no clearing of the list.
-                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                // Resolve each visible row's lightweight UI fields once, outside
+                // composition of the list item (RFP §8/§9). No I/O here.
+                val blockedMsg = stringResource(R.string.home_snackbar_blocked)
+                val rows = filteredList.map { sms ->
+                    HomeRow(
+                        sms = sms,
+                        draftKey = DraftRepository.keyFor(sms.threadId, sms.sender),
+                        draftText = draftMap[DraftRepository.keyFor(sms.threadId, sms.sender)].orEmpty(),
+                        isPinned = sms.threadId in viewModel.pinnedIds,
+                        isArchived = isInArchivedView,
+                        showYouMarker = sms.type == 2,
+                    )
+                }
+
+                ConversationList(
+                    listState = listState,
+                    rows = rows,
                     isRefreshing = viewModel.isRefreshing,
                     onRefresh = { viewModel.refreshNow() },
-                    modifier = Modifier.weight(1f)
-                ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    state = listState,
-                    contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)
-                ) {
-                    // Direct "send to number" shortcut while searching (Google Messages style)
-                    if (searchLooksLikeNumber) {
-                        item(key = "direct_send") {
-                            val directNumber = search.trim()
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .clickable {
-                                        navController.navigate(
-                                            Screen.Conversation.createNewRoute(
-                                                phone = directNumber,
-                                                name = directNumber
-                                            )
-                                        )
-                                    },
-                                shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.home_search_send_to, directNumber),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Result counter while searching
-                    if (search.isNotBlank()) {
-                        item(key = "result_count") {
-                            Text(
-                                text = "${filteredList.size} conversation${if (filteredList.size == 1) "" else "s"} found",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                    search = search,
+                    resultCount = filteredList.size,
+                    showDirectSend = searchLooksLikeNumber,
+                    directNumber = search.trim(),
+                    onDirectSend = {
+                        navController.navigate(
+                            Screen.Conversation.createNewRoute(
+                                phone = search.trim(),
+                                name = search.trim()
                             )
-                        }
-                    }
-
-                    // Global search results: messages deep inside conversations
-                    // that don't match by name/snippet (Google Messages-style
-                    // "search inside all messages").
-                    if (viewModel.globalResults.isNotEmpty()) {
-                        item(key = "global_header") {
-                            Text(
-                                text = stringResource(R.string.home_search_global_header),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                            )
-                        }
-                        items(
-                            items = viewModel.globalResults,
-                            key = { "global_${it.sms.id}" }
-                        ) { hit ->
-                            SmsItem(
-                                sms = hit.sms.copy(
-                                    message = "🔎 ${hit.sms.message.take(80)}"
-                                ),
-                                onClick = {
-                                    // Same first-paint handoff as normal rows.
-                                    ConversationLaunchStore.put(
-                                        ConversationLaunchStore.Snapshot(
-                                            threadId = hit.sms.threadId,
-                                            phone = hit.sms.sender,
-                                            name = viewModel.contactNames[
-                                                com.autonomousone.messages.repository.ContactRepository
-                                                    .normalizePhone(hit.sms.sender)
-                                            ] ?: hit.sms.sender,
-                                            message = hit.sms.message,
-                                            date = hit.sms.date,
-                                            type = hit.sms.type
-                                        )
-                                    )
-                                    navController.navigate(
-                                        Screen.Conversation.createRoute(hit.sms.threadId, hit.sms.sender)
-                                    )
-                                }
-                            )
-                        }
-                    }
-
-                    items(
-                        items = filteredList,
-                        key = { "c${it.id}" },
-                        contentType = { "conversation" }
-                    ) { sms ->
-                        val draftKey = com.autonomousone.messages.repository.DraftRepository
-                            .keyFor(sms.threadId, sms.sender)
-                        val blockedMsg = stringResource(R.string.home_snackbar_blocked)
-                        SmsItem(
-                            sms = sms,
-                            modifier = Modifier.animateItem(
-                                fadeInSpec = tween(durationMillis = 220),
-                                placementSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessLow
-                                ),
-                                fadeOutSpec = tween(durationMillis = 160)
-                            ),
-                            isPinned = sms.threadId in viewModel.pinnedIds,
-                            isArchived = isInArchivedView,
-                            draftText = draftMap[draftKey].orEmpty(),
-                            // Tiny "you" under the date: this conversation's
-                            // latest message was sent by the user (type 2).
-                            showYouMarker = sms.type == 2,
-                            onClick = {
-                                // v2.6.9 first-paint handoff: the row Home is
-                                // showing right now IS the conversation's last
-                                // bubble. Stash it (no IO) so Conversation's
-                                // very first frame is never blank.
-                                val displayName =
-                                    viewModel.contactNames[
-                                        com.autonomousone.messages.repository.ContactRepository
-                                            .normalizePhone(sms.sender)
-                                    ] ?: sms.sender
-                                ConversationLaunchStore.put(
-                                    ConversationLaunchStore.Snapshot(
-                                        threadId = sms.threadId,
-                                        phone = sms.sender,
-                                        name = displayName,
-                                        message = sms.message,
-                                        date = sms.date,
-                                        type = sms.type
-                                    )
-                                )
-                                navController.navigate(
-                                    Screen.Conversation.createRoute(
-                                        threadId = sms.threadId,
-                                        phone = sms.sender,
-                                        name = displayName
-                                    )
-                                )
-                            },
-                            onPin = { viewModel.togglePin(sms) },
-                            onBlock = {
-                                viewModel.blockConversation(sms)
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        message = blockedMsg,
-                                        duration = SnackbarDuration.Short
-                                    )
-                                }
-                            },
-                            onArchive = { pendingArchive = sms },
-                            onDelete = { pendingDelete = sms },
                         )
-                    }
-                }
-                } // PullToRefreshBox
+                    },
+                    globalHeaderText = stringResource(R.string.home_search_global_header),
+                    globalHits = viewModel.globalResults.map { it.sms },
+                    onGlobalHitClick = { hit ->
+                        val displayName = viewModel.contactNames[
+                            ContactRepository.normalizePhone(hit.sender)
+                        ] ?: hit.sender
+                        ConversationLaunchStore.put(
+                            ConversationLaunchStore.Snapshot(
+                                threadId = hit.threadId,
+                                phone = hit.sender,
+                                name = displayName,
+                                message = hit.message,
+                                date = hit.date,
+                                type = hit.type
+                            )
+                        )
+                        navController.navigate(
+                            Screen.Conversation.createRoute(hit.threadId, hit.sender)
+                        )
+                    },
+                    onRowClick = { row ->
+                        // v2.6.9 first-paint handoff: the row Home is showing
+                        // right now IS the conversation's last bubble. Stash it
+                        // (no IO) so Conversation's very first frame is never blank.
+                        val displayName = viewModel.contactNames[
+                            ContactRepository.normalizePhone(row.sms.sender)
+                        ] ?: row.sms.sender
+                        ConversationLaunchStore.put(
+                            ConversationLaunchStore.Snapshot(
+                                threadId = row.sms.threadId,
+                                phone = row.sms.sender,
+                                name = displayName,
+                                message = row.sms.message,
+                                date = row.sms.date,
+                                type = row.sms.type
+                            )
+                        )
+                        navController.navigate(
+                            Screen.Conversation.createRoute(
+                                threadId = row.sms.threadId,
+                                phone = row.sms.sender,
+                                name = displayName
+                            )
+                        )
+                    },
+                    onRowPin = { row -> viewModel.togglePin(row.sms) },
+                    onRowBlock = { row ->
+                        viewModel.blockConversation(row.sms)
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = blockedMsg,
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    },
+                    onRowArchive = { row -> pendingArchive = row.sms },
+                    onRowDelete = { row -> pendingDelete = row.sms },
+                    modifier = Modifier.weight(1f)
+                )
 
-                // v2.6.19: swipe parks the row here; nothing changes until
-                // the user confirms. This is the anti-fat-finger gate —
-                // archive and delete are now two deliberate taps.
+                // v2.6.19: swipe parks the row here; nothing changes until the
+                // user confirms. Archive and delete are two deliberate taps.
                 pendingArchive?.let { target ->
                     val confirmArchiveMsg = stringResource(R.string.home_snackbar_archived)
                     val confirmUnarchiveMsg = stringResource(R.string.home_snackbar_unarchived)
                     val confirmUndo = stringResource(R.string.action_undo)
-                    val contactLabel = viewModel.contactNames[
-                        com.autonomousone.messages.repository.ContactRepository
-                            .normalizePhone(target.sender)
-                    ] ?: target.sender
-                    AlertDialog(
-                        onDismissRequest = { pendingArchive = null },
-                        title = {
-                            Text(stringResource(
-                                if (isInArchivedView) R.string.home_confirm_unarchive_title
-                                else R.string.home_confirm_archive_title))
-                        },
-                        text = { Text(contactLabel) },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                pendingArchive = null
-                                if (isInArchivedView) {
-                                    viewModel.unarchiveConversation(target)
-                                    scope.launch {
-                                        val r = snackbarHostState.showSnackbar(
-                                            message = confirmUnarchiveMsg,
-                                            actionLabel = confirmUndo,
-                                            duration = SnackbarDuration.Short)
-                                        if (r == SnackbarResult.ActionPerformed)
-                                            viewModel.archiveConversation(target)
-                                    }
-                                } else {
-                                    viewModel.archiveConversation(target)
-                                    scope.launch {
-                                        val r = snackbarHostState.showSnackbar(
-                                            message = confirmArchiveMsg,
-                                            actionLabel = confirmUndo,
-                                            duration = SnackbarDuration.Long)
-                                        if (r == SnackbarResult.ActionPerformed)
-                                            viewModel.unarchiveConversation(target)
-                                    }
+                    HomeConfirmDialog(
+                        title = stringResource(
+                            if (isInArchivedView) R.string.home_confirm_unarchive_title
+                            else R.string.home_confirm_archive_title
+                        ),
+                        body = viewModel.contactNames[
+                            ContactRepository.normalizePhone(target.sender)
+                        ] ?: target.sender,
+                        destructive = false,
+                        onConfirm = {
+                            pendingArchive = null
+                            if (isInArchivedView) {
+                                viewModel.unarchiveConversation(target)
+                                scope.launch {
+                                    val r = snackbarHostState.showSnackbar(
+                                        message = confirmUnarchiveMsg,
+                                        actionLabel = confirmUndo,
+                                        duration = SnackbarDuration.Short)
+                                    if (r == SnackbarResult.ActionPerformed)
+                                        viewModel.archiveConversation(target)
                                 }
-                            }) {
-                                Text(stringResource(
-                                    if (isInArchivedView) R.string.list_unarchive
-                                    else R.string.list_archive))
+                            } else {
+                                viewModel.archiveConversation(target)
+                                scope.launch {
+                                    val r = snackbarHostState.showSnackbar(
+                                        message = confirmArchiveMsg,
+                                        actionLabel = confirmUndo,
+                                        duration = SnackbarDuration.Long)
+                                    if (r == SnackbarResult.ActionPerformed)
+                                        viewModel.unarchiveConversation(target)
+                                }
                             }
                         },
-                        dismissButton = {
-                            TextButton(onClick = { pendingArchive = null }) {
-                                Text(stringResource(R.string.action_cancel))
-                            }
-                        }
+                        onDismiss = { pendingArchive = null }
                     )
                 }
 
                 pendingDelete?.let { target ->
                     val confirmDeletedMsg = stringResource(R.string.home_snackbar_deleted)
                     val confirmUndo = stringResource(R.string.action_undo)
-                    val contactLabel = viewModel.contactNames[
-                        com.autonomousone.messages.repository.ContactRepository
-                            .normalizePhone(target.sender)
-                    ] ?: target.sender
-                    AlertDialog(
-                        onDismissRequest = { pendingDelete = null },
-                        title = { Text(stringResource(R.string.home_confirm_delete_title)) },
-                        text = { Text(contactLabel) },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                pendingDelete = null
-                                viewModel.deleteConversation(target)
-                                scope.launch {
-                                    val r = snackbarHostState.showSnackbar(
-                                        message = confirmDeletedMsg,
-                                        actionLabel = confirmUndo,
-                                        duration = SnackbarDuration.Long)
-                                    if (r == SnackbarResult.ActionPerformed)
-                                        viewModel.undoDelete(target)
-                                }
-                            }) {
-                                Text(stringResource(R.string.action_delete), color = StatusError)
+                    HomeConfirmDialog(
+                        title = stringResource(R.string.home_confirm_delete_title),
+                        body = viewModel.contactNames[
+                            ContactRepository.normalizePhone(target.sender)
+                        ] ?: target.sender,
+                        destructive = true,
+                        onConfirm = {
+                            pendingDelete = null
+                            viewModel.deleteConversation(target)
+                            scope.launch {
+                                val r = snackbarHostState.showSnackbar(
+                                    message = confirmDeletedMsg,
+                                    actionLabel = confirmUndo,
+                                    duration = SnackbarDuration.Long)
+                                if (r == SnackbarResult.ActionPerformed)
+                                    viewModel.undoDelete(target)
                             }
                         },
-                        dismissButton = {
-                            TextButton(onClick = { pendingDelete = null }) {
-                                Text(stringResource(R.string.action_cancel))
-                            }
-                        }
+                        onDismiss = { pendingDelete = null }
                     )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Best-practice SMS search: matches contact display name, raw sender,
- * normalized digits (so "0912" finds "+98912…") and the message snippet.
- */
-private fun matchesSearch(sms: com.autonomousone.messages.model.Sms, query: String, contactNames: Map<String, String>): Boolean {
-    if (query.isBlank()) return true
-    val q = query.trim()
-
-    val displayName = contactNames[com.autonomousone.messages.repository.ContactRepository.normalizePhone(sms.sender)] ?: ""
-    val nameMatch = displayName.contains(q, ignoreCase = true)
-    if (nameMatch) return true
-
-    val rawMatch = sms.sender.contains(q, ignoreCase = true) ||
-            sms.message.contains(q, ignoreCase = true)
-    if (rawMatch) return true
-
-    // Digit-normalized match: search "0912" should hit "+98 912 …"
-    val qDigits = q.filter { it.isDigit() }
-    if (qDigits.length >= 3) {
-        if (sms.sender.filter { it.isDigit() }.contains(qDigits)) return true
-        if (sms.message.take(120).filter { it.isDigit() }.contains(qDigits)) return true
-    }
-    return false
-}
-
-/**
- * Compact pill next to the "Messages" title: confirmed sent SMS SEGMENTS
- * today (ledger rows with success=1). Fades to a quiet style at zero so it
- * doesn't shout an empty stat; grows to "1.2k" form never needed — a phone
- * rarely sends four-digit segments in a day, plain count is honest.
- */
-@Composable
-private fun SentTodayChip(count: Int) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = if (count > 0) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Text(
-            text = stringResource(R.string.home_sent_today_chip, count),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (count > 0) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (count > 0) MaterialTheme.colorScheme.onSecondaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        )
-    }
-}
-
-@Composable
-private fun SyncBanner(progress: HomeViewModel.SyncProgress?, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
-        val total = progress?.total ?: 0
-        val loaded = progress?.loaded ?: 0
-        if (total > 0) {
-            val fraction = (loaded.toFloat() / total).coerceIn(0f, 1f)
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.home_syncing_fmt, loaded, total),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Updating conversations…",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun DefaultSmsAppBanner(onSetDefault: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Sms,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(9.dp).size(22.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.home_default_sms_off_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    stringResource(R.string.home_default_sms_off_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
-                )
-            }
-            Button(
-                onClick = onSetDefault,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-            ) {
-                Text(stringResource(R.string.home_default_sms_off_cta), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConversationListSkeleton(status: String?, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth().padding(top = 8.dp)) {
-        status?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-        }
-        repeat(6) { index ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {}
-                Spacer(Modifier.size(14.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(if (index % 2 == 0) 0.48f else 0.62f).height(12.dp),
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {}
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(if (index % 3 == 0) 0.78f else 0.9f).height(10.dp),
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                    ) {}
                 }
             }
         }
