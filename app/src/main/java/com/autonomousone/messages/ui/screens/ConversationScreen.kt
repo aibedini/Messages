@@ -129,6 +129,7 @@ import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
 import com.autonomousone.messages.ui.conversation.MessageEntrance
+import com.autonomousone.messages.ui.conversation.MessageList
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.utils.formatDateHeader
@@ -582,214 +583,25 @@ fun ConversationScreen(
                     // Chat area + floating overlays share one Box so the
                     // Jump-to-latest button can pin itself bottom-end over
                     // the list without consuming layout space.
-                    Box(modifier = Modifier.fillMaxSize()) {
-                // ── Pull-to-refresh (Instagram-style): drag down at the top of
-                // the thread to silently re-check the provider for updates.
-                // Spinner is bound to the ViewModel's real refresh state.
-                // The newest row of the window sits at data index 0 (the
-                // OLDEST crawl never emits a scroll command: in reverse
-                // layout a merged page grows at index 0 — the visual bottom
-                // — so the row being read never slides.)
-                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                MessageList(
+                    listState = listState,
+                    chatItems = chatItems,
+                    isLoadingNewer = viewModel.isLoadingNewer,
+                    isLoadingOlder = viewModel.isLoadingOlder,
                     isRefreshing = viewModel.isRefreshing,
-                    onRefresh = {
-                        if (!viewModel.isRefreshing) viewModel.refresh()
+                    onRefresh = { if (!viewModel.isRefreshing) viewModel.refresh() },
+                    showJumpFab = showJumpFab,
+                    pendingNewMessagesCount = viewModel.pendingNewMessagesCount,
+                    onJumpToLatest = {
+                        viewModel.setUserAtLatest(true)
+                        viewModel.jumpToLatest()
                     },
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    state = listState,
-                    reverseLayout = true,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // reverseLayout: data head = visual BOTTOM (newest edge),
-                    // data tail = visual TOP (oldest edge). The spinner for
-                    // the NEWER crawl (OLDEST mode) sits at the newest edge.
-                    if (viewModel.isLoadingNewer) {
-                        item(key = "newer_messages_sync") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.conv_syncing_newer),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    items(
-                        items = chatItems,
-                        key = ::chatItemKey
-                    ) { item ->
-                        when (item) {
-                            is ChatListItem.DateSeparator -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 12.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                                        tonalElevation = 1.dp
-                                    ) {
-                                        Text(
-                                            text = item.dateText,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            is ChatListItem.MessageItem -> {
-                                // v2.6.9: motion split. animateItem owns
-                                // PLACEMENT ONLY (existing bubbles glide apart
-                                // with a critical-damped spring — no bounce,
-                                // no fade, no flicker on re-anchor). The
-                                // bubble's ENTER is MessageEntrance, and it is
-                                // mounted only for ids the ViewModel marked
-                                // live (own send / incoming at latest edge) —
-                                // never for the initial Room hydration.
-                                val sms = item.sms
-                                MessageEntrance(
-                                    messageId = sms.id,
-                                    animate = viewModel.shouldAnimateEntry(sms.id),
-                                    outgoing = sms.type == 2,
-                                    modifier = Modifier.animateItem(
-                                        fadeInSpec = null,
-                                        fadeOutSpec = null,
-                                        placementSpec = spring(
-                                            dampingRatio = 1f,
-                                            stiffness = 550f
-                                        )
-                                    ),
-                                    onAnimationFinished = {
-                                        viewModel.consumeEntryAnimation(sms.id)
-                                    }
-                                ) {
-                                    ChatBubble(
-                                        sms = sms,
-                                        onForward = { text ->
-                                            navController.navigate(
-                                                Screen.NewConversation.createForwardRoute(text)
-                                            )
-                                        },
-                                        onPhoneClick = { number -> phoneActionNumber = number },
-                                        onResend = { body ->
-                                            // v2.6.12: one-tap resend of a failed send
-                                            // through the same pipeline (rate limiter,
-                                            // SIM preference, optimistic UI).
-                                            viewModel.sendMessage(
-                                                threadId, recipientPhone, body, selectedSubId
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    // OLDER crawl spinner at the DATA tail = visual TOP edge
-                    // (reverseLayout), which is exactly where the user dragged.
-                    if (viewModel.isLoadingOlder) {
-                        item(key = "older_messages_sync") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.conv_syncing_older),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-                }
-
-                // ── Floating Jump-to-latest (v2.6.7 goal #4) ───────────────
-                // Reverse layout: newest is data index 0 = visual bottom.
-                // v2.6.8: driven by the debounced showJumpFab (never flashes
-                // on layout jitter or an own-send glide) and it fades+scales
-                // in/out instead of popping binary. The badge counts messages
-                // that arrived while reading history — pressing clears the
-                // count AND glides to the newest edge.
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(end = 14.dp, bottom = 110.dp),
-                    contentAlignment = Alignment.BottomEnd
-                ) {
-                  Column {
-                    AnimatedVisibility(
-                        visible = showJumpFab && chatItems.isNotEmpty(),
-                        enter = fadeIn(tween(140)) + scaleIn(
-                            initialScale = 0.82f,
-                            animationSpec = spring(stiffness = 500f)
-                        ),
-                        exit = fadeOut(tween(100)) + scaleOut(targetScale = 0.88f)
-                    ) {
-                    Box {
-                        SmallFloatingActionButton(
-                            onClick = {
-                                viewModel.setUserAtLatest(true)
-                                viewModel.jumpToLatest()
-                            },
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowDownward,
-                                contentDescription = stringResource(R.string.jump_to_latest)
-                            )
-                        }
-                        val pending = viewModel.pendingNewMessagesCount
-                        if (pending > 0) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 4.dp, y = (-4).dp)
-                            ) {
-                                Text(
-                                    text = if (pending > 99) "99+" else pending.toString(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-                  }
-                }
-                }
-                }
-                } else if (launchSnapshot != null) {
+                    shouldAnimateEntry = { id -> viewModel.shouldAnimateEntry(id) },
+                    onEntryAnimationFinished = { id -> viewModel.consumeEntryAnimation(id) },
+                    onForward = { text -> navController.navigate(Screen.NewConversation.createForwardRoute(text)) },
+                    onPhoneClick = { number -> phoneActionNumber = number },
+                    onResend = { body -> viewModel.sendMessage(threadId, recipientPhone, body, selectedSubId) },
+                )                } else if (launchSnapshot != null) {
                     LaunchPreview(snapshot = launchSnapshot)
                 } else if (viewModel.isLoading) {
                     QuietConversationSkeleton()
