@@ -198,7 +198,8 @@ fun ChatBubble(
         Column(horizontalAlignment = if (incoming) Alignment.Start else Alignment.End) {
                 Box(
                     modifier = Modifier
-                        .widthIn(min = 80.dp, max = 300.dp)
+                        .fillMaxWidth(0.82f)   // RFP §17: ~78-82% max bubble width
+                        .widthIn(min = 80.dp)
                         .clip(bubbleShape)
                         .background(bubbleColor)
                         .combinedClickable(

@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autonomousone.messages.R
 import com.autonomousone.messages.ui.components.ChatBubble
+import com.autonomousone.messages.ui.design.MessagesMotion
+import com.autonomousone.messages.ui.design.MessagesSpacing
 
 /**
  * Message timeline for a conversation (PR-04).
@@ -83,8 +85,11 @@ fun MessageList(
                 modifier = Modifier.fillMaxWidth(),
                 state = listState,
                 reverseLayout = true,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                contentPadding = PaddingValues(
+                    horizontal = MessagesSpacing.Md + 2.dp,
+                    vertical = MessagesSpacing.Sm
+                ),
+                verticalArrangement = Arrangement.spacedBy(MessagesSpacing.Xs)
             ) {
                 // reverseLayout: data head = visual BOTTOM (newest edge).
                 if (isLoadingNewer) {
@@ -199,11 +204,11 @@ fun MessageList(
             Column {
                 AnimatedVisibility(
                     visible = showJumpFab && chatItems.isNotEmpty(),
-                    enter = fadeIn(tween(140)) + scaleIn(
+                    enter = fadeIn(MessagesMotion.Fast) + scaleIn(
                         initialScale = 0.82f,
                         animationSpec = spring(stiffness = 500f)
                     ),
-                    exit = fadeOut(tween(100)) + scaleOut(targetScale = 0.88f)
+                    exit = fadeOut(MessagesMotion.Fast) + scaleOut(targetScale = 0.88f)
                 ) {
                     Box {
                         SmallFloatingActionButton(
