@@ -104,10 +104,7 @@ object GatewayEventFactory {
 
     /** Transport checks metadata only for encrypted bytes; never decrypt here. */
     fun validateForTransport(event: GatewayEventOutboxEntity) {
-        require(event.encoding == Encoding.ENVELOPE_V1 && event.schemaVersion == 1)
-        require(event.eventUuid.isNotBlank() && event.eventType.isNotBlank())
-        require(event.cryptoVersion >= 0 && event.ciphertext.isNotEmpty())
-        if (event.cryptoVersion == 0) decodePayloadEnvelope(event.ciphertext)
+        com.autonomousone.messages.security.EventCryptoPolicy.validateForUpload(event)
     }
 
     // ── Event builders (PII inside the payload bytes, never the envelope) ──

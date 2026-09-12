@@ -1,6 +1,7 @@
 package com.autonomousone.messages.messaging
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -32,6 +33,7 @@ class SimManager(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
 
+    @SuppressLint("MissingPermission") // guarded by hasReadPhoneState() before the platform call
     fun getActiveSims(): List<SimInfo> {
         if (!hasReadPhoneState()) return emptyList()
         val result = mutableListOf<SimInfo>()
@@ -85,6 +87,7 @@ class SimManager(private val context: Context) {
      * only callable by the default SMS app; everything else — permission,
      * older OS, RIL refusing — returns null (UI shows "network default").
      */
+    @SuppressLint("MissingPermission") // all permission failures are converted to null below
     fun readSmsc(subscriptionId: Int): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return try {

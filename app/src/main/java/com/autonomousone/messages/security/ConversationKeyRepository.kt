@@ -124,6 +124,15 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
         }
     }
 
+    suspend fun hasAuthorizedHistoryReader(domain: String): Boolean {
+        if (domain !in KEYRING_DOMAINS || domain == MESSAGE_DOMAIN) return false
+        val now = System.currentTimeMillis()
+        return db.trustedDeviceDao().all().any { device ->
+            trusted(device, now) && device.historyGrant == "FULL_HISTORY" &&
+                MESSAGE_DOMAIN in capabilities(device) && domain in capabilities(device)
+        }
+    }
+
     private suspend fun historyMaster(now: Long): ConversationKeyEpochEntity {
         db.conversationKeyDao().current(
             HISTORY_MASTER_AGGREGATE, 0, 0L, MESSAGE_DOMAIN

@@ -161,6 +161,8 @@ fun ConversationScreen(
     draftText: String = ""
 ) {
     val context = LocalContext.current
+    val scheduleSuccessToast = stringResource(R.string.sched_success_toast)
+    val copiedToast = stringResource(R.string.conv_copied)
     val viewModel: ConversationViewModel = viewModel()
     // Process-wide reactive draft store (single-activity app: chat → home
     // never passes through Activity.onResume, so a shared StateFlow is the
@@ -915,7 +917,7 @@ fun ConversationScreen(
                                     draftRepo.set(draftKey, "")
                                     android.widget.Toast.makeText(
                                         context,
-                                        context.getString(R.string.sched_success_toast),
+                                        scheduleSuccessToast,
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -1153,7 +1155,7 @@ fun ConversationScreen(
                 phoneActionNumber = null
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("number", number))
-                android.widget.Toast.makeText(context, context.getString(R.string.conv_copied), android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, copiedToast, android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -1233,6 +1235,11 @@ private fun ScheduleSendDialog(
     onConfirm: (Long) -> Unit
 ) {
     val context = LocalContext.current
+    val inOneHour = stringResource(R.string.sched_in_1_hour)
+    val inThreeHours = stringResource(R.string.sched_in_3_hours)
+    val tomorrowAtNine = stringResource(R.string.sched_tomorrow_9am)
+    val pickDateTime = stringResource(R.string.sched_pick_date_time)
+    val changeDateTime = stringResource(R.string.sched_change_date_time)
     var pickedMillis by remember { mutableStateOf<Long?>(null) }
 
     androidx.compose.material3.AlertDialog(
@@ -1248,9 +1255,9 @@ private fun ScheduleSendDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
-                            context.getString(R.string.sched_in_1_hour) to 1L,
-                            context.getString(R.string.sched_in_3_hours) to 3L,
-                            context.getString(R.string.sched_tomorrow_9am) to -1L
+                            inOneHour to 1L,
+                            inThreeHours to 3L,
+                            tomorrowAtNine to -1L
                         ).forEach { (label, hours) ->
                         androidx.compose.material3.FilterChip(
                             selected = false,
@@ -1294,7 +1301,7 @@ private fun ScheduleSendDialog(
                         cal.get(java.util.Calendar.DAY_OF_MONTH)
                     ).show()
                 }) {
-                    Text(if (pickedMillis == null) context.getString(R.string.sched_pick_date_time) else context.getString(R.string.sched_change_date_time))
+                    Text(if (pickedMillis == null) pickDateTime else changeDateTime)
                 }
                 pickedMillis?.let {
                     Text(

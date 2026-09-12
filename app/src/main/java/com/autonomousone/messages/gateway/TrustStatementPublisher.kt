@@ -148,6 +148,10 @@ class TrustStatementPublisher(
                         }
                     }
                 }
+                if (statement.operation == TrustStatementOutboxEntity.OP_DEVICE_CAPABILITIES_CHANGED) {
+                    com.autonomousone.messages.data.TelephonySyncCoordinator.get(appContext)
+                        .requestSensitiveHistoryReplayForLinkedDevice(statement.deviceId)
+                }
                 acked++
                 _health.value = _health.value.copy(lastFailureReason = null, lastAckAt = ackAt)
                 onLog("Trust statement ${statement.operation} published (seq ${statement.trustSequence})")

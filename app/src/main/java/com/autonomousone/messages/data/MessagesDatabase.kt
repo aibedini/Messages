@@ -44,9 +44,10 @@ import com.autonomousone.messages.BuildConfig
         TrustedDeviceEntity::class,
         TrustStatementOutboxEntity::class,
         DeviceTelemetryEntity::class,
-        ConversationKeyEpochEntity::class
+        ConversationKeyEpochEntity::class,
+        CloudHistoryCheckpointEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -65,6 +66,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun trustStatementOutboxDao(): TrustStatementOutboxDao
     abstract fun deviceTelemetryDao(): DeviceTelemetryDao
     abstract fun conversationKeyDao(): ConversationKeyDao
+    abstract fun cloudHistoryCheckpointDao(): CloudHistoryCheckpointDao
 
     companion object {
         @Volatile
@@ -342,6 +344,19 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V10_SQL.forEach(db::execSQL) }
         }
 
+        internal val UPGRADE_TO_V11_SQL = listOf(
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `historySource` TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `historyGeneration` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `historyOrdinal` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `historyDate` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `historyProviderId` INTEGER NOT NULL DEFAULT 0",
+            "CREATE INDEX IF NOT EXISTS `index_gateway_event_outbox_historySource_historyGeneration_historyOrdinal` ON `gateway_event_outbox` (`historySource`, `historyGeneration`, `historyOrdinal`)",
+            "CREATE TABLE IF NOT EXISTS `cloud_history_checkpoint` (`source` TEXT NOT NULL, `generation` INTEGER NOT NULL, `producerCursorDate` INTEGER NOT NULL, `producerCursorProviderId` INTEGER NOT NULL, `nextOrdinal` INTEGER NOT NULL, `ackedContiguousOrdinal` INTEGER NOT NULL, `ackedCursorDate` INTEGER NOT NULL, `ackedCursorProviderId` INTEGER NOT NULL, `sourceExhausted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`source`))"
+        )
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V11_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -353,7 +368,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

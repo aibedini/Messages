@@ -30,11 +30,14 @@ class GatewayEventFactoryTest {
     }
 
     @Test
-    fun `encrypted transport does not invoke legacy JSON decoder`() {
+    fun `fake encrypted transport metadata fails closed`() {
         val row = GatewayEventOutboxEntity(eventUuid = "encrypted", eventType = "MESSAGE_CREATED",
             aggregateId = "conversation", ciphertext = byteArrayOf(1, 2, 3, 4),
             encoding = "envelope.v1", schemaVersion = 1, cryptoVersion = 1, createdAt = 1)
-        GatewayEventFactory.validateForTransport(row)
+        try {
+            GatewayEventFactory.validateForTransport(row)
+            org.junit.Assert.fail("Non-envelope ciphertext must fail closed")
+        } catch (_: Exception) { }
         try {
             GatewayEventFactory.validateForTransport(row.copy(ciphertext = byteArrayOf()))
             org.junit.Assert.fail("Empty ciphertext must fail closed")

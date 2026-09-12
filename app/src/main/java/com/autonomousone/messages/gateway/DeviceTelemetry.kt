@@ -64,6 +64,9 @@ class DeviceTelemetry(
             else -> "UNKNOWN"
         }
         val eventDao = db.gatewayEventOutboxDao()
+        val historyAckLag = db.cloudHistoryCheckpointDao().all().sumOf {
+            (it.nextOrdinal - 1 - it.ackedContiguousOrdinal).coerceAtLeast(0)
+        }
         val trustHealth = TrustStatementPublisher.health.value
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
         @Suppress("DEPRECATION")
@@ -90,7 +93,10 @@ class DeviceTelemetry(
                 }))
             .put("sync", JSONObject()
                 .put("outboxDepth", eventDao.pendingDepth())
+                .put("realtimeQueueDepth", eventDao.pendingRealtimeDepth())
+                .put("backfillQueueDepth", eventDao.pendingBackfillDepth())
                 .put("deadLetterCount", eventDao.deadLetterDepth())
+                .put("historyAckLag", historyAckLag)
                 .put("trustOutboxDepth", trustHealth.pendingCount)
                 .putOpt("lastTrustAckAt", trustHealth.lastAckAt)
                 .putOpt("lastTrustHttpStatus", trustHealth.lastHttpStatus))

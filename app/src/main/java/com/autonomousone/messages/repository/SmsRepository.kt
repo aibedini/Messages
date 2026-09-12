@@ -893,7 +893,7 @@ class SmsRepository(
                 Telephony.Mms.Part.TEXT
             )
             context.contentResolver.query(
-                Telephony.Mms.Part.CONTENT_URI,
+            Uri.parse("content://mms/part"),
                 projection,
                 "${Telephony.Mms.Part.MSG_ID} IN (${msgIds.joinToString(",")})",
                 null,

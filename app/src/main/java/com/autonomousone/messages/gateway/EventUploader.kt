@@ -11,8 +11,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.min
@@ -72,15 +74,21 @@ class EventUploader(
     }
 
     private val appContext = context.applicationContext
-    private val repo = GatewaySyncRepository(MessagesDatabase.get(appContext))
+    private val database = MessagesDatabase.get(appContext)
+    private val repo = GatewaySyncRepository(database)
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val outboxObserver = object : androidx.room.InvalidationTracker.Observer("gateway_event_outbox") {
+        override fun onInvalidated(tables: Set<String>) { wake.trySend(Unit) }
+    }
     private var job: Job? = null
     /** Last blocked-gate state so the worker logs only on change. */
     private var lastGate: UploadGate? = null
 
     fun start() {
-        if (job?.isActive == true) return
+        if (job != null) return
+        database.invalidationTracker.addObserver(outboxObserver)
         _running.value = true
-        job = scope.launch {
+        val launched = scope.launch {
             // Process-death recovery FIRST: a crash between claim and upload
             // leaves SENDING rows behind — requeue them before claiming.
             val recovered = repo.recoverSending()
@@ -139,7 +147,7 @@ class EventUploader(
                 }
                 if (claimed.isEmpty()) {
                     attempt = 0
-                    delay(2_000) // quiet drain cadence; durability ≠ latency here
+                    withTimeoutOrNull(2_000) { wake.receive() }
                     continue
                 }
                 when (uploadBatch(claimed)) {
@@ -159,12 +167,16 @@ class EventUploader(
                 }
             }
         }
-        job?.invokeOnCompletion { _running.value = false }
+        job = launched
+        launched.invokeOnCompletion {
+            database.invalidationTracker.removeObserver(outboxObserver)
+            if (job === launched) job = null
+            _running.value = false
+        }
     }
 
     fun stop() {
         job?.cancel()
-        job = null
         _running.value = false
     }
 
@@ -179,6 +191,7 @@ class EventUploader(
     private suspend fun uploadBatch(batch: List<GatewayEventOutboxEntity>): Outcome {
         val now = System.currentTimeMillis()
         val events = JSONArray()
+        val submitted = mutableListOf<GatewayEventOutboxEntity>()
         for (event in batch) {
             // Envelope self-check: an undecodable/corrupt payload can never
             // succeed — DEAD_LETTER this row only (health alert surface) and
@@ -190,10 +203,11 @@ class EventUploader(
             try {
                 GatewayEventFactory.validateForTransport(event)
             } catch (e: Exception) {
-                Log.e(TAG, "payload envelope decode failed for ${event.eventUuid}", e)
+                Log.e(TAG, "SECURITY_EVENT_REJECTED eventId=${event.eventUuid} type=${event.eventType}")
                 repo.onDeadLetter(event.eventUuid)
                 continue
             }
+            submitted += event
             events.put(
                 JSONObject()
                     .put("eventId", event.eventUuid)
@@ -217,7 +231,7 @@ class EventUploader(
                     )
             )
         }
-        if (events.length() == 0) return Outcome.FATAL
+        if (submitted.isEmpty()) return Outcome.ALL_ACKED
 
         val requeue: suspend (List<GatewayEventOutboxEntity>) -> Unit = { rows ->
             rows.forEach { repo.onRetry(it.eventUuid, it.attemptCount, Random.Default, now) }
@@ -247,7 +261,7 @@ class EventUploader(
                     if (eventId.isNotEmpty() && sequence > 0) ackedUuids[eventId] = sequence
                 }
                 var acked = 0
-                for (event in batch) {
+                for (event in submitted) {
                     if (event.eventUuid in ackedUuids) {
                         val rows = repo.onAcked(event.eventUuid, ackedUuids.getValue(event.eventUuid), now)
                         if (rows > 0) acked++
@@ -256,13 +270,13 @@ class EventUploader(
                     }
                 }
                 val duplicates = responseJson?.optInt("duplicates", 0) ?: 0
-                val failed = batch.size - acked
+                val failed = submitted.size - acked
                 Log.i(
                     TAG,
-                    "batch_upload_result events=${batch.size} accepted=$acked duplicates=$duplicates failed=$failed"
+                    "batch_upload_result events=${submitted.size} accepted=$acked duplicates=$duplicates failed=$failed"
                 )
-                if (acked > 0) onLog("📤 $acked/${batch.size} event(s) ACKed by GMweb")
-                if (acked == batch.size) Outcome.ALL_ACKED
+                if (acked > 0) onLog("📤 $acked/${submitted.size} event(s) ACKed by GMweb")
+                if (acked == submitted.size) Outcome.ALL_ACKED
                 else Outcome.PARTIAL
             }
             is ControlPlaneClient.Result.Failure -> {
@@ -271,11 +285,11 @@ class EventUploader(
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
                     // visible health signal, never a silent drop.
-                    batch.forEach { repo.onDeadLetter(it.eventUuid) }
-                    onLog("⛔ ${batch.size} event(s) dead-lettered: HTTP $status")
+                    submitted.forEach { repo.onDeadLetter(it.eventUuid) }
+                    onLog("⛔ ${submitted.size} event(s) dead-lettered: HTTP $status")
                     Outcome.FATAL
                 } else {
-                    requeue(batch)
+                    requeue(submitted)
                     Outcome.TRANSPORT_FAILURE
                 }
             }

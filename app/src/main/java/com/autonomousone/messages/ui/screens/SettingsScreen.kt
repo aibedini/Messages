@@ -272,6 +272,12 @@ fun SettingsScreen(
 
             SectionCard(title = stringResource(R.string.settings_section_data_tools)) {
                 val context = LocalContext.current
+                val diagnosticsExportTitle = stringResource(R.string.diagnostics_export)
+                val dataExportTitle = stringResource(R.string.data_export_all)
+                val backupOkFormat = stringResource(R.string.data_backup_ok_fmt)
+                val backupFailed = stringResource(R.string.data_backup_failed)
+                val restoreOkFormat = stringResource(R.string.data_restore_ok_fmt)
+                val restoreFailed = stringResource(R.string.data_restore_failed)
                 val dataTools: DataToolsViewModel = viewModel()
                 var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -297,7 +303,7 @@ fun SettingsScreen(
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(
-                                    Intent.createChooser(share, context.getString(R.string.diagnostics_export))
+                                    Intent.createChooser(share, diagnosticsExportTitle)
                                 )
                             }
                         },
@@ -339,7 +345,7 @@ fun SettingsScreen(
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
                                     context.startActivity(
-                                        Intent.createChooser(share, context.getString(R.string.data_export_all))
+                                        Intent.createChooser(share, dataExportTitle)
                                     )
                                 } else {
                                     Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
@@ -378,7 +384,7 @@ fun SettingsScreen(
                     if (uri != null) dataTools.backupTo(uri) { count ->
                         Toast.makeText(
                             context,
-                            if (count != null) context.getString(R.string.data_backup_ok_fmt, count) else context.getString(R.string.data_backup_failed),
+                            if (count != null) backupOkFormat.format(count) else backupFailed,
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -463,7 +469,7 @@ fun SettingsScreen(
                                     dataTools.restoreFrom(uri) { count ->
                                         Toast.makeText(
                                             context,
-                                            if (count != null) context.getString(R.string.data_restore_ok_fmt, count) else context.getString(R.string.data_restore_failed),
+                                            if (count != null) restoreOkFormat.format(count) else restoreFailed,
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }

@@ -188,6 +188,21 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         cloudBackfills.trySend(deviceId)
     }
 
+    /** Re-scan history after a browser gains a sensitive-message capability. */
+    suspend fun requestSensitiveHistoryReplayForLinkedDevice(deviceId: String) {
+        db.withTransaction {
+            db.cloudHistoryCheckpointDao().all().forEach { checkpoint ->
+                db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
+                    producerCursorDate = Long.MAX_VALUE,
+                    producerCursorProviderId = Long.MAX_VALUE,
+                    sourceExhausted = false,
+                    updatedAt = System.currentTimeMillis(),
+                ))
+            }
+        }
+        requestCloudBackfillForLinkedDevice(deviceId)
+    }
+
     /** Suspends until one full sync cycle completes (serialized). */
     suspend fun syncNow() = runReconcile(ReconcileRequest.FullSync)
 
@@ -562,6 +577,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         // Local audit never logs message content (ADR-006 §21).
         val firewall = com.autonomousone.messages.security.SensitiveMessageFirewall
         val verdict = firewall.classify(sender, body)
+        val category = when (verdict.category) {
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.NORMAL -> ""
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.OTP_SECURITY_CODE -> "READ_OTP"
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.BANK_SECURITY_CODE -> "READ_BANK_SECURITY"
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.PASSWORD_RESET_CODE -> "READ_PASSWORD_RESET"
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.AUTHENTICATION_CODE -> "READ_AUTH_CODES"
+            com.autonomousone.messages.security.SensitiveMessageFirewall.Category.FINANCIAL_NOTIFICATION -> "READ_FINANCIAL_NOTIFICATIONS"
+        }
         val policy = firewall.resolvePolicy(
             verdict = verdict,
             sender = sender,
@@ -570,7 +593,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             financialPolicy = messagingPrefs.financialNotificationPolicy,
             ambiguityMode = messagingPrefs.ambiguityMode
         )
-        if (policy == com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.LOCAL_ONLY) {
+        val explicitlyAuthorized = category.isNotEmpty() &&
+            com.autonomousone.messages.security.ConversationKeyRepository(db)
+                .hasAuthorizedHistoryReader(category)
+        if (policy == com.autonomousone.messages.security.SensitiveMessageFirewall.Policy.LOCAL_ONLY &&
+            !explicitlyAuthorized
+        ) {
             // ADR-006 §11: when the user's financial policy is ASK, surface a
             // per-message prompt (Sync once / Keep private) instead of a
             // silent keep-local. The DEFAULT is still local: until the user
@@ -614,14 +642,6 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             if (db.gatewayEventOutboxDao().idOf(row.eventUuid) != null) return
             val payload = org.json.JSONObject(GatewayEventFactory.decodePayloadEnvelope(row.ciphertext))
             val at = payload.optLong("dateMs", db.messageDao().findByKey(source, providerId)?.date ?: 0L)
-            val category = when (verdict.category) {
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.NORMAL -> ""
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.OTP_SECURITY_CODE -> "READ_OTP"
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.BANK_SECURITY_CODE -> "READ_BANK_SECURITY"
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.PASSWORD_RESET_CODE -> "READ_PASSWORD_RESET"
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.AUTHENTICATION_CODE -> "READ_AUTH_CODES"
-                com.autonomousone.messages.security.SensitiveMessageFirewall.Category.FINANCIAL_NOTIFICATION -> "READ_FINANCIAL_NOTIFICATIONS"
-            }
             val encrypted = com.autonomousone.messages.security.ConversationKeyRepository(db).encrypt(row, category)
             val direction = payload.optString("direction", "unknown")
             val inserted = db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
@@ -759,6 +779,25 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     internal suspend fun enqueueHistorical(entity: MessageEntity) {
         val direction = cloudMessageDirection(entity.type) ?: return
+        val generation = 4L
+        val eventId = java.util.UUID.nameUUIDFromBytes(
+            "evt:replica-v4:${entity.source}:${entity.providerId}:${entity.date}".toByteArray()
+        ).toString()
+        if (db.gatewayEventOutboxDao().idOf(eventId) != null) return
+        val checkpoint = db.cloudHistoryCheckpointDao().get(entity.source)
+            ?: CloudHistoryCheckpointEntity(
+                source = entity.source,
+                generation = generation,
+                producerCursorDate = Long.MAX_VALUE,
+                producerCursorProviderId = Long.MAX_VALUE,
+                nextOrdinal = 1,
+                ackedContiguousOrdinal = 0,
+                ackedCursorDate = Long.MAX_VALUE,
+                ackedCursorProviderId = Long.MAX_VALUE,
+                sourceExhausted = false,
+                updatedAt = System.currentTimeMillis(),
+            )
+        val ordinal = checkpoint.nextOrdinal
         enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
             GatewayEventFactory.messageCreated(
                 source = entity.source,
@@ -773,7 +812,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 read = entity.read,
                 revision = 1,
                 priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL,
+            ).copy(
+                historySource = entity.source,
+                historyGeneration = generation,
+                historyOrdinal = ordinal,
+                historyDate = entity.date,
+                historyProviderId = entity.providerId,
             )
+        }
+        if (db.gatewayEventOutboxDao().idOf(eventId) != null) {
+            db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
+                producerCursorDate = entity.date,
+                producerCursorProviderId = entity.providerId,
+                nextOrdinal = ordinal + 1,
+                sourceExhausted = false,
+                updatedAt = System.currentTimeMillis(),
+            ))
         }
     }
 
@@ -817,22 +871,53 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // v3 replays the phone source-of-truth with v3 event identities and
             // one full-history key. Run the server reset migration before
             // deploying this Android build so old and replacement events do not coexist.
-            val direction = "encrypted-history-v4:$source"
+            db.withTransaction {
+                val checkpoint = db.cloudHistoryCheckpointDao().get(source)
+                if (checkpoint != null && checkpoint.nextOrdinal > checkpoint.ackedContiguousOrdinal + 1) {
+                    val first = db.gatewayEventOutboxDao().historyAfter(
+                        source, checkpoint.generation, checkpoint.ackedContiguousOrdinal, 1
+                    ).firstOrNull()
+                    if (first == null || first.historyOrdinal != checkpoint.ackedContiguousOrdinal + 1) {
+                        db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
+                            producerCursorDate = checkpoint.ackedCursorDate,
+                            producerCursorProviderId = checkpoint.ackedCursorProviderId,
+                            nextOrdinal = checkpoint.ackedContiguousOrdinal + 1,
+                            sourceExhausted = false,
+                            updatedAt = System.currentTimeMillis(),
+                        ))
+                    }
+                }
+            }
             while (syncAllowed) {
                 val available = maxPendingBackfill - db.gatewayEventOutboxDao().pendingBackfillDepth()
                 if (available <= 0) break
                 val count = db.withTransaction {
-                    val cursor = db.syncCursorDao().get(direction)
-                    val beforeDate = cursor?.lastSequence ?: Long.MAX_VALUE
-                    val beforeId = cursor?.lastServerAck ?: Long.MAX_VALUE
-                    val page = db.messageDao().cloudHistoryPage(source, beforeDate, beforeId, minOf(100, available))
+                    val cursor = db.cloudHistoryCheckpointDao().get(source)
+                        ?: CloudHistoryCheckpointEntity(
+                            source, 4L, Long.MAX_VALUE, Long.MAX_VALUE, 1,
+                            0, Long.MAX_VALUE, Long.MAX_VALUE, false, System.currentTimeMillis()
+                        ).also { db.cloudHistoryCheckpointDao().upsert(it) }
+                    val beforeDate = cursor.producerCursorDate
+                    val beforeId = cursor.producerCursorProviderId
+                    val pageLimit = minOf(100, available)
+                    val page = db.messageDao().cloudHistoryPage(source, beforeDate, beforeId, pageLimit)
                     eligible += page.size
                     page.forEach { enqueueHistorical(it) }
                     queued += page.size
-                    if (page.isNotEmpty()) db.syncCursorDao().upsert(SyncCursorEntity(direction,
-                        lastSequence = page.last().date,
-                        lastServerAck = page.last().providerId,
-                        updatedAt = System.currentTimeMillis()))
+                    val latest = db.cloudHistoryCheckpointDao().get(source)
+                    if (page.isNotEmpty() && latest != null) {
+                        db.cloudHistoryCheckpointDao().upsert(latest.copy(
+                            producerCursorDate = page.last().date,
+                            producerCursorProviderId = page.last().providerId,
+                            sourceExhausted = page.size < pageLimit,
+                            updatedAt = System.currentTimeMillis(),
+                        ))
+                    } else if (page.isEmpty() && latest != null) {
+                        db.cloudHistoryCheckpointDao().upsert(latest.copy(
+                            sourceExhausted = true,
+                            updatedAt = System.currentTimeMillis(),
+                        ))
+                    }
                     page.size
                 }
                 if (count < minOf(100, available)) break

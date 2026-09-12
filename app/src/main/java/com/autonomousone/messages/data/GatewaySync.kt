@@ -74,6 +74,7 @@ interface RemoteConversationMapDao {
         // Claim query shape: due rows first, FIFO within a state.
         Index("state", "nextAttemptAt"),
         Index("state", "priority", "nextAttemptAt"),
+        Index("historySource", "historyGeneration", "historyOrdinal"),
         Index("aggregateId")
     ]
 )
@@ -88,6 +89,11 @@ data class GatewayEventOutboxEntity(
     val revision: Long = 1,
     val sortKey: Long = 0,
     val priority: String = PRIORITY_REALTIME,
+    val historySource: String = "",
+    val historyGeneration: Long = 0,
+    val historyOrdinal: Long = 0,
+    val historyDate: Long = 0,
+    val historyProviderId: Long = 0,
     /** Device-local monotonic queue order (= insert order via autoincrement id). */
     val sequenceLocal: Long = 0,
     /** Opaque payload bytes — NEVER parsed by business code (see file KDoc). */
@@ -191,6 +197,9 @@ interface GatewayEventOutboxDao {
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE priority = 'BACKFILL' AND state IN ('PENDING', 'SENDING')")
     suspend fun pendingBackfillDepth(): Int
 
+    @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE priority = 'REALTIME' AND state IN ('PENDING', 'SENDING')")
+    suspend fun pendingRealtimeDepth(): Int
+
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
     suspend fun deadLetterDepth(): Int
 
@@ -208,6 +217,50 @@ interface GatewayEventOutboxDao {
             "WHERE state IN ('PENDING', 'SENDING')"
     )
     suspend fun pendingBytes(): Long
+
+    @Query(
+        "SELECT * FROM gateway_event_outbox WHERE historySource = :source " +
+            "AND historyGeneration = :generation AND historyOrdinal > :afterOrdinal " +
+            "ORDER BY historyOrdinal LIMIT :limit"
+    )
+    suspend fun historyAfter(
+        source: String,
+        generation: Long,
+        afterOrdinal: Long,
+        limit: Int
+    ): List<GatewayEventOutboxEntity>
+
+    @Query(
+        "SELECT COUNT(*) FROM gateway_event_outbox WHERE historySource = :source " +
+            "AND historyGeneration = :generation AND state = 'DEAD_LETTER'"
+    )
+    suspend fun historyDeadLetters(source: String, generation: Long): Int
+}
+
+@Entity(tableName = "cloud_history_checkpoint")
+data class CloudHistoryCheckpointEntity(
+    @PrimaryKey val source: String,
+    val generation: Long,
+    val producerCursorDate: Long,
+    val producerCursorProviderId: Long,
+    val nextOrdinal: Long,
+    val ackedContiguousOrdinal: Long,
+    val ackedCursorDate: Long,
+    val ackedCursorProviderId: Long,
+    val sourceExhausted: Boolean,
+    val updatedAt: Long,
+)
+
+@Dao
+interface CloudHistoryCheckpointDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: CloudHistoryCheckpointEntity)
+
+    @Query("SELECT * FROM cloud_history_checkpoint WHERE source = :source")
+    suspend fun get(source: String): CloudHistoryCheckpointEntity?
+
+    @Query("SELECT * FROM cloud_history_checkpoint ORDER BY source")
+    suspend fun all(): List<CloudHistoryCheckpointEntity>
 }
 
 /**

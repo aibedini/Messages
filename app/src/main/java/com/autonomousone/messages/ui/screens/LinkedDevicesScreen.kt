@@ -680,7 +680,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     Text("✓ Read messages\n✓ Send messages\n✓ Receive notifications", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Requested history access", style = MaterialTheme.typography.labelLarge)
-                    Text("This choice controls encrypted history keys. Previously uploaded legacy plaintext messages cannot be protected retroactively.",
+                    Text("This choice controls encrypted history access. Sensitive categories below remain private unless you explicitly enable them.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = historyFull, onClick = { historyFull = true })
@@ -833,6 +833,12 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
  *  [onQr] returns TRUE when the payload is accepted — the analyzer is then
  *  cleared so no further frames fire. FALSE/invalid keeps scanning.
  *  Camera, scanner and executor are cleaned up on dispose. */
+@androidx.annotation.OptIn(
+    markerClass = [
+        androidx.camera.core.ExperimentalGetImage::class,
+        androidx.camera.view.TransformExperimental::class,
+    ],
+)
 @Composable
 private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
     val context = LocalContext.current
@@ -892,7 +898,6 @@ private fun QrCameraView(onQr: (String) -> Boolean, onError: (String) -> Unit) {
                         .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
                     analysis.setAnalyzer(executor) { imageProxy ->
-                        @androidx.camera.core.ExperimentalGetImage
                         val media = imageProxy.image
                         if (media == null) {
                             imageProxy.close()

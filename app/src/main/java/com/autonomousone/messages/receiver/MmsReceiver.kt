@@ -144,7 +144,7 @@ class MmsReceiver : MmsReceivedReceiver() {
     private fun queryTextBody(cr: android.content.ContentResolver, msgId: Long): String? {
         return try {
             cr.query(
-                android.provider.Telephony.Mms.Part.CONTENT_URI,
+                android.net.Uri.parse("content://mms/part"),
                 arrayOf(android.provider.Telephony.Mms.Part.TEXT),
                 "${android.provider.Telephony.Mms.Part.MSG_ID} = ? AND ${android.provider.Telephony.Mms.Part.CONTENT_TYPE} = ?",
                 arrayOf(msgId.toString(), "text/plain"),

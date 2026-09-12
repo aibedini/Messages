@@ -73,10 +73,44 @@ class GatewaySyncRepository(
             selected
         }
 
-    /** Partial ACK support (LOCK 13): each reported eventUuid advances alone. */
     /** Partial ACK (LOCK 13): only the reported eventUuid moves to ACKED. */
     suspend fun onAcked(eventUuid: String, serverSequence: Long, ackedAt: Long): Int =
-        outboxDao.markAcked(eventUuid, serverSequence, ackedAt)
+        db.withTransaction {
+            val changed = outboxDao.markAcked(eventUuid, serverSequence, ackedAt)
+            if (changed > 0) advanceHistoryAckWatermarks(ackedAt)
+            changed
+        }
+
+    private suspend fun advanceHistoryAckWatermarks(now: Long) {
+        for (checkpoint in db.cloudHistoryCheckpointDao().all()) {
+            var ordinal = checkpoint.ackedContiguousOrdinal
+            var date = checkpoint.ackedCursorDate
+            var providerId = checkpoint.ackedCursorProviderId
+            for (row in outboxDao.historyAfter(
+                checkpoint.source, checkpoint.generation, ordinal, Policy.MAX_BATCH_EVENTS * 20
+            )) {
+                if (row.historyOrdinal != ordinal + 1 || row.state != GatewayEventOutboxEntity.STATE_ACKED) break
+                ordinal = row.historyOrdinal
+                date = row.historyDate
+                providerId = row.historyProviderId
+            }
+            if (ordinal != checkpoint.ackedContiguousOrdinal) {
+                db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
+                    ackedContiguousOrdinal = ordinal,
+                    ackedCursorDate = date,
+                    ackedCursorProviderId = providerId,
+                    updatedAt = now,
+                ))
+            }
+        }
+    }
+
+    suspend fun isHistoryDeliveryComplete(source: String): Boolean {
+        val checkpoint = db.cloudHistoryCheckpointDao().get(source) ?: return false
+        return checkpoint.sourceExhausted &&
+            checkpoint.ackedContiguousOrdinal == checkpoint.nextOrdinal - 1 &&
+            outboxDao.historyDeadLetters(source, checkpoint.generation) == 0
+    }
 
     suspend fun onRetry(eventUuid: String, attempt: Int, random: Random, now: Long) {
         outboxDao.markRetry(eventUuid, now + Policy.backoffDelayMs(attempt, random))
