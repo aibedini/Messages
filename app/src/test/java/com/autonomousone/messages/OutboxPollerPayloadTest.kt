@@ -92,62 +92,22 @@ class OutboxPollerPayloadTest {
         OutboxPoller.parseTask(JSONObject("""{"task":{"requestId":"","to":"+1","text":"x"}}"""))
     }
 
-    // ── ack payloads ─────────────────────────────────────────────────────────
+    // ── canonical outcome vocabulary ─────────────────────────────────────────
 
     @Test
-    fun successAckReportsOutcomeSent() {
-        val ack = OutboxPoller.ackPayload("gw-request-1", EveSmsQueue.OUTCOME_SENT, null, 1_700_000_000_000L)
-
-        assertEquals("gw-request-1", ack.getString("requestId"))
-        assertTrue(ack.getBoolean("ok"))
-        assertEquals("sent", ack.getString("outcome"))
-        // Legacy servers read sentAt; it is always present.
-        assertEquals(1_700_000_000_000L, ack.getLong("sentAt"))
-    }
-
-    @Test
-    fun supersededAckIsDistinguishableFromDeviceFailure() {
-        val ack = OutboxPoller.ackPayload(
-            "gw-request-1", EveSmsQueue.OUTCOME_SUPERSEDED, "renewed", 1_700_000_000_000L
+    fun canonicalAckOutcomesAreExactlySentFailedSuperseded() {
+        assertEquals("sent", EveSmsQueue.OUTCOME_SENT)
+        assertEquals("failed", EveSmsQueue.OUTCOME_FAILED)
+        assertEquals("superseded", EveSmsQueue.OUTCOME_SUPERSEDED)
+        assertEquals(
+            "the pre-canonical alias now lives in the reason field",
+            "device_send_failed",
+            EveSmsQueue.REASON_DEVICE_SEND_FAILED
         )
-
-        assertFalse(ack.getBoolean("ok"))
-        assertEquals("superseded", ack.getString("outcome"))
-        assertEquals("renewed", ack.getString("reason"))
-        assertFalse(
-            "business invalidation must not be reported as a device failure",
-            ack.getString("outcome") == EveSmsQueue.OUTCOME_FAILED
-        )
-        assertFalse(ack.getString("reason") == "device_send_failed")
     }
 
     @Test
-    fun deviceFailureAckKeepsTheLegacyReason() {
-        val ack = OutboxPoller.ackPayload(
-            "gw-request-1", EveSmsQueue.OUTCOME_FAILED, "device_send_failed", 1L
-        )
-
-        assertFalse(ack.getBoolean("ok"))
-        assertEquals("device_send_failed", ack.getString("outcome"))
-        assertEquals("device_send_failed", ack.getString("reason"))
-    }
-
-    @Test
-    fun everyNonSentOutcomeIsNotOk() {
-        for (outcome in listOf(
-            EveSmsQueue.OUTCOME_SUPERSEDED,
-            EveSmsQueue.OUTCOME_FAILED,
-            EveSmsQueue.OUTCOME_CANCELLED,
-            EveSmsQueue.OUTCOME_DEFERRED
-        )) {
-            val ack = OutboxPoller.ackPayload("r", outcome, "why", 1L)
-            assertFalse(ack.getBoolean("ok"))
-            assertEquals(outcome, ack.getString("outcome"))
-        }
-    }
-
-    @Test
-    fun supersededOutcomeMapsFromTheQueueStatus() {
+    fun queueStatusMapsOntoTheCanonicalOutcomeSet() {
         val base = EveSmsQueue.Record(
             requestId = "r", jobId = "j", to = "+1", text = "t",
             priority = "critical", priorityLevel = 1,
@@ -155,9 +115,78 @@ class OutboxPollerPayloadTest {
         )
         assertEquals("sent", base.copy(status = EveSmsQueue.Status.SENT).outcome)
         assertEquals("superseded", base.copy(status = EveSmsQueue.Status.SUPERSEDED).outcome)
-        assertEquals("device_send_failed", base.copy(status = EveSmsQueue.Status.FAILED).outcome)
+        assertEquals("failed", base.copy(status = EveSmsQueue.Status.FAILED).outcome)
+        // A locally cancelled task is a failure whose reason carries the detail.
+        assertEquals("failed", base.copy(status = EveSmsQueue.Status.CANCELLED).outcome)
+        // Local status labels, never ACK outcomes.
         assertEquals("deferred", base.copy(status = EveSmsQueue.Status.DEFERRED).outcome)
         assertEquals("pending", base.copy(status = EveSmsQueue.Status.ACTIVE).outcome)
+    }
+
+    // ── ack payloads ─────────────────────────────────────────────────────────
+
+    @Test
+    fun successAckReportsOutcomeSentWithSentAt() {
+        val ack = OutboxPoller.ackPayload("gw-request-1", EveSmsQueue.OUTCOME_SENT, null, 1_700_000_000_000L)
+
+        assertEquals("gw-request-1", ack.getString("requestId"))
+        assertTrue(ack.getBoolean("ok"))
+        assertEquals("sent", ack.getString("outcome"))
+        assertEquals(1_700_000_000_000L, ack.getLong("sentAt"))
+        assertEquals(1_700_000_000_000L, ack.getLong("ackAt"))
+    }
+
+    @Test
+    fun supersededAckCarriesNoSentAtAndIsNotADeviceFailure() {
+        val ack = OutboxPoller.ackPayload(
+            "gw-request-1", EveSmsQueue.OUTCOME_SUPERSEDED, "renewed", 1_700_000_000_000L
+        )
+
+        assertFalse(ack.getBoolean("ok"))
+        assertEquals("superseded", ack.getString("outcome"))
+        assertEquals("renewed", ack.getString("reason"))
+        assertFalse("no physical submission happened", ack.has("sentAt"))
+        assertEquals(1_700_000_000_000L, ack.getLong("ackAt"))
+        assertFalse(
+            "business invalidation must not be reported as a device failure",
+            ack.getString("outcome") == EveSmsQueue.OUTCOME_FAILED
+        )
+    }
+
+    @Test
+    fun deviceFailureAckUsesTheCanonicalOutcomeAndKeepsTheLegacyReason() {
+        val ack = OutboxPoller.ackPayload(
+            "gw-request-1", EveSmsQueue.OUTCOME_FAILED, EveSmsQueue.REASON_DEVICE_SEND_FAILED, 1L
+        )
+
+        assertFalse(ack.getBoolean("ok"))
+        assertEquals("failed", ack.getString("outcome"))
+        assertEquals("device_send_failed", ack.getString("reason"))
+        assertFalse("nothing was sent", ack.has("sentAt"))
+        assertEquals(1L, ack.getLong("ackAt"))
+    }
+
+    @Test
+    fun providerCauseIsPreservedInReasonForFailures() {
+        val ack = OutboxPoller.ackPayload(
+            "gw-request-1", EveSmsQueue.OUTCOME_FAILED, "provider_error", 1L
+        )
+        assertEquals("failed", ack.getString("outcome"))
+        assertEquals("provider_error", ack.getString("reason"))
+    }
+
+    @Test
+    fun sentAtIsPopulatedOnlyForTheSentOutcome() {
+        for (outcome in listOf(
+            EveSmsQueue.OUTCOME_SUPERSEDED,
+            EveSmsQueue.OUTCOME_FAILED
+        )) {
+            val ack = OutboxPoller.ackPayload("r", outcome, "why", 1L)
+            assertFalse(ack.getBoolean("ok"))
+            assertEquals(outcome, ack.getString("outcome"))
+            assertFalse("sentAt must not be overloaded for " + outcome, ack.has("sentAt"))
+            assertTrue("ackAt is the generic terminal timestamp", ack.has("ackAt"))
+        }
     }
 
     @Test

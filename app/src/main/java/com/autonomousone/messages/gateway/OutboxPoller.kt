@@ -42,6 +42,14 @@ import java.net.URL
  *     waits in the local queue.
  *
  * Only (2) can prevent a physical send.
+ *
+ * ── ACKs are driven by LOCAL terminal state ──
+ * A task whose validation was unavailable is parked DEFERRED and retried by the
+ * queue's own backoff/sweep. Its ACK therefore must not wait for GMweb to
+ * redeliver it: every pulled task is registered in [GatewayAckTracker] and its
+ * ACK is emitted the moment the local record reaches a terminal outcome, even
+ * across process death and reboot. Server redelivery of the same
+ * gatewayRequestId is treated as a duplicate and only ever refreshes the ledger.
  */
 class OutboxPoller(
     private val context: Context,
@@ -60,9 +68,10 @@ class OutboxPoller(
         private const val DRAIN_TIMEOUT_MS = 120_000L
         /**
          * How long one pull cycle will sit on a record that is fail-closed
-         * DEFERRED. Once it elapses the cycle ends WITHOUT an ack: the task
-         * stays open on GMweb and is redelivered later, while the deduped local
-         * record keeps retrying under its own backoff.
+         * DEFERRED. Once it elapses the cycle ends WITHOUT an ack and the task
+         * stays registered in [GatewayAckTracker]; the local worker keeps
+         * retrying it under its own backoff and the ACK follows from that local
+         * terminal state.
          */
         private const val DEFERRED_WAIT_MS = 30_000L
 
@@ -107,10 +116,16 @@ class OutboxPoller(
         }
 
         /**
-         * The /gateway/ack body. "sent" is the only success; "superseded" is a
-         * distinct, non-device failure so GMweb can tell business invalidation
-         * apart from a radio/SIM problem. "sentAt" is kept for older servers and
-         * carries the ack timestamp on every outcome.
+         * The /gateway/ack body.
+         *
+         * Outcomes are the canonical set {sent, failed, superseded}; the
+         * detailed transport/provider cause rides in "reason" (e.g.
+         * "provider_error", "device_send_failed", "cancelled_locally", or the
+         * business reason "renewed").
+         *
+         * "sentAt" is populated ONLY when a physical/native submission actually
+         * produced a sent outcome. Every outcome carries "ackAt" as the generic
+         * terminal timestamp instead.
          */
         internal fun ackPayload(
             requestId: String,
@@ -123,7 +138,8 @@ class OutboxPoller(
                 .put("requestId", requestId)
                 .put("ok", ok)
                 .put("outcome", outcome)
-                .put("sentAt", nowMs)
+                .put("ackAt", nowMs)
+            if (ok) payload.put("sentAt", nowMs)
             if (!ok && !reason.isNullOrBlank()) payload.put("reason", reason)
             return payload
         }
@@ -133,6 +149,16 @@ class OutboxPoller(
 
     private val _stateFlow = MutableStateFlow(State.IDLE)
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
+
+    /**
+     * The single ACK path. Terminal outcomes produced by the local queue —
+     * including a DEFERRED task that resolves on its own backoff — are acked
+     * here, exactly once, with no dependency on server redelivery.
+     */
+    private val ackTracker = GatewayAckTracker(
+        statusOf = { localRequestId -> EveSmsQueue.status(localRequestId) },
+        sendAck = { rec, outcome, reason -> ackRecord(rec, outcome, reason) }
+    )
 
     /**
      * v2.6.11 Doze resilience: a partial wake lock held ONLY while a pull
@@ -169,6 +195,9 @@ class OutboxPoller(
     fun start() {
         if (running) return
         running = true
+        // Re-seed the local ACK ledger from the durable queue so a task parked
+        // DEFERRED before a reboot is still retried and acked by local backoff.
+        seedAckLedger()
         pollJob = scope.launch {
             _stateFlow.value = State.POLLING
             Log.i(TAG, "Outbox poller started")
@@ -192,6 +221,9 @@ class OutboxPoller(
                 try {
                     acquireCycleWakeLock()
                     try {
+                        // Local terminal outcomes are acked BEFORE dialling
+                        // again: a deferred task never waits for a redelivery.
+                        ackPending()
                         cycle()
                         _stateFlow.value = State.POLLING
                     } finally {
@@ -240,7 +272,7 @@ class OutboxPoller(
                         "VALIDATION_SUPERSEDED", task,
                         mapOf("phase" to "pull", "reason" to early.reason)
                     )
-                    ack(base, task, EveSmsQueue.OUTCOME_SUPERSEDED, early.reason)
+                    ackForTask(task, EveSmsQueue.OUTCOME_SUPERSEDED, early.reason)
                     onLog("🚫 Superseded at pull time: " + task.requestId)
                     return
                 }
@@ -285,37 +317,32 @@ class OutboxPoller(
             // the task can never produce a second physical SMS.
             onLog("↺ Duplicate gateway task " + task.requestId + " → reusing " + result.record.requestId)
         }
+        // Local ledger: the ACK for this task is emitted from local terminal
+        // state, whether that arrives inside this cycle or much later.
+        ackTracker.track(task.requestId, result.record.requestId)
 
-        when (drainUntilTerminal(result.record.requestId)) {
-            Drain.SENT -> {
-                ack(base, task, EveSmsQueue.OUTCOME_SENT, null)
-                onLog("✅ Delivered " + task.requestId)
-            }
-            Drain.SUPERSEDED -> {
-                val reason = EveSmsQueue.status(result.record.requestId)?.supersededReason
-                ack(base, task, EveSmsQueue.OUTCOME_SUPERSEDED, reason)
-                onLog("🚫 Superseded before native send: " + task.requestId)
-            }
-            Drain.FAILED -> {
-                val reason = EveSmsQueue.status(result.record.requestId)?.failedReason ?: "provider_error"
-                ack(base, task, EveSmsQueue.OUTCOME_FAILED, reason)
-                onLog("❌ Failed " + task.requestId)
-            }
-            Drain.CANCELLED -> {
-                ack(base, task, EveSmsQueue.OUTCOME_CANCELLED, "cancelled_locally")
-                onLog("✋ Cancelled locally " + task.requestId)
-            }
-            Drain.DEFERRED -> {
-                // Fail-closed. No ack: the task stays open on GMweb and is
-                // redelivered; the local record is deduped by gatewayRequestId.
-                onLog("⏳ Validation unavailable — deferred locally, not sent: " + task.requestId)
-            }
-            Drain.TIMEOUT -> {
-                // Pre-existing behaviour for a send that never reached a
-                // terminal state within the window.
-                ack(base, task, EveSmsQueue.OUTCOME_FAILED, "device_send_failed")
-                onLog("⌛ Timed out waiting for " + task.requestId)
-            }
+        val outcome = drainUntilTerminal(result.record.requestId)
+
+        if (outcome == Drain.TIMEOUT) {
+            // The record never reached a terminal state inside the window.
+            // Report the transport-level failure once and stop tracking it.
+            ackForTask(task, EveSmsQueue.OUTCOME_FAILED, EveSmsQueue.REASON_DEVICE_SEND_FAILED)
+            ackTracker.forget(task.requestId)
+            onLog("⌛ Timed out waiting for " + task.requestId)
+            return
+        }
+
+        // The single ACK path — also covers a record that resolved locally
+        // while the cycle was still waiting on it.
+        ackPending()
+
+        when (outcome) {
+            Drain.SENT -> onLog("✅ Delivered " + task.requestId)
+            Drain.SUPERSEDED -> onLog("🚫 Superseded before native send: " + task.requestId)
+            Drain.FAILED -> onLog("❌ Failed " + task.requestId)
+            Drain.CANCELLED -> onLog("✋ Cancelled locally " + task.requestId)
+            Drain.DEFERRED -> onLog("⏳ Validation unavailable — deferred locally, still retrying: " + task.requestId)
+            Drain.TIMEOUT -> Unit // handled above
         }
     }
 
@@ -348,7 +375,8 @@ class OutboxPoller(
                 EveSmsQueue.Status.DEFERRED -> {
                     val nowMs = System.currentTimeMillis()
                     if (deferredSince == 0L) deferredSince = nowMs
-                    // Do not hold the pull cycle hostage to a long backoff.
+                    // Do not hold the pull cycle hostage to a long backoff: the
+                    // record stays tracked and is acked when it resolves locally.
                     if (nowMs - deferredSince >= DEFERRED_WAIT_MS) return Drain.DEFERRED
                 }
                 EveSmsQueue.Status.QUEUED, EveSmsQueue.Status.ACTIVE -> Unit
@@ -358,40 +386,100 @@ class OutboxPoller(
         return Drain.TIMEOUT
     }
 
-    private fun ack(base: String, task: Task, outcome: String, reason: String?) {
-        val nowMs = System.currentTimeMillis()
-        val payload = ackPayload(task.requestId, outcome, reason, nowMs)
-        var accepted = false
-        val conn = open(base + "/gateway/ack", "POST", ACK_TIMEOUT_MS)
-        try {
-            conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-            accepted = conn.responseCode in 200..299
-            if (!accepted) Log.w(TAG, "ack HTTP " + conn.responseCode + " for " + task.requestId)
-        } catch (e: Exception) {
-            // A lost ack must NOT re-send locally; the server times the task out.
-            Log.w(TAG, "ack failed for " + task.requestId + ": " + e.message)
-        } finally {
-            conn.disconnect()
-        }
-        trace(
-            "ACK_SENT", task,
-            mapOf("outcome" to outcome, "reason" to reason, "accepted" to accepted, "ackAt" to nowMs)
-        )
+    /**
+     * Re-seeds the ledger from the durable queue and emits the ACK for every
+     * tracked task that has reached a terminal outcome.
+     *
+     * This is the mechanism that makes DEFERRED correct without GMweb
+     * redelivery: the retry, the terminal state and the ACK all come from the
+     * local queue and this ledger, never from a second /gateway/pull of the
+     * same task.
+     */
+    private fun ackPending(): Int {
+        seedAckLedger()
+        val emitted = ackTracker.drain()
+        if (emitted > 0) onLog("📤 Acked " + emitted + " gateway task(s)")
+        return emitted
     }
 
-    /** Structured lifecycle event (never the message body). */
+    private fun seedAckLedger() {
+        EveSmsQueue.outstandingGatewayRecords().forEach { rec ->
+            rec.gatewayRequestId?.let { ackTracker.track(it, rec.requestId) }
+        }
+    }
+
+    private fun ackForTask(task: Task, outcome: String, reason: String?) {
+        ackInternal(task.requestId, outcome, reason, traceFields(task))
+    }
+
+    private fun ackRecord(rec: EveSmsQueue.Record, outcome: String, reason: String?) {
+        val gatewayRequestId = rec.gatewayRequestId ?: return
+        ackInternal(gatewayRequestId, outcome, reason, traceFields(rec))
+    }
+
+    private fun ackInternal(
+        gatewayRequestId: String,
+        outcome: String,
+        reason: String?,
+        extra: Map<String, Any?>
+    ) {
+        val nowMs = System.currentTimeMillis()
+        val payload = ackPayload(gatewayRequestId, outcome, reason, nowMs)
+        val base = prefs.gmwebUrl.trim().trimEnd('/')
+        var accepted = false
+        if (base.isBlank()) {
+            Log.w(TAG, "ack skipped for " + gatewayRequestId + ": no GMweb URL configured")
+        } else {
+            try {
+                val conn = open(base + "/gateway/ack", "POST", ACK_TIMEOUT_MS)
+                try {
+                    conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                    accepted = conn.responseCode in 200..299
+                    if (!accepted) Log.w(TAG, "ack HTTP " + conn.responseCode + " for " + gatewayRequestId)
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                // A lost ack must NOT re-send locally; the server times the task out.
+                Log.w(TAG, "ack failed for " + gatewayRequestId + ": " + e.message)
+            }
+        }
+        val fields = linkedMapOf<String, Any?>()
+        fields.putAll(extra)
+        fields["outcome"] = outcome
+        fields["reason"] = reason
+        fields["accepted"] = accepted
+        fields["ackAt"] = nowMs
+        EveSmsQueue.trace("ACK_SENT", fields)
+    }
+
+    /** Structured lifecycle event for a pull-time task (never the message body). */
     private fun trace(event: String, task: Task, extra: Map<String, Any?>) {
-        val fields = linkedMapOf<String, Any?>(
-            "gatewayRequestId" to task.requestId,
-            "serviceKey" to task.meta?.serviceKey,
-            "notificationKind" to task.meta?.notificationKind,
-            "generation" to task.meta?.generation,
-            "correlationId" to task.meta?.correlationId,
-            "requiresValidation" to (task.meta?.requiresValidation == true)
-        )
+        val fields = linkedMapOf<String, Any?>()
+        fields.putAll(traceFields(task))
         fields.putAll(extra)
         EveSmsQueue.trace(event, fields)
     }
+
+    private fun traceFields(task: Task): Map<String, Any?> = linkedMapOf(
+        "gatewayRequestId" to task.requestId,
+        "serviceKey" to task.meta?.serviceKey,
+        "notificationKind" to task.meta?.notificationKind,
+        "generation" to task.meta?.generation,
+        "correlationId" to task.meta?.correlationId,
+        "requiresValidation" to (task.meta?.requiresValidation == true)
+    )
+
+    private fun traceFields(rec: EveSmsQueue.Record): Map<String, Any?> = linkedMapOf(
+        "gatewayRequestId" to rec.gatewayRequestId,
+        "localRequestId" to rec.requestId,
+        "serviceKey" to rec.serviceKey,
+        "notificationKind" to rec.notificationKind,
+        "generation" to rec.generation,
+        "correlationId" to rec.correlationId,
+        "requiresValidation" to rec.requiresValidation,
+        "pulledAt" to rec.pulledAt
+    )
 
     private fun open(url: String, method: String, timeoutMs: Long): HttpURLConnection {
         val conn = URL(url).openConnection() as HttpURLConnection

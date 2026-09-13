@@ -46,6 +46,8 @@ class EveSmsQueuePreSendValidationTest {
         order.clear()
         nowMs = 1_700_000_000_000L
         EveSmsQueue.resetForTest(store)
+        // Drain any persist queued by a previous test before this store is used.
+        EveSmsQueue.awaitPersistence()
         EveSmsQueue.clock = { nowMs }
     }
 

@@ -52,12 +52,23 @@ object EveSmsQueue {
     const val VALIDATION_DEFER_BASE_MS = 15_000L
     const val VALIDATION_DEFER_MAX_MS = 300_000L
 
-    /** Outcomes reported to GMweb through POST /gateway/ack. */
+    /**
+     * Canonical ACK outcomes reported to GMweb through POST /gateway/ack.
+     * GMweb distinguishes exactly these three; the detailed transport/provider
+     * cause always rides in the ACK "reason" field instead of inventing a
+     * fourth outcome value.
+     */
     const val OUTCOME_SENT = "sent"
+    const val OUTCOME_FAILED = "failed"
     const val OUTCOME_SUPERSEDED = "superseded"
-    const val OUTCOME_FAILED = "device_send_failed"
-    const val OUTCOME_CANCELLED = "cancelled"
+
+    /** Local status labels only — never emitted as an ACK outcome. */
     const val OUTCOME_DEFERRED = "deferred"
+    const val OUTCOME_PENDING = "pending"
+
+    /** Detailed ACK reason values (the pre-canonical alias lives here now). */
+    const val REASON_DEVICE_SEND_FAILED = "device_send_failed"
+    const val REASON_CANCELLED_LOCALLY = "cancelled_locally"
     const val REASON_VALIDATION_UNAVAILABLE = "validation_unavailable"
 
     val PRIORITY_LEVELS: Map<String, Int> = mapOf(
@@ -150,15 +161,19 @@ object EveSmsQueue {
         /** Non-terminal fail-closed holding state: validation could not be obtained. */
         val deferred: Boolean get() = status == Status.DEFERRED
 
-        /** GMweb-facing outcome string for POST /gateway/ack. */
+        /**
+         * GMweb-facing outcome for POST /gateway/ack, restricted to the
+         * canonical set {sent, failed, superseded}. A locally cancelled task is
+         * a failure whose reason is [REASON_CANCELLED_LOCALLY]; its local
+         * [status] still says CANCELLED for the device-side status API.
+         */
         val outcome: String
             get() = when (status) {
                 Status.SENT -> OUTCOME_SENT
                 Status.SUPERSEDED -> OUTCOME_SUPERSEDED
-                Status.FAILED -> OUTCOME_FAILED
-                Status.CANCELLED -> OUTCOME_CANCELLED
+                Status.FAILED, Status.CANCELLED -> OUTCOME_FAILED
                 Status.DEFERRED -> OUTCOME_DEFERRED
-                Status.QUEUED, Status.ACTIVE -> "pending"
+                Status.QUEUED, Status.ACTIVE -> OUTCOME_PENDING
             }
     }
 
@@ -421,6 +436,18 @@ object EveSmsQueue {
         records.values.firstOrNull { it.gatewayRequestId == gatewayRequestId }
     }
 
+    /**
+     * Tasks pulled from GMweb that have NOT reached a terminal outcome yet.
+     *
+     * This is the durable source the poller re-seeds its local ACK ledger from:
+     * a task parked DEFERRED before a process death or reboot must still be
+     * retried — and eventually acknowledged — by this queue's own backoff, with
+     * no dependency on the server redelivering it.
+     */
+    fun outstandingGatewayRecords(): List<Record> = synchronized(records) {
+        records.values.filter { it.gatewayRequestId != null && !it.terminal }
+    }
+
     /** Cancels a QUEUED or DEFERRED (never-submitted) message. */
     fun cancel(requestId: String): CancelResult? = synchronized(records) {
         val rec = records[requestId] ?: return null
@@ -676,8 +703,12 @@ object EveSmsQueue {
     }
 
     private fun persistAsync() {
+        // Capture the store alongside the snapshot: an asynchronously queued
+        // write must land in the store it was taken from, never in a store that
+        // was installed later (queue restart / test rebootstrap).
+        val target = store
         val snapshot = synchronized(records) { records.values.toList() to idempotency.toMap() }
-        persistExecutor.execute { store.save(snapshot.first, snapshot.second) }
+        persistExecutor.execute { target.save(snapshot.first, snapshot.second) }
     }
 
     /**

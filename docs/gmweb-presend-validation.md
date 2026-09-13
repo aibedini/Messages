@@ -118,21 +118,52 @@ the business decision changed.
 
 ## ACK contract
 
-    {"requestId":"...","ok":true, "outcome":"sent","sentAt":<epoch-ms>}
+Outcomes are the **canonical set** — GMweb distinguishes exactly these three:
 
-    {"requestId":"...","ok":false,"outcome":"superseded","reason":"renewed","sentAt":<epoch-ms>}
+    sent | failed | superseded
 
-    {"requestId":"...","ok":false,"outcome":"device_send_failed","reason":"provider_error",...}
+The detailed transport/provider/business cause always rides in `reason`.
 
-    {"requestId":"...","ok":false,"outcome":"cancelled","reason":"cancelled_locally",...}
+    {"requestId":"...","ok":true, "outcome":"sent",       "sentAt":<epoch-ms>,"ackAt":<epoch-ms>}
+
+    {"requestId":"...","ok":false,"outcome":"superseded", "reason":"renewed", "ackAt":<epoch-ms>}
+
+    {"requestId":"...","ok":false,"outcome":"failed",     "reason":"provider_error",       "ackAt":<epoch-ms>}
+    {"requestId":"...","ok":false,"outcome":"failed",     "reason":"device_send_failed",   "ackAt":<epoch-ms>}
+    {"requestId":"...","ok":false,"outcome":"failed",     "reason":"cancelled_locally",    "ackAt":<epoch-ms>}
 
 * `ok` is true only for `outcome = sent` (unchanged for older servers).
-* A superseded task is **never** reported as `device_send_failed`.
-* `sentAt` is always present (the ack timestamp) for compatibility.
+* `device_send_failed` is no longer an outcome value — it is the **reason** for a
+  transport-level send failure. GMweb may keep accepting it as a temporary alias
+  on input; Android always emits `failed`.
+* A locally cancelled task is reported as `failed` with
+  `reason=cancelled_locally` — cancellation is not a fourth outcome.
+* A superseded task is **never** reported as a device failure.
+* `sentAt` is populated **only** when a physical/native SMS submission actually
+  produced a sent outcome. It is never overloaded for a task that did not send.
+* `ackAt` is the generic terminal timestamp and is present on every outcome.
 
-While a task is locally `DEFERRED`, **no ack is sent**. The task stays open on
-GMweb and is redelivered; the local record is deduplicated by `requestId`, so a
-redelivery can never cause a second physical SMS.
+## DEFERRED tasks are acknowledged locally
+
+While a task is locally `DEFERRED`, **no ack is sent** and the task is retried by
+the queue's own backoff/sweep. The ACK is emitted from that **local** terminal
+state — it does not wait for GMweb to redeliver the task:
+
+    pull A -> validation timeout -> DEFERRED (no ack)
+                    |
+             local backoff expires (15s, 30s, ... )
+                    |
+             local worker re-validates A
+                    |- valid      -> native send -> SENT  -> ack {outcome:"sent"}
+                    '- superseded -> SUPERSEDED   -> ack {outcome:"superseded"}
+
+The pending-ack ledger is re-seeded from the durable queue on every poller start,
+so the same holds across process death and reboot.
+
+Server redelivery of the same `requestId` is allowed and is treated as a
+**duplicate**: the existing local record is reused, no second physical SMS is
+created, and no second ACK is emitted for a task already acknowledged in this
+process.
 
 ## Idempotency
 
