@@ -109,7 +109,14 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             onRequestLog?.invoke("✅ Server listening on http://${bindAddress ?: "0.0.0.0"}:$port")
 
             // EVE send queue: persists requests, sends highest-priority-first.
-            EveSmsQueue.start(context) { to, text -> smsSender.sendForResult(to, text) != null }
+            // The validator is the mandatory FINAL pre-send gate for GMweb
+            // metadata-aware tasks (requiresValidation=true). It is invoked from
+            // EveSmsQueue.drainOne immediately before this native sender lambda.
+            EveSmsQueue.start(
+                context,
+                { to, text -> smsSender.sendForResult(to, text) != null },
+                GmwebTaskValidator.from(GatewayPreferences(context), NetworkMonitor.get(context))
+            )
 
             acceptExecutor.execute {
                 while (isListening && serverSocket?.isClosed == false) {
@@ -679,6 +686,27 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             .put("conversationUrl", JSONObject.NULL)
             .put("sentAt", rec.sentAt.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL)
             .put("failedReason", rec.failedReason ?: JSONObject.NULL)
+            // ── Metadata-aware task identity + final pre-send gate trace ──
+            // Additive fields; opaque ids and non-secret metadata only.
+            .put("source", rec.source ?: JSONObject.NULL)
+            .put("gatewayRequestId", rec.gatewayRequestId ?: JSONObject.NULL)
+            .put("serviceKey", rec.serviceKey ?: JSONObject.NULL)
+            .put("notificationKind", rec.notificationKind ?: JSONObject.NULL)
+            .put("generation", rec.generation)
+            .put("correlationId", rec.correlationId ?: JSONObject.NULL)
+            .put("requiresValidation", rec.requiresValidation)
+            .put("validationResult", rec.validationResult ?: JSONObject.NULL)
+            .put("validationAttempts", rec.validationAttempts)
+            .put("validatedAt", rec.validatedAt.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL)
+            .put("deferredUntil", rec.deferredUntil.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL)
+            .put("supersededReason", rec.supersededReason ?: JSONObject.NULL)
+            .put("outcome", rec.outcome)
+            // Exact instant the native SmsManager funnel was entered — the
+            // diagnostic anchor for the (unavoidable) validation→radio race.
+            .put(
+                "nativeSubmitStartedAt",
+                rec.nativeSubmitStartedAt.takeIf { it > 0 }?.let { eveIsoTimestamp(it) } ?: JSONObject.NULL
+            )
         sendResponse(output, 200, json)
     }
 
@@ -729,12 +757,16 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             com.autonomousone.messages.eve.EveSmsQueue.Status.SENT -> "sent"
             com.autonomousone.messages.eve.EveSmsQueue.Status.FAILED -> "failed"
             com.autonomousone.messages.eve.EveSmsQueue.Status.CANCELLED -> "cancelled"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.SUPERSEDED -> "superseded"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.DEFERRED -> "deferred"
         }
 
     private fun eveStateString(status: com.autonomousone.messages.eve.EveSmsQueue.Status): String =
         when (status) {
             com.autonomousone.messages.eve.EveSmsQueue.Status.QUEUED -> "queued"
             com.autonomousone.messages.eve.EveSmsQueue.Status.ACTIVE -> "running"
+            // Non-terminal fail-closed holding state: not completed, not sendable.
+            com.autonomousone.messages.eve.EveSmsQueue.Status.DEFERRED -> "deferred"
             else -> "completed"
         }
 
@@ -745,6 +777,8 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             com.autonomousone.messages.eve.EveSmsQueue.Status.SENT -> "provider_delivery"
             com.autonomousone.messages.eve.EveSmsQueue.Status.FAILED -> "sending_failed"
             com.autonomousone.messages.eve.EveSmsQueue.Status.CANCELLED -> "cancelled"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.SUPERSEDED -> "superseded"
+            com.autonomousone.messages.eve.EveSmsQueue.Status.DEFERRED -> "validation_deferred"
         }
 
     private fun eveAcceptedJson(rec: com.autonomousone.messages.eve.EveSmsQueue.Record): JSONObject =
