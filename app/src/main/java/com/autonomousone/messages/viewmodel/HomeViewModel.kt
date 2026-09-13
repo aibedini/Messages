@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.data.ChangeRouter
+import com.autonomousone.messages.data.DailyWindowProvider
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
@@ -69,13 +70,20 @@ class HomeViewModel(
         private set
 
     /**
-     * Confirmed outgoing SMS SEGMENTS sent since local midnight — the Home
-     * top-bar chip. Counts ledger rows (a 3-part send = 3), written only on
-     * per-part RESULT_OK callbacks, so it matches what the carrier bills.
-     * Live via Room Flow; the window is rebuilt at midnight.
+     * Outgoing SMS SEGMENTS SUBMITTED since local midnight — the Home top-bar
+     * chip. It counts the immutable submission ledger (a 3-part send = 3), not
+     * delivery callbacks, so a late or failed callback can never make the
+     * number jump backwards. Live via a Room Flow over the current local
+     * calendar day.
      */
     var sentSegmentsToday by mutableStateOf(0)
         private set
+
+    /** Owns the day-window observation; cancelled and rebuilt on every refresh. */
+    private var sentSegmentsJob: Job? = null
+
+    /** Local calendar-day boundaries for the counter (Clock + ZoneId, DST-safe). */
+    private val dailyWindow = DailyWindowProvider()
 
     /**
      * V2: ContentObserver callback routes through ChangeRouter for O(1)
@@ -151,31 +159,45 @@ class HomeViewModel(
     }
 
     /**
-     * Room-backed today-segment count. withTimeoutOrNull reopens the window
-     * at the next local midnight instead of pinning yesterday's number.
+     * Room-backed today-segment count over the immutable submission ledger.
+     *
+     * The window is a real local calendar day — [today, tomorrow) in the
+     * current system zone via [DailyWindowProvider] — never "start + 24h", which
+     * is wrong on DST days and after a timezone change.
+     *
+     * It is rebuilt on process start, on ON_RESUME and on
+     * DATE/TIME/TIMEZONE change, so a Home left open across midnight moves to
+     * the new day's query with no Activity recreation.
+     *
+     * withTimeoutOrNull is only a wakeup optimisation: every restart re-derives
+     * the window from Clock + ZoneId, so a missed timer (Doze, manual clock
+     * change) can never pin yesterday's number.
      */
     private fun observeSentSegmentsToday() {
-        viewModelScope.launch {
+        sentSegmentsJob?.cancel()
+        sentSegmentsJob = viewModelScope.launch {
+            val dao = MessagesDatabase.get(getApplication()).sendSegmentDao()
             while (isActive) {
-                val cal = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, 0)
-                    set(java.util.Calendar.MINUTE, 0)
-                    set(java.util.Calendar.SECOND, 0)
-                    set(java.util.Calendar.MILLISECOND, 0)
-                }
-                val dayStart = cal.timeInMillis
-                val dayEnd = dayStart + 24L * 60 * 60 * 1000
-                val awakeMs = (dayEnd - System.currentTimeMillis()).coerceAtLeast(60_000L)
-                val dao = MessagesDatabase.get(getApplication()).sendSegmentDao()
+                val window = dailyWindow.currentWindow()
+                val awakeMs = (window.endMillis - System.currentTimeMillis()).coerceAtLeast(1_000L)
                 withTimeoutOrNull(awakeMs) {
-                    dao.observeSuccessSince(dayStart, dayEnd).collect { count ->
-                        sentSegmentsToday = count
-                    }
+                    dao.observeSubmittedBetween(window.startMillis, window.endMillis)
+                        .collect { count -> sentSegmentsToday = count }
                 }
-                // Midnight reached (or provider missed the tail): loop reruns
-                // with a fresh [todayStart, tomorrowStart) window.
+                // Window ended (or the timer was missed): rebuild it from the
+                // clock and re-observe. The displayed value is never reset to 0
+                // in between — the new window's count replaces it directly.
             }
         }
+    }
+
+    /**
+     * Rebuilds the day window and re-subscribes the counter query.
+     * Idempotent; called at start, on ON_RESUME and on every system
+     * date/time/timezone change.
+     */
+    fun onDayWindowMaybeChanged() {
+        observeSentSegmentsToday()
     }
 
     // ─────────────────────────────────────────────────────────────────────────

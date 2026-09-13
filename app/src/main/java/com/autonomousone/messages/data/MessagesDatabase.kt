@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.autonomousone.messages.BuildConfig
@@ -29,6 +30,7 @@ import com.autonomousone.messages.BuildConfig
  *    remote_command_executions, sync_cursors — all ADDITIVE (no rebuilds);
  *    gateway payload columns are crypto-friendly opaque blobs from day one.
  */
+@TypeConverters(SegmentCallbackStateConverter::class)
 @Database(
     entities = [
         MessageEntity::class,
@@ -47,7 +49,7 @@ import com.autonomousone.messages.BuildConfig
         ConversationKeyEpochEntity::class,
         CloudHistoryCheckpointEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -357,6 +359,29 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V11_SQL.forEach(db::execSQL) }
         }
 
+        /**
+         * v12 splits the send_segments ledger into an immutable submission half
+         * (submittedAt) and a mutable callback half (callbackAt/Result/State).
+         *
+         * A table rebuild is required because SQLite cannot drop the old
+         * sentAt/success columns in place. It is NOT destructive: every row is
+         * carried over, submittedAt is mapped from the old sentAt (the best
+         * available approximation of when the segment was submitted) and the
+         * old success flag becomes the callback verdict.
+         */
+        internal val UPGRADE_TO_V12_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS `send_segments_new` (`rowId` INTEGER NOT NULL, `partIndex` INTEGER NOT NULL, `partCount` INTEGER NOT NULL, `submittedAt` INTEGER, `subscriptionId` INTEGER NOT NULL, `callbackAt` INTEGER, `callbackResult` INTEGER, `callbackState` TEXT NOT NULL, PRIMARY KEY(`rowId`, `partIndex`))",
+            "INSERT INTO `send_segments_new` (`rowId`, `partIndex`, `partCount`, `submittedAt`, `subscriptionId`, `callbackAt`, `callbackResult`, `callbackState`) " +
+                "SELECT `rowId`, `partIndex`, `partCount`, `sentAt`, `subscriptionId`, `sentAt`, NULL, " +
+                "CASE WHEN `success` = 1 THEN 'CONFIRMED' ELSE 'FAILED' END FROM `send_segments`",
+            "DROP TABLE `send_segments`",
+            "ALTER TABLE `send_segments_new` RENAME TO `send_segments`",
+            "CREATE INDEX IF NOT EXISTS `index_send_segments_submittedAt` ON `send_segments` (`submittedAt`)"
+        )
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V12_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -368,7 +393,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

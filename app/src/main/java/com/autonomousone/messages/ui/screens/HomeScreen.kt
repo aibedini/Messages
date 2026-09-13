@@ -1,5 +1,9 @@
 package com.autonomousone.messages.ui.screens
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -26,6 +30,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -36,8 +41,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.R
@@ -75,6 +84,33 @@ fun HomeScreen(
     val viewModel: HomeViewModel = viewModel()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // ── "SMS today" window ────────────────────────────────────────────────
+    // The chip counts immutable submissions inside the CURRENT local calendar
+    // day. Its Room observation is rebuilt on resume and whenever the system
+    // date, time or timezone changes, so a Home left open across midnight (or
+    // across a DST jump or a manual clock change) moves to the new day's query
+    // without an Activity recreation. No persisted counter, no reset job.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onDayWindowMaybeChanged()
+    }
+    val clockContext = LocalContext.current
+    DisposableEffect(clockContext) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                viewModel.onDayWindowMaybeChanged()
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        ContextCompat.registerReceiver(
+            clockContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { clockContext.unregisterReceiver(receiver) }
+    }
 
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }

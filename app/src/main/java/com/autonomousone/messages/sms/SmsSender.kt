@@ -276,11 +276,11 @@ class SmsSender(
                 )
             }
 
-            // PR-11.2: the radio accepted the submit (no synchronous dispatch
-            // exception) → every part is carrier-billable NOW. The SENT
-            // callback will overwrite these rows with the true per-part
-            // verdict; counting must not depend on that broadcast arriving.
-            markSegmentsSuccessful(sentId, parts.size, effectiveSubId)
+            // The radio accepted the submit (no synchronous dispatch exception)
+            // → every part is carrier-billable NOW. This writes the IMMUTABLE
+            // submission fact the Home counter reads; the SENT callback only
+            // annotates the row and can never move or remove it.
+            recordSegmentSubmissions(sentId, parts.size, effectiveSubId)
 
             Log.d(
                 TAG,
@@ -305,30 +305,42 @@ class SmsSender(
     }
 
     /**
-     * PR-11.2 (v2.6.23): flip this message's optimistic segment rows to
-     * success after the radio accepted the send — the callback remains the
-     * authoritative per-part verdict but must not gate carrier counting.
+     * Records the immutable native-submission fact for every part of a submit
+     * the radio accepted.
+     *
+     * Counting must not depend on the SENT broadcast arriving, and a later
+     * callback must never be able to change WHEN the segment was submitted:
+     * submittedAt is written here, once, and is never overwritten.
+     *
+     * A callback can reach the ledger first — it runs on the receiver's own
+     * coroutine. Then this insert is ignored and
+     * [SendSegmentDao.fillSubmittedAtIfMissing] completes the row, so both
+     * orderings converge to the same final row.
      */
-    private fun markSegmentsSuccessful(rowId: Long, partCount: Int, subId: Int?) {
+    private fun recordSegmentSubmissions(rowId: Long, partCount: Int, subId: Int?) {
         if (rowId <= 0L || partCount <= 0) return
+        val submittedAt = System.currentTimeMillis()
         ledgerScope.launch {
             try {
                 val dao = MessagesDatabase.get(context.applicationContext).sendSegmentDao()
-                val now = System.currentTimeMillis()
                 for (part in 0 until partCount) {
-                    dao.record(
+                    val inserted = dao.insertSubmission(
                         SendSegmentEntity(
                             rowId = rowId,
                             partIndex = part,
                             partCount = partCount,
-                            sentAt = now,
-                            subscriptionId = subId ?: -1,
-                            success = true
+                            submittedAt = submittedAt,
+                            subscriptionId = subId ?: -1
                         )
                     )
+                    if (inserted == -1L) {
+                        // A callback reached the ledger first: complete the
+                        // submission fact without disturbing the callback half.
+                        dao.fillSubmittedAtIfMissing(rowId, part, submittedAt)
+                    }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "segment ledger success-write failed id=$rowId", e)
+                Log.w(TAG, "segment ledger submission-write failed id=" + rowId, e)
             }
         }
     }

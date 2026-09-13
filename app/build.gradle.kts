@@ -117,6 +117,10 @@ dependencies {
     // return defaults under returnDefaultValues, which breaks JSON round-trips
     // (GatewayEventFactoryTest). Runtime still uses the platform's own class.
     testImplementation("org.json:json:20240303")
+    // Real in-memory SQLite for the send_segments ledger tests: the ledger
+    // contract (immutable submittedAt, targeted callback UPDATE, convergent
+    // race handling) is SQL behaviour and must be tested as SQL, not mocked.
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

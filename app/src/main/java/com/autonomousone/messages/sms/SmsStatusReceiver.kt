@@ -12,6 +12,7 @@ import android.telephony.SmsMessage
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessageMutation
+import com.autonomousone.messages.data.SegmentCallbackState
 import com.autonomousone.messages.data.SendSegmentEntity
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
@@ -111,26 +112,63 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // and showing Sent. Explicit radio-level failures (NO_SERVICE,
         // RADIO_OFF, NULL_PDU) are NOT billable and stay success=false.
         if (!delivered) {
-            val countable = ok ||
-                callbackResultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE
+            // The v2.6.18 verdicts, now stored as a typed callback state
+            // instead of a boolean a racing writer could flip back:
+            //   RESULT_OK                         -> CONFIRMED
+            //   RESULT_ERROR_GENERIC_FAILURE      -> AMBIGUOUS (SMSC-accepted on
+            //                                        the affected RILs)
+            //   NO_SERVICE / RADIO_OFF / NULL_PDU -> FAILED (never billable)
+            val state = when {
+                ok -> SegmentCallbackState.CONFIRMED
+                callbackResultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE ->
+                    SegmentCallbackState.AMBIGUOUS
+                else -> SegmentCallbackState.FAILED
+            }
+            val callbackAt = System.currentTimeMillis()
             val appContext = context.applicationContext
             try {
-                MessagesDatabase.get(appContext).sendSegmentDao().record(
-                    SendSegmentEntity(
+                val dao = MessagesDatabase.get(appContext).sendSegmentDao()
+                // Targeted UPDATE of the callback columns only. It never
+                // REPLACEs the row, so the immutable submittedAt — and with it
+                // the calendar day this segment is counted in — cannot be
+                // changed, deleted or doubled by a late/duplicate callback.
+                val updated = dao.applyCallback(
+                    rowId = ledgerRowId,
+                    partIndex = partIndex,
+                    callbackAt = callbackAt,
+                    callbackResult = callbackResultCode,
+                    callbackState = state
+                )
+                if (updated == 0) {
+                    // The callback beat the native submission write. Park the
+                    // row with an unknown submission time and re-apply: which-
+                    // ever writer lands second, the final row is identical.
+                    dao.insertSubmission(
+                        SendSegmentEntity(
+                            rowId = ledgerRowId,
+                            partIndex = partIndex,
+                            partCount = partCount,
+                            submittedAt = null,
+                            subscriptionId = subscriptionId,
+                            callbackAt = callbackAt,
+                            callbackResult = callbackResultCode,
+                            callbackState = state
+                        )
+                    )
+                    dao.applyCallback(
                         rowId = ledgerRowId,
                         partIndex = partIndex,
-                        partCount = partCount,
-                        sentAt = System.currentTimeMillis(),
-                        subscriptionId = subscriptionId,
-                        success = countable
+                        callbackAt = callbackAt,
+                        callbackResult = callbackResultCode,
+                        callbackState = state
                     )
-                )
+                }
             } catch (e: Exception) {
                 // Telemetry must never break status processing.
-                Log.w(TAG, "send ledger write failed id=$rowId part=$partIndex", e)
+                Log.w(TAG, "send ledger callback update failed id=" + rowId + " part=" + partIndex, e)
                 DiagnosticLog.event(
                     "SMS_LEDGER",
-                    "write-failed row=$rowId part=${partIndex + 1}/$partCount",
+                    "callback-update-failed row=" + rowId + " part=" + (partIndex + 1) + "/" + partCount,
                     e
                 )
             }
