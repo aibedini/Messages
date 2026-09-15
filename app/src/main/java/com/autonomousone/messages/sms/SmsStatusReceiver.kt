@@ -111,23 +111,34 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // reached (user report: "stuck on 71") while messages kept sending
         // and showing Sent. Explicit radio-level failures (NO_SERVICE,
         // RADIO_OFF, NULL_PDU) are NOT billable and stay success=false.
+        val appContext = context.applicationContext
+        val ledgerDao = MessagesDatabase.get(appContext).sendSegmentDao()
         if (!delivered) {
-            // The v2.6.18 verdicts, now stored as a typed callback state
-            // instead of a boolean a racing writer could flip back:
+            // Per-part verdict from the raw modem result:
             //   RESULT_OK                         -> CONFIRMED
-            //   RESULT_ERROR_GENERIC_FAILURE      -> AMBIGUOUS (SMSC-accepted on
-            //                                        the affected RILs)
-            //   NO_SERVICE / RADIO_OFF / NULL_PDU -> FAILED (never billable)
-            val state = when {
-                ok -> SegmentCallbackState.CONFIRMED
-                callbackResultCode == SmsManager.RESULT_ERROR_GENERIC_FAILURE ->
-                    SegmentCallbackState.AMBIGUOUS
-                else -> SegmentCallbackState.FAILED
+            //   NO_SERVICE / RADIO_OFF / NULL_PDU -> FAILED  (definite refusal)
+            //   GENERIC_FAILURE / unknown         -> UNCONFIRMED (ambiguous)
+            //
+            // Deliberately NOT "non-OK == FAILED" (GENERIC_FAILURE is followed
+            // by real delivery on affected RILs) and deliberately NOT "the API
+            // returned, so it was sent": the second reading is what made a dead
+            // SIM with no credit render as a successful single tick.
+            val verdict = SmsSendPolicy.classifySentResult(callbackResultCode)
+            val state = when (verdict) {
+                SentPartVerdict.CONFIRMED -> SegmentCallbackState.CONFIRMED
+                SentPartVerdict.UNCONFIRMED -> SegmentCallbackState.AMBIGUOUS
+                SentPartVerdict.FAILED -> SegmentCallbackState.FAILED
+            }
+            // Only a stable CODE is persisted; user-facing text is generated at
+            // render time, so no translated string is ever stored as state.
+            val failureCode = when (verdict) {
+                SentPartVerdict.CONFIRMED -> null
+                SentPartVerdict.UNCONFIRMED -> SmsSendPolicy.ambiguousReason(callbackResultCode).code
+                SentPartVerdict.FAILED -> SmsSendPolicy.hardFailure(callbackResultCode)?.code
             }
             val callbackAt = System.currentTimeMillis()
-            val appContext = context.applicationContext
             try {
-                val dao = MessagesDatabase.get(appContext).sendSegmentDao()
+                val dao = ledgerDao
                 // Targeted UPDATE of the callback columns only. It never
                 // REPLACEs the row, so the immutable submittedAt — and with it
                 // the calendar day this segment is counted in — cannot be
@@ -137,7 +148,8 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     partIndex = partIndex,
                     callbackAt = callbackAt,
                     callbackResult = callbackResultCode,
-                    callbackState = state
+                    callbackState = state,
+                    callbackFailureCode = failureCode
                 )
                 if (updated == 0) {
                     // The callback beat the native submission write. Park the
@@ -152,7 +164,8 @@ class SmsStatusReceiver : BroadcastReceiver() {
                             subscriptionId = subscriptionId,
                             callbackAt = callbackAt,
                             callbackResult = callbackResultCode,
-                            callbackState = state
+                            callbackState = state,
+                            callbackFailureCode = failureCode
                         )
                     )
                     dao.applyCallback(
@@ -160,7 +173,8 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         partIndex = partIndex,
                         callbackAt = callbackAt,
                         callbackResult = callbackResultCode,
-                        callbackState = state
+                        callbackState = state,
+                        callbackFailureCode = failureCode
                     )
                 }
             } catch (e: Exception) {
@@ -178,13 +192,22 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // above remains valid when Telephony failed to return one.
         if (rowId <= 0L) return
 
+        // SENT-side verdicts come from the DURABLE LEDGER, not from a set of part
+        // indices: the ledger is what knows whether each part was confirmed,
+        // ambiguous or refused, and it survives process death and reboot. If the
+        // ledger write above failed, the message stays PENDING — fail-safe, never
+        // a false success tick.
+        val ledgerStates = runCatching { ledgerDao.callbackStatesForRow(rowId) }
+            .getOrDefault(emptyList())
+        val sentConfirmed = ledgerStates.count { it == SegmentCallbackState.CONFIRMED }
+        val sentUnconfirmed = ledgerStates.count { it == SegmentCallbackState.AMBIGUOUS }
+        val sentFailed = ledgerStates.count { it == SegmentCallbackState.FAILED }
+
         val nextStatus = synchronized(LOCK) {
-            // SENT transport results never poison provider delivery state. A
-            // delivery-report error is only a reporting gap and likewise
-            // cannot downgrade a sent message.
-            // Versioned keys deliberately ignore callback state written by the
-            // pre-PDU policies in v2.6.13..16.
-            val sentDoneKey = "v2617_${rowId}_sent_parts"
+            // DELIVERED evidence is tracked separately and is monotonic: it can
+            // only UPGRADE a message, never downgrade it. Versioned keys
+            // deliberately ignore callback state written by the pre-PDU policies
+            // in v2.6.13..16.
             val dlvDoneKey = "v2617_${rowId}_dlv_parts"
             val dlvPendingKey = "v2617_${rowId}_dlv_pending"
             val dlvFailedKey = "v2617_${rowId}_dlv_failed"
@@ -199,18 +222,14 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 )
             }
 
-            val sentDone = prefs.getStringSet(sentDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvPending = prefs.getStringSet(dlvPendingKey, emptySet()).orEmpty().toMutableSet()
             val dlvFailed = prefs.getStringSet(dlvFailedKey, emptySet()).orEmpty().toMutableSet()
-            if (phase == SmsStatusPolicy.Phase.SENT) {
-                sentDone += partIndex.toString()
-                edit.putStringSet(sentDoneKey, sentDone)
-            } else {
-                // Per-part evidence is monotonic: DELIVERED is strongest and
-                // can never be downgraded by a duplicate/stale report;
-                // TEMPORARY may advance to FAILED or DELIVERED. UNKNOWN leaves
-                // prior evidence untouched.
+            // Per-part delivery evidence is monotonic: DELIVERED is strongest
+            // and can never be downgraded by a duplicate/stale report; TEMPORARY
+            // may advance to FAILED or DELIVERED; UNKNOWN leaves prior evidence
+            // untouched.
+            if (phase == SmsStatusPolicy.Phase.DELIVERED) {
                 val part = partIndex.toString()
                 when (deliveryEvidence) {
                     SmsStatusPolicy.DeliveryEvidence.DELIVERED -> {
@@ -226,14 +245,16 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         if (part !in dlvDone && part !in dlvFailed) dlvPending += part
                     SmsStatusPolicy.DeliveryEvidence.UNKNOWN -> Unit
                 }
-                edit.putStringSet(dlvDoneKey, dlvDone)
-                    .putStringSet(dlvPendingKey, dlvPending)
-                    .putStringSet(dlvFailedKey, dlvFailed)
             }
+            edit.putStringSet(dlvDoneKey, dlvDone)
+                .putStringSet(dlvPendingKey, dlvPending)
+                .putStringSet(dlvFailedKey, dlvFailed)
             edit.apply()
 
             SmsStatusPolicy.nextStatus(
-                sentPartsDone = sentDone.size,
+                sentConfirmedParts = sentConfirmed,
+                sentUnconfirmedParts = sentUnconfirmed,
+                sentFailedParts = sentFailed,
                 dlvPartsDone = dlvDone.size,
                 dlvPartsPending = dlvPending.size,
                 dlvPartsFailed = dlvFailed.size,

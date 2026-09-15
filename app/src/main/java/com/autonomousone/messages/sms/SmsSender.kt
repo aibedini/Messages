@@ -1,5 +1,6 @@
 package com.autonomousone.messages.sms
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
@@ -11,6 +12,7 @@ import android.util.Log
 import android.widget.Toast
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.RemoteCommandEntity
+import com.autonomousone.messages.data.SegmentCallbackState
 import com.autonomousone.messages.data.SendSegmentEntity
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.messaging.MessagingPreferences
@@ -20,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Sends SMS honouring the user's Messaging preferences:
@@ -110,8 +113,17 @@ class SmsSender(
     }
 
     /**
-     * v2.6.10: explicit outcome for machine callers (REST gateway).
-     * (Body lives in [directSend]; this is the single-funnel entry.)
+     * Explicit outcome for machine callers (REST gateway, EVE queue).
+     *
+     * This entry point is NON-BLOCKING by construction: it takes the direct
+     * path and never waits on a coroutine. The durable remote_commands path
+     * needs a coroutine context and lives in [sendWithOutcomeSuspend].
+     *
+     * History: this method used to launch on a throwaway CoroutineScope and
+     * then `CountDownLatch.await(10s)` on the caller's thread. That is exactly
+     * the ANR pattern this project forbids, it is banned by the engineering
+     * rules, and it was unreachable anyway (GatewayOutgoingPipeline.
+     * ENQUEUE_ALL_SENDS is false in every shipped configuration).
      */
     fun sendWithOutcome(
         phone: String,
@@ -123,67 +135,83 @@ class SmsSender(
         originCommandId: String? = null,
         clientMessageId: String? = null,
     ): SendOutcome {
-        if (com.autonomousone.messages.BuildConfig.DEBUG) {
-            check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-                "SmsSender.sendWithOutcome must never run on Main"
-            }
-        }
-        val enqueueMode = GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS
-        if (!enqueueMode) {
-            // Direct path (flag off): legacy behaviour, still the ONLY place
-            // SmsManager is ever touched.
-            return directSend(
+        requireOffMainThread()
+        return directSend(
+            phone, text, subscriptionIdOverride, smscOverride, showToast,
+            originCommandId, clientMessageId
+        )
+    }
+
+    /**
+     * Structured-async variant of [sendWithOutcome].
+     *
+     * Suspends instead of blocking: no ad-hoc CoroutineScope, no CountDownLatch
+     * and no caller thread is ever parked waiting for another coroutine.
+     * When the durable pipeline is enabled the remote_commands row is committed
+     * before the physical send, so a crash between the two is recoverable.
+     */
+    suspend fun sendWithOutcomeSuspend(
+        phone: String,
+        text: String,
+        subscriptionIdOverride: Int? = null,
+        smscOverride: String? = null,
+        showToast: Boolean = false,
+        threadId: Long = 0L,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
+    ): SendOutcome = withContext(Dispatchers.IO) {
+        if (!GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS) {
+            return@withContext directSend(
                 phone, text, subscriptionIdOverride, smscOverride, showToast,
                 originCommandId, clientMessageId
             )
         }
         // ── Durable path: remote_commands row → execute → mark ─────────────
-        val idempotencyKey = java.util.UUID.randomUUID().toString()
-        val execScope = kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-        )
-        var outcome: SendOutcome = SendOutcome.Rejected(rowId = null, reason = "queued")
-        val latch = java.util.concurrent.CountDownLatch(1)
-        execScope.launch {
-            try {
-                val plan = GatewayOutgoingPipeline.enqueueSendSms(
-                    phone = phone,
-                    body = text,
-                    threadId = threadId,
-                    subscriptionId = subscriptionIdOverride,
-                    idempotencyKey = idempotencyKey
+        val idempotencyKey = clientMessageId ?: java.util.UUID.randomUUID().toString()
+        try {
+            val plan = GatewayOutgoingPipeline.enqueueSendSms(
+                phone = phone,
+                body = text,
+                threadId = threadId,
+                subscriptionId = subscriptionIdOverride,
+                idempotencyKey = idempotencyKey
+            )
+            val repo = com.autonomousone.messages.repository.GatewaySyncRepository(
+                com.autonomousone.messages.data.MessagesDatabase.get(
+                    com.autonomousone.messages.Holders.appContext
                 )
-                val repo = com.autonomousone.messages.repository.GatewaySyncRepository(
-                    com.autonomousone.messages.data.MessagesDatabase.get(
-                        com.autonomousone.messages.Holders.appContext
-                    )
+            )
+            if (repo.markCommandAcceptedIfReceived(plan.commandId)) {
+                val outcome = directSend(
+                    phone, text, subscriptionIdOverride, smscOverride, showToast,
+                    plan.commandId, idempotencyKey
                 )
-                if (repo.markCommandAcceptedIfReceived(plan.commandId)) {
-                    outcome = directSend(
-                        phone, text, subscriptionIdOverride, smscOverride, showToast,
-                        plan.commandId, idempotencyKey
-                    )
-                    repo.markCommandState(
-                        plan.commandId,
-                        if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
-                        else RemoteCommandEntity.STATE_FAILED,
-                        listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
-                    )
-                } else {
-                    // Redelivery of a live idempotency key: do not execute twice.
-                    outcome = SendOutcome.Rejected(rowId = null, reason = "duplicate command")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "pipeline enqueue failed", e)
-                outcome = SendOutcome.Rejected(rowId = null, reason = "enqueue failed")
-            } finally {
-                latch.countDown()
+                repo.markCommandState(
+                    plan.commandId,
+                    if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+                    else RemoteCommandEntity.STATE_FAILED,
+                    listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+                )
+                outcome
+            } else {
+                // Redelivery of a live idempotency key: do not execute twice.
+                SendOutcome.Rejected(rowId = null, reason = "duplicate command")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "pipeline enqueue failed", e)
+            SendOutcome.Rejected(rowId = null, reason = "enqueue failed")
         }
-        // Callers expect a synchronous outcome (blocking send semantics with
-        // the rate limiter were already blocking); wait briefly for the IO hop.
-        latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
-        return outcome
+    }
+
+    /**
+     * Main-thread guard that is enforced in EVERY build, not just DEBUG: a
+     * blocking provider/Room/radio call on Main is an ANR, and the assertion
+     * must not exist only in the build users do not run.
+     */
+    private fun requireOffMainThread() {
+        check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            "SmsSender must never run on the main thread"
+        }
     }
 
     /** Explicit result of a send hand-off to telephony. */
@@ -233,9 +261,13 @@ class SmsSender(
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
         val wantReports = prefs.deliveryReportsEnabled
 
+        // Kept outside the try so a synchronous rejection can report how many
+        // parts were about to be submitted.
+        var attemptedParts = 1
         try {
             // Split long messages into multi-part SMS if needed
             val parts = manager.divideMessage(text)
+            attemptedParts = parts.size
             DiagnosticLog.event(
                 "SMS_SEND",
                 "dispatch row=$sentId phone=${DiagnosticLog.phoneToken(phone)} " +
@@ -297,6 +329,10 @@ class SmsSender(
                 e
             )
             updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
+            // A synchronous rejection must never disappear into Logcat: persist a
+            // typed reason (and the provider STATUS_FAILED above) so the bubble
+            // stays Failed across restarts instead of silently looking queued.
+            recordDispatchRejection(sentId, attemptedParts, effectiveSubId, e)
             if (showToast) {
                 Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
             }
@@ -343,6 +379,58 @@ class SmsSender(
                 Log.w(TAG, "segment ledger submission-write failed id=" + rowId, e)
             }
         }
+    }
+
+
+    /**
+     * Records a synchronous dispatch rejection (the SmsManager call itself
+     * threw) as a durable, typed failure on the ledger.
+     *
+     * submittedAt is NULL on purpose: the segment was NEVER submitted, so it
+     * must never be counted by the daily submission counter — it exists purely
+     * to carry the reason. This is the same NULL-submission semantics the
+     * callback-first race uses, so the "SMS today" ledger cannot regress.
+     */
+    private fun recordDispatchRejection(
+        rowId: Long,
+        partCount: Int,
+        subId: Int?,
+        error: Exception?
+    ) {
+        if (rowId <= 0L || partCount <= 0) return
+        val at = System.currentTimeMillis()
+        val code = SmsSendFailure.DispatchRejected(null).code
+        ledgerScope.launch {
+            try {
+                val dao = MessagesDatabase.get(context.applicationContext).sendSegmentDao()
+                for (part in 0 until partCount) {
+                    dao.insertSubmission(
+                        SendSegmentEntity(
+                            rowId = rowId,
+                            partIndex = part,
+                            partCount = partCount,
+                            submittedAt = null,
+                            subscriptionId = subId ?: -1,
+                            callbackAt = at,
+                            callbackResult = Activity.RESULT_CANCELED,
+                            callbackState = SegmentCallbackState.FAILED,
+                            callbackFailureCode = code
+                        )
+                    )
+                    dao.applyCallback(
+                        rowId = rowId,
+                        partIndex = part,
+                        callbackAt = at,
+                        callbackResult = Activity.RESULT_CANCELED,
+                        callbackState = SegmentCallbackState.FAILED,
+                        callbackFailureCode = code
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "dispatch-rejection ledger write failed id=" + rowId, e)
+            }
+        }
+        DiagnosticLog.event("SMS_SEND", "dispatch-rejected row=" + rowId + " code=" + code, error)
     }
 
     /**

@@ -960,7 +960,23 @@ class ConversationViewModel(
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                // A send failure must never disappear into Logcat. The
+                // optimistic bubble is already on screen, so flip it to the
+                // durable Failed state the user can see and retry instead of
+                // leaving an eternal "Sending...". A synchronous rejection
+                // means the submit never reached the radio.
+                android.util.Log.e("SMS_SEND", "outgoing send failed", e)
+                com.autonomousone.messages.utils.DiagnosticLog.event(
+                    "SMS_SEND",
+                    "optimistic-send-failed code=DISPATCH_REJECTED"
+                )
+                val failed = optimisticSms.copy(
+                    status = android.provider.Telephony.Sms.STATUS_FAILED
+                )
+                val index = messages.indexOfFirst { it.id == optimisticSms.id }
+                if (index >= 0) messages[index] = failed
+                val optimisticIndex = optimisticMessages.indexOfFirst { it.id == optimisticSms.id }
+                if (optimisticIndex >= 0) optimisticMessages[optimisticIndex] = failed
             }
         }
     }

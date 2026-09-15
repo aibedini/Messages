@@ -329,8 +329,13 @@ class HomeViewModel(
                 roomReadEnabled = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
             }
             if (roomReadEnabled) {
+                // Foreground reads must NEVER trigger a provider-wide
+                // reconciliation. The shadow is kept fresh by the targeted
+                // observer / coordinator channel; a slightly stale read here
+                // costs one frame, whereas syncNow() scans provider history and
+                // is exactly the foreground FullSync this codebase forbids
+                // (constitution: FullSync is bootstrap / recovery only).
                 val roomList = kotlin.runCatching {
-                    coordinator.syncNow()
                     roomConversations()
                 }.getOrNull()
                 if (roomList != null) {

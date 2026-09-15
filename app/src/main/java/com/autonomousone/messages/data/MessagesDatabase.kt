@@ -49,7 +49,7 @@ import com.autonomousone.messages.BuildConfig
         ConversationKeyEpochEntity::class,
         CloudHistoryCheckpointEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -382,6 +382,19 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V12_SQL.forEach(db::execSQL) }
         }
 
+        /**
+         * v13 adds the stable typed failure code to the send ledger (ADDITIVE,
+         * no rebuild): each part's modem verdict now carries an actionable
+         * reason such as NO_SERVICE / RADIO_OFF / MODEM_FAILURE that survives
+         * process death, reboot and locale changes.
+         */
+        internal val UPGRADE_TO_V13_SQL = listOf(
+            "ALTER TABLE `send_segments` ADD COLUMN `callbackFailureCode` TEXT"
+        )
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V13_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -393,7 +406,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

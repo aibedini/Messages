@@ -89,7 +89,16 @@ data class SendSegmentEntity(
     /** Raw SmsManager/Activity result code of the SENT callback. */
     val callbackResult: Int? = null,
     /** Modem verdict; diagnostics only — never gates the submitted counter. */
-    val callbackState: SegmentCallbackState = SegmentCallbackState.PENDING
+    val callbackState: SegmentCallbackState = SegmentCallbackState.PENDING,
+    /**
+     * Stable failure code for this part (SmsSendFailure.code: "NO_SERVICE",
+     * "RADIO_OFF", "MODEM_FAILURE", ...), or null when confirmed.
+     *
+     * A CODE is persisted, never translated UI text, so the reason survives
+     * process death, reboot and locale changes and is turned into copy at
+     * render time.
+     */
+    val callbackFailureCode: String? = null
 )
 
 /**
@@ -121,8 +130,15 @@ object SendSegmentSql {
      */
     const val APPLY_CALLBACK =
         "UPDATE `send_segments` SET `callbackAt` = :callbackAt, " +
-            "`callbackResult` = :callbackResult, `callbackState` = :callbackState " +
+            "`callbackResult` = :callbackResult, " +
+            "`callbackState` = :callbackState, " +
+            "`callbackFailureCode` = :callbackFailureCode " +
             "WHERE `rowId` = :rowId AND `partIndex` = :partIndex"
+
+    /** Per-part verdicts of one message — the input of the send state machine. */
+    const val CALLBACK_STATES_FOR_ROW =
+        "SELECT `callbackState` FROM `send_segments` " +
+            "WHERE `rowId` = :rowId ORDER BY `partIndex`"
 
     /** The Home counter's source of truth: immutable submissions in the window. */
     const val COUNT_SUBMITTED_BETWEEN =
@@ -186,8 +202,13 @@ interface SendSegmentDao {
         partIndex: Int,
         callbackAt: Long,
         callbackResult: Int,
-        callbackState: SegmentCallbackState
+        callbackState: SegmentCallbackState,
+        callbackFailureCode: String?
     ): Int
+
+    /** Per-part verdicts for one message, ordered by part index. */
+    @Query(SendSegmentSql.CALLBACK_STATES_FOR_ROW)
+    suspend fun callbackStatesForRow(rowId: Long): List<SegmentCallbackState>
 
     // ── Counter ─────────────────────────────────────────────────────────────
 

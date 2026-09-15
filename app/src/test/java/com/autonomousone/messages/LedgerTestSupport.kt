@@ -31,7 +31,8 @@ internal const val V11_SEND_SEGMENTS_DDL =
 internal const val INSERT_SEGMENT =
     "INSERT OR IGNORE INTO `send_segments` (`rowId`,`partIndex`," +
         "`partCount`,`submittedAt`,`subscriptionId`,`callbackAt`," +
-        "`callbackResult`,`callbackState`) VALUES (?,?,?,?,?,?,?,?)"
+        "`callbackResult`,`callbackState`,`callbackFailureCode`) " +
+        "VALUES (?,?,?,?,?,?,?,?,?)"
 
 private val NAMED_PARAM = Regex(":[A-Za-z][A-Za-z0-9_]*")
 
@@ -43,6 +44,7 @@ internal fun rawDb(path: String = ":memory:"): Connection =
 internal fun Connection.migrateV11toV12(): Connection {
     exec(V11_SEND_SEGMENTS_DDL)
     MessagesDatabase.UPGRADE_TO_V12_SQL.forEach { exec(it) }
+    MessagesDatabase.UPGRADE_TO_V13_SQL.forEach { exec(it) }
     return this
 }
 
@@ -86,6 +88,7 @@ internal fun Connection.submitSegment(
         st.setLong(1, rowId); st.setInt(2, partIndex); st.setInt(3, partCount)
         st.setLong(4, submittedAt); st.setInt(5, subId)
         st.setNull(6, Types.INTEGER); st.setNull(7, Types.INTEGER); st.setString(8, "PENDING")
+        st.setNull(9, Types.VARCHAR)
         st.executeUpdate()
     }
     if (inserted == 0) {
@@ -102,11 +105,12 @@ internal fun Connection.applyCallback(
     callbackAt: Long,
     result: Int,
     state: SegmentCallbackState,
-    subId: Int = 7
+    subId: Int = 7,
+    failureCode: String? = null
 ) {
     val updated = prepareStatement(SendSegmentSql.APPLY_CALLBACK.replace(NAMED_PARAM, "?")).use { st ->
         st.setLong(1, callbackAt); st.setInt(2, result); st.setString(3, state.name)
-        st.setLong(4, rowId); st.setInt(5, partIndex)
+        st.setString(4, failureCode); st.setLong(5, rowId); st.setInt(6, partIndex)
         st.executeUpdate()
     }
     if (updated == 0) {
@@ -114,9 +118,13 @@ internal fun Connection.applyCallback(
             st.setLong(1, rowId); st.setInt(2, partIndex); st.setInt(3, partCount)
             st.setNull(4, Types.INTEGER); st.setInt(5, subId)
             st.setLong(6, callbackAt); st.setInt(7, result); st.setString(8, state.name)
+            st.setString(9, failureCode)
             st.executeUpdate()
         }
-        execNamed(SendSegmentSql.APPLY_CALLBACK, callbackAt, result, state.name, rowId, partIndex)
+        execNamed(
+            SendSegmentSql.APPLY_CALLBACK,
+            callbackAt, result, state.name, failureCode, rowId, partIndex
+        )
     }
 }
 
