@@ -4,59 +4,67 @@ import com.autonomousone.messages.data.LocalProviderWrites
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 
 /**
  * A bulk mark-read on an OPEN chat must reconcile ONLY that thread.
- * The registry is the handoff between the write path and ChangeRouter:
- * note → claim (exactly once) → ForThread. Stale notes expire so one
- * forgotten entry can't suppress a real future sync.
+ *
+ * The registry is the handoff between the write path and ChangeRouter. It is an
+ * OPERATION TOKEN, not a one-shot claim: one mark-read legitimately causes
+ * several provider callbacks (SMS + MMS + threads table), and every one of them
+ * must be able to narrow itself to that thread. The token expires by time.
  */
 class LocalProviderWritesTest {
 
-    /** The registry is a process singleton; start every test from empty. */
-    private fun drain() {
-        while (LocalProviderWrites.claimRecentMarkRead() != null) { /* consume */ }
+    @Before
+    fun setUp() {
+        LocalProviderWrites.clearForTest()
     }
 
     @Test
-    fun `mark-read is claimed exactly once`() {
-        drain()
+    fun `mark-read token survives several provider callbacks`() {
         LocalProviderWrites.noteMarkRead(42L)
-        val first = LocalProviderWrites.claimRecentMarkRead()
-        assertNotNull(first)
-        assertEquals(42L, first!!.threadId)
-        // Consumed — the second claim must miss so the next observer
-        // event is treated as genuinely unknown.
-        assertNull(LocalProviderWrites.claimRecentMarkRead())
+
+        // Three callbacks of the SAME operation must all see the token; the old
+        // one-shot claim let the 2nd and 3rd fall through to a full reconcile.
+        repeat(3) {
+            val active = LocalProviderWrites.activeMarkRead()
+            assertNotNull("token must stay valid for its whole window", active)
+            assertEquals(42L, active!!.threadId)
+        }
+    }
+
+    @Test
+    fun `token carries an operation id and an expiry`() {
+        LocalProviderWrites.noteMarkRead(7L)
+        val entry = LocalProviderWrites.activeMarkRead()!!
+        assertEquals(LocalProviderWrites.Kind.MARK_READ, entry.kind)
+        assertEquals(7L, entry.threadId)
+        assertEquals(entry.startedAt + LocalProviderWrites.WINDOW_MS, entry.expiresAt)
     }
 
     @Test
     fun `non-positive thread ids are never noted`() {
-        drain()
-        // Address-only fallback (threadId == 0) can't target a thread, so
-        // recording it would downgrade a needed FullSync to nothing.
         LocalProviderWrites.noteMarkRead(0L)
         LocalProviderWrites.noteMarkRead(-1L)
-        assertNull(LocalProviderWrites.claimRecentMarkRead())
+        assertNull(LocalProviderWrites.activeMarkRead())
+        assertNull(LocalProviderWrites.activeOperation())
     }
 
     @Test
-    fun `entries expire outside the window`() {
+    fun `tokens expire outside the window`() {
         LocalProviderWrites.noteMarkRead(7L)
-        val future = System.currentTimeMillis() + LocalProviderWrites.WINDOW_MS + 1_000
-        assertNull(LocalProviderWrites.claimRecentMarkRead(future))
+        val future = System.currentTimeMillis() + LocalProviderWrites.WINDOW_MS + 1000L
+        assertNull(LocalProviderWrites.activeMarkRead(future))
     }
 
     @Test
-    fun `ring keeps the newest notes when flooded`() {
-        repeat(40) { LocalProviderWrites.noteMarkRead((it + 1).toLong()) }
-        // Oldest entries evicted; claims return survivors in order.
-        val claimed = generateSequence { LocalProviderWrites.claimRecentMarkRead() }
-            .map { it.threadId }
-            .take(8)
-            .toList()
-        assertEquals(8, claimed.size)
-        assert(claimed.all { it >= 9L })
+    fun `newest token wins when a burst notes several`() {
+        LocalProviderWrites.noteMarkRead(1L)
+        LocalProviderWrites.noteMarkRead(2L)
+        LocalProviderWrites.noteMarkRead(3L)
+        assertEquals(3L, LocalProviderWrites.activeMarkRead()!!.threadId)
+        assertEquals(3L, LocalProviderWrites.activeOperation()!!.threadId)
     }
 }

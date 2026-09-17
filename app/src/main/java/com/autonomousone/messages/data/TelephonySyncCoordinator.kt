@@ -679,6 +679,20 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             is ReconcileRequest.ForThread -> {
                 repairThreadInShadow(request.threadId)
             }
+            is ReconcileRequest.TailDelta -> {
+                // Bounded newest-window repair for an unidentifiable provider
+                // event. No ledger prune, no backfill scheduling: a provider
+                // notification must never kick off history work.
+                val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
+                val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
+                if (sms.projectionStale || mms.projectionStale) {
+                    fullRebuildConversations()
+                }
+                val now = System.currentTimeMillis()
+                val stateDao = db.syncStateDao()
+                if (sms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_SMS, now)
+                if (mms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_MMS, now)
+            }
             is ReconcileRequest.FullSync -> {
                 // Ledger hygiene piggybacks the periodic full sync (it runs
                 // on app start + pulls, never mid-conversation): the send

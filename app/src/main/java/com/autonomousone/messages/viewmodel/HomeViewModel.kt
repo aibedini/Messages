@@ -89,10 +89,12 @@ class HomeViewModel(
      * V2: ContentObserver callback routes through ChangeRouter for O(1)
      * targeted mutations instead of triggering a full provider scan.
      */
-    private val observer = SmsContentObserver { uri ->
+    private val observer = SmsContentObserver { batch ->
         ThreadMessageCache.generation++ // provider changed → cached threads stale
-        // Route to targeted mutation or bounded reconcile — NOT full reload.
-        ChangeRouter.route(getApplication(), uri)
+        // The accumulated burst is routed to the narrowest repair it justifies
+        // (exact row -> thread -> bounded tail). An ordinary incoming SMS is an
+        // O(1) exact mutation and can no longer escalate to a full reconcile.
+        ChangeRouter.route(getApplication(), batch)
     }
 
     /** True while the conversation list is being refreshed. */

@@ -8,15 +8,17 @@ import android.os.Looper
 /**
  * Observes changes to the SMS/MMS ContentProvider.
  *
- * V2: Passes the URI through to the callback so ChangeRouter can extract
- * the row ID for targeted O(1) mutations when available.
- *
  * LEADING-EDGE dispatch: the FIRST change fires immediately (millisecond-live
- * UI), and any further changes inside [COALESCE_MS] are collapsed into a single
- * trailing call.
+ * UI). Further changes inside [COALESCE_MS] are accumulated — NOT discarded —
+ * and dispatched once as a [ProviderChangeBatch].
+ *
+ * The accumulator is the fix for the escalation bug: the trailing edge used to
+ * dispatch `null` ("unknown change"), which ChangeRouter mapped to a full
+ * dual-source reconcile. A burst therefore turned one exact row insert into a
+ * FullSync 150 ms later.
  */
 class SmsContentObserver(
-    private val onChange: (uri: Uri?) -> Unit
+    private val onChange: (ProviderChangeBatch) -> Unit
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
 
     companion object {
@@ -25,10 +27,16 @@ class SmsContentObserver(
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /** Accumulated, still-undispatched changes. Guarded by the main looper. */
+    private var pending = ProviderChangeBatch.EMPTY
+
     private val trailingRunnable = Runnable {
         pendingTrailing = false
         lastFiredAt = System.currentTimeMillis()
-        onChange(null)  // null = unknown change type → reconcile
+        val batch = pending
+        pending = ProviderChangeBatch.EMPTY
+        onChange(batch)
     }
 
     @Volatile
@@ -49,23 +57,28 @@ class SmsContentObserver(
     }
 
     private fun dispatch(uri: Uri?) {
+        val change = ProviderChangeBatch.from(uri?.authority, uri?.path)
         val now = System.currentTimeMillis()
         val wasLeading = now - lastFiredAt >= COALESCE_MS
         android.util.Log.i(
             "SmsObserver",
-            "observer_fired uri=${uri ?: "<unknown>"} leading=$wasLeading now=$now"
+            "observer_fired uri=" + (uri ?: "<unknown>") + " leading=" + wasLeading +
+                " sms=" + change.smsIds.size + " mms=" + change.mmsIds.size +
+                " threads=" + change.threadIds.size + " unknown=" + change.unknownCount
         )
         if (wasLeading) {
             // Leading edge: no waiting at all.
             lastFiredAt = now
             handler.removeCallbacks(trailingRunnable)
             pendingTrailing = false
-            onChange(uri)
+            pending = ProviderChangeBatch.EMPTY
+            onChange(change)
             return
         }
-        // Inside the coalesce window: schedule exactly ONE trailing call so a
-        // burst of provider notifications (multipart SMS, MMS parts) still ends
-        // with a final reconcile.
+        // Inside the coalesce window: keep everything the burst told us and
+        // dispatch exactly ONE trailing batch with the narrowest possible
+        // repair. Never blind, never "null".
+        pending = pending.merge(change)
         if (!pendingTrailing) {
             pendingTrailing = true
             handler.postDelayed(trailingRunnable, COALESCE_MS)

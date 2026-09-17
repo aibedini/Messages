@@ -4,34 +4,43 @@ package com.autonomousone.messages.data
  * Registry of provider writes THIS app made that we already know how to
  * reconcile locally (mark-read sweeps, deletes, sends).
  *
- * Why: a bulk mark-read on a conversation fires a ContentObserver burst
- * whose URIs often carry no row id (content://sms, .../thread/N). The old
- * ChangeRouter mapped every id-less URI to ReconcileRequest.FullSync —
- * so simply OPENING a chat could trigger a full dual-source window sync
- * racing the backfill crawl. That is load we create for ourselves.
+ * Why: a bulk mark-read on a conversation fires a ContentObserver burst whose
+ * URIs often carry no row id (content://sms, .../thread/N). Mapping every
+ * id-less URI to ReconcileRequest.FullSync meant that simply OPENING a chat
+ * could trigger a dual-source reconcile racing the backfill crawl.
  *
- * The write paths note what they touched here; ChangeRouter consumes the
- * entries within a short window and downgrades the unknown-URI fallback
- * to a targeted ForThread repair (or drops it entirely when the mutation
- * was already applied to the shadow by the write path itself).
+ * IMPORTANT — this used to be a ONE-SHOT claim: the first id-less callback
+ * consumed the hint, so the 2nd/3rd callback of the SAME mark-read burst (SMS +
+ * MMS + threads table) found nothing and escalated to FullSync. The hint is now
+ * an OPERATION TOKEN that stays valid for its whole window and is shared by
+ * every callback the operation causes:
  *
- * Small fixed-size ring: only freshness matters, this is a hint, never a
- * source of truth. Thread-safe by coarse lock — volume is a handful of
- * entries per user action.
+ *   operationId, kind, threadId, startedAt, expiresAt
+ *
+ * It is a hint, never a source of truth, and only ever NARROWS a repair — it can
+ * never suppress an unrelated external provider change (an unknown event with
+ * no matching token still reconciles).
  */
 object LocalProviderWrites {
 
     private const val MAX_ENTRIES = 32
 
-    /** How long an unclaimed note stays believable. */
+    /** How long a note stays believable. */
     const val WINDOW_MS = 2_000L
 
     enum class Kind { MARK_READ, DELETE_THREAD, SEND }
 
-    data class Entry(val kind: Kind, val threadId: Long, val at: Long)
+    data class Entry(
+        val operationId: Long,
+        val kind: Kind,
+        val threadId: Long,
+        val startedAt: Long,
+        val expiresAt: Long
+    )
 
     private val lock = Any()
     private val entries = ArrayDeque<Entry>()
+    private var nextOperationId = 1L
 
     fun noteMarkRead(threadId: Long) = note(Kind.MARK_READ, threadId)
 
@@ -41,28 +50,44 @@ object LocalProviderWrites {
         if (threadId <= 0L) return // address-only fallbacks can't be targeted
         val now = System.currentTimeMillis()
         synchronized(lock) {
-            entries.addLast(Entry(kind, threadId, now))
+            entries.addLast(
+                Entry(
+                    operationId = nextOperationId++,
+                    kind = kind,
+                    threadId = threadId,
+                    startedAt = now,
+                    expiresAt = now + WINDOW_MS
+                )
+            )
             while (entries.size > MAX_ENTRIES) entries.removeFirst()
         }
     }
 
     /**
-     * True when a mark-read for [threadId] was noted within the window —
-     * the caller (ChangeRouter) then reconciles THAT thread only instead
-     * of the whole SMS+MMS universe. Entries are consumed so one write
-     * cannot suppress many unrelated syncs.
+     * Newest still-valid mark-read operation, or null.
+     *
+     * NON-CONSUMING on purpose: one mark-read legitimately causes several
+     * provider callbacks, and every one of them must be able to narrow itself to
+     * that thread. The token expires by time, not by being read.
      */
-    fun claimRecentMarkRead(now: Long = System.currentTimeMillis()): Entry? {
-        synchronized(lock) {
-            prune(now)
-            val idx = entries.indexOfFirst { it.kind == Kind.MARK_READ }
-            return if (idx >= 0) entries.removeAt(idx) else null
-        }
+    fun activeMarkRead(now: Long = System.currentTimeMillis()): Entry? = synchronized(lock) {
+        prune(now)
+        entries.lastOrNull { it.kind == Kind.MARK_READ }
+    }
+
+    /** Any still-valid self-write operation (mark-read, delete, send). */
+    fun activeOperation(now: Long = System.currentTimeMillis()): Entry? = synchronized(lock) {
+        prune(now)
+        entries.lastOrNull()
     }
 
     private fun prune(now: Long) {
-        while (entries.isNotEmpty() && now - entries.first().at > WINDOW_MS) {
-            entries.removeFirst()
-        }
+        entries.removeAll { it.expiresAt <= now }
+    }
+
+    /** Test hook: forget every note. */
+    internal fun clearForTest() = synchronized(lock) {
+        entries.clear()
+        nextOperationId = 1L
     }
 }

@@ -52,4 +52,14 @@ sealed interface MessageMutation {
 sealed interface ReconcileRequest {
     data object FullSync : ReconcileRequest
     data class ForThread(val threadId: Long) : ReconcileRequest
+    /**
+     * Bounded repair for a provider notification with no usable identity.
+     *
+     * Reads the newest provider window for both sources (same bounded keyset
+     * read FullSync uses) but deliberately does NOT prune the ledger, does NOT
+     * schedule a history backfill and does NOT rebuild the conversation
+     * projection unless it is actually stale. Preference order is
+     * exact row -> ForThread -> TailDelta; FullSync is bootstrap/recovery only.
+     */
+    data object TailDelta : ReconcileRequest
 }
