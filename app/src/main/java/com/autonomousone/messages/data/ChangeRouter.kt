@@ -19,10 +19,13 @@ import kotlinx.coroutines.launch
  *   nothing identifiable -> TailDelta (bounded newest-window repair)
  *
  * A full reconcile is NOT reachable from this router. It used to be: the
- * observer dispatched a trailing `null`, and every null became
- * ReconcileRequest.FullSync — so one exact INSERT escalated, 150 ms later, into a
- * dual-source re-read of the newest 500 SMS + 500 MMS rows plus a conversation
- * projection rebuild.
+ * observer dispatched a trailing null, and every null became
+ * ReconcileRequest.FullSync. What FullSync costs depends on shadow state: on an
+ * un-bootstrapped shadow it reads the newest FIRST_BATCH rows per source; in
+ * steady state syncSource() is already incremental (readNewerThan on the durable
+ * newestDate/newestId). The REAL damage of the escalation was that a fresh row
+ * makes projectionStale true and therefore triggered fullRebuildConversations()
+ * — a global projection rebuild for one incoming SMS.
  *
  * [route] is invoked from the ContentObserver, which fires on the MAIN looper.
  * It must never block there — every provider read is offloaded to [scope].
@@ -51,20 +54,27 @@ object ChangeRouter {
     )
 
     internal fun planRepair(batch: ProviderChangeBatch, selfWriteThreadId: Long?): RepairPlan {
-        if (batch.hasExactRows) {
-            return RepairPlan(
-                exactSmsIds = batch.smsIds.toList(),
-                exactMmsIds = batch.mmsIds.toList(),
-                threadRepairs = batch.threadIds.take(MAX_THREAD_REPAIRS).toList()
-            )
-        }
-        if (batch.threadIds.isNotEmpty()) {
-            return RepairPlan(threadRepairs = batch.threadIds.take(MAX_THREAD_REPAIRS).toList())
-        }
-        if (selfWriteThreadId != null) {
-            return RepairPlan(threadRepairs = listOf(selfWriteThreadId))
-        }
-        return RepairPlan(tailDelta = true)
+        val threads = batch.threadIds.take(MAX_THREAD_REPAIRS).toMutableList()
+        if (selfWriteThreadId != null && threads.isEmpty()) threads += selfWriteThreadId
+
+        // SAFETY INVARIANT: an unknown notification is NEVER dropped, and never
+        // assumed to belong to something else in the same burst.
+        //
+        // The first version of this function returned as soon as it saw an exact
+        // row, silently discarding unknownCount. A coalesced burst can legitimately
+        // carry "exact SMS id" AND "generic provider notification" for DIFFERENT
+        // rows, so ignoring the unknown would lose a real change.
+        //
+        // The same reasoning applies to the 2-second self-write token: a generic
+        // event arriving inside the window may be an unrelated external change,
+        // so it earns its own bounded delta in addition to the thread repair.
+        // Correctness is worth one bounded watermark query.
+        return RepairPlan(
+            exactSmsIds = batch.smsIds.toList(),
+            exactMmsIds = batch.mmsIds.toList(),
+            threadRepairs = threads,
+            tailDelta = batch.unknownCount > 0
+        )
     }
 
     fun route(context: Context, batch: ProviderChangeBatch) {

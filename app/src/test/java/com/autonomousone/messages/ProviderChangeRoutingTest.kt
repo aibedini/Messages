@@ -8,31 +8,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The P0 contract: an ordinary provider notification can NEVER schedule a full
- * reconcile. It routes to the narrowest repair the burst justifies.
+ * The P0 contract, part 1: an ordinary provider notification can NEVER schedule
+ * a full reconcile (ChangeRouter.RepairPlan has no fullSync field at all).
  *
- * ChangeRouter.RepairPlan has no fullSync field at all, so this is structural as
- * well as asserted.
+ * Part 2 — the safety invariant: an UNKNOWN notification is never dropped and is
+ * never assumed to belong to something else in the same burst. It may cost one
+ * extra bounded watermark delta; losing a real change is not an acceptable
+ * trade.
  */
 class ProviderChangeRoutingTest {
 
+    private fun plan(batch: ProviderChangeBatch, selfWriteThreadId: Long? = null) =
+        ChangeRouter.planRepair(batch, selfWriteThreadId)
+
     @Test
-    fun `exact sms row is an exact mutation`() {
+    fun `exact sms row is an exact mutation and needs no delta`() {
         val batch = ProviderChangeBatch.from("sms", "/348201")
 
         assertEquals(setOf(348201L), batch.smsIds)
-        val plan = ChangeRouter.planRepair(batch, selfWriteThreadId = null)
+        val p = plan(batch)
 
-        assertEquals(listOf(348201L), plan.exactSmsIds)
-        assertTrue(plan.threadRepairs.isEmpty())
-        assertFalse("an exact row must not trigger a tail repair", plan.tailDelta)
+        assertEquals(listOf(348201L), p.exactSmsIds)
+        assertTrue(p.threadRepairs.isEmpty())
+        assertFalse("nothing unknown -> no extra delta", p.tailDelta)
     }
 
     @Test
     fun `mms authority routes to the mms table`() {
         val batch = ProviderChangeBatch.from("mms", "/77")
         assertEquals(setOf(77L), batch.mmsIds)
-        assertEquals(listOf(77L), ChangeRouter.planRepair(batch, null).exactMmsIds)
+        assertEquals(listOf(77L), plan(batch).exactMmsIds)
     }
 
     @Test
@@ -41,58 +46,97 @@ class ProviderChangeRoutingTest {
         assertEquals(setOf(123L), batch.threadIds)
         assertFalse(batch.hasExactRows)
 
-        val plan = ChangeRouter.planRepair(batch, null)
-        assertEquals(listOf(123L), plan.threadRepairs)
-        assertFalse(plan.tailDelta)
+        val p = plan(batch)
+        assertEquals(listOf(123L), p.threadRepairs)
+        assertFalse(p.tailDelta)
     }
 
+    // ── the safety invariant ────────────────────────────────────────────────
+
     @Test
-    fun `observer burst exact uri plus trailing generic never escalates`() {
-        // The reported bug: leading exact row, then a coalesced notification
-        // with no id. The old code dispatched null for the trailing edge and
-        // ChangeRouter turned it into a dual-source FullSync 150 ms later.
+    fun `exact sms plus unknown keeps BOTH repairs`() {
+        // A coalesced burst can carry an exact row for one change and a generic
+        // notification for a DIFFERENT one. The first version of planRepair
+        // returned on the exact row and silently dropped the unknown.
         val burst = ProviderChangeBatch.from("sms", "/900")
             .merge(ProviderChangeBatch.from("sms", "/sms"))
 
         assertEquals(1, burst.unknownCount)
-        val plan = ChangeRouter.planRepair(burst, null)
+        val p = plan(burst)
 
-        assertEquals(listOf(900L), plan.exactSmsIds)
-        assertFalse("a burst containing an exact row must not tail-repair", plan.tailDelta)
-        assertTrue(plan.threadRepairs.isEmpty())
+        assertEquals(listOf(900L), p.exactSmsIds)
+        assertTrue("the unknown event must still earn its own delta", p.tailDelta)
     }
 
     @Test
-    fun `generic provider event routes to a bounded tail delta`() {
+    fun `exact mms plus unknown keeps BOTH repairs`() {
+        val burst = ProviderChangeBatch.from("mms", "/55")
+            .merge(ProviderChangeBatch.from("mms", "/mms"))
+
+        val p = plan(burst)
+        assertEquals(listOf(55L), p.exactMmsIds)
+        assertTrue(p.tailDelta)
+    }
+
+    @Test
+    fun `multiple exact ids plus unknown keep everything`() {
+        val burst = ProviderChangeBatch.from("sms", "/1")
+            .merge(ProviderChangeBatch.from("sms", "/2"))
+            .merge(ProviderChangeBatch.from("mms", "/3"))
+            .merge(ProviderChangeBatch.EMPTY.merge(ProviderChangeBatch.from(null, null)))
+
+        val p = plan(burst)
+        assertEquals(listOf(1L, 2L), p.exactSmsIds)
+        assertEquals(listOf(3L), p.exactMmsIds)
+        assertTrue(p.tailDelta)
+    }
+
+    @Test
+    fun `mark-read thread A plus an unrelated generic event keeps the delta`() {
+        // The self-write token must NOT let an unrelated external change be
+        // attributed only to thread A.
+        val burst = ProviderChangeBatch.from("sms", "/thread/42")
+            .merge(ProviderChangeBatch.from("sms", "/sms"))
+
+        val p = plan(burst, selfWriteThreadId = 42L)
+        assertEquals(listOf(42L), p.threadRepairs)
+        assertTrue("unrelated unknown must still repair", p.tailDelta)
+    }
+
+    @Test
+    fun `active SEND token does not swallow an unrelated incoming sms`() {
+        // A real incoming row is exact, so it is always repaired regardless of
+        // any self-write token; a generic event alongside it still deltas.
+        val burst = ProviderChangeBatch.from("sms", "/777")
+            .merge(ProviderChangeBatch.from("sms", "/sms"))
+
+        val p = plan(burst, selfWriteThreadId = 5L)
+        assertEquals(listOf(777L), p.exactSmsIds)
+        assertTrue(p.tailDelta)
+    }
+
+    @Test
+    fun `unknown only with a self-write narrows but still deltas`() {
         val batch = ProviderChangeBatch.from("sms", "/sms")
         assertTrue(batch.isUnknownOnly)
 
-        val plan = ChangeRouter.planRepair(batch, selfWriteThreadId = null)
+        val p = plan(batch, selfWriteThreadId = 42L)
 
-        assertTrue("unknown burst -> bounded tail repair", plan.tailDelta)
-        assertTrue(plan.exactSmsIds.isEmpty())
-        assertTrue(plan.exactMmsIds.isEmpty())
-        assertTrue(plan.threadRepairs.isEmpty())
+        assertEquals("self-write narrows the repair", listOf(42L), p.threadRepairs)
+        assertTrue(
+            "identity cannot be proven, so the unknown event is not discarded",
+            p.tailDelta
+        )
     }
 
     @Test
-    fun `self mark-read burst routes to that thread only`() {
-        // SMS + MMS + generic callbacks from ONE mark-read: the token narrows
-        // each of them to the thread and none of them escalates.
-        for (path in listOf("/sms", "/mms", "/sms/thread/42")) {
-            val authority = if (path.startsWith("/mms")) "mms" else "sms"
-            val plan = ChangeRouter.planRepair(
-                ProviderChangeBatch.from(authority, path),
-                selfWriteThreadId = 42L
-            )
-            assertFalse("self-write must never tail-repair: " + path, plan.tailDelta)
-            assertTrue(
-                "self-write must be narrowed to its thread: " + path,
-                plan.threadRepairs.isEmpty() || plan.threadRepairs == listOf(42L)
-            )
-            assertTrue(plan.exactSmsIds.isEmpty())
-            assertTrue(plan.exactMmsIds.isEmpty())
-        }
+    fun `generic provider event with no self-write deltas exactly once`() {
+        val p = plan(ProviderChangeBatch.from("sms", "/sms"))
+
+        assertTrue(p.tailDelta)
+        assertTrue(p.exactSmsIds.isEmpty())
+        assertTrue(p.exactMmsIds.isEmpty())
+        assertTrue(p.threadRepairs.isEmpty())
     }
 
     @Test
@@ -104,9 +148,6 @@ class ProviderChangeRoutingTest {
         assertEquals(setOf(1L, 2L), merged.smsIds)
         assertEquals(setOf(3L), merged.mmsIds)
         assertEquals(0, merged.unknownCount)
-        val plan = ChangeRouter.planRepair(merged, null)
-        assertEquals(listOf(1L, 2L), plan.exactSmsIds)
-        assertEquals(listOf(3L), plan.exactMmsIds)
     }
 
     @Test
@@ -114,7 +155,7 @@ class ProviderChangeRoutingTest {
         var batch = ProviderChangeBatch.EMPTY
         repeat(50) { batch = batch.merge(ProviderChangeBatch.from("sms", "/thread/" + (it + 1))) }
 
-        val plan = ChangeRouter.planRepair(batch, null)
-        assertTrue("burst must not schedule unbounded repairs", plan.threadRepairs.size <= 8)
+        val p = plan(batch)
+        assertTrue("burst must not schedule unbounded repairs", p.threadRepairs.size <= 8)
     }
 }

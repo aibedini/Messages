@@ -55,11 +55,18 @@ sealed interface ReconcileRequest {
     /**
      * Bounded repair for a provider notification with no usable identity.
      *
-     * Reads the newest provider window for both sources (same bounded keyset
-     * read FullSync uses) but deliberately does NOT prune the ledger, does NOT
-     * schedule a history backfill and does NOT rebuild the conversation
-     * projection unless it is actually stale. Preference order is
-     * exact row -> ForThread -> TailDelta; FullSync is bootstrap/recovery only.
+     * Rows are read from the DURABLE watermark: syncSource() calls
+     * readNewerThan(newestDate, newestId) once initialWindowReady is true, so a
+     * steady-state TailDelta is an incremental watermark read, NOT a re-read of
+     * the newest 500 rows. (An earlier comment claimed otherwise and was wrong.)
+     *
+     * It deliberately does NOT prune the ledger and does NOT schedule history
+     * backfill. It also does NOT rebuild the global conversation projection:
+     * only the threads touched by fresh rows are recomputed, with the same
+     * rules the recovery rebuild uses.
+     *
+     * Preference order: exact row -> ForThread -> TailDelta. FullSync is
+     * bootstrap/recovery only.
      */
     data object TailDelta : ReconcileRequest
 }

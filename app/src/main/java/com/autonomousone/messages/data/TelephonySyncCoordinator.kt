@@ -685,8 +685,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 // notification must never kick off history work.
                 val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
                 val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
-                if (sms.projectionStale || mms.projectionStale) {
+                if (sms.initialWindowLanded || mms.initialWindowLanded) {
+                    // Only reachable when the shadow had never been bootstrapped:
+                    // the projection does not exist yet, so it must be built.
                     fullRebuildConversations()
+                } else {
+                    // A realtime delta must NEVER rebuild the global projection.
+                    // Only the threads the fresh rows actually touched are
+                    // recomputed, with the SAME rules the full rebuild uses.
+                    val touched = (sms.touchedThreadIds + mms.touchedThreadIds).distinct()
+                    if (touched.isNotEmpty()) {
+                        val archived = archivedRepositoryIds()
+                        val pinned = pinRepositoryIds()
+                        db.withTransaction {
+                            touched.forEach { rebuildConversationFor(it, archived, pinned) }
+                        }
+                    }
                 }
                 val now = System.currentTimeMillis()
                 val stateDao = db.syncStateDao()
@@ -947,7 +961,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
          *  projection and only then flip initialWindowReady. */
         val initialWindowLanded: Boolean,
         /** Rows changed → the conversation projection needs a rebuild. */
-        val projectionStale: Boolean
+        val projectionStale: Boolean,
+        /**
+         * Threads touched by rows mirrored in THIS pass. The realtime path
+         * recomputes exactly these projections — it must never rebuild the
+         * global projection for a small delta.
+         */
+        val touchedThreadIds: List<Long> = emptyList()
     )
 
     // ── Provider sync (reconcile path only) ────────────────────────────────
@@ -984,7 +1004,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // durable keyset crawl detached — the initial window alone is
             // enough for the first paint, and awaiting the full history here
             // was the original startup hang.
-            SourceSyncResult(initialWindowLanded = true, projectionStale = true)
+            SourceSyncResult(
+                initialWindowLanded = true,
+                projectionStale = true,
+                touchedThreadIds = batch.map { it.threadId }.distinct()
+            )
         } else {
             // Steady state: only rows newer than the persisted watermark, and
             // resume an interrupted history backfill if one is still pending.
@@ -1004,7 +1028,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // (detached, durable cursor) — never inline here.
             SourceSyncResult(
                 initialWindowLanded = false,
-                projectionStale = fresh.isNotEmpty()
+                projectionStale = fresh.isNotEmpty(),
+                touchedThreadIds = fresh.map { it.threadId }.distinct()
             )
         }
     }
@@ -1234,7 +1259,47 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
     }
 
-    /** Full rebuild: startup or repair only. Never on the realtime path. */
+    /**
+     * Recomputes ONE thread's conversation projection using the canonical
+     * projection rules.
+     *
+     * Shared by the recovery rebuild and the realtime tail so the two can never
+     * diverge: a realtime delta must not need a different (or looser) copy of
+     * these rules.
+     */
+    private suspend fun rebuildConversationFor(
+        threadId: Long,
+        archivedIds: Set<Long>,
+        pinnedIds: Set<Long>
+    ) {
+        val dao = db.messageDao()
+        val newest = dao.pageForThread(threadId, limit = 1, offset = 0).firstOrNull() ?: return
+        db.conversationDao().upsert(
+            ConversationEntity(
+                threadId = newest.threadId,
+                normalizedAddress = newest.normalizedAddress,
+                rawAddress = newest.rawAddress,
+                snippet = newest.body,
+                lastMessageDate = newest.date,
+                unreadCount = dao.countUnread(threadId),
+                lastMessageType = newest.type,
+                pinned = threadId in pinnedIds,
+                archived = threadId in archivedIds
+            )
+        )
+    }
+
+    /**
+     * Full rebuild: BOOTSTRAP / RECOVERY ONLY.
+     *
+     * Never on the realtime path — not from a ContentObserver event, not from
+     * TailDelta for a small delta, not from marking read, not from resume.
+     *
+     * KNOWN LIMITATION (not yet fixed): this still issues one countUnread()
+     * per conversation (N+1). It is recovery-only today, so it is not on the hot
+     * path, but it is still the wrong shape at 360K messages and should become a
+     * single aggregate query.
+     */
     suspend fun fullRebuildConversations() = withContext(Dispatchers.IO) {
         val database = db
         val newestByThread = database.messageDao().newestPerThread()
@@ -1245,20 +1310,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
         database.withTransaction {
             for (m in newestByThread) {
-                val unread = database.messageDao().countUnread(m.threadId)
-                database.conversationDao().upsert(
-                    ConversationEntity(
-                        threadId = m.threadId,
-                        normalizedAddress = m.normalizedAddress,
-                        rawAddress = m.rawAddress,
-                        snippet = m.body,
-                        lastMessageDate = m.date,
-                        unreadCount = unread,
-                        lastMessageType = m.type,
-                        pinned = m.threadId in pinnedIds,
-                        archived = m.threadId in archivedIds
-                    )
-                )
+                rebuildConversationFor(m.threadId, archivedIds, pinnedIds)
             }
         }
     }

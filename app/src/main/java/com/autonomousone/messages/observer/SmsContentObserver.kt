@@ -18,6 +18,13 @@ import android.os.Looper
  * FullSync 150 ms later.
  */
 class SmsContentObserver(
+    /**
+     * Time source. Injectable so the coalescing window is testable
+     * deterministically instead of racing a real 150 ms wall-clock window on a
+     * loaded CI machine. Declared FIRST so [onChange] stays the last parameter
+     * and every existing trailing-lambda call site keeps compiling.
+     */
+    private val clock: () -> Long = { System.currentTimeMillis() },
     private val onChange: (ProviderChangeBatch) -> Unit
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
 
@@ -33,7 +40,7 @@ class SmsContentObserver(
 
     private val trailingRunnable = Runnable {
         pendingTrailing = false
-        lastFiredAt = System.currentTimeMillis()
+        lastFiredAt = clock()
         val batch = pending
         pending = ProviderChangeBatch.EMPTY
         onChange(batch)
@@ -58,14 +65,19 @@ class SmsContentObserver(
 
     private fun dispatch(uri: Uri?) {
         val change = ProviderChangeBatch.from(uri?.authority, uri?.path)
-        val now = System.currentTimeMillis()
+        val now = clock()
         val wasLeading = now - lastFiredAt >= COALESCE_MS
-        android.util.Log.i(
-            "SmsObserver",
-            "observer_fired uri=" + (uri ?: "<unknown>") + " leading=" + wasLeading +
-                " sms=" + change.smsIds.size + " mms=" + change.mmsIds.size +
-                " threads=" + change.threadIds.size + " unknown=" + change.unknownCount
-        )
+        // Build the log line ONLY when it will actually be emitted: this runs on
+        // the main looper for every provider notification, and eagerly
+        // concatenating a diagnostic string on the hot path is pure waste.
+        if (android.util.Log.isLoggable("SmsObserver", android.util.Log.INFO)) {
+            android.util.Log.i(
+                "SmsObserver",
+                "observer_fired uri=" + (uri ?: "<unknown>") + " leading=" + wasLeading +
+                    " sms=" + change.smsIds.size + " mms=" + change.mmsIds.size +
+                    " threads=" + change.threadIds.size + " unknown=" + change.unknownCount
+            )
+        }
         if (wasLeading) {
             // Leading edge: no waiting at all.
             lastFiredAt = now
