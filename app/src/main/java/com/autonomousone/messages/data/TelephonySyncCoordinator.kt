@@ -82,8 +82,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     private val mutations = Channel<MessageMutation>(capacity = Channel.UNLIMITED)
 
-    /** Reconcile requests: CONFLATED — N nudges collapse into 1. */
-    private val reconciles = Channel<ReconcileRequest>(Channel.CONFLATED)
+    /**
+     * Reconcile NUEDGE channel: CONFLATED is correct here because it carries no
+     * information — it is only a wakeup. The work itself lives in
+     * [pendingReconciles], which merges by semantic union instead of last-value
+     * wins (a conflated channel of typed requests silently dropped ForThread ids
+     * and even a startup FullSync).
+     */
+    private val reconcileNudge = Channel<Unit>(Channel.CONFLATED)
+
+    /** Durable-in-process accumulator for reconcile work. */
+    private val pendingReconciles = PendingReconciles()
 
     /**
      * FIX 2/3: one-shot cloud-history backfill requests — fired after a web
@@ -147,10 +156,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
     }
 
-    /** Queue a bounded reconcile (conflated). */
+    /** Queue reconcile work. Merged semantically — never last-value-wins. */
     fun reconcile(request: ReconcileRequest = ReconcileRequest.FullSync) {
         ensureLoop()
-        reconciles.trySend(request)
+        pendingReconciles.add(request)
+        reconcileNudge.trySend(Unit)
     }
 
     /** Start the shadow-sync loop without forcing a full reconcile.
@@ -169,7 +179,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         ensureLoop()
         if (startupReconcileRequested.compareAndSet(false, true)) {
             Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH")
-            reconciles.trySend(ReconcileRequest.FullSync)
+            reconcile(ReconcileRequest.FullSync)
         }
     }
 
@@ -207,8 +217,23 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     suspend fun syncNow() = runReconcile(ReconcileRequest.FullSync)
 
     /**
+     * Executes one merged snapshot.
+     *
+     * FullSync first (it subsumes a pending tail), then any tail that FullSync
+     * did not cover, then the thread repairs. Thread repairs are never swallowed
+     * by FullSync: FullSync only rebuilds the projection when it mirrored fresh
+     * rows, while a repair can be needed for a read-state change that touched no
+     * newest row.
+     */
+    private suspend fun runReconcileWork(work: PendingReconciles.Work) {
+        if (work.fullSync) runReconcile(ReconcileRequest.FullSync)
+        if (work.tailDelta) runReconcile(ReconcileRequest.TailDelta)
+        work.threadIds.forEach { runReconcile(ReconcileRequest.ForThread(it)) }
+    }
+
+    /**
      * P0: single-flight reconcile boundary. Both [syncNow] (manual) and the
-     * CONFLATED `reconciles` consumer execute through here so two
+     * reconcile-work consumer execute through here so two
      * reconciliations can never overlap (no double provider scans, no doubled
      * projection rebuilds). Mutations are untouched — they keep their own
      * exact, never-conflated channel.
@@ -295,12 +320,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     }
                 }
             }
-            // Reconcile requests: conflated, only the latest matters.
-            for (request in reconciles) {
-                try {
-                    runReconcile(request)
-                } catch (e: Exception) {
-                    Log.e(TAG, "reconcile failed", e)
+            // Reconcile work. The conflated nudge is only a wakeup; the real
+            // queue is the merging accumulator. Drain until empty so work that
+            // arrives WHILE we execute is picked up in the same nudge.
+            for (nudge in reconcileNudge) {
+                while (true) {
+                    val work = pendingReconciles.drainSnapshot() ?: break
+                    try {
+                        runReconcileWork(work)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "reconcile failed", e)
+                    }
                 }
             }
         }
@@ -694,13 +724,9 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // Only the threads the fresh rows actually touched are
                     // recomputed, with the SAME rules the full rebuild uses.
                     val touched = (sms.touchedThreadIds + mms.touchedThreadIds).distinct()
-                    if (touched.isNotEmpty()) {
-                        val archived = archivedRepositoryIds()
-                        val pinned = pinRepositoryIds()
-                        db.withTransaction {
-                            touched.forEach { rebuildConversationFor(it, archived, pinned) }
-                        }
-                    }
+                    // ONE projection implementation: the exact same function the
+                    // exact-mutation path and the recovery rebuild use.
+                    touched.forEach { rebuildConversationProjection(it, preserveFlags = true) }
                 }
                 val now = System.currentTimeMillis()
                 val stateDao = db.syncStateDao()
@@ -1196,14 +1222,30 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     suspend fun repairThreadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
-        val fresh = smsRepository.querySmsRaw(
+        // The observer tracks BOTH tables, so a thread repair must read both:
+        // an MMS-only thread used to be repaired with an empty SMS read and the
+        // repair silently did nothing.
+        val sms = smsRepository.querySmsRaw(
             selection = "${Telephony.Sms.THREAD_ID} = ?",
             selectionArgs = arrayOf(threadId.toString()),
             sortOrder = "${Telephony.Sms.DATE} DESC",
             limit = 200
         )
-        if (fresh.isEmpty()) return@withContext
-        db.messageDao().upsertAll(fresh.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+        val mms = smsRepository.queryMmsRaw(
+            selection = "${Telephony.Mms.THREAD_ID} = ?",
+            selectionArgs = arrayOf(threadId.toString()),
+            sortOrder = "${Telephony.Mms.DATE} DESC",
+            limit = 200
+        )
+        if (sms.isEmpty() && mms.isEmpty()) return@withContext
+        db.withTransaction {
+            if (sms.isNotEmpty()) {
+                db.messageDao().upsertAll(sms.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+            }
+            if (mms.isNotEmpty()) {
+                db.messageDao().upsertAll(mms.mapNotNull { toEntity(it, MessageEntity.SOURCE_MMS) })
+            }
+        }
         rebuildConversationProjection(threadId, preserveFlags = true)
     }
 
@@ -1267,28 +1309,6 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * diverge: a realtime delta must not need a different (or looser) copy of
      * these rules.
      */
-    private suspend fun rebuildConversationFor(
-        threadId: Long,
-        archivedIds: Set<Long>,
-        pinnedIds: Set<Long>
-    ) {
-        val dao = db.messageDao()
-        val newest = dao.pageForThread(threadId, limit = 1, offset = 0).firstOrNull() ?: return
-        db.conversationDao().upsert(
-            ConversationEntity(
-                threadId = newest.threadId,
-                normalizedAddress = newest.normalizedAddress,
-                rawAddress = newest.rawAddress,
-                snippet = newest.body,
-                lastMessageDate = newest.date,
-                unreadCount = dao.countUnread(threadId),
-                lastMessageType = newest.type,
-                pinned = threadId in pinnedIds,
-                archived = threadId in archivedIds
-            )
-        )
-    }
-
     /**
      * Full rebuild: BOOTSTRAP / RECOVERY ONLY.
      *
@@ -1308,10 +1328,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         val pinnedIds = com.autonomousone.messages.repository.PinRepository(appContext)
             .getPinnedIds()
 
-        database.withTransaction {
-            for (m in newestByThread) {
-                rebuildConversationFor(m.threadId, archivedIds, pinnedIds)
-            }
+        // Each thread goes through the SAME projection implementation as the
+        // realtime path, so a repair and a rebuild can never disagree.
+        for (m in newestByThread) {
+            rebuildConversationProjection(m.threadId, preserveFlags = true)
         }
     }
 

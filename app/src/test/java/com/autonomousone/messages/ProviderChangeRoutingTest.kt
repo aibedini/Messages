@@ -156,6 +156,6 @@ class ProviderChangeRoutingTest {
         repeat(50) { batch = batch.merge(ProviderChangeBatch.from("sms", "/thread/" + (it + 1))) }
 
         val p = plan(batch)
-        assertTrue("burst must not schedule unbounded repairs", p.threadRepairs.size <= 8)
+        assertEquals("no known thread may ever be dropped", 50, p.threadRepairs.size)
     }
 }

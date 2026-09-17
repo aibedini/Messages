@@ -34,9 +34,6 @@ object ChangeRouter {
 
     private const val TAG = "CHANGE_ROUTER"
 
-    /** Upper bound on thread-scoped repairs one burst may schedule. */
-    private const val MAX_THREAD_REPAIRS = 8
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -54,7 +51,10 @@ object ChangeRouter {
     )
 
     internal fun planRepair(batch: ProviderChangeBatch, selfWriteThreadId: Long?): RepairPlan {
-        val threads = batch.threadIds.take(MAX_THREAD_REPAIRS).toMutableList()
+        // ALL thread ids are preserved. Bounding is the reconcile
+        // accumulator's job (it unions ids and drains them in chunks); dropping
+        // ids here silently lost real changes — 50 known threads became 8.
+        val threads = batch.threadIds.toMutableList()
         if (selfWriteThreadId != null && threads.isEmpty()) threads += selfWriteThreadId
 
         // SAFETY INVARIANT: an unknown notification is NEVER dropped, and never
