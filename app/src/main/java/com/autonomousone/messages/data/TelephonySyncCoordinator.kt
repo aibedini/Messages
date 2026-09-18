@@ -33,6 +33,22 @@ internal fun cloudMessageDirection(type: Int): String? = when (type) {
     else -> null
 }
 
+enum class DiscoveryMode {
+    REALTIME_EXACT,
+    REALTIME_RECONCILE,
+    STARTUP_DELTA,
+    HISTORY_BACKFILL,
+    INTEGRITY_AUDIT
+}
+
+private enum class ProviderTransition {
+    NEW,
+    CONTENT_CHANGED,
+    STATUS_CHANGED,
+    READ_CHANGED,
+    UNCHANGED
+}
+
 /**
  * The SINGLE writer into Room. Two completely separate channels:
  *
@@ -365,6 +381,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 // by the queue's own lease reclaim; nudging it here just makes the
                 // first retry immediate instead of waiting for the first timer tick.
                 ChangeRouter.retryPendingExactReads(appContext)
+                scheduleIntegrityAudit()
             }
         }
     }
@@ -620,114 +637,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     private suspend fun applyMutation(m: MessageMutation) = withContext(Dispatchers.IO) {
         when (m) {
             is MessageMutation.Upsert -> {
-                val entity = toEntity(m.message, m.source) ?: return@withContext
-                val database = db
-                val dao = database.messageDao()
-                val convDao = database.conversationDao()
-
-                // Single Room transaction: message + conversation, atomically.
-                database.withTransaction {
-                    // Find old version for unread delta calculation.
-                    val old = dao.findByKey(m.source, entity.providerId)
-                    val oldRead = old?.read ?: true
-
-                    // Upsert the message.
-                    dao.upsertAll(listOf(entity))
-
-                    // Calculate unread delta — O(1), never recounts the thread.
-                    val unreadDelta = UnreadDelta.compute(
-                        oldExists = old != null,
-                        oldRead = oldRead,
-                        newRead = entity.read
-                    )
-
-                    // Upsert conversation projection (preserve pinned/archived).
-                    // upsertPreservingFlags is a TRUE upsert: a brand-new thread
-                    // is INSERTED here — Home must not depend on a later rebuild.
-                    val existing = convDao.byThread(entity.threadId)
-                    // PHASE 10.4: the user is LOOKING at this conversation. The
-                    // unread count converges to 0 in the SAME transaction that
-                    // inserts the message, so no frame can ever render
-                    // 0 -> 1 -> 0 for a message that is already on screen. The
-                    // provider READ write is eventual persistence; it is never
-                    // the thing that clears the badge.
-                    val projectedUnread =
-                        if (VisibleConversationTracker.isVisible(entity.threadId)) 0
-                        else (existing?.unreadCount ?: 0) + unreadDelta
-                    convDao.upsertPreservingFlags(
-                        threadId = entity.threadId,
-                        normalizedAddress = entity.normalizedAddress,
-                        rawAddress = entity.rawAddress,
-                        snippet = entity.body,
-                        lastMessageDate = maxOf(entity.date, existing?.lastMessageDate ?: 0L),
-                        unreadCount = projectedUnread,
-                        // pinned/archived are NOT NULL with no SQL default, so a
-                        // value is mandatory on this INSERT — the exact statement
-                        // that materializes a brand-new conversation. The row is
-                        // authoritative when it exists; the repositories are
-                        // consulted only for a genuine first insert (?: lazily
-                        // short-circuits, so the common path pays nothing).
-                        pinnedOnInsert = existing?.pinned ?: (entity.threadId in pinRepositoryIds()),
-                        archivedOnInsert = existing?.archived ?: (entity.threadId in archivedRepositoryIds()),
-                        lastMessageType = entity.type
-                    )
-
-                    // ── PR-02: cloud event committed IN THIS TRANSACTION ──
-                    // Rule 4 (no critical fire-and-forget): the outbox row and
-                    // the message it describes live or die together. If the
-                    // process dies here, BOTH are absent → the provider
-                    // reconcile re-mirrors and the event re-enqueues.
-                    cloudMessageDirection(entity.type)?.let { direction ->
-                        enqueueCloudEvent(
-                            source = m.source,
-                            providerId = entity.providerId,
-                            sender = entity.normalizedAddress,
-                            body = entity.body
-                        ) {
-                            val created = GatewayEventFactory.messageCreated(
-                                source = m.source,
-                                providerId = entity.providerId,
-                                conversationId = conversationIdFor(entity.threadId),
-                                direction = direction,
-                                body = entity.body,
-                                dateMs = entity.date,
-                                status = entity.status,
-                                address = entity.normalizedAddress,
-                                contactName = contactNameFor(entity.normalizedAddress),
-                                read = entity.read,
-                                originCommandId = m.originCommandId,
-                                clientMessageId = m.clientMessageId,
-                            )
-                            if (old != null && (
-                                    old.body != entity.body || old.type != entity.type ||
-                                        old.normalizedAddress != entity.normalizedAddress ||
-                                        m.originCommandId != null || m.clientMessageId != null
-                                    )) {
-                                created.copy(eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
-                                    eventUuid = java.util.UUID.nameUUIDFromBytes("update:${created.eventUuid}:".toByteArray(Charsets.UTF_8) + created.ciphertext).toString())
-                            } else created
-                        }
-                        val conversationId = conversationIdFor(entity.threadId)
-                        enqueueCloudEvent(
-                            source = m.source,
-                            providerId = entity.providerId,
-                            sender = entity.normalizedAddress,
-                            body = entity.body,
-                        ) {
-                            GatewayEventFactory.conversationUpserted(
-                                conversationId = conversationId,
-                                displayName = contactNameFor(entity.normalizedAddress),
-                                address = entity.normalizedAddress,
-                                lastMessagePreview = entity.body,
-                                lastMessageDirection = direction,
-                                lastMessageAt = entity.date,
-                                unreadCount = projectedUnread,
-                                pinned = existing?.pinned ?: false,
-                                archived = existing?.archived ?: false,
-                            )
-                        }
-                    }
-                }
+                ingestProviderRows(
+                    source = m.source,
+                    rows = listOf(m.message),
+                    mode = DiscoveryMode.REALTIME_EXACT,
+                    originCommandId = m.originCommandId,
+                    clientMessageId = m.clientMessageId
+                )
             }
 
             is MessageMutation.Delete -> {
@@ -840,57 +756,24 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
 
             is MessageMutation.RefreshStatus -> {
-                // P0-3: the identity is KNOWN, so this uses the STRICT read. The
-                // forgiving variant made "provider failed" and "row not there yet"
-                // identical, and the status transition was then silently dropped.
-                val statusRead = readExactMessageStrict(m.source, m.providerId)
-                val fresh: Sms? = when (statusRead) {
-                    is ProviderRead.Success -> statusRead.value
-                    is ProviderRead.Failure -> null
-                }
-                if (statusRead !is ProviderRead.Success || fresh == null) {
-                    // A delivery-status change must eventually converge even when the
-                    // first exact read fails or the row is momentarily absent, so the
-                    // identity goes to the durable queue and is retried on its own
-                    // timer - no provider event required.
-                    Log.w(TAG, "status read unresolved " + m.source + ":" + m.providerId +
-                        " ok=" + (statusRead is ProviderRead.Success) + " -> durable REFRESH_STATUS repair")
-                    // REFRESH_STATUS: the message is known to exist locally, so an
-                    // absence must never delete it - only a matured absence may
-                    // become a delete CANDIDATE.
-                    ChangeRouter.enqueueExactRepair(
-                        appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
-                    )
-                }
-                if (fresh != null) {
-                    val entity = toEntity(fresh, m.source)
-                    if (entity != null) {
-                        // PR-02: status change → cloud event in the same
-                        // transaction (deterministic eventUuid: provider
-                        // re-reports of the same status dedupe for free).
-                        db.withTransaction {
-                            db.messageDao().upsertAll(listOf(entity))
-                            enqueueCloudEvent(
+                when (val statusRead = readExactMessageStrict(m.source, m.providerId)) {
+                    is ProviderRead.Success -> {
+                        val fresh = statusRead.value
+                        if (fresh != null) {
+                            ingestProviderRows(
                                 source = m.source,
-                                providerId = entity.providerId,
-                                sender = entity.normalizedAddress,
-                                body = entity.body
-                            ) {
-                                GatewayEventFactory.messageStatusChanged(
-                                    source = m.source,
-                                    providerId = entity.providerId,
-                                    conversationId = conversationIdFor(entity.threadId),
-                                    status = entity.status,
-                                    dateMs = entity.date,
-                                    direction = cloudMessageDirection(entity.type),
-                                    body = entity.body,
-                                    address = entity.normalizedAddress,
-                                    contactName = contactNameFor(entity.normalizedAddress),
-                                    read = entity.read,
-                                )
-                            }
+                                rows = listOf(fresh),
+                                mode = DiscoveryMode.REALTIME_EXACT
+                            )
+                        } else {
+                            ChangeRouter.enqueueExactRepair(
+                                appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
+                            )
                         }
                     }
+                    is ProviderRead.Failure -> ChangeRouter.enqueueExactRepair(
+                        appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
+                    )
                 }
             }
 
@@ -940,6 +823,205 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 db.messageDao().deleteThread(m.threadId)
                 db.conversationDao().delete(m.threadId)
             }
+        }
+    }
+
+    private fun classifyTransition(old: MessageEntity?, next: MessageEntity): ProviderTransition = when {
+        old == null -> ProviderTransition.NEW
+        old.body != next.body || old.type != next.type ||
+            old.normalizedAddress != next.normalizedAddress || old.rawAddress != next.rawAddress ->
+            ProviderTransition.CONTENT_CHANGED
+        old.status != next.status || old.dateSent != next.dateSent -> ProviderTransition.STATUS_CHANGED
+        old.read != next.read -> ProviderTransition.READ_CHANGED
+        else -> ProviderTransition.UNCHANGED
+    }
+
+    private fun stableRevision(seed: String): Long =
+        java.util.UUID.nameUUIDFromBytes(seed.toByteArray(Charsets.UTF_8))
+            .leastSignificantBits and Long.MAX_VALUE
+
+    /**
+     * ONE provider-fact ingest primitive for exact, delta, history and integrity paths.
+     * Message state is canonical; batch callers repair each touched projection once.
+     */
+    private suspend fun ingestProviderRows(
+        source: String,
+        rows: List<Sms>,
+        mode: DiscoveryMode,
+        originCommandId: String? = null,
+        clientMessageId: String? = null
+    ): Set<Long> = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) return@withContext emptySet()
+        val touched = LinkedHashSet<Long>()
+        val pinnedIds = pinRepositoryIds()
+        val archivedIds = archivedRepositoryIds()
+        TraceSections.begin(TraceSections.ROOM_INGEST)
+        try {
+            db.withTransaction {
+                val dao = db.messageDao()
+                val convDao = db.conversationDao()
+                val transitions = ArrayList<Pair<ProviderTransition, MessageEntity>>()
+
+                for (row in rows) {
+                    val providerEntity = toEntity(row, source) ?: continue
+                    val old = dao.findByKey(source, providerEntity.providerId)
+                    // READ is monotonic in the local read model: once the user has
+                    // read a row, a stale provider READ=0 cannot resurrect unread.
+                    // A row arriving while its thread is visible is locally read in
+                    // this same durable transaction.
+                    val entity = if ((old?.read == true || VisibleConversationTracker.isVisible(providerEntity.threadId)) &&
+                        !providerEntity.read
+                    ) providerEntity.copy(read = true) else providerEntity
+                    val transition = classifyTransition(old, entity)
+                    if (transition == ProviderTransition.UNCHANGED) continue
+
+                    dao.upsertAll(listOf(entity))
+                    touched += entity.threadId
+                    transitions += transition to entity
+
+                    if (mode == DiscoveryMode.HISTORY_BACKFILL || mode == DiscoveryMode.STARTUP_DELTA) {
+                        enqueueHistorical(entity)
+                    } else {
+                        val direction = cloudMessageDirection(entity.type) ?: continue
+                        enqueueCloudEvent(
+                            source = source,
+                            providerId = entity.providerId,
+                            sender = entity.normalizedAddress,
+                            body = entity.body
+                        ) {
+                            when (transition) {
+                                ProviderTransition.NEW -> GatewayEventFactory.messageCreated(
+                                    source = source,
+                                    providerId = entity.providerId,
+                                    conversationId = conversationIdFor(entity.threadId),
+                                    direction = direction,
+                                    body = entity.body,
+                                    dateMs = entity.date,
+                                    status = entity.status,
+                                    address = entity.normalizedAddress,
+                                    contactName = contactNameFor(entity.normalizedAddress),
+                                    read = entity.read,
+                                    originCommandId = originCommandId,
+                                    clientMessageId = clientMessageId,
+                                    revision = stableRevision("new:$source:${entity.providerId}:${entity.date}")
+                                )
+                                ProviderTransition.CONTENT_CHANGED -> {
+                                    val created = GatewayEventFactory.messageCreated(
+                                        source = source,
+                                        providerId = entity.providerId,
+                                        conversationId = conversationIdFor(entity.threadId),
+                                        direction = direction,
+                                        body = entity.body,
+                                        dateMs = entity.date,
+                                        status = entity.status,
+                                        address = entity.normalizedAddress,
+                                        contactName = contactNameFor(entity.normalizedAddress),
+                                        read = entity.read,
+                                        originCommandId = originCommandId,
+                                        clientMessageId = clientMessageId,
+                                        revision = stableRevision("content:$source:${entity.providerId}:${entity.body.hashCode()}:${entity.type}:${entity.normalizedAddress}")
+                                    )
+                                    created.copy(
+                                        eventType = GatewayEventFactory.Types.MESSAGE_UPDATED,
+                                        eventUuid = java.util.UUID.nameUUIDFromBytes(
+                                            "message-update:$source:${entity.providerId}:${entity.date}:${entity.body.hashCode()}:${entity.type}:${entity.normalizedAddress}"
+                                                .toByteArray(Charsets.UTF_8)
+                                        ).toString()
+                                    )
+                                }
+                                ProviderTransition.STATUS_CHANGED,
+                                ProviderTransition.READ_CHANGED -> GatewayEventFactory.messageStatusChanged(
+                                    source = source,
+                                    providerId = entity.providerId,
+                                    conversationId = conversationIdFor(entity.threadId),
+                                    status = entity.status,
+                                    dateMs = entity.date,
+                                    direction = direction,
+                                    body = entity.body,
+                                    address = entity.normalizedAddress,
+                                    contactName = contactNameFor(entity.normalizedAddress),
+                                    read = entity.read
+                                ).copy(
+                                    eventUuid = java.util.UUID.nameUUIDFromBytes(
+                                        "message-state:$source:${entity.providerId}:${entity.date}:${entity.status}:${entity.dateSent}:${entity.read}"
+                                            .toByteArray(Charsets.UTF_8)
+                                    ).toString(),
+                                    revision = stableRevision("state:$source:${entity.providerId}:${entity.status}:${entity.dateSent}:${entity.read}")
+                                )
+                                ProviderTransition.UNCHANGED -> error("unreachable")
+                            }
+                        }
+                    }
+                }
+
+                TraceSections.begin(TraceSections.ROOM_PROJECTION)
+                try {
+                    for (threadId in touched) {
+                        if (threadId <= 0L) continue
+                        val newest = dao.newestForThread(threadId) ?: run {
+                            convDao.delete(threadId)
+                            continue
+                        }
+                        val unread = dao.countUnread(threadId)
+                        val existing = convDao.byThread(threadId)
+                        val pinned = existing?.pinned ?: (threadId in pinnedIds)
+                        val archived = existing?.archived ?: (threadId in archivedIds)
+                        val projectionChanged = existing == null ||
+                            existing.normalizedAddress != newest.normalizedAddress ||
+                            existing.rawAddress != newest.rawAddress ||
+                            existing.snippet != newest.body ||
+                            existing.lastMessageDate != newest.date ||
+                            existing.unreadCount != unread ||
+                            existing.lastMessageType != newest.type
+                        convDao.replaceProjectionPreservingFlags(
+                            threadId = threadId,
+                            normalizedAddress = newest.normalizedAddress,
+                            rawAddress = newest.rawAddress,
+                            snippet = newest.body,
+                            lastMessageDate = newest.date,
+                            unreadCount = unread,
+                            pinnedOnInsert = pinned,
+                            archivedOnInsert = archived,
+                            lastMessageType = newest.type
+                        )
+                        if (projectionChanged &&
+                            mode != DiscoveryMode.HISTORY_BACKFILL &&
+                            mode != DiscoveryMode.STARTUP_DELTA
+                        ) {
+                            val direction = cloudMessageDirection(newest.type) ?: continue
+                            val conversationId = conversationIdFor(threadId)
+                            enqueueCloudEvent(
+                                source = newest.source,
+                                providerId = newest.providerId,
+                                sender = newest.normalizedAddress,
+                                body = newest.body
+                            ) {
+                                val revision = stableRevision(
+                                    "conversation:$conversationId:${newest.source}:${newest.providerId}:${newest.date}:$unread:$pinned:$archived:${newest.body.hashCode()}"
+                                )
+                                GatewayEventFactory.conversationUpserted(
+                                    conversationId = conversationId,
+                                    displayName = contactNameFor(newest.normalizedAddress),
+                                    address = newest.normalizedAddress,
+                                    lastMessagePreview = newest.body,
+                                    lastMessageDirection = direction,
+                                    lastMessageAt = newest.date,
+                                    unreadCount = unread,
+                                    pinned = pinned,
+                                    archived = archived,
+                                    revision = revision
+                                )
+                            }
+                        }
+                    }
+                } finally {
+                    TraceSections.end()
+                }
+            }
+            if (touched.isNotEmpty()) PerfTelemetry.noteRoomCommit()
+            touched
+        } finally {
+            TraceSections.end()
         }
     }
 
@@ -1084,28 +1166,23 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 repairThreadInShadow(request.threadId)
             }
             is ReconcileRequest.TailDelta -> {
-                // Bounded newest-window repair for an unidentifiable provider
-                // event. No ledger prune, no backfill scheduling: a provider
-                // notification must never kick off history work.
-                val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
-                val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
-                if (sms.initialWindowLanded || mms.initialWindowLanded) {
-                    // Only reachable when the shadow had never been bootstrapped:
-                    // the projection does not exist yet, so it must be built.
-                    fullRebuildConversations()
-                } else {
-                    // A realtime delta must NEVER rebuild the global projection.
-                    // Only the threads the fresh rows actually touched are
-                    // recomputed, with the SAME rules the full rebuild uses.
-                    val touched = (sms.touchedThreadIds + mms.touchedThreadIds).distinct()
-                    // ONE projection implementation: the exact same function the
-                    // exact-mutation path and the recovery rebuild use.
-                    touched.forEach { rebuildConversationProjection(it, preserveFlags = true) }
+                val mark = PerfTelemetry.mark()
+                TraceSections.begin(TraceSections.TAIL_DELTA)
+                try {
+                    val sms = syncSource(MessageEntity.SOURCE_SMS)
+                    val mms = syncSource(MessageEntity.SOURCE_MMS)
+                    if (sms.initialWindowLanded || mms.initialWindowLanded) fullRebuildConversations()
+                    val now = System.currentTimeMillis()
+                    val stateDao = db.syncStateDao()
+                    if (sms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_SMS, now)
+                    if (mms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_MMS, now)
+                    // Generic/unknown notifications get BOTH the newest-watermark
+                    // delta and a small recent overlap. Never a FullSync.
+                    repairRecentOverlap()
+                } finally {
+                    TraceSections.end()
+                    PerfTelemetry.recordSince(PerfMetric.TAIL_DELTA, mark)
                 }
-                val now = System.currentTimeMillis()
-                val stateDao = db.syncStateDao()
-                if (sms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_SMS, now)
-                if (mms.initialWindowLanded) stateDao.markInitialWindowReady(MessageEntity.SOURCE_MMS, now)
             }
             is ReconcileRequest.FullSync -> {
                 // Ledger hygiene piggybacks the periodic full sync (it runs
@@ -1113,8 +1190,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 // stats only power a "today" chip, so a 90-day horizon is
                 // generous while keeping the table bounded.
                 db.sendSegmentDao().pruneBefore(System.currentTimeMillis() - 90L * 24 * 3600 * 1000)
-                val sms = syncSource(MessageEntity.SOURCE_SMS, ::readSmsKeyset)
-                val mms = syncSource(MessageEntity.SOURCE_MMS, ::readMmsKeyset)
+                val sms = syncSource(MessageEntity.SOURCE_SMS)
+                val mms = syncSource(MessageEntity.SOURCE_MMS)
                 // ── Cutover ordering (fixes "list showed, then went empty") ──
                 // syncSource deliberately leaves initialWindowReady FALSE when
                 // the window just landed. The flag may only flip AFTER the
@@ -1145,13 +1222,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     private val backfillInFlight = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
 
     /**
-     * The crawl runs on its own single thread at MIN_PRIORITY. Caveat,
-     * stated honestly: nested `withContext(Dispatchers.IO)` inside the
-     * provider readers still hop to the IO pool, so this lane mainly
-     * enforces ONE crawl at a time and keeps the between-batch bookkeeping
-     * (cursor reads, state writes, yield pacing) off the threads the UI
-     * shares. The big win over the old code is the single-threaded crawl +
-     * single rebuild; the priority bit is best-effort.
+     * The crawl runs on its own single thread at MIN_PRIORITY. Provider keyset
+     * reads are synchronous repository calls and stay on this lane; no nested
+     * Dispatchers.IO hop escapes the executor. Room projection work may use its
+     * own dispatcher after each bounded batch, but provider history I/O stays
+     * serialized and lower priority than interactive work.
      */
     private val backfillDispatcher by lazy {
         val factory = java.util.concurrent.ThreadFactory { r ->
@@ -1177,7 +1252,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             var didWork = false
             if (smsGuard.compareAndSet(false, true)) {
                 try {
-                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_SMS, ::readSmsKeyset) || didWork
+                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_SMS) || didWork
                 } catch (e: Exception) {
                     Log.e(TAG, "backfill failed for SMS", e)
                 } finally {
@@ -1186,18 +1261,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
             if (mmsGuard.compareAndSet(false, true)) {
                 try {
-                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_MMS, ::readMmsKeyset) || didWork
+                    didWork = backfillOlderKeyset(MessageEntity.SOURCE_MMS) || didWork
                 } catch (e: Exception) {
                     Log.e(TAG, "backfill failed for MMS", e)
                 } finally {
                     mmsGuard.set(false)
                 }
             }
-            // ONE rebuild for the whole crawl — previously SMS and MMS each
-            // rebuilt the full projection back to back: doubled writes,
-            // double Home churn mid-sync. (fullRebuildConversations hops to
-            // IO internally; we are already a single sequential crawl.)
-            if (didWork) fullRebuildConversations()
+            // Canonical batch ingest repairs each touched projection once per
+            // batch, so a global projection rebuild is no longer needed here.
+            if (didWork) Log.d(TAG, "history backfill changed local Room rows")
             publishHistoricalConversationSnapshots()
             // Also repairs installations whose provider history was already
             // mirrored before cloud history production existed.
@@ -1372,25 +1445,18 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     // ── Provider sync (reconcile path only) ────────────────────────────────
 
-    private suspend fun syncSource(
-        source: String,
-        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
-    ): SourceSyncResult {
-        val dao = db.messageDao()
+    private suspend fun syncSource(source: String): SourceSyncResult {
         val stateDao = db.syncStateDao()
         val state = stateDao.forSource(source)
             ?: SyncStateEntity(source = source, newestDate = 0L).also { stateDao.upsert(it) }
 
         return if (!state.initialWindowReady) {
-            // First contact: mirror the newest FIRST_BATCH via keyset from the
-            // sentinel (everything is older than MAX_VALUE), persist the
-            // watermarks, then continue the history backfill durably.
-            val batch = reader(Long.MAX_VALUE, Long.MAX_VALUE, FIRST_BATCH)
-            db.withTransaction {
-                val entities = batch.mapNotNull { toEntity(it, source) }
-                dao.insertOrIgnore(entities)
-                entities.forEach { enqueueHistorical(it) }
+            val read = readOlderPageStrict(source, Long.MAX_VALUE, Long.MAX_VALUE, FIRST_BATCH)
+            val batch = when (read) {
+                is ProviderRead.Success -> read.value
+                is ProviderRead.Failure -> throw IllegalStateException("provider bootstrap failed $source: ${read.reason}", read.cause)
             }
+            val touched = ingestProviderRows(source, batch, DiscoveryMode.STARTUP_DELTA)
             val now = System.currentTimeMillis()
             if (batch.isNotEmpty()) {
                 val newest = batch.maxWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
@@ -1398,93 +1464,51 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 val oldest = batch.minWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
                 stateDao.advanceOldest(source, oldest.date, providerId(oldest), now)
             }
-            // Do NOT mark initialWindowReady here — the caller flips it only
-            // after fullRebuildConversations() has populated the projection.
-            // No inline backfill either: scheduleBackfill (caller) runs the
-            // durable keyset crawl detached — the initial window alone is
-            // enough for the first paint, and awaiting the full history here
-            // was the original startup hang.
-            SourceSyncResult(
-                initialWindowLanded = true,
-                projectionStale = true,
-                touchedThreadIds = batch.map { it.threadId }.distinct()
-            )
+            SourceSyncResult(true, touched.isNotEmpty(), touched.toList())
         } else {
-            // Steady state: only rows newer than the persisted watermark, and
-            // resume an interrupted history backfill if one is still pending.
-            val fresh = readNewerThan(source, state.newestDate, state.newestId)
+            val read = readNewerThanStrict(source, state.newestDate, state.newestId, FIRST_BATCH)
+            val fresh = when (read) {
+                is ProviderRead.Success -> read.value
+                is ProviderRead.Failure -> throw IllegalStateException("provider delta failed $source: ${read.reason}", read.cause)
+            }
+            val touched = ingestProviderRows(source, fresh, DiscoveryMode.REALTIME_RECONCILE)
             if (fresh.isNotEmpty()) {
-                db.withTransaction {
-                    val entities = fresh.mapNotNull { toEntity(it, source) }
-                    dao.upsertAll(entities)
-                    entities.forEach { enqueueHistorical(it) }
-                }
                 val newest = fresh.maxWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
                 stateDao.advanceNewest(source, newest.date, providerId(newest), System.currentTimeMillis())
-            } else {
-                stateDao.touchReconcile(source, System.currentTimeMillis())
-            }
-            // An interrupted crawl resumes via the caller's scheduleBackfill
-            // (detached, durable cursor) — never inline here.
-            SourceSyncResult(
-                initialWindowLanded = false,
-                projectionStale = fresh.isNotEmpty(),
-                touchedThreadIds = fresh.map { it.threadId }.distinct()
-            )
+            } else stateDao.touchReconcile(source, System.currentTimeMillis())
+            SourceSyncResult(false, touched.isNotEmpty(), touched.toList())
         }
     }
 
-    /**
-     * Keyset (watermark) backfill — NO OFFSET.
-     *
-     * Each batch reads `WHERE (date,id) < watermark ORDER BY date DESC LIMIT n`
-     * and persists the new watermark BEFORE yielding. A process kill resumes
-     * exactly from the last durable cursor (next app start sees
-     * historyBackfillComplete=false in steady state and calls us again) —
-     * no restart from zero, no row skipped, none duplicated, immune to
-     * provider inserts shifting window boundaries (the offset bug).
-     *
-     * Watermark updates are targeted UPDATEs: never a full-entity copy of a
-     * `state` read before the loop — that stomped every cursor advanced
-     * during the run.
-     *
-     * Returns true if any older rows were mirrored (projection needs rebuild).
-     */
-    private suspend fun backfillOlderKeyset(
-        source: String,
-        reader: suspend (beforeDate: Long, beforeId: Long, limit: Int) -> List<Sms>
-    ): Boolean {
-        val dao = db.messageDao()
+    private suspend fun backfillOlderKeyset(source: String): Boolean {
         val stateDao = db.syncStateDao()
         var cursor = stateDao.forSource(source) ?: return false
         if (cursor.historyBackfillComplete) return false
-
-        var insertedAny = false
+        var changedAny = false
         while (true) {
-            val batch = reader(cursor.oldestDate, cursor.oldestId, BACKFILL_BATCH)
-            if (batch.isEmpty()) break
-
-            db.withTransaction {
-                val entities = batch.mapNotNull { toEntity(it, source) }
-                dao.insertOrIgnore(entities)
-                entities.forEach { enqueueHistorical(it) }
+            val mark = PerfTelemetry.mark()
+            TraceSections.begin(TraceSections.HISTORY_BACKFILL_BATCH)
+            val batch = try {
+                when (val read = readOlderPageStrict(source, cursor.oldestDate, cursor.oldestId, BACKFILL_BATCH)) {
+                    is ProviderRead.Success -> read.value
+                    is ProviderRead.Failure -> throw IllegalStateException("history provider read failed $source: ${read.reason}", read.cause)
+                }
+            } finally {
+                TraceSections.end()
+                PerfTelemetry.recordSince(PerfMetric.HISTORY_BACKFILL_BATCH, mark)
             }
-            insertedAny = true
-
+            if (batch.isEmpty()) break
+            val touched = ingestProviderRows(source, batch, DiscoveryMode.HISTORY_BACKFILL)
+            changedAny = changedAny || touched.isNotEmpty()
             val oldest = batch.minWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })!!
             stateDao.advanceOldest(source, oldest.date, providerId(oldest), System.currentTimeMillis())
-
             if (batch.size < BACKFILL_BATCH) break
-
-            // Yield: let other coroutines run; re-read the DURABLE cursor
-            // (not a stale copy) before the next hop.
-            cursor = stateDao.forSource(source) ?: return insertedAny
+            cursor = stateDao.forSource(source) ?: return changedAny
             yield()
         }
-
         stateDao.markHistoryComplete(source, System.currentTimeMillis())
-        Log.d(TAG, "backfill complete for $source (keyset watermark cursor)")
-        return insertedAny
+        Log.d(TAG, "backfill complete for $source (strict keyset watermark cursor)")
+        return changedAny
     }
 
     /**
@@ -1518,29 +1542,47 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * Rows strictly newer than the (date,id) watermark — keyset, so a message
      * inserted with the same timestamp as the watermark is still picked up.
      */
-    private suspend fun readNewerThan(source: String, newestMs: Long, newestId: Long): List<Sms> =
-        if (source == MessageEntity.SOURCE_SMS) {
-            smsRepository.querySmsRaw(
-                selection = "(${Telephony.Sms.DATE} > ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} > ?)",
-                selectionArgs = arrayOf(newestMs.toString(), newestMs.toString(), newestId.toString()),
-                sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
-                limit = 500
-            )
-        } else {
-            // Mms.DATE is SECONDS; our watermarks are millis (toEntity
-            // multiplies by 1000 — MMS dates are whole seconds so division
-            // here is exact).
-            smsRepository.queryMmsRaw(
-                selection = "(${Telephony.Mms.DATE} > ?) OR (${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} > ?)",
-                selectionArgs = arrayOf(
-                    (newestMs / 1000L).toString(),
-                    (newestMs / 1000L).toString(),
-                    newestId.toString()
-                ),
-                sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
-                limit = 500
-            )
-        }
+    private fun readOlderPageStrict(
+        source: String,
+        beforeDate: Long,
+        beforeId: Long,
+        limit: Int
+    ): ProviderRead<List<Sms>> = if (source == MessageEntity.SOURCE_SMS) {
+        smsRepository.readSmsStrict(
+            selection = "(${Telephony.Sms.DATE} < ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} < ?)",
+            selectionArgs = arrayOf(beforeDate.toString(), beforeDate.toString(), beforeId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
+            limit = limit
+        )
+    } else {
+        smsRepository.readMmsStrict(
+            selection = "(${Telephony.Mms.DATE} < ?) OR (${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} < ?)",
+            selectionArgs = arrayOf((beforeDate / 1000L).toString(), (beforeDate / 1000L).toString(), beforeId.toString()),
+            sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
+            limit = limit
+        )
+    }
+
+    private fun readNewerThanStrict(
+        source: String,
+        newestMs: Long,
+        newestId: Long,
+        limit: Int
+    ): ProviderRead<List<Sms>> = if (source == MessageEntity.SOURCE_SMS) {
+        smsRepository.readSmsStrict(
+            selection = "(${Telephony.Sms.DATE} > ?) OR (${Telephony.Sms.DATE} = ? AND ${Telephony.Sms._ID} > ?)",
+            selectionArgs = arrayOf(newestMs.toString(), newestMs.toString(), newestId.toString()),
+            sortOrder = "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
+            limit = limit
+        )
+    } else {
+        smsRepository.readMmsStrict(
+            selection = "(${Telephony.Mms.DATE} > ?) OR (${Telephony.Mms.DATE} = ? AND ${Telephony.Mms._ID} > ?)",
+            selectionArgs = arrayOf((newestMs / 1000L).toString(), (newestMs / 1000L).toString(), newestId.toString()),
+            sortOrder = "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC",
+            limit = limit
+        )
+    }
 
     private fun toEntity(sms: Sms, source: String): MessageEntity? {
         val rawAddress = sms.sender.takeIf { it.isNotBlank() } ?: return null
@@ -1643,69 +1685,202 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     suspend fun repairThreadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
-        // The observer tracks BOTH tables, so a thread repair must read both:
-        // an MMS-only thread used to be repaired with an empty SMS read and the
-        // repair silently did nothing.
-        // PHASE 4.1: STRICT reads. querySmsRaw/queryMmsRaw catch every exception
-        // and return emptyList(), which makes "the provider failed" and "the
-        // provider has no such rows" indistinguishable. A repair that cannot tell
-        // them apart must not draw a destructive conclusion from either.
-        val smsRead = smsRepository.querySmsThreadStrict(threadId, limit = THREAD_REPAIR_LIMIT)
-        val mmsRead = smsRepository.queryMmsThreadStrict(threadId, limit = THREAD_REPAIR_LIMIT)
+        val mark = PerfTelemetry.mark()
+        TraceSections.begin(TraceSections.FOR_THREAD)
+        try {
+            val smsRead = smsRepository.querySmsThreadStrict(threadId, THREAD_REPAIR_LIMIT)
+            val mmsRead = smsRepository.queryMmsThreadStrict(threadId, THREAD_REPAIR_LIMIT)
+            val smsOk = smsRead is ProviderRead.Success
+            val mmsOk = mmsRead is ProviderRead.Success
+            val sms = (smsRead as? ProviderRead.Success)?.value.orEmpty()
+            val mms = (mmsRead as? ProviderRead.Success)?.value.orEmpty()
 
-        val smsOk = smsRead is ProviderRead.Success
-        val mmsOk = mmsRead is ProviderRead.Success
-        val sms = (smsRead as? ProviderRead.Success)?.value.orEmpty()
-        val mms = (mmsRead as? ProviderRead.Success)?.value.orEmpty()
-
-        // PHASE 4.3: the ONLY proof that a provider thread is empty is a
-        // SUCCESSFUL, EMPTY read from BOTH sources. One failed source means
-        // UNKNOWN, and unknown never removes data.
-        //
-        // (An empty page is a real proof even with a LIMIT: a limit bounds how
-        // many rows come back, it does not invent rows that are not there.)
-        if (smsOk && mmsOk && sms.isEmpty() && mms.isEmpty()) {
-            db.withTransaction {
-                // SQL delete: a huge thread is never materialized into Kotlin.
-                db.messageDao().deleteThread(threadId)
-                db.conversationDao().delete(threadId)
-            }
-            Log.i(TAG, "thread repair " + threadId + " proved empty -> conversation removed")
-            return@withContext
-        }
-
-        if ((smsOk && sms.isNotEmpty()) || (mmsOk && mms.isNotEmpty())) {
-            db.withTransaction {
-                if (smsOk && sms.isNotEmpty()) {
-                    db.messageDao().upsertAll(sms.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+            if (smsOk && mmsOk && sms.isEmpty() && mms.isEmpty()) {
+                db.withTransaction {
+                    db.messageDao().deleteThread(threadId)
+                    db.conversationDao().delete(threadId)
                 }
-                if (mmsOk && mms.isNotEmpty()) {
-                    db.messageDao().upsertAll(mms.mapNotNull { toEntity(it, MessageEntity.SOURCE_MMS) })
+                return@withContext
+            }
+
+            if (smsOk) reconcileCoveredSource(threadId, MessageEntity.SOURCE_SMS, sms)
+            if (mmsOk) reconcileCoveredSource(threadId, MessageEntity.SOURCE_MMS, mms)
+
+            if (!smsOk || !mmsOk) {
+                throw IllegalStateException(
+                    PARTIAL_THREAD_REPAIR + " thread=" + threadId + " smsOk=" + smsOk + " mmsOk=" + mmsOk
+                )
+            }
+        } finally {
+            TraceSections.end()
+            PerfTelemetry.recordSince(PerfMetric.FOR_THREAD, mark)
+        }
+    }
+
+    private suspend fun reconcileCoveredSource(threadId: Long, source: String, providerRows: List<Sms>) {
+        if (providerRows.isEmpty()) return
+        ingestProviderRows(source, providerRows, DiscoveryMode.REALTIME_RECONCILE)
+        val boundary = providerRows.last()
+        val boundaryId = providerId(boundary)
+        val localCovered = db.messageDao().rowsInCoveredThreadRange(
+            source, threadId, boundary.date, boundaryId
+        )
+        val providerIds = providerRows.asSequence().map(::providerId).toHashSet()
+        val queue = ProviderRepairQueue(appContext)
+        var queued = false
+        for (local in localCovered) {
+            if (local.providerId !in providerIds) {
+                queue.enqueue(source, local.providerId, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE)
+                queued = true
+            }
+        }
+        if (queued) ChangeRouter.retryPendingExactReads(appContext)
+    }
+
+    private suspend fun repairRecentOverlap(limit: Int = 8) {
+        var firstFailure: Throwable? = null
+        for (threadId in db.messageDao().recentThreadIds(limit)) {
+            try {
+                repairThreadInShadow(threadId)
+            } catch (t: Throwable) {
+                if (firstFailure == null) firstFailure = t
+            }
+        }
+        firstFailure?.let { throw it }
+    }
+
+    // ── Integrity audit ────────────────────────────────────────────────────
+
+    private val integrityInFlight = AtomicBoolean(false)
+    private val integrityDispatcher by lazy {
+        val factory = java.util.concurrent.ThreadFactory { r ->
+            Thread(r, "sms-integrity").apply { priority = Thread.MIN_PRIORITY }
+        }
+        java.util.concurrent.Executors.newSingleThreadExecutor(factory).asCoroutineDispatcher()
+    }
+
+    private fun scheduleIntegrityAudit() {
+        if (!integrityInFlight.compareAndSet(false, true)) return
+        syncScope.launch(integrityDispatcher) {
+            try {
+                runIntegrityAudit()
+            } catch (e: Exception) {
+                Log.e(TAG, "integrity audit failed; durable cursors retained", e)
+            } finally {
+                integrityInFlight.set(false)
+                val running = kotlin.runCatching {
+                    db.integrityAuditDao().all().any { it.state == IntegrityAuditStateEntity.STATE_RUNNING }
+                }.getOrDefault(false)
+                if (running) {
+                    syncScope.launch {
+                        kotlinx.coroutines.delay(60_000L)
+                        scheduleIntegrityAudit()
+                    }
                 }
             }
-            rebuildConversationProjection(threadId, preserveFlags = true)
         }
+    }
 
-        if (!smsOk || !mmsOk) {
-            // P0-6: a PARTIAL repair is not a success.
-            //
-            // Returning normally made the reconcile consumer treat the ForThread
-            // generation as repaired and ACK it, so a provider source that failed
-            // was silently forgotten - and the earlier version only nudged the
-            // exact queue, which had nothing new to retry. Each source is
-            // independent: an SMS failure says nothing about MMS.
-            //
-            // Throwing makes PendingReconciles NACK this thread with bounded
-            // backoff, so the failed source is retried; a poison source still
-            // quarantines under the existing ForThread policy and is re-armed by a
-            // fresh provider event for that thread. The rows the surviving source
-            // DID deliver were applied above and are never discarded.
-            Log.w(TAG, PARTIAL_THREAD_REPAIR + " thread=" + threadId +
-                " smsOk=" + smsOk + " mmsOk=" + mmsOk + " -> NACK, bounded retry")
-            throw IllegalStateException(
-                PARTIAL_THREAD_REPAIR + " thread=" + threadId +
-                    " smsOk=" + smsOk + " mmsOk=" + mmsOk
-            )
+    private suspend fun runIntegrityAudit() {
+        for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
+            auditRoomToProvider(source)
+            auditProviderToRoom(source)
+        }
+    }
+
+    private suspend fun beginAuditState(source: String, direction: IntegrityAuditDirection): IntegrityAuditStateEntity? {
+        val dao = db.integrityAuditDao()
+        val now = System.currentTimeMillis()
+        val existing = dao.get(source, direction.name)
+        if (existing != null && existing.state == IntegrityAuditStateEntity.STATE_IDLE && now < existing.nextRunAt) return null
+        if (existing != null && existing.state == IntegrityAuditStateEntity.STATE_RUNNING) return existing
+        val start = (existing ?: IntegrityAuditStateEntity(source, direction.name)).copy(
+            cursorDate = Long.MAX_VALUE,
+            cursorProviderId = Long.MAX_VALUE,
+            cycleStartedAt = now,
+            state = IntegrityAuditStateEntity.STATE_RUNNING,
+            updatedAt = now
+        )
+        dao.upsert(start)
+        return start
+    }
+
+    private suspend fun completeAuditState(state: IntegrityAuditStateEntity) {
+        val now = System.currentTimeMillis()
+        db.integrityAuditDao().upsert(state.copy(
+            cursorDate = Long.MAX_VALUE,
+            cursorProviderId = Long.MAX_VALUE,
+            lastCompletedAt = now,
+            nextRunAt = now + 6L * 60L * 60L * 1000L,
+            state = IntegrityAuditStateEntity.STATE_IDLE,
+            updatedAt = now
+        ))
+    }
+
+    private suspend fun auditRoomToProvider(source: String) {
+        var state = beginAuditState(source, IntegrityAuditDirection.ROOM_TO_PROVIDER) ?: return
+        val repairQueue = ProviderRepairQueue(appContext)
+        while (true) {
+            val mark = PerfTelemetry.mark()
+            TraceSections.begin(TraceSections.INTEGRITY_BATCH)
+            try {
+                val page = db.messageDao().auditPageForSource(source, state.cursorDate, state.cursorProviderId, 100)
+                if (page.isEmpty()) {
+                    completeAuditState(state)
+                    return
+                }
+                var queued = false
+                for (local in page) {
+                    when (val read = readExactMessageStrict(source, local.providerId)) {
+                        is ProviderRead.Success -> {
+                            val provider = read.value
+                            if (provider != null) ingestProviderRows(source, listOf(provider), DiscoveryMode.INTEGRITY_AUDIT)
+                            else {
+                                repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE)
+                                queued = true
+                            }
+                        }
+                        is ProviderRead.Failure -> {
+                            repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE)
+                            queued = true
+                        }
+                    }
+                }
+                if (queued) ChangeRouter.retryPendingExactReads(appContext)
+                val last = page.last()
+                state = state.copy(cursorDate = last.date, cursorProviderId = last.providerId, updatedAt = System.currentTimeMillis())
+                db.integrityAuditDao().upsert(state)
+                yield()
+            } finally {
+                TraceSections.end()
+                PerfTelemetry.recordSince(PerfMetric.INTEGRITY_BATCH, mark)
+            }
+        }
+    }
+
+    private suspend fun auditProviderToRoom(source: String) {
+        var state = beginAuditState(source, IntegrityAuditDirection.PROVIDER_TO_ROOM) ?: return
+        while (true) {
+            val mark = PerfTelemetry.mark()
+            TraceSections.begin(TraceSections.INTEGRITY_BATCH)
+            try {
+                val page = when (val read = readOlderPageStrict(source, state.cursorDate, state.cursorProviderId, 100)) {
+                    is ProviderRead.Success -> read.value
+                    is ProviderRead.Failure -> throw IllegalStateException("integrity provider page failed $source: ${read.reason}", read.cause)
+                }
+                if (page.isEmpty()) {
+                    completeAuditState(state)
+                    return
+                }
+                ingestProviderRows(source, page, DiscoveryMode.INTEGRITY_AUDIT)
+                val last = page.last()
+                state = state.copy(cursorDate = last.date, cursorProviderId = providerId(last), updatedAt = System.currentTimeMillis())
+                db.integrityAuditDao().upsert(state)
+                yield()
+            } finally {
+                TraceSections.end()
+                PerfTelemetry.recordSince(PerfMetric.INTEGRITY_BATCH, mark)
+            }
         }
     }
 
