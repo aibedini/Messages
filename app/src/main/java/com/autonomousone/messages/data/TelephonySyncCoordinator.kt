@@ -217,18 +217,55 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     suspend fun syncNow() = runReconcile(ReconcileRequest.FullSync)
 
     /**
-     * Executes one merged snapshot.
+     * Claims and executes reconcile work until nothing is due.
      *
-     * FullSync first (it subsumes a pending tail), then any tail that FullSync
-     * did not cover, then the thread repairs. Thread repairs are never swallowed
-     * by FullSync: FullSync only rebuilds the projection when it mirrored fresh
-     * rows, while a repair can be needed for a read-state change that touched no
-     * newest row.
+     * Every unit is ACKed or NACKed individually:
+     *  - a failure never discards the work (it is requeued with backoff);
+     *  - one poison thread cannot lose the rest of its claim;
+     *  - a claimed tail is only consumed when the full sync that covered it
+     *    actually SUCCEEDED.
      */
-    private suspend fun runReconcileWork(work: PendingReconciles.Work) {
-        if (work.fullSync) runReconcile(ReconcileRequest.FullSync)
-        if (work.tailDelta) runReconcile(ReconcileRequest.TailDelta)
-        work.threadIds.forEach { runReconcile(ReconcileRequest.ForThread(it)) }
+    private suspend fun drainReconcileWork() {
+        while (true) {
+            val claim = pendingReconciles.claim(System.currentTimeMillis()) ?: break
+
+            if (claim.fullSync) {
+                var ok = false
+                try {
+                    runReconcile(ReconcileRequest.FullSync)
+                    ok = true
+                } catch (e: Exception) {
+                    Log.e(TAG, "FullSync failed; requeued", e)
+                }
+                // Also acks the claimed tail — but only on success.
+                pendingReconciles.ackFullSync(claim, ok, System.currentTimeMillis())
+            } else if (claim.tailEpoch != null) {
+                var ok = false
+                try {
+                    runReconcile(ReconcileRequest.TailDelta)
+                    ok = true
+                } catch (e: Exception) {
+                    Log.e(TAG, "TailDelta failed; requeued", e)
+                }
+                pendingReconciles.ackTail(claim, ok, System.currentTimeMillis())
+            }
+
+            claim.threadIds.forEach { threadId ->
+                var ok = false
+                try {
+                    runReconcile(ReconcileRequest.ForThread(threadId))
+                    ok = true
+                } catch (e: Exception) {
+                    Log.e(TAG, "ForThread failed; requeued id=" + threadId, e)
+                }
+                pendingReconciles.ackThread(threadId, ok, System.currentTimeMillis())
+            }
+        }
+
+        val abandoned = pendingReconciles.abandonedThreadIds()
+        if (abandoned.isNotEmpty()) {
+            Log.w(TAG, "reconcile_abandoned threads=" + abandoned.size)
+        }
     }
 
     /**
@@ -324,13 +361,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // queue is the merging accumulator. Drain until empty so work that
             // arrives WHILE we execute is picked up in the same nudge.
             for (nudge in reconcileNudge) {
-                while (true) {
-                    val work = pendingReconciles.drainSnapshot() ?: break
-                    try {
-                        runReconcileWork(work)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "reconcile failed", e)
-                    }
+                drainReconcileWork()
+                // Anything still pending is inside its retry backoff. Wake up
+                // when it is due instead of spinning.
+                val waitMs = pendingReconciles.nextWakeUpInMs(System.currentTimeMillis())
+                if (waitMs > 0) {
+                    kotlinx.coroutines.delay(waitMs)
+                    reconcileNudge.trySend(Unit)
                 }
             }
         }
