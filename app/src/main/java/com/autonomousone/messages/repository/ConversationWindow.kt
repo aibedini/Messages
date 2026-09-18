@@ -36,6 +36,15 @@ object MessageIdentity {
 
     /** Composite key for a UI row. */
     fun keyOf(row: Sms): Key = keyOf(row.id)
+
+    /**
+     * Identity for an outgoing event. Prefer the Telephony row id so the
+     * event and the provider refresh replace each other instead of painting
+     * two bubbles. Older/non-SMS producers can still fall back to their
+     * synthetic timestamp identity.
+     */
+    fun outgoingEventId(providerRowId: Long?, fallbackDate: Long): Long =
+        providerRowId?.takeIf { it > 0L } ?: fallbackDate
 }
 
 /**

@@ -102,7 +102,8 @@ class SmsSender(
             threadId = 0L, // resolved by Home via phone match
             phone = phone,
             message = text,
-            date = System.currentTimeMillis()
+            date = System.currentTimeMillis(),
+            providerRowId = sentId
         )
         val dispatched = dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast)
         return if (dispatched) {
