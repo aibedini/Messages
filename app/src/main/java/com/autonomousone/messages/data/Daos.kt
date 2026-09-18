@@ -218,6 +218,52 @@ interface ConversationDao {
         lastMessageType: Int = 1
     )
 
+    /**
+     * AUTHORITATIVE projection replace for every REBUILD path (exact delete,
+     * thread repair, integrity repair).
+     *
+     * [upsertPreservingFlags] is deliberately MONOTONIC (lastMessageDate =
+     * MAX(excluded, existing)) because that is correct for the realtime insert
+     * fast path: a new message may only advance a conversation. It is WRONG for a
+     * rebuild, because deleting the newest message must be able to roll the
+     * conversation BACKWARDS:
+     *
+     *   projection = C @ 12:00 ; delete C ; remaining newest = B @ 11:00
+     *   MAX(11:00, 12:00) keeps 12:00 and the deleted snippet stays on Home.
+     *
+     * This variant writes snippet / lastMessageDate / lastMessageType
+     * unconditionally, and still never touches the user-owned pinned / archived
+     * flags.
+     */
+    @Query(
+        """
+        INSERT INTO conversations (
+            threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
+            lastMessageType
+        )
+        VALUES (
+            :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
+            :lastMessageType
+        )
+        ON CONFLICT(threadId) DO UPDATE SET
+            normalizedAddress = excluded.normalizedAddress,
+            rawAddress = excluded.rawAddress,
+            snippet = excluded.snippet,
+            lastMessageDate = excluded.lastMessageDate,
+            lastMessageType = excluded.lastMessageType,
+            unreadCount = excluded.unreadCount
+        """
+    )
+    suspend fun replaceProjectionPreservingFlags(
+        threadId: Long,
+        normalizedAddress: String,
+        rawAddress: String,
+        snippet: String,
+        lastMessageDate: Long,
+        unreadCount: Int,
+        lastMessageType: Int = 1
+    )
+
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")
     suspend fun markRead(threadId: Long)
 

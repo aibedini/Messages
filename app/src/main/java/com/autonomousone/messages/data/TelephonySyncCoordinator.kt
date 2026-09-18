@@ -1334,7 +1334,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         val convDao = database.conversationDao()
 
         database.withTransaction {
-            val newest = dao.pageForThread(threadId, limit = 1, offset = 0).firstOrNull()
+            // ONE canonical newest order (date DESC, source DESC, providerId
+            // DESC). pageForThread orders by date DESC, providerId DESC, so at an
+            // equal timestamp SMS and MMS could disagree about which row is
+            // newest depending on which query a caller happened to use.
+            val newest = dao.newestForThread(threadId)
             if (newest == null) {
                 // Last message in the thread was deleted → the conversation must
                 // disappear from Home, not keep a stale snippet/date forever.
@@ -1344,7 +1348,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             val unread = dao.countUnread(threadId)
 
             if (preserveFlags) {
-                convDao.upsertPreservingFlags(
+                // A rebuild is authoritative: it must be able to move the
+                // projection BACKWARDS after a delete. upsertPreservingFlags is
+                // monotonic by design and is only for the realtime insert path.
+                convDao.replaceProjectionPreservingFlags(
                     threadId = threadId,
                     normalizedAddress = newest.normalizedAddress,
                     rawAddress = newest.rawAddress,

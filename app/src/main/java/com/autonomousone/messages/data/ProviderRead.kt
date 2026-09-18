@@ -39,16 +39,19 @@ sealed interface ProviderRead<out T> {
         UNEXPECTED
     }
 
-    companion object {
-        /** True only when the provider positively answered. */
-        val <T> ProviderRead<T>.isSuccess: Boolean
-            get() = this is Success
-
-        /** True only when absence was PROVEN by a successful read. */
-        val <T> ProviderRead<T?>.provesAbsence: Boolean
-            get() = this is Success && value == null
-    }
 }
+
+/** True only when the provider positively answered. */
+val <T> ProviderRead<T>.isSuccess: Boolean
+    get() = this is ProviderRead.Success
+
+/**
+ * True only when absence was PROVEN by a successful read.
+ *
+ * A Failure is NEVER absence — that distinction is the entire point of this type.
+ */
+val <T> ProviderRead<T?>.provesAbsence: Boolean
+    get() = this is ProviderRead.Success && value == null
 
 /** Maps the value of a successful read; a Failure stays a Failure. */
 inline fun <T, R> ProviderRead<T>.map(transform: (T) -> R): ProviderRead<R> = when (this) {

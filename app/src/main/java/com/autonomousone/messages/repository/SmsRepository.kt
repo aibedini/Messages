@@ -8,6 +8,8 @@ import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.data.LocalProviderWrites
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.data.ProviderRead
+import com.autonomousone.messages.data.map
 import com.autonomousone.messages.repository.ContactRepository
 
 /**
@@ -27,9 +29,6 @@ data class LoadProgress(
 fun interface ProgressListener {
     fun onProgress(progress: LoadProgress)
 }
-
-import com.autonomousone.messages.data.ProviderRead
-import com.autonomousone.messages.data.map
 
 class SmsRepository(
     private val context: Context
