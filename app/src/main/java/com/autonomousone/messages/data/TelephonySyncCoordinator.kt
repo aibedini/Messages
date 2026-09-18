@@ -4,6 +4,10 @@ import android.content.Context
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.diagnostics.DiagnosticsBreadcrumbs
+import com.autonomousone.messages.diagnostics.PerfMetric
+import com.autonomousone.messages.diagnostics.PerfTelemetry
+import com.autonomousone.messages.diagnostics.TraceSections
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
@@ -295,6 +299,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             if (claim.fullSync) {
                 var ok = false
                 try {
+                    DiagnosticsBreadcrumbs.setSyncOperation("full_sync")
                     runReconcile(ReconcileRequest.FullSync)
                     ok = true
                 } catch (e: Exception) {
@@ -304,22 +309,40 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 pendingReconciles.ackFullSync(claim, ok, System.currentTimeMillis())
             } else if (claim.tailEpoch != null) {
                 var ok = false
+                val startedNanos = PerfTelemetry.mark()
                 try {
-                    runReconcile(ReconcileRequest.TailDelta)
+                    // Bounded newest-window repair for an event with no usable
+                    // identity. The trace section and the sync-operation
+                    // breadcrumb exist so a stall report can say WHICH sync
+                    // operation was running when the main thread stopped.
+                    TraceSections.trace(TraceSections.TAIL_DELTA) {
+                        DiagnosticsBreadcrumbs.setSyncOperation("tail_delta")
+                        runReconcile(ReconcileRequest.TailDelta)
+                    }
                     ok = true
                 } catch (e: Exception) {
                     Log.e(TAG, "TailDelta failed; requeued", e)
+                } finally {
+                    // Duration of the repair itself, independent of whether it
+                    // succeeded. No number is claimed unless samples exist.
+                    PerfTelemetry.recordSince(PerfMetric.TAIL_DELTA, startedNanos)
                 }
                 pendingReconciles.ackTail(claim, ok, System.currentTimeMillis())
             }
 
             claim.threads.forEach { claimed ->
                 var ok = false
+                val startedNanos = PerfTelemetry.mark()
                 try {
-                    runReconcile(ReconcileRequest.ForThread(claimed.threadId))
+                    TraceSections.trace(TraceSections.FOR_THREAD) {
+                        DiagnosticsBreadcrumbs.setSyncOperation("for_thread")
+                        runReconcile(ReconcileRequest.ForThread(claimed.threadId))
+                    }
                     ok = true
                 } catch (e: Exception) {
                     Log.e(TAG, "ForThread failed; requeued id=" + claimed.threadId, e)
+                } finally {
+                    PerfTelemetry.recordSince(PerfMetric.FOR_THREAD, startedNanos)
                 }
                 // The ACK is scoped to the generation this claim covered, so a
                 // provider event that arrived WHILE the repair was executing is
