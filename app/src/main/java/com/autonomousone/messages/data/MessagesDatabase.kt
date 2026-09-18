@@ -25,6 +25,11 @@ import com.autonomousone.messages.BuildConfig
  *  - FTS4 full-text search over message bodies (360K-scale search no longer
  *    loads every row into Kotlin).
  *
+ * v14 adds:
+ *  - provider_repair_queue: the DURABLE exact-repair work queue. Failed exact
+ *    provider reads are retried by a timer instead of waiting for the next
+ *    provider event, survive process death, and can never be silently evicted.
+ *
  * v7 adds (PR-01 / Messaging Platform durability foundation, see docs/adr/):
  *  - remote_conversation_map, gateway_event_outbox, remote_commands,
  *    remote_command_executions, sync_cursors — all ADDITIVE (no rebuilds);
@@ -47,9 +52,10 @@ import com.autonomousone.messages.BuildConfig
         TrustStatementOutboxEntity::class,
         DeviceTelemetryEntity::class,
         ConversationKeyEpochEntity::class,
-        CloudHistoryCheckpointEntity::class
+        CloudHistoryCheckpointEntity::class,
+        ProviderRepairEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -69,6 +75,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun deviceTelemetryDao(): DeviceTelemetryDao
     abstract fun conversationKeyDao(): ConversationKeyDao
     abstract fun cloudHistoryCheckpointDao(): CloudHistoryCheckpointDao
+    abstract fun providerRepairDao(): ProviderRepairDao
 
     companion object {
         @Volatile
@@ -395,6 +402,27 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V13_SQL.forEach(db::execSQL) }
         }
 
+        /**
+         * v14 — DURABLE EXACT-REPAIR QUEUE (ADDITIVE, one new table).
+         *
+         * Exact provider reads that fail used to be retried from an in-process
+         * map with a 256-entry cap that evicted the oldest entry. Correctness
+         * work must survive process death and must never be silently discarded,
+         * so the queue is a Room table with a genation-scoped claim/ack/nack
+         * protocol (see ProviderRepairEntity).
+         *
+         * No existing table is touched; the exact CREATE text is pinned by
+         * ProviderRepairQueueTest against the shape Room generates.
+         */
+        internal val UPGRADE_TO_V14_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS `provider_repair_queue` (`source` TEXT NOT NULL, `providerId` INTEGER NOT NULL, `generation` INTEGER NOT NULL, `state` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `nextRetryAt` INTEGER NOT NULL, `leaseUntil` INTEGER NOT NULL, `lastFailureReason` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`source`, `providerId`))",
+            "CREATE INDEX IF NOT EXISTS `index_provider_repair_queue_state_nextRetryAt` ON `provider_repair_queue` (`state`, `nextRetryAt`)",
+            "CREATE INDEX IF NOT EXISTS `index_provider_repair_queue_nextRetryAt` ON `provider_repair_queue` (`nextRetryAt`)"
+        )
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V14_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -406,7 +434,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

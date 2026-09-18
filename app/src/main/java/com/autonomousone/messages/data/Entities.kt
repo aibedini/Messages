@@ -106,6 +106,63 @@ data class ConversationEntity(
 )
 
 /**
+ * DURABLE work queue for exact provider identities whose STRICT read failed.
+ *
+ * This replaces the in-process PendingExactRepairs map, which had four
+ * architectural defects:
+ *
+ *  1. retries only happened when ANOTHER provider event arrived, so a read that
+ *     failed while the provider was quiet was never retried at all;
+ *  2. due() did not claim, so the same identity could be read concurrently by
+ *     two workers;
+ *  3. it was in-process, so process death silently dropped correctness work;
+ *  4. it had a fixed capacity of 256 and evicted the OLDEST entry, i.e. it
+ *     silently discarded correctness work under load.
+ *
+ * Rules encoded here:
+ *  - Identity is the composite (source, providerId): SMS 123 and MMS 123 are
+ *    different rows and must never share work.
+ *  - A NEW provider event for the same identity bumps [generation] and resets
+ *    the row to PENDING. An in-flight read ACKs the generation it claimed, so an
+ *    older successful read can never consume newer work.
+ *  - [state] is IN_FLIGHT only while a worker holds [leaseUntil]. An expired
+ *    lease is reclaimed at startup, so a crashed worker cannot strand a row.
+ *  - There is NO capacity limit and NO eviction. A correctness queue bounds its
+ *    processing rate, never its state.
+ */
+@Entity(
+    tableName = "provider_repair_queue",
+    primaryKeys = ["source", "providerId"],
+    indices = [
+        Index("state", "nextRetryAt"),
+        Index("nextRetryAt")
+    ]
+)
+data class ProviderRepairEntity(
+    /** "sms" | "mms" - the MessageEntity source vocabulary. */
+    val source: String,
+    val providerId: Long,
+    /** Bumped every time new work arrives for this identity. */
+    val generation: Long = 1L,
+    val state: String = STATE_PENDING,
+    /** Consecutive failures. Never used to abandon the row. */
+    val attempts: Int = 0,
+    val nextRetryAt: Long = 0L,
+    /** Epoch ms until which the current IN_FLIGHT owner may work. */
+    val leaseUntil: Long = 0L,
+    /** Typed reason from the last failure (ProviderRead.Reason name). */
+    val lastFailureReason: String = "",
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+) {
+    companion object {
+        const val STATE_PENDING = "PENDING"
+        const val STATE_IN_FLIGHT = "IN_FLIGHT"
+        const val STATE_BACKOFF = "BACKOFF"
+    }
+}
+
+/**
  * One row per synced source+window so incremental syncs know where they are.
  *
  * Dual watermarks:

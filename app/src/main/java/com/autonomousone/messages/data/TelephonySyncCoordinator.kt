@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,7 @@ internal fun cloudMessageDirection(type: Int): String? = when (type) {
  * No full scan. No rebuildConversations(). No countUnread(10K rows).
  */
 class TelephonySyncCoordinator internal constructor(context: Context, private val databaseOverride: MessagesDatabase? = null) {
+
 
     private val appContext = context.applicationContext
     private val smsRepository = SmsRepository(appContext)
@@ -183,8 +185,32 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     fun startGatewaySync() {
         ensureLoop()
         if (startupReconcileRequested.compareAndSet(false, true)) {
-            Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH")
-            reconcile(ReconcileRequest.FullSync)
+            syncScope.launch {
+                // PHASE 6.2 / 6.3: the durable initial window decides. A process
+                // RESTART is not a reason to re-crawl: the watermarks in
+                // sync_state survived, so only the delta since them can be
+                // missing. FullSync stays reachable for genuine bootstrap and
+                // explicit recovery (ReconcileRequest.FullSync callers), but it
+                // is no longer the automatic answer to "the app was reopened".
+                val durableWindowReady = try {
+                    db.syncStateDao().forSource(MessageEntity.SOURCE_SMS)?.initialWindowReady == true ||
+                        db.syncStateDao().forSource(MessageEntity.SOURCE_MMS)?.initialWindowReady == true
+                } catch (e: Exception) {
+                    Log.e(TAG, "startup state read failed; falling back to bootstrap", e)
+                    false
+                }
+                if (durableWindowReady) {
+                    Log.i(TAG, "SYNC_BOOTSTRAP_SKIPPED reason=durable_initial_window_present mode=TAIL_DELTA")
+                    reconcile(ReconcileRequest.TailDelta)
+                } else {
+                    Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH")
+                    reconcile(ReconcileRequest.FullSync)
+                }
+                // Exact work that was in flight when the process died is recovered
+                // by the queue's own lease reclaim; nudging it here just makes the
+                // first retry immediate instead of waiting for the first timer tick.
+                ChangeRouter.retryPendingExactReads(appContext)
+            }
         }
     }
 
@@ -351,6 +377,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     private fun ensureLoop() {
         if (!started.compareAndSet(false, true)) return
+        // The durable exact-repair queue has its OWN timer. It must run even when
+        // no provider event ever arrives (that was the in-process map's fatal
+        // defect: a failed read during a quiet period was never retried).
+        ChangeRouter.ensureRepairScheduler(appContext)
         syncScope.launch {
             // Exact mutations: sequential, never conflated.
             launch {
@@ -437,13 +467,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // upsertPreservingFlags is a TRUE upsert: a brand-new thread
                     // is INSERTED here — Home must not depend on a later rebuild.
                     val existing = convDao.byThread(entity.threadId)
+                    // PHASE 10.4: the user is LOOKING at this conversation. The
+                    // unread count converges to 0 in the SAME transaction that
+                    // inserts the message, so no frame can ever render
+                    // 0 -> 1 -> 0 for a message that is already on screen. The
+                    // provider READ write is eventual persistence; it is never
+                    // the thing that clears the badge.
+                    val projectedUnread =
+                        if (VisibleConversationTracker.isVisible(entity.threadId)) 0
+                        else (existing?.unreadCount ?: 0) + unreadDelta
                     convDao.upsertPreservingFlags(
                         threadId = entity.threadId,
                         normalizedAddress = entity.normalizedAddress,
                         rawAddress = entity.rawAddress,
                         snippet = entity.body,
                         lastMessageDate = maxOf(entity.date, existing?.lastMessageDate ?: 0L),
-                        unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
+                        unreadCount = projectedUnread,
                         // pinned/archived are NOT NULL with no SQL default, so a
                         // value is mandatory on this INSERT — the exact statement
                         // that materializes a brand-new conversation. The row is
@@ -504,7 +543,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                 lastMessagePreview = entity.body,
                                 lastMessageDirection = direction,
                                 lastMessageAt = entity.date,
-                                unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
+                                unreadCount = projectedUnread,
                                 pinned = existing?.pinned ?: false,
                                 archived = existing?.archived ?: false,
                             )
@@ -515,51 +554,108 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
             is MessageMutation.Delete -> {
                 val dao = db.messageDao()
-                val threadId = m.threadId ?: dao.findByKey(m.source, m.providerId)?.threadId
-                // PR-02: capture date BEFORE deleting (the event needs it) and
-                // commit the cloud event in the same transaction as the delete.
-                val deleted = dao.findByKey(m.source, m.providerId)
+                val convDao = db.conversationDao()
+                // PHASE 3: ONE transaction for the whole delete transition.
+                //
+                // Before: the row was deleted in transaction A, the projection
+                // was rebuilt in transaction B, and the MESSAGE_DELETED /
+                // CONVERSATION_* events were enqueued in transactions C and D. A
+                // process death between them left Room, the projection and the
+                // outbox disagreeing, and Home could be observed in the window
+                // where the message was already gone but the conversation still
+                // showed it.
+                //
+                // Now the message, the projection and BOTH cloud events commit
+                // together or not at all.
                 db.withTransaction {
+                    // 1. Composite identity is the only lookup key: SMS 123 and
+                    //    MMS 123 are different rows and must never alias.
+                    val deleted = dao.findByKey(m.source, m.providerId)
+                    if (deleted == null) {
+                        // Idempotent: a duplicate delete must not emit a second
+                        // logical event. The transition it describes is already
+                        // durable, so there is nothing left to do.
+                        Log.i(TAG, "delete no-op, row already absent: " + m.source + ":" + m.providerId)
+                        return@withTransaction
+                    }
+                    val threadId = m.threadId ?: deleted.threadId
+
+                    // 2. Remove exactly that composite key.
                     dao.deleteBySourceAndId(m.source, m.providerId)
-                    if (deleted != null) {
+
+                    // 3. MESSAGE_DELETED commits with the delete. Its identity
+                    //    comes from stable provider facts, so a re-notification of
+                    //    the same deletion dedupes instead of manufacturing a new
+                    //    logical event from the wall clock.
+                    enqueueCloudEvent(
+                        source = m.source,
+                        providerId = m.providerId,
+                        sender = deleted.normalizedAddress,
+                        body = deleted.body
+                    ) {
+                        GatewayEventFactory.messageDeleted(
+                            source = m.source,
+                            providerId = m.providerId,
+                            conversationId = conversationIdFor(threadId),
+                            dateMs = deleted.date
+                        )
+                    }
+
+                    if (threadId <= 0L) return@withTransaction
+
+                    // 4. Recompute the projection from the canonical newest row
+                    //    (date DESC, source DESC, providerId DESC). This is the
+                    //    SAME order rebuildConversationProjection uses, so deleting
+                    //    the newest message moves Home BACKWARDS to the true newest
+                    //    surviving row, and mixed SMS/MMS fallback works.
+                    val newest = dao.newestForThread(threadId)
+                    val conversationId = conversationIdFor(threadId)
+                    if (newest == null) {
+                        // 5a. The thread is now empty: the conversation must
+                        //     disappear from Home immediately instead of keeping a
+                        //     stale snippet and date forever.
+                        convDao.delete(threadId)
                         enqueueCloudEvent(
                             source = m.source,
                             providerId = m.providerId,
-                            sender = deleted.normalizedAddress ?: "",
-                            body = deleted.body ?: ""
+                            sender = deleted.normalizedAddress,
+                            body = deleted.body
                         ) {
-                            GatewayEventFactory.messageDeleted(
-                                source = m.source,
-                                providerId = m.providerId,
-                                conversationId = conversationIdFor(threadId ?: 0L),
-                                dateMs = deleted.date
-                            )
+                            GatewayEventFactory.conversationDeleted(conversationId)
                         }
+                        return@withTransaction
                     }
-                }
-                if (threadId != null && threadId > 0L) {
-                    rebuildConversationProjection(threadId, preserveFlags = true)
-                    val latest = dao.newestForThread(threadId)
-                    val conversationId = conversationIdFor(threadId)
-                    if (latest == null && deleted != null) {
-                        db.withTransaction {
-                            enqueueCloudEvent(m.source, m.providerId,
-                                deleted.normalizedAddress, deleted.body) {
-                                GatewayEventFactory.conversationDeleted(conversationId)
-                            }
-                        }
-                    } else if (latest != null) {
-                        val conversation = db.conversationDao().byThread(threadId)
-                        val direction = cloudMessageDirection(latest.type)
-                        if (conversation != null && direction != null) db.withTransaction {
-                            enqueueCloudEvent(latest.source, latest.providerId,
-                                latest.normalizedAddress, latest.body) {
-                                GatewayEventFactory.conversationUpserted(
-                                    conversationId, contactNameFor(latest.normalizedAddress),
-                                    latest.normalizedAddress, latest.body, direction, latest.date,
-                                    conversation.unreadCount, conversation.pinned, conversation.archived,
-                                )
-                            }
+
+                    // 5b. A surviving row owns the projection. replace (not
+                    //     upsert) so the projection can move BACKWARDS; pinned and
+                    //     archived are INSERT-only and stay user-owned.
+                    val existing = convDao.byThread(threadId)
+                    convDao.replaceProjectionPreservingFlags(
+                        threadId = threadId,
+                        normalizedAddress = newest.normalizedAddress,
+                        rawAddress = newest.rawAddress,
+                        snippet = newest.body,
+                        lastMessageDate = newest.date,
+                        unreadCount = dao.countUnread(threadId),
+                        pinnedOnInsert = existing?.pinned ?: (threadId in pinRepositoryIds()),
+                        archivedOnInsert = existing?.archived ?: (threadId in archivedRepositoryIds()),
+                        lastMessageType = newest.type
+                    )
+
+                    val direction = cloudMessageDirection(newest.type)
+                    val projected = convDao.byThread(threadId)
+                    if (direction != null && projected != null) {
+                        enqueueCloudEvent(
+                            source = newest.source,
+                            providerId = newest.providerId,
+                            sender = newest.normalizedAddress,
+                            body = newest.body
+                        ) {
+                            GatewayEventFactory.conversationUpserted(
+                                conversationId, contactNameFor(newest.normalizedAddress),
+                                newest.normalizedAddress, newest.body, direction, newest.date,
+                                projected.unreadCount, projected.pinned, projected.archived,
+                            )
                         }
                     }
                 }

@@ -1,14 +1,18 @@
 package com.autonomousone.messages.data
 
 import android.content.Context
-import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.observer.ProviderChangeBatch
 import com.autonomousone.messages.repository.SmsRepository
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Routes an accumulated ContentObserver burst into the NARROWEST repair it can
@@ -25,16 +29,34 @@ import kotlinx.coroutines.launch
  * steady state syncSource() is already incremental (readNewerThan on the durable
  * newestDate/newestId). The REAL damage of the escalation was that a fresh row
  * makes projectionStale true and therefore triggered fullRebuildConversations()
- * — a global projection rebuild for one incoming SMS.
+ * - a global projection rebuild for one incoming SMS.
  *
  * [route] is invoked from the ContentObserver, which fires on the MAIN looper.
- * It must never block there — every provider read is offloaded to [scope].
+ * It must never block there, and it performs no provider read at all any more:
+ * exact identities are ENQUEUED into the durable ProviderRepairQueue and the
+ * repair itself runs on [scope] under a claim/ack/nack protocol.
+ *
+ * The queue is driven by its own timer. A provider burst is a useful EARLY
+ * NUDGE, but it is not the only retry source - that was the core defect of the
+ * old in-process map, where a read that failed during a quiet period was never
+ * retried.
  */
 object ChangeRouter {
 
     private const val TAG = "CHANGE_ROUTER"
 
+    /** Safety poll: never depend on an external event to make progress. */
+    private const val IDLE_POLL_MS = 30_000L
+
+    /** Never sleep longer than this, even if the queue says the next work is far away. */
+    private const val MAX_WAIT_MS = 30_000L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Conflated: a burst of nudges collapses into one wake-up. */
+    private val nudge = Channel<Unit>(Channel.CONFLATED)
+
+    private val schedulerStarted = AtomicBoolean(false)
 
     /**
      * The pure routing decision, so the contract "an ordinary provider event can
@@ -53,7 +75,7 @@ object ChangeRouter {
     internal fun planRepair(batch: ProviderChangeBatch, selfWriteThreadId: Long?): RepairPlan {
         // ALL thread ids are preserved. Bounding is the reconcile
         // accumulator's job (it unions ids and drains them in chunks); dropping
-        // ids here silently lost real changes — 50 known threads became 8.
+        // ids here silently lost real changes - 50 known threads became 8.
         val threads = batch.threadIds.toMutableList()
         if (selfWriteThreadId != null && threads.isEmpty()) threads += selfWriteThreadId
 
@@ -78,11 +100,10 @@ object ChangeRouter {
     }
 
     fun route(context: Context, batch: ProviderChangeBatch) {
-        val coordinator = TelephonySyncCoordinator.get(context)
+        val app = context.applicationContext
+        val coordinator = TelephonySyncCoordinator.get(app)
 
-        // A provider burst proves the provider is reachable again: this is the
-        // right moment to retry exact reads that previously failed.
-        retryPendingExactReads(context)
+        ensureRepairScheduler(app)
 
         // A self-write token narrows an unidentifiable burst to the thread we
         // wrote. NON-CONSUMING: one mark-read legitimately causes several
@@ -92,9 +113,31 @@ object ChangeRouter {
 
         val plan = planRepair(batch, selfWrite?.threadId)
 
-        if (plan.exactSmsIds.isNotEmpty() || plan.exactMmsIds.isNotEmpty()) {
-            readExactRows(context, coordinator, plan.exactSmsIds, plan.exactMmsIds)
+        // Enqueue, then wake the scheduler. Nothing here touches the provider,
+        // and nothing here can lose work if the process dies immediately after:
+        // the queue row is already committed (or the identity will be re-derived
+        // by the next delta, which is why this is a queue and not a promise).
+        scope.launch {
+            val queue = ProviderRepairQueue(app)
+            var enqueued = false
+            for (id in plan.exactSmsIds) {
+                queue.enqueue(MessageEntity.SOURCE_SMS, id)
+                enqueued = true
+            }
+            for (id in plan.exactMmsIds) {
+                queue.enqueue(MessageEntity.SOURCE_MMS, id)
+                enqueued = true
+            }
+            if (enqueued) {
+                Log.i(TAG, "enqueued exact repair: " + plan.exactSmsIds.size + " sms, " +
+                    plan.exactMmsIds.size + " mms")
+            }
+            // Nudge even when this burst carried no exact id: it may have arrived
+            // while earlier work was backing off, and a reachable provider is the
+            // single best moment to retry.
+            nudge.trySend(Unit)
         }
+
         plan.threadRepairs.forEach { threadId ->
             coordinator.reconcile(ReconcileRequest.ForThread(threadId))
         }
@@ -104,96 +147,173 @@ object ChangeRouter {
         }
     }
 
-    /** Reads the exact rows the burst identified, off the main thread. */
-    private fun readExactRows(
-        context: Context,
-        coordinator: TelephonySyncCoordinator,
-        smsIds: List<Long>,
-        mmsIds: List<Long>
-    ) {
-        scope.launch {
-            val repo = SmsRepository(context)
-            for (id in smsIds) applyExactSms(repo, coordinator, id)
-            for (id in mmsIds) applyExactMms(repo, coordinator, id)
-        }
+    /**
+     * Starts the durable exact-repair scheduler exactly once.
+     *
+     * Safe to call from any thread and any number of times; the first caller wins.
+     */
+    fun ensureRepairScheduler(context: Context) {
+        val app = context.applicationContext
+        if (!schedulerStarted.compareAndSet(false, true)) return
+        scope.launch { repairLoop(app) }
     }
 
     /**
-     * Re-attempts exact reads that previously FAILED.
+     * Wakes the durable queue now.
      *
-     * Called from [route] on every provider burst: a burst is exactly the moment
-     * the provider is demonstrably reachable again. Cheap no-op when nothing is
-     * pending. Never fabricates absence.
+     * Kept as the public entry point used by [route] and by startup wiring. It no
+     * longer reads providers itself: the queue decides what is due, claims it, and
+     * retries it. A burst is evidence that the provider is reachable again, which
+     * is exactly the right moment to retry early.
      */
     fun retryPendingExactReads(context: Context) {
-        val due = PendingExactRepairs.due(System.currentTimeMillis())
+        ensureRepairScheduler(context)
+        nudge.trySend(Unit)
+    }
+
+    /**
+     * The ONE exact-repair consumer.
+     *
+     * Loop shape: drain everything due -> compute the next wake time -> sleep
+     * until then (or until nudged, or at most [IDLE_POLL_MS] as a safety poll).
+     * The safety poll is what guarantees progress without any external event.
+     */
+    private suspend fun repairLoop(context: Context) {
+        val queue = ProviderRepairQueue(context)
+        // Process death recovery: a lease that outlived its owner is reclaimed
+        // before the first drain, so a crash mid-read cannot strand work.
+        val reclaimed = queue.reclaimExpiredLeases()
+        if (reclaimed > 0) {
+            Log.w(TAG, "recovered " + reclaimed + " expired exact-repair lease(s) at startup")
+        }
+        while (currentCoroutineContext().isActive) {
+            drainDueRepairs(context, queue)
+            val wakeAt = queue.nextWakeAt()
+            val now = System.currentTimeMillis()
+            val waitMs = when {
+                wakeAt == null -> IDLE_POLL_MS
+                else -> (wakeAt - now).coerceIn(0L, MAX_WAIT_MS)
+            }
+            if (waitMs > 0L) withTimeoutOrNull(waitMs) { nudge.receive() }
+        }
+    }
+
+    private suspend fun drainDueRepairs(context: Context, queue: ProviderRepairQueue) {
+        val now = System.currentTimeMillis()
+        queue.reclaimExpiredLeases(now)
+        val due = queue.due(now)
         if (due.isEmpty()) return
-        scope.launch {
-            val repo = SmsRepository(context)
-            val coordinator = TelephonySyncCoordinator.get(context)
-            due.forEach { entry ->
-                when (entry.source) {
-                    PendingExactRepairs.Source.SMS -> applyExactSms(repo, coordinator, entry.providerId)
-                    PendingExactRepairs.Source.MMS -> applyExactMms(repo, coordinator, entry.providerId)
+
+        val repo = SmsRepository(context)
+        val coordinator = TelephonySyncCoordinator.get(context)
+        for (entry in due) {
+            // Claim FIRST. due() is only an observation; two workers can see the
+            // same row, but only one claim succeeds.
+            if (!queue.claim(entry, now)) continue
+            // A newer provider event may already have replaced this generation,
+            // in which case that work owns the row and this read is obsolete.
+            if (!queue.stillOwned(entry)) continue
+
+            val outcome = when (entry.source) {
+                MessageEntity.SOURCE_SMS -> applyExactSms(repo, coordinator, entry.providerId)
+                MessageEntity.SOURCE_MMS -> applyExactMms(repo, coordinator, entry.providerId)
+                else -> ExactRepairResult.Failed("UNSUPPORTED_SOURCE")
+            }
+
+            if (!queue.stillOwned(entry)) {
+                // Superseded while reading. Do NOT ack (that would consume the
+                // newer generation's work) and do NOT nack (also generation
+                // scoped). The newer generation is due now and will converge.
+                Log.i(TAG, "exact repair superseded by a newer generation: " + entry.source +
+                    ":" + entry.providerId)
+                continue
+            }
+
+            when (outcome) {
+                is ExactRepairResult.Done -> queue.ack(entry)
+                is ExactRepairResult.Failed -> {
+                    Log.w(TAG, "exact repair failed " + entry.source + ":" + entry.providerId +
+                        " reason=" + outcome.reason + " attempts=" + (entry.attempts + 1) +
+                        " -> bounded backoff, work retained")
+                    queue.nack(entry, outcome.reason)
                 }
             }
         }
     }
 
+    /** Claim outcome: [Done] may be acked, [Failed] must be nacked and retried. */
+    internal sealed interface ExactRepairResult {
+        data object Done : ExactRepairResult
+        data class Failed(val reason: String) : ExactRepairResult
+    }
+
     /**
-     * Exact SMS decision. A DELETE is only ever issued from a SUCCESSFUL read
-     * that proves absence; a failed read keeps the identity for retry.
+     * Exact SMS decision.
+     *
+     * A DELETE is only ever issued from a SUCCESSFUL read that proves absence; a
+     * failed read keeps the identity for retry.
      */
     private fun applyExactSms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
         id: Long
-    ) {
-        when (val read = repo.readSmsExactStrict(id)) {
-            is ProviderRead.Success -> {
-                PendingExactRepairs.clear(PendingExactRepairs.Source.SMS, id)
-                val row = read.value
-                if (row != null) {
-                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
-                } else {
-                    // PROVEN absence: the provider answered and has no such row.
-                    coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
-                }
+    ): ExactRepairResult = when (val read = repo.readSmsExactStrict(id)) {
+        is ProviderRead.Success -> {
+            val row = read.value
+            if (row != null) {
+                coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
+            } else {
+                // PROVEN absence: the provider answered and has no such row.
+                coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
             }
-            is ProviderRead.Failure -> {
-                Log.w(
-                    TAG,
-                    "exact SMS read failed id=" + id + " reason=" + read.reason +
-                        " -> keeping Room row, retry scheduled"
-                )
-                PendingExactRepairs.note(PendingExactRepairs.Source.SMS, id, System.currentTimeMillis())
-            }
+            ExactRepairResult.Done
         }
+        is ProviderRead.Failure -> ExactRepairResult.Failed(read.reason.name)
     }
 
-    /** Exact MMS decision. Same contract as [applyExactSms]. */
+    /**
+     * Exact MMS decision, in TWO questions instead of one.
+     *
+     * "Does this row exist?" and "what does it contain?" are different questions
+     * with different failure modes:
+     *
+     *   existence  -> one query against content://mms; a failure is UNKNOWN
+     *   content    -> the same row PLUS content://mms/addr and content://mms/part
+     *
+     * The old code asked only the second question through a reader that degraded
+     * a failed Addr/Part lookup into the literals "Unknown" and "[MMS]", then
+     * wrote that over the good Room row. Now:
+     *
+     *   existence Failure              -> keep Room, retry
+     *   existence Absent               -> PROVEN delete, and no secondary read at all
+     *   existence Exists + read Failure-> keep Room, retry (no placeholder write)
+     *   existence Exists + row gone    -> PROVEN delete (the provider answered twice)
+     *   existence Exists + row present -> authoritative upsert
+     */
     private fun applyExactMms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
         id: Long
-    ) {
-        when (val read = repo.readMmsExactStrict(id)) {
-            is ProviderRead.Success -> {
-                PendingExactRepairs.clear(PendingExactRepairs.Source.MMS, id)
-                val row = read.value
-                if (row != null) {
-                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row))
-                } else {
-                    coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
-                }
+    ): ExactRepairResult = when (val existence = repo.readMmsExistenceStrict(id)) {
+        is ProviderRead.Failure -> ExactRepairResult.Failed(existence.reason.name)
+        is ProviderRead.Success -> when (existence.value) {
+            ProviderExistence.Absent -> {
+                coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
+                ExactRepairResult.Done
             }
-            is ProviderRead.Failure -> {
-                Log.w(
-                    TAG,
-                    "exact MMS read failed id=" + id + " reason=" + read.reason +
-                        " -> keeping Room row, retry scheduled"
-                )
-                PendingExactRepairs.note(PendingExactRepairs.Source.MMS, id, System.currentTimeMillis())
+            ProviderExistence.Exists -> when (val materialized = repo.readMmsMaterializedStrict(id)) {
+                is ProviderRead.Failure -> ExactRepairResult.Failed(materialized.reason.name)
+                is ProviderRead.Success -> {
+                    val row = materialized.value
+                    if (row != null) {
+                        coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row))
+                    } else {
+                        // The base read proved existence, this one proved absence:
+                        // the provider answered both times, so the delete is proven.
+                        coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
+                    }
+                    ExactRepairResult.Done
+                }
             }
         }
     }

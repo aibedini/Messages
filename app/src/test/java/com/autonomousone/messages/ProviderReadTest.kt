@@ -1,6 +1,5 @@
 package com.autonomousone.messages
 
-import com.autonomousone.messages.data.PendingExactRepairs
 import com.autonomousone.messages.data.ProviderRead
 import com.autonomousone.messages.data.map
 import org.junit.Assert.assertEquals

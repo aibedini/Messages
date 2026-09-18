@@ -329,6 +329,129 @@ interface SyncStateDao {
     suspend fun markHistoryComplete(source: String, now: Long)
 
     @Query("UPDATE sync_state SET lastReconcileAt = :now WHERE source = :source")
+
+/**
+ * Durable exact-repair queue. See [ProviderRepairEntity] for the invariants.
+ *
+ * Every mutation is scoped by generation so that two workers, or one worker and
+ * a newer provider event, can never corrupt each other.
+ */
+@Dao
+interface ProviderRepairDao {
+
+    /**
+     * Records work for an exact provider identity, or bumps its generation.
+     *
+     * Unbounded by design: a correctness queue must never evict.
+     */
+    @Query(
+        "INSERT INTO provider_repair_queue " +
+            "(source, providerId, generation, state, attempts, nextRetryAt, leaseUntil, " +
+            "lastFailureReason, createdAt, updatedAt) " +
+            "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now) " +
+            "ON CONFLICT(source, providerId) DO UPDATE SET " +
+            "generation = provider_repair_queue.generation + 1, " +
+            "state = 'PENDING', attempts = 0, nextRetryAt = :now, leaseUntil = 0, " +
+            "updatedAt = :now"
+    )
+    suspend fun enqueue(source: String, providerId: Long, now: Long)
+
+    /** Earliest retry among rows nobody currently owns - the timer wake time. */
+    @Query("SELECT MIN(nextRetryAt) FROM provider_repair_queue WHERE state != 'IN_FLIGHT'")
+    suspend fun minPendingRetryAt(): Long?
+
+    /** Earliest lease expiry, so a crashed owner is recovered without an event. */
+    @Query("SELECT MIN(leaseUntil) FROM provider_repair_queue WHERE state = 'IN_FLIGHT'")
+    suspend fun minLeaseUntil(): Long?
+
+    @Query("SELECT COUNT(*) FROM provider_repair_queue")
+    suspend fun count(): Int
+
+    /** Non-claiming observation of due work. Claiming is separate (see [claim]). */
+    @Query(
+        "SELECT * FROM provider_repair_queue " +
+            "WHERE state != 'IN_FLIGHT' AND nextRetryAt <= :now " +
+            "ORDER BY nextRetryAt ASC LIMIT :limit"
+    )
+    suspend fun due(now: Long, limit: Int): List<ProviderRepairEntity>
+
+    /**
+     * Claims ONE row. Returns the number of rows updated.
+     *
+     * 0 means somebody else owns it, or a NEWER generation already replaced it:
+     * in both cases this worker must do nothing at all.
+     */
+    @Query(
+        "UPDATE provider_repair_queue SET state = 'IN_FLIGHT', leaseUntil = :leaseUntil, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation AND state != 'IN_FLIGHT'"
+    )
+    suspend fun claim(
+        source: String,
+        providerId: Long,
+        generation: Long,
+        leaseUntil: Long,
+        now: Long
+    ): Int
+
+    /**
+     * Is this worker still the owner of the generation it claimed?
+     *
+     * Checked immediately before a destructive mutation so that a read which has
+     * been superseded by a newer provider event cannot delete a row.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM provider_repair_queue WHERE source = :source " +
+            "AND providerId = :providerId AND generation = :generation " +
+            "AND state = 'IN_FLIGHT'"
+    )
+    suspend fun stillOwned(source: String, providerId: Long, generation: Long): Int
+
+    /** Success: the work is DONE. Scoped to the claimed generation. */
+    @Query(
+        "DELETE FROM provider_repair_queue WHERE source = :source " +
+            "AND providerId = :providerId AND generation = :generation"
+    )
+    suspend fun ack(source: String, providerId: Long, generation: Long): Int
+
+    /** Failure: keep the work, schedule a capped retry. Never dropped. */
+    @Query(
+        "UPDATE provider_repair_queue SET state = 'BACKOFF', attempts = attempts + 1, " +
+            "nextRetryAt = :nextRetryAt, leaseUntil = 0, lastFailureReason = :reason, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation"
+    )
+    suspend fun nack(
+        source: String,
+        providerId: Long,
+        generation: Long,
+        nextRetryAt: Long,
+        reason: String,
+        now: Long
+    ): Int
+
+    /**
+     * Crash recovery: a lease that expired means the owner died. The row goes
+     * back to PENDING and becomes due immediately.
+     *
+     * Never touches the generation: the work itself is still the newest known
+     * work for that identity.
+     */
+    @Query(
+        "UPDATE provider_repair_queue SET state = 'PENDING', nextRetryAt = 0, " +
+            "leaseUntil = 0, updatedAt = :now " +
+            "WHERE state = 'IN_FLIGHT' AND leaseUntil <= :now"
+    )
+    suspend fun reclaimExpiredLeases(now: Long): Int
+
+    /** Diagnostics: bounded snapshot, never used for a correctness decision. */
+    @Query("SELECT * FROM provider_repair_queue ORDER BY nextRetryAt ASC LIMIT :limit")
+    suspend fun snapshot(limit: Int): List<ProviderRepairEntity>
+
+    @Query("SELECT COALESCE(SUM(attempts), 0) FROM provider_repair_queue")
+    suspend fun totalAttempts(): Int
+}
+
     suspend fun touchReconcile(source: String, now: Long)
 }
 

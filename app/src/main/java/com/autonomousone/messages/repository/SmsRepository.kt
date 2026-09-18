@@ -8,8 +8,10 @@ import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.data.LocalProviderWrites
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.data.ProviderExistence
 import com.autonomousone.messages.data.ProviderRead
 import com.autonomousone.messages.data.map
+import com.autonomousone.messages.data.mmsSecondaryFailure
 import com.autonomousone.messages.repository.ContactRepository
 
 /**
@@ -360,7 +362,7 @@ class SmsRepository(
 
     // ── strict MMS reads ───────────────────────────────────────────────────
 
-    private data class MmsRow(
+    internal data class MmsRow(
         val id: Long,
         val threadId: Long,
         val date: Long,
@@ -384,7 +386,18 @@ class SmsRepository(
         }
     }
 
-    /** Strict paged MMS read (see [readSmsStrict] for the contract). */
+    /**
+     * Strict paged MMS read (see [readSmsStrict] for the contract).
+     *
+     * STRICT applies to the secondary tables too. This used to route through the
+     * forgiving `mmsRowsToSms`, so a failed Addr/Part lookup silently produced a
+     * row whose body was the literal "[MMS]" and whose sender was "Unknown" —
+     * and the sync layer then wrote that placeholder OVER the good Room row.
+     * Authoritative callers now get a Failure instead, which keeps Room intact
+     * and schedules a retry.
+     *
+     * Rendering-only callers keep the forgiving [queryMmsRaw].
+     */
     fun readMmsStrict(
         selection: String?,
         selectionArgs: Array<String>?,
@@ -392,15 +405,58 @@ class SmsRepository(
         limit: Int = Int.MAX_VALUE,
         offset: Int = 0
     ): ProviderRead<List<Sms>> =
-        readMmsRowsStrict(selection, selectionArgs, sortOrder, limit, offset).map { mmsRowsToSms(it) }
+        when (val rows = readMmsRowsStrict(selection, selectionArgs, sortOrder, limit, offset)) {
+            is ProviderRead.Failure -> rows
+            is ProviderRead.Success -> {
+                val ids = rows.value.map { it.id }
+                mmsRowsToSmsStrict(
+                    rows.value,
+                    loadMmsAddressesStrict(ids),
+                    loadMmsBodiesStrict(ids)
+                )
+            }
+        }
 
-    /** Exact MMS row read for a destructive decision. */
-    fun readMmsExactStrict(id: Long): ProviderRead<Sms?> = readMmsStrict(
+    /**
+     * Is this MMS row really there? ONE provider query, no secondary tables.
+     *
+     * Deliberately does NOT touch Addr/Part: a body or address lookup failure
+     * says nothing about whether the message exists, and must never be mistaken
+     * for absence.
+     */
+    fun readMmsExistenceStrict(id: Long): ProviderRead<ProviderExistence> =
+        when (val rows = readMmsRowsStrict(
+            selection = Telephony.Mms._ID + " = ?",
+            selectionArgs = arrayOf(id.toString()),
+            sortOrder = Telephony.Mms.DATE + " DESC",
+            limit = 1,
+            offset = 0
+        )) {
+            is ProviderRead.Failure -> rows
+            is ProviderRead.Success ->
+                ProviderRead.Success(
+                    if (rows.value.isEmpty()) ProviderExistence.Absent else ProviderExistence.Exists
+                )
+        }
+
+    /**
+     * The full MMS row for an AUTHORITATIVE Room write.
+     *
+     * Success(row) -> base row plus a successfully read address and body.
+     * Success(null) -> the base read proved the row is gone.
+     * Failure      -> the base row OR a secondary table failed. The caller must
+     *                 keep the existing Room row and retry; it must never write
+     *                 a placeholder.
+     */
+    fun readMmsMaterializedStrict(id: Long): ProviderRead<Sms?> = readMmsStrict(
         selection = Telephony.Mms._ID + " = ?",
         selectionArgs = arrayOf(id.toString()),
         sortOrder = Telephony.Mms.DATE + " DESC",
         limit = 1
     ).map { it.firstOrNull() }
+
+    /** Exact MMS row read for a destructive decision (see [readMmsMaterializedStrict]). */
+    fun readMmsExactStrict(id: Long): ProviderRead<Sms?> = readMmsMaterializedStrict(id)
 
     /** Strict bounded thread read for MMS. */
     fun queryMmsThreadStrict(threadId: Long, limit: Int): ProviderRead<List<Sms>> = readMmsStrict(
@@ -455,25 +511,65 @@ class SmsRepository(
         classifyFailure(e)
     }
 
-    /** The single MMS -> UI mapping, shared by the forgiving and strict readers. */
+    /** The forgiving MMS -> UI mapping, used only by the rendering path. */
     private fun mmsRowsToSms(rows: List<MmsRow>): List<Sms> {
         if (rows.isEmpty()) return emptyList()
         val addressMap = loadMmsAddresses(rows.map { it.id })
         val bodyMap = loadMmsBodies(rows.map { it.id })
-        return rows.map { r ->
-            Sms(
-                id = -r.id,
-                threadId = r.threadId,
-                sender = (addressMap[r.id] ?: "").let {
-                    if (it.isBlank() || it.equals("insert-address-token", true)) "" else it
-                }.ifBlank { phoneFallbackForThread(r.threadId) },
-                message = bodyMap[r.id] ?: r.subject?.takeIf { s -> s.isNotBlank() } ?: "[MMS]",
-                date = r.date,
-                unread = r.read == 0,
-                type = if (r.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
-            )
-        }
+        return rows.map { mmsRowToSms(it, addressMap, bodyMap) }
     }
+
+    /**
+     * Strict MMS materialization: BOTH secondary reads must have succeeded.
+     *
+     * This is the whole point of the existence/materialization split. It used to
+     * be impossible to distinguish "the provider answered and this message has
+     * no text body" (where "[MMS]" is a legitimate rendering choice) from "the
+     * Part table could not be read" (where "[MMS]" is a lie that then OVERWRITES
+     * the good body already in Room).
+     *
+     * Pure and Android-free: the caller passes the already-completed secondary
+     * results, so the invariant is unit-testable without a device.
+     */
+    internal fun mmsRowsToSmsStrict(
+        rows: List<MmsRow>,
+        addressResult: ProviderRead<Map<Long, String>>,
+        bodyResult: ProviderRead<Map<Long, String>>
+    ): ProviderRead<List<Sms>> {
+        // A failure in EITHER secondary table wins over everything else: the
+        // caller must keep the existing Room row rather than write a placeholder.
+        val failure = mmsSecondaryFailure(addressResult, bodyResult)
+        if (failure != null) return failure
+        if (rows.isEmpty()) return ProviderRead.Success(emptyList())
+        // Both succeeded (mmsSecondaryFailure returns null only in that case).
+        val addresses = (addressResult as ProviderRead.Success).value
+        val bodies = (bodyResult as ProviderRead.Success).value
+        // A successful EMPTY map is real data: no address/body to show, and the
+        // mapping below is then allowed to fall back to its placeholders.
+        return ProviderRead.Success(rows.map { mmsRowToSms(it, addresses, bodies) })
+    }
+
+    /**
+     * ONE MMS row -> UI row mapping, shared by every reader.
+     *
+     * Reached only when the caller either succeeded at BOTH secondary reads
+     * (authoritative) or explicitly chose the forgiving path (rendering).
+     */
+    private fun mmsRowToSms(
+        r: MmsRow,
+        addressMap: Map<Long, String>,
+        bodyMap: Map<Long, String>
+    ): Sms = Sms(
+        id = -r.id,
+        threadId = r.threadId,
+        sender = (addressMap[r.id] ?: "").let {
+            if (it.isBlank() || it.equals("insert-address-token", true)) "" else it
+        }.ifBlank { phoneFallbackForThread(r.threadId) },
+        message = bodyMap[r.id] ?: r.subject?.takeIf { s -> s.isNotBlank() } ?: "[MMS]",
+        date = r.date,
+        unread = r.read == 0,
+        type = if (r.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
+    )
 
     private fun phoneFallbackForThread(threadId: Long): String =
         resolveSmsAddressForThread(threadId).ifBlank { "Unknown" }
@@ -963,52 +1059,78 @@ class SmsRepository(
     /**
      * Bulk-resolve counterpart phone numbers for a set of MMS ids from the Addr
      * table. Prefers the FROM address (TYPE 137) and falls back to TO (151).
+     *
+     * Forgiving facade for RENDERING paths only: a failed query degrades to an
+     * empty map. Authoritative writers use [loadMmsAddressesStrict], which keeps
+     * failure and "genuinely empty" apart. Both share [parseMmsAddresses] so the
+     * two can never disagree about what the provider data means.
      */
-    private fun loadMmsAddresses(msgIds: List<Long>): Map<Long, String> {
-        val result = mutableMapOf<Long, String>()
-        if (msgIds.isEmpty()) return result
-        try {
-            val projection = arrayOf(
-                Telephony.Mms.Addr.MSG_ID,
-                Telephony.Mms.Addr.ADDRESS,
-                Telephony.Mms.Addr.TYPE
-            )
-            context.contentResolver.query(
+    private fun loadMmsAddresses(msgIds: List<Long>): Map<Long, String> =
+        when (val read = loadMmsAddressesStrict(msgIds)) {
+            is ProviderRead.Success -> read.value
+            is ProviderRead.Failure -> {
+                Log.e("SMS_DEBUG", "Error loading MMS addresses: " + read.reason, read.cause)
+                emptyMap()
+            }
+        }
+
+    /**
+     * Strict Addr read.
+     *
+     * Success(map) is the provider ANSWERING — an empty map is real data for a
+     * message that genuinely has no usable address. A null cursor or an
+     * exception is Failure: UNKNOWN, never "no address".
+     */
+    private fun loadMmsAddressesStrict(msgIds: List<Long>): ProviderRead<Map<Long, String>> {
+        if (msgIds.isEmpty()) return ProviderRead.Success(emptyMap())
+        return try {
+            val selection = Telephony.Mms.Addr.MSG_ID + " IN (" + msgIds.joinToString(",") + ")"
+            val cursor = context.contentResolver.query(
                 Uri.parse("content://mms/addr"),
-                projection,
-                "${Telephony.Mms.Addr.MSG_ID} IN (${msgIds.joinToString(",")})",
+                arrayOf(
+                    Telephony.Mms.Addr.MSG_ID,
+                    Telephony.Mms.Addr.ADDRESS,
+                    Telephony.Mms.Addr.TYPE
+                ),
+                selection,
                 null,
                 null
-            )?.use { cursor ->
-                val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.MSG_ID)
-                val addrIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.ADDRESS)
-                val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.TYPE)
-                val from = mutableMapOf<Long, String>()
-                val to = mutableMapOf<Long, String>()
-                val other = mutableMapOf<Long, String>()
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(msgIdIndex)
-                    var addr = cursor.getString(addrIndex)?.trim() ?: ""
-                    if (addr.isBlank()) continue
-                    // Skip the placeholder token some stacks store for the FROM
-                    // address, and strip stray '+' separators that make headers
-                    // render like "+98+991+716+6…".
-                    if (addr.equals("insert-address-token", ignoreCase = true)) continue
-                    addr = ContactRepository.normalizePhone(addr)
-                    when (cursor.getInt(typeIndex)) {
-                        137 -> if (!from.containsKey(id)) from[id] = addr
-                        151 -> if (!to.containsKey(id)) to[id] = addr
-                        else -> if (!other.containsKey(id)) other[id] = addr
-                    }
-                }
-                val allIds = (from.keys + to.keys + other.keys).distinct()
-                for (id in allIds) {
-                    val addr = from[id] ?: to[id] ?: other[id] ?: ""
-                    if (addr.isNotBlank()) result[id] = addr
-                }
-            }
+            ) ?: return ProviderRead.Failure(ProviderRead.Reason.QUERY_RETURNED_NULL)
+            ProviderRead.Success(cursor.use { parseMmsAddresses(it) })
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error loading MMS addresses", e)
+            Log.e("SMS_DEBUG", "loadMmsAddressesStrict failed", e)
+            classifyFailure(e)
+        }
+    }
+
+    /** The single Addr parser. Pure cursor -> map, no provider access. */
+    private fun parseMmsAddresses(cursor: android.database.Cursor): Map<Long, String> {
+        val result = mutableMapOf<Long, String>()
+        val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.MSG_ID)
+        val addrIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.ADDRESS)
+        val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Addr.TYPE)
+        val from = mutableMapOf<Long, String>()
+        val to = mutableMapOf<Long, String>()
+        val other = mutableMapOf<Long, String>()
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(msgIdIndex)
+            var addr = cursor.getString(addrIndex)?.trim() ?: ""
+            if (addr.isBlank()) continue
+            // Skip the placeholder token some stacks store for the FROM
+            // address, and strip stray '+' separators that make headers
+            // render like "+98+991+716+6…".
+            if (addr.equals("insert-address-token", ignoreCase = true)) continue
+            addr = ContactRepository.normalizePhone(addr)
+            when (cursor.getInt(typeIndex)) {
+                137 -> if (!from.containsKey(id)) from[id] = addr
+                151 -> if (!to.containsKey(id)) to[id] = addr
+                else -> if (!other.containsKey(id)) other[id] = addr
+            }
+        }
+        val allIds = (from.keys + to.keys + other.keys).distinct()
+        for (id in allIds) {
+            val addr = from[id] ?: to[id] ?: other[id] ?: ""
+            if (addr.isNotBlank()) result[id] = addr
         }
         return result
     }
@@ -1016,52 +1138,80 @@ class SmsRepository(
     /**
      * Bulk-resolve the display body for a set of MMS ids from the Part table.
      * Prefers the text/plain part, then an attachment placeholder.
+     *
+     * Forgiving facade for RENDERING paths only. Authoritative writers use
+     * [loadMmsBodiesStrict]: treating a FAILED Part read the same as "this
+     * message has no text part" is exactly what let a local "[MMS]" placeholder
+     * overwrite the real body already stored in Room. Both share
+     * [parseMmsBodies] so the two can never disagree.
      */
-    private fun loadMmsBodies(msgIds: List<Long>): Map<Long, String> {
-        val result = mutableMapOf<Long, String>()
-        if (msgIds.isEmpty()) return result
-        try {
-            val projection = arrayOf(
-                Telephony.Mms.Part.MSG_ID,
-                Telephony.Mms.Part.CONTENT_TYPE,
-                Telephony.Mms.Part.TEXT
-            )
-            context.contentResolver.query(
-            Uri.parse("content://mms/part"),
-                projection,
-                "${Telephony.Mms.Part.MSG_ID} IN (${msgIds.joinToString(",")})",
+    private fun loadMmsBodies(msgIds: List<Long>): Map<Long, String> =
+        when (val read = loadMmsBodiesStrict(msgIds)) {
+            is ProviderRead.Success -> read.value
+            is ProviderRead.Failure -> {
+                Log.e("SMS_DEBUG", "Error loading MMS bodies: " + read.reason, read.cause)
+                emptyMap()
+            }
+        }
+
+    /**
+     * Strict Part read.
+     *
+     * Success(map) is the provider ANSWERING: an empty map means the message
+     * genuinely has no text/plain part (an image-only MMS), and the caller may
+     * still render "[MMS]" as a display choice. A null cursor or an exception is
+     * Failure, which must never be written to Room as if it were content.
+     */
+    private fun loadMmsBodiesStrict(msgIds: List<Long>): ProviderRead<Map<Long, String>> {
+        if (msgIds.isEmpty()) return ProviderRead.Success(emptyMap())
+        return try {
+            val selection = Telephony.Mms.Part.MSG_ID + " IN (" + msgIds.joinToString(",") + ")"
+            val cursor = context.contentResolver.query(
+                Uri.parse("content://mms/part"),
+                arrayOf(
+                    Telephony.Mms.Part.MSG_ID,
+                    Telephony.Mms.Part.CONTENT_TYPE,
+                    Telephony.Mms.Part.TEXT
+                ),
+                selection,
                 null,
                 null
-            )?.use { cursor ->
-                val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.MSG_ID)
-                val ctIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
-                val textIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.TEXT)
-                val text = mutableMapOf<Long, String>()
-                val attachments = mutableSetOf<Long>()
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(msgIdIndex)
-                    val ct = cursor.getString(ctIndex)?.lowercase() ?: ""
-                    when {
-                        ct == "text/plain" -> {
-                            val body = cursor.getString(textIndex)
-                            if (!body.isNullOrBlank() && !text.containsKey(id)) text[id] = body
-                        }
-                        ct.startsWith("image/") || ct.startsWith("audio/") || ct.startsWith("video/") -> {
-                            attachments.add(id)
-                        }
-                    }
+            ) ?: return ProviderRead.Failure(ProviderRead.Reason.QUERY_RETURNED_NULL)
+            ProviderRead.Success(cursor.use { parseMmsBodies(it) })
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "loadMmsBodiesStrict failed", e)
+            classifyFailure(e)
+        }
+    }
+
+    /** The single Part parser. Pure cursor -> map, no provider access. */
+    private fun parseMmsBodies(cursor: android.database.Cursor): Map<Long, String> {
+        val result = mutableMapOf<Long, String>()
+        val msgIdIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.MSG_ID)
+        val ctIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
+        val textIndex = cursor.getColumnIndexOrThrow(Telephony.Mms.Part.TEXT)
+        val text = mutableMapOf<Long, String>()
+        val attachments = mutableSetOf<Long>()
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(msgIdIndex)
+            val ct = cursor.getString(ctIndex)?.lowercase() ?: ""
+            when {
+                ct == "text/plain" -> {
+                    val body = cursor.getString(textIndex)
+                    if (!body.isNullOrBlank() && !text.containsKey(id)) text[id] = body
                 }
-                val allIds = (text.keys + attachments).distinct()
-                for (id in allIds) {
-                    val body = text[id]
-                    when {
-                        body != null -> result[id] = body
-                        id in attachments -> result[id] = "[MMS]"
-                    }
+                ct.startsWith("image/") || ct.startsWith("audio/") || ct.startsWith("video/") -> {
+                    attachments.add(id)
                 }
             }
-        } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error loading MMS bodies", e)
+        }
+        val allIds = (text.keys + attachments).distinct()
+        for (id in allIds) {
+            val body = text[id]
+            when {
+                body != null -> result[id] = body
+                id in attachments -> result[id] = "[MMS]"
+            }
         }
         return result
     }

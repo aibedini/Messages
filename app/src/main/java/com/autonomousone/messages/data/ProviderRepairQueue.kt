@@ -1,0 +1,139 @@
+package com.autonomousone.messages.data
+
+import android.content.Context
+
+/**
+ * Capped exponential retry schedule for exact provider repairs.
+ *
+ * Pure arithmetic, deliberately not part of the Room class, so the schedule is
+ * unit-testable without a database.
+ *
+ * There is a CAP and therefore no permanent abandonment: an exact provider
+ * identity is NEVER given up on merely because it failed N times. A transient
+ * provider outage (radio off, provider process restarting, no permission window)
+ * must not turn into "this message stays wrong forever".
+ */
+object ProviderRepairBackoff {
+
+    /** First retry: 1s. */
+    const val BASE_MS = 1_000L
+
+    /** Steady-state retry ceiling: 5 minutes, forever. */
+    const val MAX_MS = 5L * 60_000L
+
+    /**
+     * Delay after [attempts] consecutive failures (1-based).
+     *
+     * 1s, 2s, 4s, 8s ... capped at [MAX_MS]. Always finite, never zero, so a
+     * permanently broken provider cannot spin the scheduler.
+     */
+    fun delayMs(attempts: Int): Long {
+        val a = attempts.coerceAtLeast(1)
+        if (a >= 16) return MAX_MS
+        return (BASE_MS shl (a - 1)).coerceAtMost(MAX_MS)
+    }
+}
+
+/**
+ * Durable exact-repair queue.
+ *
+ * Replaces the in-process PendingExactRepairs map. The properties that matter,
+ * and the reason each one exists:
+ *
+ *  - DURABLE. Work is a Room row, so process death, an app update or a reboot
+ *    cannot drop it. The provider still holds the truth, but "the next observer
+ *    event will fix it" is not a guarantee: a row that changes while the app is
+ *    dead produces no event.
+ *  - SELF-DRIVEN. A timer wakes the queue; a provider burst merely nudges it
+ *    earlier. Retrying only on another provider event meant a failed read during
+ *    a quiet period was never retried.
+ *  - CLAIMED. [due] does not claim; [claim] does, and is generation-scoped. Two
+ *    workers cannot read the same identity at once.
+ *  - GENERATION-SCOPED. A new provider event for the same identity bumps the
+ *    generation, so an older in-flight read can neither consume newer work nor
+ *    (thanks to the ownership check in the drain loop) act on it.
+ *  - LEASED. An IN_FLIGHT row carries a lease; an expired lease is reclaimed at
+ *    startup, so a crash mid-read cannot strand work forever.
+ *  - UNCAPPED. No eviction, no capacity limit. Rate is bounded, state is not.
+ */
+class ProviderRepairQueue(context: Context) {
+
+    private val dao = MessagesDatabase.get(context).providerRepairDao()
+
+    companion object {
+        /** Long enough for one bounded provider read, short enough to recover fast. */
+        const val LEASE_MS = 30_000L
+
+        /** Bounded processing rate per drain; NOT a bound on stored work. */
+        const val MAX_CLAIM_PER_DRAIN = 16
+
+        /** Diagnostics snapshot bound. */
+        const val MAX_SNAPSHOT = 50
+    }
+
+    /**
+     * Records work for an exact identity, or bumps an existing entry's
+     * generation. Idempotent for repeated notifications of the SAME change.
+     */
+    suspend fun enqueue(source: String, providerId: Long, now: Long = System.currentTimeMillis()) {
+        if (source.isBlank() || providerId <= 0L) return
+        dao.enqueue(source, providerId, now)
+    }
+
+    /** Observations due for a retry. Non-claiming: see [claim]. */
+    suspend fun due(now: Long, limit: Int = MAX_CLAIM_PER_DRAIN): List<ProviderRepairEntity> =
+        dao.due(now, limit)
+
+    /** @return true only when THIS caller now owns the work. */
+    suspend fun claim(entry: ProviderRepairEntity, now: Long = System.currentTimeMillis()): Boolean =
+        dao.claim(entry.source, entry.providerId, entry.generation, now + LEASE_MS, now) == 1
+
+    /** True while this caller still owns the generation it claimed. */
+    suspend fun stillOwned(entry: ProviderRepairEntity): Boolean =
+        dao.stillOwned(entry.source, entry.providerId, entry.generation) > 0
+
+    /** Success: the work is done and leaves the queue. */
+    suspend fun ack(entry: ProviderRepairEntity): Boolean =
+        dao.ack(entry.source, entry.providerId, entry.generation) == 1
+
+    /** Failure: the work stays, with a capped backoff. It is never dropped. */
+    suspend fun nack(entry: ProviderRepairEntity, reason: String, now: Long = System.currentTimeMillis()) {
+        val attempts = entry.attempts + 1
+        dao.nack(
+            entry.source,
+            entry.providerId,
+            entry.generation,
+            now + ProviderRepairBackoff.delayMs(attempts),
+            reason,
+            now
+        )
+    }
+
+    suspend fun reclaimExpiredLeases(now: Long = System.currentTimeMillis()): Int =
+        dao.reclaimExpiredLeases(now)
+
+    /**
+     * When this queue could next have work.
+     *
+     * Considers BOTH the earliest pending retry and the earliest lease expiry, so
+     * a crashed owner is recovered even if nobody ever sends a nudge. Null means
+     * the queue is empty.
+     */
+    suspend fun nextWakeAt(): Long? {
+        val pending = dao.minPendingRetryAt()
+        val lease = dao.minLeaseUntil()
+        return when {
+            pending == null -> lease
+            lease == null -> pending
+            else -> minOf(pending, lease)
+        }
+    }
+
+    /** Number of identities currently carrying unresolved work. */
+    suspend fun depth(): Int = dao.count()
+
+    suspend fun totalAttempts(): Int = dao.totalAttempts()
+
+    /** Diagnostics only. */
+    suspend fun snapshot(limit: Int = MAX_SNAPSHOT): List<ProviderRepairEntity> = dao.snapshot(limit)
+}
