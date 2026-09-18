@@ -6,6 +6,8 @@ import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.repository.ProviderReadRepairRequester
 import com.autonomousone.messages.repository.ReadDiagnosticSink
 import com.autonomousone.messages.repository.ThreadReadProviderWriter
+import com.autonomousone.messages.repository.MarkReadProviderResult
+import com.autonomousone.messages.repository.SourceWriteResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,10 +53,14 @@ class MarkConversationReadUseCaseTest {
             threadId: Long,
             phone: String,
             sources: Set<ConversationReadSource>
-        ) {
+        ): MarkReadProviderResult {
             order += "provider:$threadId"
             calls += ProviderCall(threadId, phone, sources)
             if (fail) throw IllegalStateException("provider read update failed")
+            return MarkReadProviderResult(
+                sms = if (ConversationReadSource.SMS in sources) SourceWriteResult.Success(1) else SourceWriteResult.NotApplicable,
+                mms = if (ConversationReadSource.MMS in sources) SourceWriteResult.Success(1) else SourceWriteResult.NotApplicable
+            )
         }
     }
 
