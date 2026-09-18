@@ -1,44 +1,58 @@
 package com.autonomousone.messages.data
 
 /**
- * CLAIM / ACK / NACK accumulator for reconcile work.
+ * Reliable IN-PROCESS work accumulator for reconcile work, with
+ * CLAIM / ACK / NACK and explicit unit states.
  *
- * Two separate correctness properties live here.
+ * ## What this is NOT
+ *
+ * This accumulator is VOLATILE. It lives in memory only. It is deliberately NOT
+ * described as durable, and it must not be treated as a recovery mechanism:
+ *
+ *  - an exception / failed provider read while the process is alive  -> NACK,
+ *    the work stays known and is retried with backoff;
+ *  - PROCESS DEATH (low memory, force stop, crash, `kill -9`) -> this object is
+ *    GONE and everything it held is lost.
+ *
+ * Process-death recovery is a different problem and is NOT solved here: it
+ * depends on the durable Room sync state (sync_state watermarks,
+ * initialWindowReady, backfill cursor) plus the startup/provider reconciliation
+ * path. An earlier comment in this file wrongly claimed the accumulator survives
+ * process death; that claim was false and has been removed.
+ *
+ * ## Two correctness properties
  *
  * 1) Requests are NOT interchangeable, so they are merged by SEMANTIC UNION —
- *    never by last-value-wins. A conflated channel of typed requests silently
- *    dropped work:
- *
+ *    never last-writer-wins. A conflated channel of typed requests dropped work:
  *      ForThread(12), ForThread(99), TailDelta -> TailDelta
- *      startup FullSync, provider TailDelta    -> TailDelta
  *
- * 2) Receiving work is NOT the same as completing it. The previous
- *    drainSnapshot() REMOVED work before it ran, so
+ * 2) Receiving work is not completing it. Claimed units move to IN_FLIGHT and
+ *    are only cleared by an explicit ACK, so one failing unit cannot discard its
+ *    siblings and a transient failure is never a silent loss.
  *
- *      threads = [1..8] -> claim -> thread 2 throws -> the rest are gone
- *      FullSync + TailDelta -> claim -> FullSync throws -> both are gone
+ * ## Per-unit state
  *
- *    That is a silent data-loss bug. Work now moves PENDING -> IN_FLIGHT and is
- *    only cleared by an explicit ACK:
+ *   PENDING -> IN_FLIGHT -> (ACK | NACK)
+ *                            NACK -> BACKOFF -> PENDING  (retry)
+ *                                 |-> QUARANTINED       (thread repairs only)
  *
- *      claim(now) -> Claim
- *          fullSync   : ackFullSync(claim, success, now)
- *          tail       : ackTail(claim, success, now)
- *          thread(id) : ackThread(id, success, now)
- *
- *    Anything not ACKed (exception, process death before the ack) is still known
- *    to the accumulator and is retried after a bounded backoff.
- *
- * Pure by design (no coroutines, no Android) so all of this is unit-testable.
+ * FullSync and TailDelta are never permanently abandoned: they are global
+ * reconciliation and must keep retrying at a capped interval, staying observable
+ * as degraded. A provably poisonous THREAD repair is quarantined instead of
+ * retried forever — quarantine is observable, cannot starve healthy threads, and
+ * a new provider event for that thread RE-ARMS it.
  */
 class PendingReconciles(
     /** Thread repairs returned by one claim. Bounds a claim, never drops. */
     private val threadChunkSize: Int = 8,
-    /** Attempts before a failing unit is abandoned (observable, not retried). */
-    private val maxAttempts: Int = 5,
-    /** Bounded exponential backoff: 1s, 2s, 4s, 8s, 16s. */
-    private val backoffMs: (attempt: Int) -> Long = { a -> 1_000L shl (a - 1).coerceIn(0, 5) }
+    /** Attempts before a THREAD repair is quarantined. Global work is exempt. */
+    private val maxThreadAttempts: Int = 5,
+    /** Capped exponential backoff: 1s, 2s, 4s ... capped at 64s. */
+    private val backoffMs: (attempt: Int) -> Long = { a -> 1_000L shl (a - 1).coerceIn(0, 6) }
 ) {
+
+    /** Observable lifecycle of one unit of work. */
+    enum class UnitState { ABSENT, PENDING, IN_FLIGHT, BACKOFF, QUARANTINED }
 
     /** Work a consumer has taken responsibility for and must ack or nack. */
     data class Claim(
@@ -52,43 +66,47 @@ class PendingReconciles(
 
     private val lock = Any()
 
-    // ── pending (not yet claimed) ──
+    // ── global work (never abandoned) ──
     private var fullSync = false
-    private var fullSyncRetryAt = 0L
+    private var fullSyncInFlight = false
     private var fullSyncAttempts = 0
+    private var fullSyncRetryAt = 0L
 
     private var tailDelta = false
-    private var tailEpoch = 0L
-    private var tailRetryAt = 0L
-    private var tailAttempts = 0
-
-    private val pendingThreads = LinkedHashSet<Long>()
-
-    // ── in flight (claimed, awaiting ack) ──
-    private var fullSyncInFlight = false
     private var tailInFlight = false
-    private val inFlightThreads = LinkedHashSet<Long>()
+    private var tailEpoch = 0L
+    private var tailAttempts = 0
+    private var tailRetryAt = 0L
 
+    // ── thread repairs ──
+    private val pendingThreads = LinkedHashSet<Long>()
+    private val inFlightThreads = LinkedHashSet<Long>()
+    private val quarantinedThreads = LinkedHashSet<Long>()
     private val threadAttempts = HashMap<Long, Int>()
     private val threadRetryAt = HashMap<Long, Long>()
-
-    /** Units abandoned after [maxAttempts]; observable so it is never silent. */
-    private val abandoned = LinkedHashSet<String>()
-    private val abandonedThreads = LinkedHashSet<Long>()
 
     fun add(request: ReconcileRequest) {
         synchronized(lock) {
             when (request) {
                 is ReconcileRequest.FullSync -> fullSync = true
                 is ReconcileRequest.TailDelta -> {
-                    // A NEW tail gets a new epoch: a tail that arrives while a
-                    // full sync is executing must not be treated as covered by it.
+                    // A NEW tail gets a new epoch: a tail arriving while a full
+                    // sync executes must not be treated as covered by it.
                     tailDelta = true
                     tailEpoch++
                 }
                 is ReconcileRequest.ForThread -> {
                     val id = request.threadId
-                    if (id > 0L && id !in abandonedThreads && id !in inFlightThreads) {
+                    if (id <= 0L) return
+                    // A fresh provider event RE-ARMS a quarantined thread: the
+                    // world changed, so the old failure history is no longer a
+                    // reason to stay silent about it.
+                    if (quarantinedThreads.remove(id)) {
+                        threadAttempts.remove(id)
+                        threadRetryAt.remove(id)
+                    }
+                    if (id !in inFlightThreads) {
+                        threadRetryAt.remove(id)
                         pendingThreads.add(id)
                     }
                 }
@@ -97,11 +115,8 @@ class PendingReconciles(
     }
 
     /**
-     * Claims the work that is due at [now].
-     *
-     * Claimed units are held IN_FLIGHT and will not be claimed again until they
-     * are acked/nacked, so a second claim cannot duplicate work in progress and a
-     * failure cannot drop it.
+     * Claims the work that is due at [now]. Claimed units are held IN_FLIGHT and
+     * are not handed out again until acked/nacked.
      */
     fun claim(now: Long): Claim? = synchronized(lock) {
         val claimFull = fullSync && !fullSyncInFlight && fullSyncRetryAt <= now
@@ -125,11 +140,8 @@ class PendingReconciles(
     }
 
     /**
-     * ACK/NACK the full sync.
-     *
-     * A claimed tail is only acknowledged when the full sync SUCCEEDED and no
-     * newer tail arrived meanwhile. On failure both the full sync and the tail
-     * return to pending — nothing is consumed before success is proven.
+     * ACK/NACK the full sync. A claimed tail is only consumed when the full sync
+     * SUCCEEDED; on failure BOTH go back to retry.
      */
     fun ackFullSync(claim: Claim, success: Boolean, now: Long) {
         synchronized(lock) {
@@ -141,27 +153,16 @@ class PendingReconciles(
                 fullSyncRetryAt = 0L
                 claim.tailEpoch?.let { ackTailLocked(it, true, now) }
             } else {
-                nackFullSyncLocked(now)
-                // The tail was NOT covered: requeue it too.
+                fullSyncAttempts++
+                // Never abandoned: global reconciliation keeps retrying at a
+                // capped interval and stays observable as degraded.
+                fullSyncRetryAt = now + backoffMs(fullSyncAttempts)
                 claim.tailEpoch?.let { ackTailLocked(it, false, now) }
             }
         }
     }
 
-    private fun nackFullSyncLocked(now: Long) {
-        val attempt = fullSyncAttempts + 1
-        if (attempt >= maxAttempts) {
-            abandoned += "fullsync"
-            fullSync = false
-            fullSyncAttempts = 0
-            fullSyncRetryAt = 0L
-        } else {
-            fullSyncAttempts = attempt
-            fullSyncRetryAt = now + backoffMs(attempt)
-        }
-    }
-
-    /** ACK/NACK a claimed tail (only needed when no full sync was in the claim). */
+    /** ACK/NACK a claimed tail (when no full sync was in the same claim). */
     fun ackTail(claim: Claim, success: Boolean, now: Long) {
         synchronized(lock) { claim.tailEpoch?.let { ackTailLocked(it, success, now) } }
     }
@@ -178,25 +179,17 @@ class PendingReconciles(
             }
             return
         }
-        val attempt = tailAttempts + 1
-        if (attempt >= maxAttempts) {
-            abandoned += "taildelta"
-            tailDelta = false
-            tailAttempts = 0
-            tailRetryAt = 0L
-        } else {
-            tailAttempts = attempt
-            tailRetryAt = now + backoffMs(attempt)
-        }
+        tailAttempts++
+        tailRetryAt = now + backoffMs(tailAttempts) // capped, never abandoned
     }
 
     /**
      * ACK/NACK one thread repair.
      *
-     * A failing thread is REQUEUED with backoff; after [maxAttempts] it is
-     * abandoned so one poison thread can never starve the others. The remaining
-     * ids of the same claim are unaffected — the consumer acks each id
-     * individually.
+     * A failing thread is requeued with backoff; after [maxThreadAttempts] it is
+     * QUARANTINED (not deleted). Quarantine is observable, never blocks the
+     * remaining ids of the same claim, and is re-armed by the next provider event
+     * for that thread.
      */
     fun ackThread(threadId: Long, success: Boolean, now: Long) {
         if (threadId <= 0L) return
@@ -208,8 +201,8 @@ class PendingReconciles(
                 return
             }
             val attempt = (threadAttempts[threadId] ?: 0) + 1
-            if (attempt >= maxAttempts) {
-                abandonedThreads.add(threadId)
+            if (attempt >= maxThreadAttempts) {
+                quarantinedThreads.add(threadId)
                 threadAttempts.remove(threadId)
                 threadRetryAt.remove(threadId)
                 return
@@ -220,21 +213,22 @@ class PendingReconciles(
         }
     }
 
-    /** True when anything is pending or in flight (including backoff). */
+    /** True when anything is pending, in flight, or in backoff. */
     fun hasWork(): Boolean = synchronized(lock) {
-        fullSync || tailDelta || pendingThreads.isNotEmpty() || inFlightThreads.isNotEmpty() ||
-            fullSyncInFlight || tailInFlight
+        fullSync || tailDelta || pendingThreads.isNotEmpty() ||
+            inFlightThreads.isNotEmpty() || fullSyncInFlight || tailInFlight
     }
 
     /**
      * Milliseconds until the earliest scheduled retry, or 0 when there is no
-     * pending work at all (the consumer then waits for the next nudge). Prevents
-     * both a busy retry loop and a stranded backoff.
+     * scheduled retry at all. A caller must use this to ARM A TIMER, never to
+     * sleep: parking the only consumer here would let a poison thread delay
+     * unrelated realtime work by the whole backoff window.
      */
     fun nextWakeUpInMs(now: Long): Long = synchronized(lock) {
         var earliest = Long.MAX_VALUE
-        if (fullSync) earliest = minOf(earliest, fullSyncRetryAt)
-        if (tailDelta) earliest = minOf(earliest, tailRetryAt)
+        if (fullSync && !fullSyncInFlight) earliest = minOf(earliest, fullSyncRetryAt)
+        if (tailDelta && !tailInFlight) earliest = minOf(earliest, tailRetryAt)
         pendingThreads.forEach { earliest = minOf(earliest, threadRetryAt[it] ?: 0L) }
         if (earliest == Long.MAX_VALUE) return 0L
         (earliest - now).coerceAtLeast(1L)
@@ -242,11 +236,37 @@ class PendingReconciles(
 
     // ── observability ──
 
+    fun fullSyncState(now: Long): UnitState = synchronized(lock) {
+        when {
+            fullSyncInFlight -> UnitState.IN_FLIGHT
+            !fullSync -> UnitState.ABSENT
+            fullSyncRetryAt > now -> UnitState.BACKOFF
+            else -> UnitState.PENDING
+        }
+    }
+
+    fun tailState(now: Long): UnitState = synchronized(lock) {
+        when {
+            tailInFlight -> UnitState.IN_FLIGHT
+            !tailDelta -> UnitState.ABSENT
+            tailRetryAt > now -> UnitState.BACKOFF
+            else -> UnitState.PENDING
+        }
+    }
+
+    fun threadState(threadId: Long, now: Long): UnitState = synchronized(lock) {
+        when {
+            threadId in inFlightThreads -> UnitState.IN_FLIGHT
+            threadId in quarantinedThreads -> UnitState.QUARANTINED
+            threadId !in pendingThreads -> UnitState.ABSENT
+            (threadRetryAt[threadId] ?: 0L) > now -> UnitState.BACKOFF
+            else -> UnitState.PENDING
+        }
+    }
+
     internal fun pendingThreadCount(): Int = synchronized(lock) { pendingThreads.size }
 
     internal fun inFlightThreadCount(): Int = synchronized(lock) { inFlightThreads.size }
 
-    internal fun abandonedThreadIds(): Set<Long> = synchronized(lock) { abandonedThreads.toSet() }
-
-    internal fun abandonedKinds(): Set<String> = synchronized(lock) { abandoned.toSet() }
+    fun quarantinedThreadIds(): Set<Long> = synchronized(lock) { quarantinedThreads.toSet() }
 }

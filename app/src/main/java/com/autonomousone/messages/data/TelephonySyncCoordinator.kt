@@ -225,6 +225,27 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      *  - a claimed tail is only consumed when the full sync that covered it
      *    actually SUCCEEDED.
      */
+    /** Single retry timer; re-armed after every drain. Never the consumer itself. */
+    private var retryTimer: kotlinx.coroutines.Job? = null
+
+    /**
+     * Arms (or re-arms) the wake-up timer for the earliest scheduled retry.
+     *
+     * Cancelled and recomputed after every drain, so the timer always reflects
+     * the current retry schedule. It only nudges the conflated channel; it never
+     * executes work itself.
+     */
+    private fun armRetryTimer() {
+        retryTimer?.cancel()
+        retryTimer = null
+        val waitMs = pendingReconciles.nextWakeUpInMs(System.currentTimeMillis())
+        if (waitMs <= 0L) return
+        retryTimer = syncScope.launch {
+            kotlinx.coroutines.delay(waitMs)
+            reconcileNudge.trySend(Unit)
+        }
+    }
+
     private suspend fun drainReconcileWork() {
         while (true) {
             val claim = pendingReconciles.claim(System.currentTimeMillis()) ?: break
@@ -262,9 +283,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
         }
 
-        val abandoned = pendingReconciles.abandonedThreadIds()
-        if (abandoned.isNotEmpty()) {
-            Log.w(TAG, "reconcile_abandoned threads=" + abandoned.size)
+        // Quarantine is observable, never silent: quarantined thread repairs are
+        // not retried every cycle (so they cannot starve healthy threads) and are
+        // re-armed by the next provider event for the same thread.
+        val quarantined = pendingReconciles.quarantinedThreadIds()
+        if (quarantined.isNotEmpty()) {
+            Log.w(TAG, "reconcile_quarantined threads=" + quarantined.size)
         }
     }
 
@@ -362,13 +386,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // arrives WHILE we execute is picked up in the same nudge.
             for (nudge in reconcileNudge) {
                 drainReconcileWork()
-                // Anything still pending is inside its retry backoff. Wake up
-                // when it is due instead of spinning.
-                val waitMs = pendingReconciles.nextWakeUpInMs(System.currentTimeMillis())
-                if (waitMs > 0) {
-                    kotlinx.coroutines.delay(waitMs)
-                    reconcileNudge.trySend(Unit)
-                }
+                // Arm a SEPARATE timer for the next scheduled retry.
+                //
+                // The consumer must NEVER park on the retry backoff: it is the
+                // only consumer, so sleeping here would delay unrelated realtime
+                // work (a new SMS, a TailDelta, another ForThread, a FullSync) by
+                // the whole backoff window of a poison thread. reconcile() always
+                // sends an immediate nudge, so that work is processed at once
+                // while the timer waits independently.
+                armRetryTimer()
             }
         }
     }
