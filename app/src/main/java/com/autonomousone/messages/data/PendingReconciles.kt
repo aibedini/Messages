@@ -106,12 +106,18 @@ class PendingReconciles(
         synchronized(lock) {
             when (request) {
                 is ReconcileRequest.FullSync -> {
+                    // A NEW generation is immediately claimable: it must not
+                    // inherit the previous generation's backoff.
                     fullSync = true
                     fullSyncEpoch++
+                    fullSyncAttempts = 0
+                    fullSyncRetryAt = 0L
                 }
                 is ReconcileRequest.TailDelta -> {
                     tailDelta = true
                     tailEpoch++
+                    tailAttempts = 0
+                    tailRetryAt = 0L
                 }
                 is ReconcileRequest.ForThread -> {
                     val id = request.threadId
@@ -177,9 +183,13 @@ class PendingReconciles(
                     fullSyncRetryAt = 0L
                 }
                 claim.tailEpoch?.let { ackTailLocked(it, true, now) }
-            } else {
+            } else if (fullSyncEpoch == claimed) {
                 fullSyncAttempts++
                 fullSyncRetryAt = now + backoffMs(fullSyncAttempts) // capped, never abandoned
+                claim.tailEpoch?.let { ackTailLocked(it, false, now) }
+            } else {
+                // A newer FullSync arrived while this one ran. Its failure must
+                // not delay the newer generation: leave it immediately pending.
                 claim.tailEpoch?.let { ackTailLocked(it, false, now) }
             }
         }
@@ -199,6 +209,11 @@ class PendingReconciles(
                 tailAttempts = 0
                 tailRetryAt = 0L
             }
+            return
+        }
+        if (tailEpoch != epoch) {
+            // A newer tail arrived while this one ran: it is immediately pending
+            // and must not be pushed into the failed generation's backoff.
             return
         }
         tailAttempts++
@@ -233,6 +248,15 @@ class PendingReconciles(
                 return
             }
 
+            if (current > claimed.epoch) {
+                // A newer event for this thread arrived while the old claim ran.
+                // Retry the NEW generation immediately; do not apply the old
+                // generation's backoff to it.
+                threadAttempts.remove(threadId)
+                threadRetryAt.remove(threadId)
+                pendingThreads.add(threadId)
+                return
+            }
             val attempt = (threadAttempts[threadId] ?: 0) + 1
             if (attempt >= maxThreadAttempts) {
                 quarantinedThreads.add(threadId)

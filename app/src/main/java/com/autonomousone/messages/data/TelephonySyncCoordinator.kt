@@ -91,7 +91,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     private val reconcileNudge = Channel<Unit>(Channel.CONFLATED)
 
-    /** Durable-in-process accumulator for reconcile work. */
+    /**
+     * In-process reliable reconcile accumulator.
+     *
+     * NOT durable: it is volatile and does not survive Android process death.
+     * Process-death recovery depends on durable Room sync_state, not on this.
+     */
     private val pendingReconciles = PendingReconciles()
 
     /**

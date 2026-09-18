@@ -80,6 +80,10 @@ object ChangeRouter {
     fun route(context: Context, batch: ProviderChangeBatch) {
         val coordinator = TelephonySyncCoordinator.get(context)
 
+        // A provider burst proves the provider is reachable again: this is the
+        // right moment to retry exact reads that previously failed.
+        retryPendingExactReads(context)
+
         // A self-write token narrows an unidentifiable burst to the thread we
         // wrote. NON-CONSUMING: one mark-read legitimately causes several
         // provider callbacks and every one of them must see the token.
@@ -109,32 +113,87 @@ object ChangeRouter {
     ) {
         scope.launch {
             val repo = SmsRepository(context)
-            for (id in smsIds) {
-                val fresh = repo.querySmsRaw(
-                    selection = Telephony.Sms._ID + " = ?",
-                    selectionArgs = arrayOf(id.toString()),
-                    sortOrder = Telephony.Sms.DATE + " DESC",
-                    limit = 1
-                ).firstOrNull()
-                if (fresh != null) {
-                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, fresh))
+            for (id in smsIds) applyExactSms(repo, coordinator, id)
+            for (id in mmsIds) applyExactMms(repo, coordinator, id)
+        }
+    }
+
+    /**
+     * Re-attempts exact reads that previously FAILED.
+     *
+     * Called from [route] on every provider burst: a burst is exactly the moment
+     * the provider is demonstrably reachable again. Cheap no-op when nothing is
+     * pending. Never fabricates absence.
+     */
+    fun retryPendingExactReads(context: Context) {
+        val due = PendingExactRepairs.due(System.currentTimeMillis())
+        if (due.isEmpty()) return
+        scope.launch {
+            val repo = SmsRepository(context)
+            val coordinator = TelephonySyncCoordinator.get(context)
+            due.forEach { entry ->
+                when (entry.source) {
+                    PendingExactRepairs.Source.SMS -> applyExactSms(repo, coordinator, entry.providerId)
+                    PendingExactRepairs.Source.MMS -> applyExactMms(repo, coordinator, entry.providerId)
+                }
+            }
+        }
+    }
+
+    /**
+     * Exact SMS decision. A DELETE is only ever issued from a SUCCESSFUL read
+     * that proves absence; a failed read keeps the identity for retry.
+     */
+    private fun applyExactSms(
+        repo: SmsRepository,
+        coordinator: TelephonySyncCoordinator,
+        id: Long
+    ) {
+        when (val read = repo.readSmsExactStrict(id)) {
+            is ProviderRead.Success -> {
+                PendingExactRepairs.clear(PendingExactRepairs.Source.SMS, id)
+                val row = read.value
+                if (row != null) {
+                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
                 } else {
-                    // Row was deleted externally.
+                    // PROVEN absence: the provider answered and has no such row.
                     coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
                 }
             }
-            for (id in mmsIds) {
-                val fresh = repo.queryMmsRaw(
-                    selection = Telephony.Mms._ID + " = ?",
-                    selectionArgs = arrayOf(id.toString()),
-                    sortOrder = Telephony.Mms.DATE + " DESC",
-                    limit = 1
-                ).firstOrNull()
-                if (fresh != null) {
-                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_MMS, fresh))
+            is ProviderRead.Failure -> {
+                Log.w(
+                    TAG,
+                    "exact SMS read failed id=" + id + " reason=" + read.reason +
+                        " -> keeping Room row, retry scheduled"
+                )
+                PendingExactRepairs.note(PendingExactRepairs.Source.SMS, id, System.currentTimeMillis())
+            }
+        }
+    }
+
+    /** Exact MMS decision. Same contract as [applyExactSms]. */
+    private fun applyExactMms(
+        repo: SmsRepository,
+        coordinator: TelephonySyncCoordinator,
+        id: Long
+    ) {
+        when (val read = repo.readMmsExactStrict(id)) {
+            is ProviderRead.Success -> {
+                PendingExactRepairs.clear(PendingExactRepairs.Source.MMS, id)
+                val row = read.value
+                if (row != null) {
+                    coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row))
                 } else {
                     coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
                 }
+            }
+            is ProviderRead.Failure -> {
+                Log.w(
+                    TAG,
+                    "exact MMS read failed id=" + id + " reason=" + read.reason +
+                        " -> keeping Room row, retry scheduled"
+                )
+                PendingExactRepairs.note(PendingExactRepairs.Source.MMS, id, System.currentTimeMillis())
             }
         }
     }

@@ -330,4 +330,82 @@ class PendingReconcilesTest {
         p.ackThread(p.claim(1000)!!.threads.single(), false, 1000)
         assertTrue(p.nextWakeUpInMs(1000) > 0L)
     }
+
+    // ── generation-scoped backoff: a new generation never inherits it ───────
+
+    @Test
+    fun `a new tail generation is immediately claimable despite old backoff`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.TailDelta)
+        var now = 1_000_000L
+        p.ackTail(p.claim(now)!!, false, now)
+        assertEquals(UnitState.BACKOFF, p.tailState(now))
+
+        // A NEW provider event arrives while the old generation is in backoff.
+        p.add(ReconcileRequest.TailDelta)
+
+        assertEquals(
+            "the new generation must not inherit the old failure's backoff",
+            UnitState.PENDING,
+            p.tailState(now)
+        )
+        assertNotNull("and it is immediately claimable", p.claim(now))
+    }
+
+    @Test
+    fun `an old tail failure does not delay a newer in-flight generation`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.TailDelta)
+        val claim = p.claim(1000)!!
+
+        p.add(ReconcileRequest.TailDelta) // newer generation while in flight
+        p.ackTail(claim, false, 1000)     // the OLD generation fails
+
+        assertEquals(UnitState.PENDING, p.tailState(1000))
+        assertNotNull(p.claim(1000))
+    }
+
+    @Test
+    fun `a new full sync generation is immediately claimable despite old backoff`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.FullSync)
+        val now = 1_000_000L
+        p.ackFullSync(p.claim(now)!!, false, now)
+        assertEquals(UnitState.BACKOFF, p.fullSyncState(now))
+
+        p.add(ReconcileRequest.FullSync)
+
+        assertEquals(UnitState.PENDING, p.fullSyncState(now))
+        assertNotNull(p.claim(now))
+    }
+
+    @Test
+    fun `an old full sync failure does not delay a newer generation`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.FullSync)
+        val claim = p.claim(1000)!!
+
+        p.add(ReconcileRequest.FullSync)
+        p.ackFullSync(claim, false, 1000)
+
+        assertEquals(UnitState.PENDING, p.fullSyncState(1000))
+        assertNotNull("the newer generation is not pushed into backoff", p.claim(1000))
+    }
+
+    @Test
+    fun `an old thread failure does not backoff a newer generation`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.ForThread(8))
+        val claimed = p.claim(1000)!!.threads.single()
+
+        p.add(ReconcileRequest.ForThread(8)) // newer event
+        p.ackThread(claimed, false, 1000)    // old generation fails
+
+        assertEquals(
+            "the newer generation retries immediately, not in the old backoff",
+            UnitState.PENDING,
+            p.threadState(8, 1000)
+        )
+        assertNotNull(p.claim(1000))
+    }
 }

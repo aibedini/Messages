@@ -28,6 +28,9 @@ fun interface ProgressListener {
     fun onProgress(progress: LoadProgress)
 }
 
+import com.autonomousone.messages.data.ProviderRead
+import com.autonomousone.messages.data.map
+
 class SmsRepository(
     private val context: Context
 ) {
@@ -278,66 +281,198 @@ class SmsRepository(
         return out
     }
 
-    /** Paged MMS twin of [querySmsRaw]. */
+    // ── STRICT sync-critical reads ─────────────────────────────────────────
+    //
+    // Destructive reconciliation (absence proof / delete) MUST use these.
+    // The forgiving querySmsRaw/queryMmsRaw above stay for non-destructive UI
+    // reads: they turn every failure into an empty list, which is exactly the
+    // "provider error looks like a deleted row" bug.
+
+    private fun classifyFailure(e: Exception): ProviderRead.Failure = when (e) {
+        is android.os.DeadObjectException -> ProviderRead.Failure(ProviderRead.Reason.BINDER, e)
+        is android.os.RemoteException -> ProviderRead.Failure(ProviderRead.Reason.BINDER, e)
+        is SecurityException -> ProviderRead.Failure(ProviderRead.Reason.SECURITY, e)
+        is java.io.FileNotFoundException ->
+            ProviderRead.Failure(ProviderRead.Reason.PROVIDER_UNAVAILABLE, e)
+        is IllegalStateException -> ProviderRead.Failure(ProviderRead.Reason.PROVIDER_UNAVAILABLE, e)
+        else -> ProviderRead.Failure(ProviderRead.Reason.UNEXPECTED, e)
+    }
+
+    /**
+     * Strict paged SMS read.
+     * Success(list) -> the provider ANSWERED (an empty list is real absence).
+     * Failure       -> UNKNOWN; the caller must never treat it as absence.
+     */
+    fun readSmsStrict(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String,
+        limit: Int = Int.MAX_VALUE,
+        offset: Int = 0
+    ): ProviderRead<List<Sms>> = try {
+        val projection = arrayOf(
+            Telephony.Sms._ID,
+            Telephony.Sms.THREAD_ID,
+            Telephony.Sms.ADDRESS,
+            Telephony.Sms.BODY,
+            Telephony.Sms.DATE,
+            Telephony.Sms.DATE_SENT,
+            Telephony.Sms.READ,
+            Telephony.Sms.TYPE,
+            Telephony.Sms.STATUS
+        )
+        val cursor = context.contentResolver.query(
+            Telephony.Sms.CONTENT_URI.buildUpon()
+                .appendQueryParameter("limit", offset.toString() + "," + limit)
+                .build(),
+            projection,
+            selection,
+            selectionArgs,
+            sortOrder
+        ) ?: return ProviderRead.Failure(ProviderRead.Reason.QUERY_RETURNED_NULL)
+        cursor.use {
+            val out = mutableListOf<Sms>()
+            while (it.moveToNext()) out += smsFromCursor(it)
+            ProviderRead.Success(out)
+        }
+    } catch (e: Exception) {
+        Log.e("SMS_DEBUG", "readSmsStrict failed", e)
+        classifyFailure(e)
+    }
+
+    /**
+     * Exact SMS row read for a destructive decision.
+     * Success(null) is a PROOF OF ABSENCE; Failure is UNKNOWN.
+     */
+    fun readSmsExactStrict(id: Long): ProviderRead<Sms?> = readSmsStrict(
+        selection = Telephony.Sms._ID + " = ?",
+        selectionArgs = arrayOf(id.toString()),
+        sortOrder = Telephony.Sms.DATE + " DESC",
+        limit = 1
+    ).map { it.firstOrNull() }
+
+    /** Strict bounded thread read for SMS. */
+    fun querySmsThreadStrict(threadId: Long, limit: Int): ProviderRead<List<Sms>> = readSmsStrict(
+        selection = Telephony.Sms.THREAD_ID + " = ?",
+        selectionArgs = arrayOf(threadId.toString()),
+        sortOrder = Telephony.Sms.DATE + " DESC, " + Telephony.Sms._ID + " DESC",
+        limit = limit
+    )
+
+    // ── strict MMS reads ───────────────────────────────────────────────────
+
+    private data class MmsRow(
+        val id: Long,
+        val threadId: Long,
+        val date: Long,
+        val box: Int,
+        val read: Int,
+        val subject: String?
+    )
+
+    /** Forgiving MMS read: unchanged behaviour for UI paths. */
     fun queryMmsRaw(
         selection: String?,
         selectionArgs: Array<String>?,
         sortOrder: String,
         limit: Int = Int.MAX_VALUE,
         offset: Int = 0
-    ): List<Sms> {
-        return try {
-            val projection = arrayOf(
-                Telephony.Mms._ID,
-                Telephony.Mms.THREAD_ID,
-                Telephony.Mms.DATE,
-                Telephony.Mms.MESSAGE_BOX,
-                Telephony.Mms.READ,
-                Telephony.Mms.SUBJECT
-            )
-            data class Row(val id: Long, val threadId: Long, val date: Long, val box: Int, val read: Int, val subject: String?)
-            val rows = mutableListOf<Row>()
-            context.contentResolver.query(
-                Uri.parse("content://mms").buildUpon()
-                    .appendQueryParameter("limit", "$offset,$limit")
-                    .build(),
-                projection,
-                selection,
-                selectionArgs,
-                sortOrder
-            )?.use { cursor ->
-                val idI = cursor.getColumnIndexOrThrow(Telephony.Mms._ID)
-                val thI = cursor.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID)
-                val dtI = cursor.getColumnIndexOrThrow(Telephony.Mms.DATE)
-                val bxI = cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
-                val rdI = cursor.getColumnIndexOrThrow(Telephony.Mms.READ)
-                val sbI = cursor.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
-                while (cursor.moveToNext()) {
-                    rows += Row(
-                        cursor.getLong(idI), cursor.getLong(thI),
-                        cursor.getLong(dtI) * 1000L, cursor.getInt(bxI), cursor.getInt(rdI), cursor.getString(sbI)
-                    )
-                }
-            }
-            if (rows.isEmpty()) return emptyList()
-            val addressMap = loadMmsAddresses(rows.map { it.id })
-            val bodyMap = loadMmsBodies(rows.map { it.id })
-            rows.map { r ->
-                Sms(
-                    id = -r.id,
-                    threadId = r.threadId,
-                    sender = (addressMap[r.id] ?: "").let {
-                        if (it.isBlank() || it.equals("insert-address-token", true)) "" else it
-                    }.ifBlank { phoneFallbackForThread(r.threadId) },
-                    message = bodyMap[r.id] ?: r.subject?.takeIf { s -> s.isNotBlank() } ?: "[MMS]",
-                    date = r.date,
-                    unread = r.read == 0,
-                    type = if (r.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
+    ): List<Sms> = when (val read = readMmsRowsStrict(selection, selectionArgs, sortOrder, limit, offset)) {
+        is ProviderRead.Success -> mmsRowsToSms(read.value)
+        is ProviderRead.Failure -> {
+            Log.e("SMS_DEBUG", "queryMmsRaw failed: " + read.reason, read.cause)
+            emptyList()
+        }
+    }
+
+    /** Strict paged MMS read (see [readSmsStrict] for the contract). */
+    fun readMmsStrict(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String,
+        limit: Int = Int.MAX_VALUE,
+        offset: Int = 0
+    ): ProviderRead<List<Sms>> =
+        readMmsRowsStrict(selection, selectionArgs, sortOrder, limit, offset).map { mmsRowsToSms(it) }
+
+    /** Exact MMS row read for a destructive decision. */
+    fun readMmsExactStrict(id: Long): ProviderRead<Sms?> = readMmsStrict(
+        selection = Telephony.Mms._ID + " = ?",
+        selectionArgs = arrayOf(id.toString()),
+        sortOrder = Telephony.Mms.DATE + " DESC",
+        limit = 1
+    ).map { it.firstOrNull() }
+
+    /** Strict bounded thread read for MMS. */
+    fun queryMmsThreadStrict(threadId: Long, limit: Int): ProviderRead<List<Sms>> = readMmsStrict(
+        selection = Telephony.Mms.THREAD_ID + " = ?",
+        selectionArgs = arrayOf(threadId.toString()),
+        sortOrder = Telephony.Mms.DATE + " DESC, " + Telephony.Mms._ID + " DESC",
+        limit = limit
+    )
+
+    private fun readMmsRowsStrict(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        sortOrder: String,
+        limit: Int,
+        offset: Int
+    ): ProviderRead<List<MmsRow>> = try {
+        val projection = arrayOf(
+            Telephony.Mms._ID,
+            Telephony.Mms.THREAD_ID,
+            Telephony.Mms.DATE,
+            Telephony.Mms.MESSAGE_BOX,
+            Telephony.Mms.READ,
+            Telephony.Mms.SUBJECT
+        )
+        val rows = mutableListOf<MmsRow>()
+        val cursor = context.contentResolver.query(
+            Uri.parse("content://mms").buildUpon()
+                .appendQueryParameter("limit", offset.toString() + "," + limit)
+                .build(),
+            projection,
+            selection,
+            selectionArgs,
+            sortOrder
+        ) ?: return ProviderRead.Failure(ProviderRead.Reason.QUERY_RETURNED_NULL)
+        cursor.use {
+            val idI = it.getColumnIndexOrThrow(Telephony.Mms._ID)
+            val thI = it.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID)
+            val dtI = it.getColumnIndexOrThrow(Telephony.Mms.DATE)
+            val bxI = it.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
+            val rdI = it.getColumnIndexOrThrow(Telephony.Mms.READ)
+            val sbI = it.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
+            while (it.moveToNext()) {
+                rows += MmsRow(
+                    it.getLong(idI), it.getLong(thI), it.getLong(dtI) * 1000L,
+                    it.getInt(bxI), it.getInt(rdI), it.getString(sbI)
                 )
             }
-        } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "queryMmsRaw failed", e)
-            emptyList()
+        }
+        ProviderRead.Success(rows)
+    } catch (e: Exception) {
+        Log.e("SMS_DEBUG", "readMmsRowsStrict failed", e)
+        classifyFailure(e)
+    }
+
+    /** The single MMS -> UI mapping, shared by the forgiving and strict readers. */
+    private fun mmsRowsToSms(rows: List<MmsRow>): List<Sms> {
+        if (rows.isEmpty()) return emptyList()
+        val addressMap = loadMmsAddresses(rows.map { it.id })
+        val bodyMap = loadMmsBodies(rows.map { it.id })
+        return rows.map { r ->
+            Sms(
+                id = -r.id,
+                threadId = r.threadId,
+                sender = (addressMap[r.id] ?: "").let {
+                    if (it.isBlank() || it.equals("insert-address-token", true)) "" else it
+                }.ifBlank { phoneFallbackForThread(r.threadId) },
+                message = bodyMap[r.id] ?: r.subject?.takeIf { s -> s.isNotBlank() } ?: "[MMS]",
+                date = r.date,
+                unread = r.read == 0,
+                type = if (r.box == Telephony.Mms.MESSAGE_BOX_INBOX) 1 else 2
+            )
         }
     }
 
