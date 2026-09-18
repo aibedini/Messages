@@ -81,21 +81,44 @@ class MarkConversationReadUseCase(
     suspend fun markRead(threadId: Long, phone: String) {
         if (threadId <= 0L && phone.isBlank()) return
 
-        // (a) + (b) local-first, then the UI signal.
-        applyLocalRead(threadId, phone)
+        // (a) + (b) local-first, then the UI signal. The signal is emitted ONLY
+        // when the durable local write actually succeeded.
+        val localApplied = applyLocalRead(threadId, phone)
 
-        // (c) provider persistence, eventual and failure-isolated.
+        // (c) provider persistence, eventual and failure-isolated. Attempted even
+        // when the local write failed: the provider READ is what makes the narrow
+        // ForThread repair converge Room to "read", so it IS the recovery path.
         writeProviderRead(threadId, phone, requestedSources(threadId, phone))
+
+        if (!localApplied) {
+            diagnostics.event(
+                CATEGORY,
+                "read-pending-recovery thread=$threadId provider-write-attempted=true",
+                null
+            )
+        }
     }
 
-    private suspend fun applyLocalRead(threadId: Long, phone: String) {
+    /**
+     * @return true when the LOCAL durable read is real (or was not required,
+     *         because there is no thread to mark), false when the Room
+     *         transaction failed.
+     */
+    private suspend fun applyLocalRead(threadId: Long, phone: String): Boolean {
         if (threadId > 0L) {
             try {
                 localRead.markThreadReadLocally(threadId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                // The Room transaction IS the durable read. If it failed, the read
+                // did NOT happen locally, so the UI must not be told that it did:
+                // an overlay claiming "read" while Room still says unread is
+                // exactly how unread resurrects (the optimistic state is later
+                // overwritten by the durable truth).
                 diagnostics.event(CATEGORY, "local-read-failed thread=$threadId", e)
+                requestNarrowRepair(threadId)
+                return false
             }
         }
         try {
@@ -105,6 +128,7 @@ class MarkConversationReadUseCase(
         } catch (_: Throwable) {
             // UI signalling must never break the durable read path.
         }
+        return true
     }
 
     private suspend fun writeProviderRead(
@@ -130,7 +154,12 @@ class MarkConversationReadUseCase(
         // half of the read cannot be written. Surface the partial coverage
         // once rather than letting it be silent.
         if (threadId <= 0L) {
-            diagnostics.event(CATEGORY, "provider-read-partial thread=0 mms=unreachable")
+            diagnostics.event(
+                CATEGORY,
+                "provider-read-partial thread=0 mms=unreachable sources=" +
+                    sources.joinToString(","),
+                null
+            )
         }
     }
 

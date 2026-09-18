@@ -60,6 +60,13 @@ object ChangeRouter {
     private val schedulerStarted = AtomicBoolean(false)
 
     /**
+     * The mutation reached the coordinator but its Room transaction did NOT
+     * commit. The repair must be retained, never ACKed: ACKing here would drop
+     * correctness work on the floor exactly when durability is what failed.
+     */
+    internal const val MUTATION_NOT_COMMITTED = "MUTATION_NOT_COMMITTED"
+
+    /**
      * The pure routing decision, so the contract "an ordinary provider event can
      * never schedule a FullSync" is unit-testable without Android.
      *
@@ -173,6 +180,24 @@ object ChangeRouter {
     }
 
     /**
+     * Durably records ONE exact identity for repair.
+     *
+     * Public because a caller that already KNOWS the identity must be able to hand
+     * it over instead of losing it: a delivery-status callback whose first read
+     * failed, an outgoing send whose row is not yet readable, or a thread repair
+     * whose provider source failed. Those callers must NOT have to wait for an
+     * unrelated provider event to trigger a retry.
+     */
+    fun enqueueExactRepair(context: Context, source: String, providerId: Long) {
+        val app = context.applicationContext
+        ensureRepairScheduler(app)
+        scope.launch {
+            ProviderRepairQueue(app).enqueue(source, providerId)
+            nudge.trySend(Unit)
+        }
+    }
+
+    /**
      * The ONE exact-repair consumer.
      *
      * Loop shape: drain everything due -> compute the next wake time -> sleep
@@ -258,20 +283,23 @@ object ChangeRouter {
      * A DELETE is only ever issued from a SUCCESSFUL read that proves absence; a
      * failed read keeps the identity for retry.
      */
-    private fun applyExactSms(
+    private suspend fun applyExactSms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
         id: Long
     ): ExactRepairResult = when (val read = repo.readSmsExactStrict(id)) {
         is ProviderRead.Success -> {
             val row = read.value
-            if (row != null) {
-                coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
+            // ONE durable commit: the queue row may only be ACKed after Room (and
+            // the outbox that commits with it) accepted this mutation.
+            val committed = if (row != null) {
+                coordinator.mutateAndAwaitCommit(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
             } else {
                 // PROVEN absence: the provider answered and has no such row.
-                coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
+                coordinator.mutateAndAwaitCommit(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
             }
-            ExactRepairResult.Done
+            if (committed) ExactRepairResult.Done
+            else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
         }
         is ProviderRead.Failure -> ExactRepairResult.Failed(read.reason.name)
     }
@@ -295,7 +323,7 @@ object ChangeRouter {
      *   existence Exists + row gone    -> PROVEN delete (the provider answered twice)
      *   existence Exists + row present -> authoritative upsert
      */
-    private fun applyExactMms(
+    private suspend fun applyExactMms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
         id: Long
@@ -303,21 +331,28 @@ object ChangeRouter {
         is ProviderRead.Failure -> ExactRepairResult.Failed(existence.reason.name)
         is ProviderRead.Success -> when (existence.value) {
             ProviderExistence.Absent -> {
-                coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
-                ExactRepairResult.Done
+                if (coordinator.mutateAndAwaitCommit(
+                        MessageMutation.Delete(MessageEntity.SOURCE_MMS, id)
+                    )
+                ) ExactRepairResult.Done else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
             }
             ProviderExistence.Exists -> when (val materialized = repo.readMmsMaterializedStrict(id)) {
                 is ProviderRead.Failure -> ExactRepairResult.Failed(materialized.reason.name)
                 is ProviderRead.Success -> {
                     val row = materialized.value
-                    if (row != null) {
-                        coordinator.mutate(MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row))
+                    val committed = if (row != null) {
+                        coordinator.mutateAndAwaitCommit(
+                            MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row)
+                        )
                     } else {
                         // The base read proved existence, this one proved absence:
                         // the provider answered both times, so the delete is proven.
-                        coordinator.mutate(MessageMutation.Delete(MessageEntity.SOURCE_MMS, id))
+                        coordinator.mutateAndAwaitCommit(
+                            MessageMutation.Delete(MessageEntity.SOURCE_MMS, id)
+                        )
                     }
-                    ExactRepairResult.Done
+                    if (committed) ExactRepairResult.Done
+                    else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
                 }
             }
         }

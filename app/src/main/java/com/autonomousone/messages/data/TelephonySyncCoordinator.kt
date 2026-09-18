@@ -11,6 +11,7 @@ import com.autonomousone.messages.diagnostics.TraceSections
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -86,7 +87,20 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * exactly-once delivery; each item is a small immutable value and the
      * consumer drains continuously, so the queue stays near-empty.
      */
-    private val mutations = Channel<MessageMutation>(capacity = Channel.UNLIMITED)
+    private val mutations = Channel<MutationWork>(capacity = Channel.UNLIMITED)
+
+    /**
+     * One unit of exact mutation work.
+     *
+     * [completion] is non-null only for a caller that must know the mutation was
+     * DURABLY COMMITTED before it may consider its own work finished. The durable
+     * exact-repair queue is exactly such a caller. A normal realtime caller passes
+     * null and never waits.
+     */
+    private data class MutationWork(
+        val mutation: MessageMutation,
+        val completion: CompletableDeferred<Result<Unit>>? = null
+    )
 
     /**
      * Reconcile NUEDGE channel: CONFLATED is correct here because it carries no
@@ -144,6 +158,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
         /** Conversations written per transaction by a full projection rebuild. */
         const val REBUILD_CHUNK = 500
+
+        /**
+         * Marker for "one provider source of this thread could not be read".
+         *
+         * Thrown so the reconcile consumer NACKs instead of ACKing; the message
+         * prefix is stable so a test can assert on it without a typed exception
+         * leaking across layers.
+         */
+        const val PARTIAL_THREAD_REPAIR = "PARTIAL_THREAD_REPAIR"
         const val TAG = "SYNC_COORD"
 
         @Volatile
@@ -157,10 +180,40 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     // ── Public API ─────────────────────────────────────────────────────────
 
-    /** Queue an exact mutation (insert/update/delete/status). O(1). */
+    /** Queue an exact mutation (insert/update/delete/status). O(1), never blocks. */
     fun mutate(mutation: MessageMutation) {
         ensureLoop()
-        mutations.trySend(mutation)
+        enqueue(MutationWork(mutation))
+    }
+
+    /**
+     * Queue an exact mutation and WAIT until Room (and the durable outbox it
+     * commits with) has actually accepted it.
+     *
+     * Why this exists: the durable exact-repair queue may only be ACKed once the
+     * mutation it produced is DURABLE. Putting a mutation into an in-memory
+     * channel is not durability - if the process died between the ACK and the
+     * consumer running, the queue row would be gone and the repair lost, which is
+     * precisely the failure the durable queue was built to prevent.
+     *
+     * @return true only when the mutation's Room transaction committed.
+     */
+    suspend fun mutateAndAwaitCommit(mutation: MessageMutation): Boolean {
+        ensureLoop()
+        val completion = CompletableDeferred<Result<Unit>>()
+        mutations.send(MutationWork(mutation, completion))
+        return completion.await().isSuccess
+    }
+
+    private fun enqueue(work: MutationWork) {
+        val result = mutations.trySend(work)
+        if (result.isFailure) {
+            // Never silently drop correctness work on a closed channel.
+            Log.e(TAG, "mutation channel rejected work: " + work.mutation)
+            work.completion?.complete(
+                Result.failure(IllegalStateException("mutation channel is closed"))
+            )
+        }
     }
 
     /** Exact O(1) provider-row nudge used immediately after an outgoing insert. */
@@ -172,9 +225,41 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     ) {
         ensureLoop()
         syncScope.launch {
-            readExactMessage(source, providerId)?.let {
-                mutations.send(MessageMutation.Upsert(source, it, originCommandId, clientMessageId))
+            // P0-10: the identity is KNOWN here, so a transient read failure must
+            // not simply lose the update. It goes to the durable repair queue and
+            // converges on the queue's own timer, with no provider event needed.
+            when (val read = readExactMessageStrict(source, providerId)) {
+                is ProviderRead.Success -> read.value?.let {
+                    enqueue(
+                        MutationWork(
+                            MessageMutation.Upsert(source, it, originCommandId, clientMessageId)
+                        )
+                    )
+                }
+                is ProviderRead.Failure -> {
+                    Log.w(TAG, "providerRowChanged read failed " + source + ":" + providerId +
+                        " reason=" + read.reason + " -> durable exact repair")
+                    ChangeRouter.enqueueExactRepair(appContext, source, providerId)
+                }
             }
+        }
+    }
+
+    /**
+     * Strict counterpart of [readExactMessage].
+     *
+     * Success(null) is a PROOF OF ABSENCE; Failure is UNKNOWN. Used wherever the
+     * outcome may influence a durable decision; the forgiving variant stays only
+     * for non-destructive callers.
+     */
+    private suspend fun readExactMessageStrict(
+        source: String,
+        providerId: Long
+    ): ProviderRead<Sms?> = withContext(Dispatchers.IO) {
+        when (source) {
+            MessageEntity.SOURCE_SMS -> smsRepository.readSmsExactStrict(providerId)
+            MessageEntity.SOURCE_MMS -> smsRepository.readMmsMaterializedStrict(providerId)
+            else -> ProviderRead.Failure(ProviderRead.Reason.UNEXPECTED)
         }
     }
 
@@ -207,18 +292,50 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 // missing. FullSync stays reachable for genuine bootstrap and
                 // explicit recovery (ReconcileRequest.FullSync callers), but it
                 // is no longer the automatic answer to "the app was reopened".
-                val durableWindowReady = try {
-                    db.syncStateDao().forSource(MessageEntity.SOURCE_SMS)?.initialWindowReady == true ||
-                        db.syncStateDao().forSource(MessageEntity.SOURCE_MMS)?.initialWindowReady == true
+                val stateDao = db.syncStateDao()
+                // P0-7: READY is a PER-SOURCE fact and BOTH sources must be ready.
+                //
+                // This used to be an OR. With SMS ready and MMS not, a restart
+                // chose TailDelta mode - and TailDelta only covers rows newer than
+                // the newest watermark, so the missing MMS initial window could
+                // never be built. A half-bootstrapped install must never look READY.
+                val smsState = try {
+                    stateDao.forSource(MessageEntity.SOURCE_SMS)
                 } catch (e: Exception) {
-                    Log.e(TAG, "startup state read failed; falling back to bootstrap", e)
-                    false
+                    Log.e(TAG, "startup state read failed for sms", e)
+                    null
                 }
-                if (durableWindowReady) {
-                    Log.i(TAG, "SYNC_BOOTSTRAP_SKIPPED reason=durable_initial_window_present mode=TAIL_DELTA")
+                val mmsState = try {
+                    stateDao.forSource(MessageEntity.SOURCE_MMS)
+                } catch (e: Exception) {
+                    Log.e(TAG, "startup state read failed for mms", e)
+                    null
+                }
+                val smsReady = smsState?.initialWindowReady == true
+                val mmsReady = mmsState?.initialWindowReady == true
+
+                if (smsReady && mmsReady) {
+                    Log.i(TAG, "SYNC_BOOTSTRAP_SKIPPED reason=both_sources_ready mode=TAIL_DELTA")
                     reconcile(ReconcileRequest.TailDelta)
+
+                    // P0-8: a restart must RESUME an interrupted history crawl.
+                    //
+                    // TailDelta covers rows NEWER than the newest watermark; it
+                    // never schedules the older crawl. Nothing else did either, so
+                    // a process death mid-backfill left historyBackfillComplete at
+                    // false forever and the app quietly stopped converging on old
+                    // history. This is deliberately a STARTUP decision: an ordinary
+                    // provider TailDelta event must not start a history crawl.
+                    val smsComplete = smsState?.historyBackfillComplete == true
+                    val mmsComplete = mmsState?.historyBackfillComplete == true
+                    if (!smsComplete || !mmsComplete) {
+                        Log.i(TAG, "BACKFILL_RESUME scheduled smsComplete=" + smsComplete +
+                            " mmsComplete=" + mmsComplete)
+                        scheduleBackfill()
+                    }
                 } else {
-                    Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH")
+                    Log.i(TAG, "SYNC_BOOTSTRAP_STARTED sources=sms,mms firstBatch=$FIRST_BATCH " +
+                        "smsReady=" + smsReady + " mmsReady=" + mmsReady)
                     reconcile(ReconcileRequest.FullSync)
                 }
                 // Exact work that was in flight when the process died is recovered
@@ -418,11 +535,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         syncScope.launch {
             // Exact mutations: sequential, never conflated.
             launch {
-                for (mutation in mutations) {
+                for (work in mutations) {
                     try {
-                        applyMutation(mutation)
+                        applyMutation(work.mutation)
+                        // DURABLE COMMIT: only now may a caller (the exact-repair
+                        // queue) treat its mutation as done.
+                        work.completion?.complete(Result.success(Unit))
                     } catch (e: Exception) {
-                        Log.e(TAG, "mutation failed: $mutation", e)
+                        Log.e(TAG, "mutation failed: " + work.mutation, e)
+                        work.completion?.complete(Result.failure(e))
                     }
                 }
             }
@@ -1437,6 +1558,23 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
     }
 
+    /**
+     * Marks EVERY conversation read in Room, in ONE transaction.
+     *
+     * Home used to loop over the RENDERED conversations and run one shadow write
+     * each: N transactions, and any conversation that was archived, filtered,
+     * blocked or off-screen was silently skipped - leaving unread rows that
+     * reappear as soon as the filter changes. Room is the authority, so this is
+     * expressed over the whole table and the UI simply follows the Flow. The
+     * provider write remains a separate, eventual bulk pass.
+     */
+    suspend fun markAllThreadsReadInShadow() = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            db.messageDao().markAllRead()
+            db.conversationDao().markAllRead()
+        }
+    }
+
     /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
     suspend fun markThreadReadAndPublish(threadId: Long) {
         if (threadId > 0L) applyMutation(MessageMutation.MarkThreadRead(threadId))
@@ -1462,15 +1600,6 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         val mmsOk = mmsRead is ProviderRead.Success
         val sms = (smsRead as? ProviderRead.Success)?.value.orEmpty()
         val mms = (mmsRead as? ProviderRead.Success)?.value.orEmpty()
-
-        if (!smsOk || !mmsOk) {
-            // Each source is independent: an SMS failure says nothing about MMS.
-            // The surviving source is still repaired; the failed one keeps its
-            // Room rows AND earns durable work in the exact-repair queue.
-            Log.w(TAG, "thread repair " + threadId + " partial: smsOk=" + smsOk +
-                " mmsOk=" + mmsOk + " -> no destructive conclusion")
-            if (!smsOk) ChangeRouter.retryPendingExactReads(appContext)
-        }
 
         // PHASE 4.3: the ONLY proof that a provider thread is empty is a
         // SUCCESSFUL, EMPTY read from BOTH sources. One failed source means
@@ -1498,6 +1627,28 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 }
             }
             rebuildConversationProjection(threadId, preserveFlags = true)
+        }
+
+        if (!smsOk || !mmsOk) {
+            // P0-6: a PARTIAL repair is not a success.
+            //
+            // Returning normally made the reconcile consumer treat the ForThread
+            // generation as repaired and ACK it, so a provider source that failed
+            // was silently forgotten - and the earlier version only nudged the
+            // exact queue, which had nothing new to retry. Each source is
+            // independent: an SMS failure says nothing about MMS.
+            //
+            // Throwing makes PendingReconciles NACK this thread with bounded
+            // backoff, so the failed source is retried; a poison source still
+            // quarantines under the existing ForThread policy and is re-armed by a
+            // fresh provider event for that thread. The rows the surviving source
+            // DID deliver were applied above and are never discarded.
+            Log.w(TAG, PARTIAL_THREAD_REPAIR + " thread=" + threadId +
+                " smsOk=" + smsOk + " mmsOk=" + mmsOk + " -> NACK, bounded retry")
+            throw IllegalStateException(
+                PARTIAL_THREAD_REPAIR + " thread=" + threadId +
+                    " smsOk=" + smsOk + " mmsOk=" + mmsOk
+            )
         }
     }
 
@@ -1607,6 +1758,24 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         val existingByThread = convDao.all().associateBy { it.threadId }
         val pinnedIds = pinRepositoryIds()
         val archivedIds = archivedRepositoryIds()
+
+        // P0-13: a recovery rebuild is AUTHORITATIVE. A conversation projection
+        // whose thread no longer has any message is a phantom: nothing else ever
+        // revisits it, so it would stay on Home forever. (Pin/archive live in
+        // their own repositories and are deliberately untouched: an archived
+        // thread that no longer exists is still the user's archive state.)
+        val liveThreadIds = newestByThread.mapTo(HashSet()) { it.threadId }
+        val staleProjectionIds = existingByThread.keys - liveThreadIds
+        if (staleProjectionIds.isNotEmpty()) {
+            Log.i(TAG, "projection rebuild removing " + staleProjectionIds.size +
+                " stale conversation(s)")
+            staleProjectionIds.toList().chunked(REBUILD_CHUNK).forEach { chunk ->
+                database.withTransaction {
+                    for (staleId in chunk) convDao.delete(staleId)
+                }
+                yield()
+            }
+        }
 
         // Chunked transactions: a full rebuild can cover every conversation, and
         // one giant transaction would hold a write lock while blocking every

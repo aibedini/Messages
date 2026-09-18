@@ -187,7 +187,21 @@ class HomeConversationState {
 
             val rowCaughtUp = overrideRow == null ||
                 (roomRow != null && roomRow.date >= overrideRow.date)
-            val readCaughtUp = !override.forceRead || roomRow == null || !roomRow.unread
+            // P0-5: a read override is satisfied ONLY when Room actually shows
+            // the thread as read.
+            //
+            // This used to be `roomRow == null || !roomRow.unread`, so TEMPORARY
+            // ABSENCE retired the override: if Room had not yet written the
+            // projection (or an upsert/delete was in flight), the override was
+            // dropped and the next emission - which may still say unread - brought
+            // the badge back. Absence is not evidence of read.
+            //
+            // The override is inert while the row is absent (render only applies
+            // overrides on top of existing Room rows), so keeping it costs nothing
+            // and is strictly safer than resurrecting unread.
+            val readCaughtUp = !override.forceRead || (roomRow != null && !roomRow.unread)
+            // Removal, by contrast, IS satisfied by absence: that is exactly what
+            // "the conversation is gone" means, and an absent row renders nothing.
             val removalCaughtUp = !override.removed || roomRow == null
 
             if (rowCaughtUp && readCaughtUp && removalCaughtUp) iterator.remove()

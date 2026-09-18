@@ -13,7 +13,7 @@ interface MessageDao {
     @Query("""
         SELECT * FROM messages
         WHERE source = :source AND (date < :beforeDate OR (date = :beforeDate AND providerId < :beforeId))
-        ORDER BY date DESC, providerId DESC LIMIT :limit
+        ORDER BY date DESC, source DESC, providerId DESC LIMIT :limit
     """)
     suspend fun cloudHistoryPage(source: String, beforeDate: Long, beforeId: Long, limit: Int): List<MessageEntity>
 
@@ -22,7 +22,7 @@ interface MessageDao {
         """
         SELECT * FROM messages
         WHERE threadId = :threadId
-        ORDER BY date DESC, providerId DESC
+        ORDER BY date DESC, source DESC, providerId DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -39,7 +39,7 @@ interface MessageDao {
         """
         SELECT * FROM messages
         WHERE threadId = :threadId
-        ORDER BY date DESC, providerId DESC
+        ORDER BY date DESC, source DESC, providerId DESC
         LIMIT :limit
         """
     )
@@ -50,7 +50,7 @@ interface MessageDao {
         """
         SELECT * FROM messages
         WHERE threadId = :threadId
-        ORDER BY date DESC, providerId DESC
+        ORDER BY date DESC, source DESC, providerId DESC
         LIMIT :limit
         """
     )
@@ -60,7 +60,7 @@ interface MessageDao {
         """
         SELECT * FROM messages
         WHERE normalizedAddress = :address
-        ORDER BY date DESC, providerId DESC
+        ORDER BY date DESC, source DESC, providerId DESC
         LIMIT :limit
         """
     )
@@ -120,6 +120,17 @@ interface MessageDao {
 
     @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
     suspend fun markThreadRead(threadId: Long)
+
+    /**
+     * Marks EVERY unread message read, in one statement.
+     *
+     * "Mark all read" is a whole-table fact, not a property of the rows a
+     * particular Home filter happened to be rendering: a per-row loop skipped
+     * archived, filtered, blocked and off-screen conversations and left unread
+     * rows that reappear the moment the filter changes.
+     */
+    @Query("UPDATE messages SET read = 1 WHERE read = 0")
+    suspend fun markAllRead()
 
     // ── NEW: SQL COUNT for unread (replaces O(n) in-memory scan) ──────────
 
@@ -301,6 +312,15 @@ interface ConversationDao {
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")
     suspend fun markRead(threadId: Long)
 
+    /**
+     * Clears every conversation's unread counter in one statement.
+     *
+     * Pairs with MessageDao.markAllRead inside ONE coordinator transaction, so the
+     * message flags and the projection cannot diverge.
+     */
+    @Query("UPDATE conversations SET unreadCount = 0 WHERE unreadCount != 0")
+    suspend fun markAllRead()
+
     @Query("UPDATE conversations SET archived = :archived WHERE threadId = :threadId")
     suspend fun setArchived(threadId: Long, archived: Boolean)
 
@@ -349,6 +369,8 @@ interface SyncStateDao {
     suspend fun markHistoryComplete(source: String, now: Long)
 
     @Query("UPDATE sync_state SET lastReconcileAt = :now WHERE source = :source")
+    suspend fun touchReconcile(source: String, now: Long)
+}
 
 /**
  * Durable exact-repair queue. See [ProviderRepairEntity] for the invariants.
@@ -470,9 +492,6 @@ interface ProviderRepairDao {
 
     @Query("SELECT COALESCE(SUM(attempts), 0) FROM provider_repair_queue")
     suspend fun totalAttempts(): Int
-}
-
-    suspend fun touchReconcile(source: String, now: Long)
 }
 
 /** Per-thread aggregate over the full-text index. */
