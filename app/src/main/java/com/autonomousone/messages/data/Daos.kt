@@ -103,6 +103,40 @@ interface MessageDao {
     @Query("SELECT MAX(date) FROM messages WHERE source = :source")
     suspend fun newestDateFor(source: String): Long?
 
+    /** Source-scoped Room keyset for integrity audit; never OFFSETs through history. */
+    @Query("""
+        SELECT * FROM messages
+        WHERE source = :source
+          AND (date < :beforeDate OR (date = :beforeDate AND providerId < :beforeId))
+        ORDER BY date DESC, providerId DESC
+        LIMIT :limit
+    """)
+    suspend fun auditPageForSource(source: String, beforeDate: Long, beforeId: Long, limit: Int): List<MessageEntity>
+
+    /** Room rows provably inside a bounded provider thread page. */
+    @Query("""
+        SELECT * FROM messages
+        WHERE source = :source AND threadId = :threadId
+          AND (date > :boundaryDate OR (date = :boundaryDate AND providerId >= :boundaryProviderId))
+        ORDER BY date DESC, providerId DESC
+    """)
+    suspend fun rowsInCoveredThreadRange(
+        source: String,
+        threadId: Long,
+        boundaryDate: Long,
+        boundaryProviderId: Long
+    ): List<MessageEntity>
+
+    /** Small bounded overlap set for a generic provider notification. */
+    @Query("""
+        SELECT threadId FROM messages
+        WHERE threadId > 0
+        GROUP BY threadId
+        ORDER BY MAX(date) DESC
+        LIMIT :limit
+    """)
+    suspend fun recentThreadIds(limit: Int): List<Long>
+
     @Upsert
     suspend fun upsertAll(messages: List<MessageEntity>)
 
@@ -532,6 +566,18 @@ interface ProviderRepairDao {
 
     @Query("SELECT COALESCE(SUM(attempts), 0) FROM provider_repair_queue")
     suspend fun totalAttempts(): Int
+}
+
+@Dao
+interface IntegrityAuditDao {
+    @Query("SELECT * FROM integrity_audit_state WHERE source = :source AND direction = :direction LIMIT 1")
+    suspend fun get(source: String, direction: String): IntegrityAuditStateEntity?
+
+    @Upsert
+    suspend fun upsert(state: IntegrityAuditStateEntity)
+
+    @Query("SELECT * FROM integrity_audit_state")
+    suspend fun all(): List<IntegrityAuditStateEntity>
 }
 
 /** Per-thread aggregate over the full-text index. */

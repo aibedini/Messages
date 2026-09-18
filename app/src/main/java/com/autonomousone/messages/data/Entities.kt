@@ -244,6 +244,30 @@ data class ProviderRepairEntity(
     }
 }
 
+enum class IntegrityAuditDirection {
+    ROOM_TO_PROVIDER,
+    PROVIDER_TO_ROOM
+}
+
+/** Durable checkpoint for one side of the two-sided integrity audit. */
+@Entity(tableName = "integrity_audit_state", primaryKeys = ["source", "direction"])
+data class IntegrityAuditStateEntity(
+    val source: String,
+    val direction: String,
+    val cursorDate: Long = Long.MAX_VALUE,
+    val cursorProviderId: Long = Long.MAX_VALUE,
+    val cycleStartedAt: Long = 0L,
+    val lastCompletedAt: Long = 0L,
+    val nextRunAt: Long = 0L,
+    val state: String = STATE_IDLE,
+    val updatedAt: Long = 0L
+) {
+    companion object {
+        const val STATE_IDLE = "IDLE"
+        const val STATE_RUNNING = "RUNNING"
+    }
+}
+
 /**
  * One row per synced source+window so incremental syncs know where they are.
  *

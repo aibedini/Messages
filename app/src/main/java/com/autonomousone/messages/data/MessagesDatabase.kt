@@ -53,7 +53,8 @@ import com.autonomousone.messages.BuildConfig
         DeviceTelemetryEntity::class,
         ConversationKeyEpochEntity::class,
         CloudHistoryCheckpointEntity::class,
-        ProviderRepairEntity::class
+        ProviderRepairEntity::class,
+        IntegrityAuditStateEntity::class
     ],
     version = 15,
     exportSchema = true
@@ -76,6 +77,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun conversationKeyDao(): ConversationKeyDao
     abstract fun cloudHistoryCheckpointDao(): CloudHistoryCheckpointDao
     abstract fun providerRepairDao(): ProviderRepairDao
+    abstract fun integrityAuditDao(): IntegrityAuditDao
 
     companion object {
         @Volatile
@@ -443,7 +445,8 @@ abstract class MessagesDatabase : RoomDatabase() {
             "ALTER TABLE `provider_repair_queue` ADD COLUMN `intent` TEXT NOT NULL DEFAULT 'EXPECT_EXISTS'",
             "ALTER TABLE `provider_repair_queue` ADD COLUMN `intentSince` INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE `provider_repair_queue` ADD COLUMN `absenceCount` INTEGER NOT NULL DEFAULT 0",
-            "UPDATE `provider_repair_queue` SET `intentSince` = `updatedAt` WHERE `intentSince` = 0"
+            "UPDATE `provider_repair_queue` SET `intentSince` = `updatedAt` WHERE `intentSince` = 0",
+            "CREATE TABLE IF NOT EXISTS `integrity_audit_state` (`source` TEXT NOT NULL, `direction` TEXT NOT NULL, `cursorDate` INTEGER NOT NULL, `cursorProviderId` INTEGER NOT NULL, `cycleStartedAt` INTEGER NOT NULL, `lastCompletedAt` INTEGER NOT NULL, `nextRunAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`source`, `direction`))"
         )
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V15_SQL.forEach(db::execSQL) }
