@@ -1380,18 +1380,35 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     // ── Mirror writes (app-initiated mutations) ────────────────────────────
 
-    /** Mirrors a conversation delete into Room. */
+    /**
+     * Mirrors a conversation delete into Room.
+     *
+     * ONE transaction: the messages and the conversation projection must not be
+     * observable in a half-deleted state (messages gone, conversation still on
+     * Home) - a reader that catches that window renders a phantom conversation.
+     */
     suspend fun deleteThreadFromShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
-        db.messageDao().deleteThread(threadId)
-        db.conversationDao().delete(threadId)
+        db.withTransaction {
+            db.messageDao().deleteThread(threadId)
+            db.conversationDao().delete(threadId)
+        }
     }
 
-    /** Marks a thread read in Room. */
+    /**
+     * Marks a thread read in Room.
+     *
+     * PHASE 10.2: ONE transaction. The per-message read flags and the
+     * conversation unread counter are two views of the same fact; if they diverge,
+     * Home can show a cleared badge over messages that are still unread (or the
+     * reverse), and the divergence survives until the next repair.
+     */
     suspend fun markThreadReadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
         if (threadId <= 0L) return@withContext
-        db.messageDao().markThreadRead(threadId)
-        db.conversationDao().markRead(threadId)
+        db.withTransaction {
+            db.messageDao().markThreadRead(threadId)
+            db.conversationDao().markRead(threadId)
+        }
     }
 
     /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
