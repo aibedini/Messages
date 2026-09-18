@@ -3,6 +3,7 @@ package com.autonomousone.messages
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.ProviderRepairBackoff
+import com.autonomousone.messages.data.ProviderRepairIntent
 import java.sql.Connection
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -28,11 +29,9 @@ import org.junit.Test
  *   an old success could consume new work     a newer generation survives an
  *                                             ACK scoped to the old generation
  *
- * The statements are copied VERBATIM from ProviderRepairDao in Daos.kt, and the
- * table is built by running the SHIPPED v14 migration, so this test also pins the
- * migration text against the behaviour of the statements it must support.
- *
- * WRITTEN BUT NOT EXECUTED.
+ * The statements mirror ProviderRepairDao in Daos.kt, and the table is built by
+ * running the SHIPPED migrations through v15, so this test also pins the migration
+ * text against the behaviour of the statements it must support.
  */
 class ProviderRepairQueueTest {
 
@@ -44,12 +43,13 @@ class ProviderRepairQueueTest {
     private val enqueueSql =
         "INSERT INTO provider_repair_queue " +
             "(source, providerId, generation, state, attempts, nextRetryAt, leaseUntil, " +
-            "lastFailureReason, createdAt, updatedAt) " +
-            "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now) " +
+            "lastFailureReason, createdAt, updatedAt, intent, intentSince, absenceCount) " +
+            "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now, " +
+            ":intent, :now, 0) " +
             "ON CONFLICT(source, providerId) DO UPDATE SET " +
             "generation = provider_repair_queue.generation + 1, " +
             "state = 'PENDING', attempts = 0, nextRetryAt = :now, leaseUntil = 0, " +
-            "updatedAt = :now"
+            "updatedAt = :now, intent = :intent, intentSince = :now, absenceCount = 0"
 
     private val claimSql =
         "UPDATE provider_repair_queue SET state = 'IN_FLIGHT', leaseUntil = :leaseUntil, " +
@@ -90,6 +90,7 @@ class ProviderRepairQueueTest {
         db = rawDb()
         // The SHIPPED migration text, not a hand-written copy of the schema.
         MessagesDatabase.UPGRADE_TO_V14_SQL.forEach { db.exec(it) }
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
     }
 
     @After
@@ -101,12 +102,11 @@ class ProviderRepairQueueTest {
 
     private val named = Regex(":[A-Za-z][A-Za-z0-9_]*")
 
-    private fun exec(sql: String, vararg args: Any?) {
+    private fun update(sql: String, vararg args: Any?): Long =
         db.prepareStatement(sql.replace(named, "?")).use { st ->
             args.forEachIndexed { i, a -> st.setObject(i + 1, a) }
-            st.executeUpdate()
+            st.executeUpdate().toLong()
         }
-    }
 
     private fun one(sql: String, vararg args: Any?): Long =
         db.prepareStatement(sql.replace(named, "?")).use { st ->
@@ -139,12 +139,33 @@ class ProviderRepairQueueTest {
         }
 
     /** Mirrors ProviderRepairQueue.enqueue. */
-    private fun enqueue(source: String, id: Long, now: Long) =
-        exec(enqueueSql, source, id, now, now, now, now, now)
+    private fun enqueue(
+        source: String,
+        id: Long,
+        now: Long,
+        intent: String = ProviderRepairIntent.EXPECT_EXISTS.name
+    ): Long = update(
+        enqueueSql,
+        source, id, now, now, now, intent, now, now, now, intent, now
+    )
 
     /** Mirrors ProviderRepairQueue.claim. */
     private fun claim(source: String, id: Long, generation: Long, leaseUntil: Long, now: Long): Long =
-        one(claimSql, leaseUntil, now, source, id, generation)
+        update(claimSql, leaseUntil, now, source, id, generation)
+
+    private fun ack(source: String, id: Long, generation: Long): Long =
+        update(ackSql, source, id, generation)
+
+    private fun nack(
+        source: String,
+        id: Long,
+        generation: Long,
+        nextRetryAt: Long,
+        reason: String,
+        now: Long
+    ): Long = update(nackSql, nextRetryAt, reason, now, source, id, generation)
+
+    private fun reclaim(now: Long): Long = update(reclaimSql, now, now)
 
     private fun generationOf(source: String, id: Long): Long =
         one("SELECT generation FROM provider_repair_queue WHERE source = ? AND providerId = ?", source, id)
@@ -163,7 +184,7 @@ class ProviderRepairQueueTest {
     // ── schema / persistence ───────────────────────────────────────────────
 
     @Test
-    fun `the shipped v14 migration creates the queue table`() {
+    fun `the shipped v15 migrations create the current queue table`() {
         val ddl = db.scalarString(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'provider_repair_queue'"
         ) ?: ""
@@ -171,6 +192,8 @@ class ProviderRepairQueueTest {
         assertTrue("generation is stored", ddl.contains("`generation` INTEGER NOT NULL"))
         assertTrue("state is stored", ddl.contains("`state` TEXT NOT NULL"))
         assertTrue("a lease is stored", ddl.contains("`leaseUntil` INTEGER NOT NULL"))
+        assertTrue("intent is stored", ddl.contains("`intent` TEXT NOT NULL DEFAULT 'EXPECT_EXISTS'"))
+        assertTrue("absence evidence is stored", ddl.contains("`absenceCount` INTEGER NOT NULL DEFAULT 0"))
         assertTrue(
             "the timer index exists",
             db.scalarString(
@@ -186,7 +209,7 @@ class ProviderRepairQueueTest {
         // silently discarded correctness work. 300 identities must all survive.
         for (i in 1L..300L) enqueue(sms, i, 1_000L)
         assertEquals(300L, count())
-        assertEquals(300L, dueIds(1_000L, 1000).size)
+        assertEquals(300, dueIds(1_000L, 1000).size)
         assertNotNull(stateOf(sms, 1L))
     }
 
@@ -265,7 +288,7 @@ class ProviderRepairQueueTest {
         enqueue(sms, 7L, 2_000L)          // generation 2 arrives
 
         // The stale worker finishes successfully and tries to ack generation 1.
-        assertEquals(0L, one(ackSql, sms, 7L, 1L))
+        assertEquals(0L, ack(sms, 7L, 1L))
 
         assertEquals("the newer work survives", 1L, count())
         assertEquals(2L, generationOf(sms, 7L))
@@ -276,7 +299,7 @@ class ProviderRepairQueueTest {
     fun `an ack of the claimed generation removes the work`() {
         enqueue(sms, 7L, 1_000L)
         claim(sms, 7L, 1L, 31_000L, 1_000L)
-        assertEquals(1L, one(ackSql, sms, 7L, 1L))
+        assertEquals(1L, ack(sms, 7L, 1L))
         assertEquals(0L, count())
     }
 
@@ -286,7 +309,7 @@ class ProviderRepairQueueTest {
     fun `a nack keeps the work and schedules a retry`() {
         enqueue(sms, 7L, 1_000L)
         claim(sms, 7L, 1L, 31_000L, 1_000L)
-        exec(nackSql, 2_000L, "BINDER", 1_100L, sms, 7L, 1L)
+        nack(sms, 7L, 1L, 2_000L, "BINDER", 1_100L)
 
         assertEquals(1L, count())
         assertEquals("BACKOFF", stateOf(sms, 7L))
@@ -304,7 +327,7 @@ class ProviderRepairQueueTest {
             claim(sms, 7L, 1L, now + 30_000L, now)
             attempts += 1
             val next = now + ProviderRepairBackoff.delayMs(attempts)
-            exec(nackSql, next, "PROVIDER_UNAVAILABLE", now, sms, 7L, 1L)
+            nack(sms, 7L, 1L, next, "PROVIDER_UNAVAILABLE", now)
             now = next
         }
         assertEquals("the identity is still queued after 50 failures", 1L, count())
@@ -318,7 +341,7 @@ class ProviderRepairQueueTest {
         enqueue(sms, 1L, 1_000L)          // will keep failing
         enqueue(sms, 2L, 1_000L)          // healthy
         claim(sms, 1L, 1L, 31_000L, 1_000L)
-        exec(nackSql, 300_000L, "BINDER", 1_000L, sms, 1L, 1L)
+        nack(sms, 1L, 1L, 300_000L, "BINDER", 1_000L)
 
         // The healthy identity is still due and still claimable.
         assertEquals(listOf("sms:2"), dueIds(1_000L, 10))
@@ -332,7 +355,7 @@ class ProviderRepairQueueTest {
     fun `a live lease is not reclaimed`() {
         enqueue(sms, 7L, 1_000L)
         claim(sms, 7L, 1L, 31_000L, 1_000L)
-        assertEquals(0L, one(reclaimSql, 30_000L, 30_000L))
+        assertEquals(0L, reclaim(30_000L))
         assertEquals("IN_FLIGHT", stateOf(sms, 7L))
     }
 
@@ -340,7 +363,7 @@ class ProviderRepairQueueTest {
     fun `an expired lease is reclaimed and becomes due immediately`() {
         enqueue(sms, 7L, 1_000L)
         claim(sms, 7L, 1L, 31_000L, 1_000L)     // worker "dies" here
-        assertEquals(1L, one(reclaimSql, 31_001L, 31_001L))
+        assertEquals(1L, reclaim(31_001L))
         assertEquals("PENDING", stateOf(sms, 7L))
         assertEquals(listOf("sms:7"), dueIds(31_001L, 10))
         assertEquals("the generation is untouched by recovery", 1L, generationOf(sms, 7L))

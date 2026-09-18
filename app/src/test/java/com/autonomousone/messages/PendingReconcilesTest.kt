@@ -90,10 +90,10 @@ class PendingReconcilesTest {
         p.add(ReconcileRequest.ForThread(42)) // newer event
         p.ackThread(claimed, false, 1000)     // old claim fails
 
-        assertEquals(UnitState.BACKOFF, p.threadState(42, 1000))
+        assertEquals(UnitState.PENDING, p.threadState(42, 1001))
         assertNotNull(
-            "the retry covers the newest generation",
-            p.claim(1_000_000)
+            "the newer generation must be immediately claimable",
+            p.claim(1001)
         )
     }
 
