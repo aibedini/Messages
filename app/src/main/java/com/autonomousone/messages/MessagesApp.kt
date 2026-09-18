@@ -16,7 +16,14 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.autonomousone.messages.diagnostics.DebugFrameMetrics
+import com.autonomousone.messages.diagnostics.DebugStrictMode
+import com.autonomousone.messages.diagnostics.MainThreadStallWatchdog
+import com.autonomousone.messages.diagnostics.ProcessExitDiagnostics
 import com.autonomousone.messages.utils.DiagnosticLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * App-owned process hooks.
@@ -30,6 +37,13 @@ import com.autonomousone.messages.utils.DiagnosticLog
  * swallow: a dead process with a written log beats a dead process blind.
  */
 class MessagesApp : Application() {
+
+    /**
+     * App-lifetime scope for the Phase 14-18 diagnostics. IO only: none of the
+     * startup diagnostic work may run on the main thread, and none of it is
+     * allowed to delay [onCreate].
+     */
+    private val diagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +60,7 @@ class MessagesApp : Application() {
         // once at startup (throttled to 7 days) so the history is waiting in
         // the outbox when the user finally links a browser.
         maybeTriggerStartupCloudBackfill()
+        installDiagnostics()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
@@ -89,6 +104,25 @@ class MessagesApp : Application() {
         } catch (e: Throwable) {
             Log.w("SYNC_COORD", "startup cloud backfill schedule failed", e)
         }
+    }
+
+    /**
+     * Phases 14-18. Each component has exactly one entry point and none of
+     * them blocks startup:
+     *
+     *  - [DebugStrictMode.install]          DEBUG-only, log-only StrictMode thread policy;
+     *  - [MainThreadStallWatchdog.install]  background probe thread, 2 s / 5 s thresholds;
+     *  - [DebugFrameMetrics.install]        DEBUG-only bounded FrameMetrics counters;
+     *  - [ProcessExitDiagnostics.install]   API 30+, async historical exit-reason import.
+     *
+     * Called after DiagnosticLog.initialize so every component can persist
+     * through the existing redacting log.
+     */
+    private fun installDiagnostics() {
+        DebugStrictMode.install()
+        MainThreadStallWatchdog.install()
+        DebugFrameMetrics.install(this)
+        ProcessExitDiagnostics.install(this, diagnosticsScope)
     }
 
     /** Log any runtime-critical permission that is currently denied. */

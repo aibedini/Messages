@@ -84,6 +84,20 @@ data class MessageEntity(
     )
 }
 
+/**
+ * Projection DTO: the unread message count of ONE thread.
+ *
+ * Exists so a full projection rebuild can read every thread's unread count in a
+ * single aggregate query instead of one COUNT per conversation (the N+1 shape).
+ * The predicate mirrors MessageDao.countUnread exactly - `read = 0 AND type = 1` -
+ * so the batch and the single-thread query can never disagree about what
+ * "unread" means.
+ */
+data class ThreadUnreadCount(
+    val threadId: Long,
+    val unreadCount: Int
+)
+
 /** Per-conversation projection kept up to date by the sync engine. */
 @Entity(
     tableName = "conversations",

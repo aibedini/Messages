@@ -1,5 +1,6 @@
 package com.autonomousone.messages.messaging
 
+import com.autonomousone.messages.diagnostics.DiagnosticsBreadcrumbs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -34,7 +35,11 @@ object VisibleConversationTracker {
     fun isVisible(threadId: Long): Boolean = _visibleThreadId.value == threadId
 
     fun onOpened(threadId: Long) {
-        if (threadId > 0L) _visibleThreadId.value = threadId
+        if (threadId <= 0L) return
+        _visibleThreadId.value = threadId
+        // Feed the stall watchdog. The breadcrumb layer hashes the id itself;
+        // the raw thread id never reaches a log or a diagnostic.
+        DiagnosticsBreadcrumbs.setVisibleConversation(threadId, null)
     }
 
     /**
@@ -42,11 +47,14 @@ object VisibleConversationTracker {
      * tracked: a fast A -> B navigation must not let A's teardown hide B.
      */
     fun onClosed(threadId: Long) {
-        if (_visibleThreadId.value == threadId) _visibleThreadId.value = null
+        if (_visibleThreadId.value != threadId) return
+        _visibleThreadId.value = null
+        DiagnosticsBreadcrumbs.setVisibleConversation(null, null)
     }
 
     /** Test seam. Never call from production code. */
     internal fun resetForTest() {
         _visibleThreadId.value = null
+        DiagnosticsBreadcrumbs.setVisibleConversation(null, null)
     }
 }

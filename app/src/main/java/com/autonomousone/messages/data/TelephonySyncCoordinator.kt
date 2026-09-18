@@ -137,6 +137,9 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
          * never delete Room rows outside the window it actually covered.
          */
         const val THREAD_REPAIR_LIMIT = 200
+
+        /** Conversations written per transaction by a full projection rebuild. */
+        const val REBUILD_CHUNK = 500
         const val TAG = "SYNC_COORD"
 
         @Volatile
@@ -1555,23 +1558,54 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * Never on the realtime path — not from a ContentObserver event, not from
      * TailDelta for a small delta, not from marking read, not from resume.
      *
-     * KNOWN LIMITATION (not yet fixed): this still issues one countUnread()
-     * per conversation (N+1). It is recovery-only today, so it is not on the hot
-     * path, but it is still the wrong shape at 360K messages and should become a
-     * single aggregate query.
+     * PHASE 5: the READ query count is CONSTANT, not linear in the number of
+     * conversations.
+     *
+     * Before: rebuildConversationProjection() per thread, and that function is
+     * newestForThread + countUnread + byThread, plus a pin/archive repository
+     * round trip for every thread it had never seen - 3N+ reads.
+     *
+     * Now: two aggregate reads (newest row per thread, unread count per thread),
+     * one projection read, and the pin/archive repositories consulted ONCE.
+     * Only the WRITES remain per conversation, and no SQL shape avoids one row
+     * per conversation.
+     *
+     * Each row still goes through the SAME
+     * replaceProjectionPreservingFlags statement as the realtime and repair
+     * paths, so a rebuild cannot diverge from them.
      */
     suspend fun fullRebuildConversations() = withContext(Dispatchers.IO) {
         val database = db
-        val newestByThread = database.messageDao().newestPerThread()
-        val archivedIds = com.autonomousone.messages.repository.ArchiveRepository(appContext)
-            .getArchivedIds()
-        val pinnedIds = com.autonomousone.messages.repository.PinRepository(appContext)
-            .getPinnedIds()
+        val dao = database.messageDao()
+        val convDao = database.conversationDao()
 
-        // Each thread goes through the SAME projection implementation as the
-        // realtime path, so a repair and a rebuild can never disagree.
-        for (m in newestByThread) {
-            rebuildConversationProjection(m.threadId, preserveFlags = true)
+        val newestByThread = dao.newestPerThread()
+        val unreadByThread = dao.unreadCountsByThread().associate { it.threadId to it.unreadCount }
+        val existingByThread = convDao.all().associateBy { it.threadId }
+        val pinnedIds = pinRepositoryIds()
+        val archivedIds = archivedRepositoryIds()
+
+        // Chunked transactions: a full rebuild can cover every conversation, and
+        // one giant transaction would hold a write lock while blocking every
+        // realtime mutation behind it. Each chunk is independently idempotent.
+        newestByThread.chunked(REBUILD_CHUNK).forEach { chunk ->
+            database.withTransaction {
+                for (m in chunk) {
+                    val existing = existingByThread[m.threadId]
+                    convDao.replaceProjectionPreservingFlags(
+                        threadId = m.threadId,
+                        normalizedAddress = m.normalizedAddress,
+                        rawAddress = m.rawAddress,
+                        snippet = m.body,
+                        lastMessageDate = m.date,
+                        unreadCount = unreadByThread[m.threadId] ?: 0,
+                        pinnedOnInsert = existing?.pinned ?: (m.threadId in pinnedIds),
+                        archivedOnInsert = existing?.archived ?: (m.threadId in archivedIds),
+                        lastMessageType = m.type
+                    )
+                }
+            }
+            yield()
         }
     }
 

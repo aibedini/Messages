@@ -2,6 +2,7 @@ package com.autonomousone.messages.data
 
 import android.content.Context
 import android.util.Log
+import com.autonomousone.messages.diagnostics.DiagnosticsBreadcrumbs
 import com.autonomousone.messages.observer.ProviderChangeBatch
 import com.autonomousone.messages.repository.SmsRepository
 import java.util.concurrent.atomic.AtomicBoolean
@@ -188,6 +189,10 @@ object ChangeRouter {
         }
         while (currentCoroutineContext().isActive) {
             drainDueRepairs(context, queue)
+            // Watchdog breadcrumb: a queue that keeps growing is the difference
+            // between "quiet" and "stuck", which is exactly what a stall report
+            // needs to distinguish.
+            DiagnosticsBreadcrumbs.setExactRepairQueueDepth(queue.depth())
             val wakeAt = queue.nextWakeAt()
             val now = System.currentTimeMillis()
             val waitMs = when {

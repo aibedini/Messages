@@ -132,6 +132,26 @@ interface MessageDao {
     )
     suspend fun countUnread(threadId: Long): Int
 
+    /**
+     * PHASE 5: every thread's unread count in ONE aggregate query.
+     *
+     * The full projection rebuild used to call countUnread() once per
+     * conversation (3N read queries for N conversations). This replaces N of
+     * those with 1, so a rebuild's READ query count no longer grows with the
+     * number of conversations - only its writes do, which is unavoidable.
+     *
+     * The predicate is deliberately identical to [countUnread].
+     */
+    @Query(
+        """
+        SELECT threadId AS threadId, COUNT(*) AS unreadCount
+        FROM messages
+        WHERE read = 0 AND type = 1
+        GROUP BY threadId
+        """
+    )
+    suspend fun unreadCountsByThread(): List<ThreadUnreadCount>
+
     /** Find a message by composite key (source, providerId) for delta calculation. */
     @Query(
         """
