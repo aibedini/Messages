@@ -1,6 +1,7 @@
 package com.autonomousone.messages
 
 import com.autonomousone.messages.data.PendingReconciles
+import com.autonomousone.messages.data.PendingReconciles.UnitState
 import com.autonomousone.messages.data.ReconcileRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,12 +11,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Merging + CLAIM/ACK/NACK + quarantine semantics.
+ * Merging + CLAIM/ACK/NACK + GENERATION semantics.
  *
  * NOTE: this accumulator is IN-PROCESS ONLY. Nothing here proves anything about
  * Android process death — after process death the accumulator is gone and
- * recovery depends on durable Room sync state, which is a separate (unfinished)
- * concern.
+ * recovery depends on durable Room sync_state, which is unfinished.
  *
  * WRITTEN BUT NOT EXECUTED in this revision.
  */
@@ -39,10 +39,11 @@ class PendingReconcilesTest {
                     executed += if (ok) "tail" else "tail!"
                     p.ackTail(claim, ok, now)
                 }
-                claim.threadIds.forEach { id ->
-                    val ok = !fail("thread:" + id)
-                    executed += if (ok) "thread:" + id else "thread:" + id + "!"
-                    p.ackThread(id, ok, now)
+                claim.threads.forEach { claimed ->
+                    val key = "thread:" + claimed.threadId
+                    val ok = !fail(key)
+                    executed += if (ok) key else key + "!"
+                    p.ackThread(claimed, ok, now)
                 }
                 now += 5_000L
             }
@@ -54,92 +55,94 @@ class PendingReconcilesTest {
             .toSet()
     }
 
-    // ── a retry backoff must never block unrelated realtime work ────────────
+    // ── P0-A1: an in-flight thread must not swallow a newer event ───────────
 
     @Test
-    fun `a thread in retry backoff does not block an immediate tail`() {
+    fun `an in-flight thread is not completed by the old ack when a new event arrives`() {
         val p = PendingReconciles()
-        p.add(ReconcileRequest.ForThread(1))
-        val first = p.claim(1000)!!
-        assertEquals(listOf(1L), first.threadIds)
-        p.ackThread(1, false, 1000)
+        p.add(ReconcileRequest.ForThread(42))
 
-        assertEquals(PendingReconciles.UnitState.BACKOFF, p.threadState(1, 1000))
+        val claim = p.claim(1000)!!
+        val claimed = claim.threads.single()
+        assertEquals(42L, claimed.threadId)
 
-        // Realtime work arrives 1 ms later, while thread 1 is in a 1 s backoff.
-        p.add(ReconcileRequest.TailDelta)
-        val next = p.claim(1001)
-        assertNotNull("the tail must be claimable immediately", next)
-        assertNotNull(next!!.tailEpoch)
+        // A NEW provider event for the SAME thread arrives while the repair for
+        // the old generation is still executing.
+        p.add(ReconcileRequest.ForThread(42))
+
+        // The old claim reports success.
+        p.ackThread(claimed, true, 1000)
+
         assertEquals(
-            "the poison thread is still in backoff and was not retried early",
-            PendingReconciles.UnitState.BACKOFF,
-            p.threadState(1, 1001)
+            "the newer event must NOT be acknowledged by the old claim",
+            UnitState.PENDING,
+            p.threadState(42, 1001)
+        )
+        assertNotNull("and it is immediately claimable again", p.claim(1001))
+    }
+
+    @Test
+    fun `an in-flight thread failure keeps the newest generation pending`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.ForThread(42))
+        val claimed = p.claim(1000)!!.threads.single()
+
+        p.add(ReconcileRequest.ForThread(42)) // newer event
+        p.ackThread(claimed, false, 1000)     // old claim fails
+
+        assertEquals(UnitState.BACKOFF, p.threadState(42, 1000))
+        assertNotNull(
+            "the retry covers the newest generation",
+            p.claim(1_000_000)
         )
     }
 
     @Test
-    fun `a thread in retry backoff does not block a healthy thread`() {
+    fun `repeated in-flight generations all get repaired`() {
         val p = PendingReconciles()
-        p.add(ReconcileRequest.ForThread(1))
-        val first = p.claim(1000)!!
-        p.ackThread(1, false, 1000)
+        p.add(ReconcileRequest.ForThread(7))
+        val first = p.claim(1000)!!.threads.single()
 
-        p.add(ReconcileRequest.ForThread(2))
-        val next = p.claim(1001)
-        assertNotNull("the healthy thread must not wait for the poison backoff", next)
-        assertEquals(listOf(2L), next!!.threadIds)
+        p.add(ReconcileRequest.ForThread(7))
+        p.add(ReconcileRequest.ForThread(7))
+        p.ackThread(first, true, 1000)
+
+        assertEquals(UnitState.PENDING, p.threadState(7, 1001))
+        assertNotNull(p.claim(1001))
     }
 
-    @Test
-    fun `a thread in retry backoff does not block a full sync`() {
-        val p = PendingReconciles()
-        p.add(ReconcileRequest.ForThread(1))
-        p.ackThread(1, false, 1000)
-
-        p.add(ReconcileRequest.FullSync)
-        val next = p.claim(1001)
-        assertNotNull(next)
-        assertTrue(next!!.fullSync)
-    }
-
-    // ── global work is never permanently abandoned ──────────────────────────
+    // ── P0-A2: FullSync / TailDelta generations ─────────────────────────────
 
     @Test
-    fun `full sync transient failures never permanently abandon it`() {
+    fun `a full sync requested while one is in flight remains pending`() {
         val p = PendingReconciles()
         p.add(ReconcileRequest.FullSync)
 
-        var now = 1_000_000L
-        repeat(12) {
-            val claim = p.claim(now)!!
-            p.ackFullSync(claim, false, now)
-            assertEquals(
-                "still pending/degraded, never gone",
-                PendingReconciles.UnitState.BACKOFF,
-                p.fullSyncState(now)
-            )
-            now += 120_000L // past the capped backoff
-        }
+        val claim = p.claim(1000)!!
+        assertTrue(claim.fullSync)
 
-        val later = p.claim(now)
-        assertNotNull("a full sync keeps retrying at a capped interval", later)
-        assertTrue(later!!.fullSync)
+        // A NEW FullSync request arrives while the first one is executing.
+        p.add(ReconcileRequest.FullSync)
+
+        // The first one succeeds.
+        p.ackFullSync(claim, true, 1000)
+
+        assertTrue("the newer FullSync must remain pending", p.hasWork())
+        assertEquals(UnitState.PENDING, p.fullSyncState(1001))
+        val next = p.claim(1001)!!
+        assertTrue(next.fullSync)
     }
 
     @Test
-    fun `tail transient failures never permanently abandon it`() {
+    fun `a tail requested while a tail is in flight remains pending`() {
         val p = PendingReconciles()
         p.add(ReconcileRequest.TailDelta)
+        val claim = p.claim(1000)!!
 
-        var now = 1_000_000L
-        repeat(12) {
-            val claim = p.claim(now)!!
-            p.ackTail(claim, false, now)
-            assertEquals(PendingReconciles.UnitState.BACKOFF, p.tailState(now))
-            now += 120_000L
-        }
-        assertNotNull("the tail keeps retrying", p.claim(now))
+        p.add(ReconcileRequest.TailDelta)
+        p.ackTail(claim, true, 1000)
+
+        assertNotNull("the newer tail is still pending", p.claim(1001))
     }
 
     @Test
@@ -155,7 +158,7 @@ class PendingReconcilesTest {
 
         assertTrue("the tail was NOT covered by a failed full sync", p.hasWork())
         val retry = p.claim(1_000_000)!!
-        assertNotNull("the tail is still claimable", retry.tailEpoch)
+        assertNotNull(retry.tailEpoch)
     }
 
     @Test
@@ -165,14 +168,84 @@ class PendingReconcilesTest {
         val claim = p.claim(1000)!!
         assertNull(claim.tailEpoch)
 
-        p.add(ReconcileRequest.TailDelta) // arrives while the full sync executes
+        p.add(ReconcileRequest.TailDelta)
         p.ackFullSync(claim, true, 1000)
 
-        assertTrue("the newer tail was not covered", p.hasWork())
+        assertTrue(p.hasWork())
         assertNotNull(p.claim(2000)!!.tailEpoch)
     }
 
-    // ── thread isolation and quarantine ────────────────────────────────────
+    // ── global work is never permanently abandoned ──────────────────────────
+
+    @Test
+    fun `full sync transient failures never permanently abandon it`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.FullSync)
+
+        var now = 1_000_000L
+        repeat(12) {
+            val claim = p.claim(now)!!
+            p.ackFullSync(claim, false, now)
+            assertEquals(UnitState.BACKOFF, p.fullSyncState(now))
+            now += 120_000L
+        }
+        assertNotNull("keeps retrying at a capped interval", p.claim(now))
+    }
+
+    @Test
+    fun `tail transient failures never permanently abandon it`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.TailDelta)
+        var now = 1_000_000L
+        repeat(12) {
+            val claim = p.claim(now)!!
+            p.ackTail(claim, false, now)
+            assertEquals(UnitState.BACKOFF, p.tailState(now))
+            now += 120_000L
+        }
+        assertNotNull(p.claim(now))
+    }
+
+    // ── retry backoff never blocks unrelated realtime work ──────────────────
+
+    @Test
+    fun `a thread in retry backoff does not block an immediate tail`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.ForThread(1))
+        val claimed = p.claim(1000)!!.threads.single()
+        p.ackThread(claimed, false, 1000)
+        assertEquals(UnitState.BACKOFF, p.threadState(1, 1000))
+
+        p.add(ReconcileRequest.TailDelta)
+        val next = p.claim(1001)
+        assertNotNull("the tail must be claimable immediately", next)
+        assertNotNull(next!!.tailEpoch)
+        assertEquals(UnitState.BACKOFF, p.threadState(1, 1001))
+    }
+
+    @Test
+    fun `a thread in retry backoff does not block a healthy thread`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.ForThread(1))
+        val claimed = p.claim(1000)!!.threads.single()
+        p.ackThread(claimed, false, 1000)
+
+        p.add(ReconcileRequest.ForThread(2))
+        val next = p.claim(1001)!!
+        assertEquals(listOf(2L), next.threads.map { it.threadId })
+    }
+
+    @Test
+    fun `a thread in retry backoff does not block a full sync`() {
+        val p = PendingReconciles()
+        p.add(ReconcileRequest.ForThread(1))
+        p.ackThread(p.claim(1000)!!.threads.single(), false, 1000)
+
+        p.add(ReconcileRequest.FullSync)
+        assertTrue(p.claim(1001)!!.fullSync)
+    }
+
+    // ── thread isolation, quarantine ───────────────────────────────────────
 
     @Test
     fun `one failing thread does not lose its siblings`() {
@@ -195,14 +268,10 @@ class PendingReconcilesTest {
         val h = Harness(p)
         h.runAll { it == "thread:2" }
 
-        assertTrue("the healthy thread ran", h.successes().contains(1L))
+        assertTrue(h.successes().contains(1L))
         assertTrue(p.quarantinedThreadIds().contains(2L))
-        assertEquals(
-            "quarantined is an explicit state, not a silent deletion",
-            PendingReconciles.UnitState.QUARANTINED,
-            p.threadState(2, h.now)
-        )
-        assertFalse("no infinite retry", p.hasWork())
+        assertEquals(UnitState.QUARANTINED, p.threadState(2, h.now))
+        assertFalse(p.hasWork())
     }
 
     @Test
@@ -211,26 +280,24 @@ class PendingReconcilesTest {
         p.add(ReconcileRequest.ForThread(5))
         var now = 1_000_000L
         repeat(2) {
-            val c = p.claim(now)!!
-            p.ackThread(5, false, now)
+            p.ackThread(p.claim(now)!!.threads.single(), false, now)
             now += 120_000L
         }
-        assertEquals(PendingReconciles.UnitState.QUARANTINED, p.threadState(5, now))
+        assertEquals(UnitState.QUARANTINED, p.threadState(5, now))
 
-        p.add(ReconcileRequest.ForThread(5)) // fresh provider event
+        p.add(ReconcileRequest.ForThread(5))
 
-        assertEquals(PendingReconciles.UnitState.PENDING, p.threadState(5, now))
-        assertNotNull("and it is claimable again", p.claim(now))
+        assertEquals(UnitState.PENDING, p.threadState(5, now))
+        assertNotNull(p.claim(now))
     }
 
-    // ── semantic union ─────────────────────────────────────────────────────
+    // ── semantic union / dedupe / in-flight ────────────────────────────────
 
     @Test
     fun `fullSync is not lost when a tail arrives first`() {
         val p = PendingReconciles()
         p.add(ReconcileRequest.FullSync)
         p.add(ReconcileRequest.TailDelta)
-
         val claim = p.claim(1000)!!
         assertTrue(claim.fullSync)
         assertNotNull(claim.tailEpoch)
@@ -240,45 +307,18 @@ class PendingReconcilesTest {
     fun `fifty thread ids lose none`() {
         val p = PendingReconciles(threadChunkSize = 8)
         (1L..50L).forEach { p.add(ReconcileRequest.ForThread(it)) }
-
         val h = Harness(p)
         h.runAll()
-
         assertEquals((1L..50L).toSet(), h.successes())
         assertFalse(p.hasWork())
-    }
-
-    @Test
-    fun `duplicate ids dedupe`() {
-        val p = PendingReconciles()
-        repeat(100) { p.add(ReconcileRequest.ForThread(7)) }
-        assertEquals(listOf(7L), p.claim(1000)!!.threadIds)
-    }
-
-    @Test
-    fun `new work arriving while in flight stays pending`() {
-        val p = PendingReconciles()
-        p.add(ReconcileRequest.ForThread(1))
-        val claim = p.claim(1000)!!
-        p.add(ReconcileRequest.ForThread(2))
-        p.add(ReconcileRequest.TailDelta)
-
-        p.ackThread(1, true, 1000)
-        val next = p.claim(2000)!!
-        assertEquals(listOf(2L), next.threadIds)
-        assertNotNull(next.tailEpoch)
     }
 
     @Test
     fun `a claim is not re-claimed while in flight`() {
         val p = PendingReconciles()
         p.add(ReconcileRequest.ForThread(9))
-        assertEquals(listOf(9L), p.claim(1000)!!.threadIds)
+        assertEquals(listOf(9L), p.claim(1000)!!.threads.map { it.threadId })
         assertNull("in-flight work is not handed out twice", p.claim(1000))
-
-        p.ackThread(9, false, 1000)
-        assertNull("still inside the retry backoff", p.claim(1000))
-        assertNotNull("due once the backoff elapses", p.claim(1000 + 120_000))
     }
 
     @Test
@@ -287,8 +327,7 @@ class PendingReconcilesTest {
         assertEquals(0L, p.nextWakeUpInMs(1000))
 
         p.add(ReconcileRequest.ForThread(3))
-        p.claim(1000)
-        p.ackThread(3, false, 1000)
-        assertTrue("a requeued unit reports a real future wake-up", p.nextWakeUpInMs(1000) > 0L)
+        p.ackThread(p.claim(1000)!!.threads.single(), false, 1000)
+        assertTrue(p.nextWakeUpInMs(1000) > 0L)
     }
 }

@@ -271,15 +271,18 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 pendingReconciles.ackTail(claim, ok, System.currentTimeMillis())
             }
 
-            claim.threadIds.forEach { threadId ->
+            claim.threads.forEach { claimed ->
                 var ok = false
                 try {
-                    runReconcile(ReconcileRequest.ForThread(threadId))
+                    runReconcile(ReconcileRequest.ForThread(claimed.threadId))
                     ok = true
                 } catch (e: Exception) {
-                    Log.e(TAG, "ForThread failed; requeued id=" + threadId, e)
+                    Log.e(TAG, "ForThread failed; requeued id=" + claimed.threadId, e)
                 }
-                pendingReconciles.ackThread(threadId, ok, System.currentTimeMillis())
+                // The ACK is scoped to the generation this claim covered, so a
+                // provider event that arrived WHILE the repair was executing is
+                // never consumed by it.
+                pendingReconciles.ackThread(claimed, ok, System.currentTimeMillis())
             }
         }
 
