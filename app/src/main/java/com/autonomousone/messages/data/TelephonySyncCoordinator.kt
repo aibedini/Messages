@@ -444,6 +444,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         snippet = entity.body,
                         lastMessageDate = maxOf(entity.date, existing?.lastMessageDate ?: 0L),
                         unreadCount = (existing?.unreadCount ?: 0) + unreadDelta,
+                        // pinned/archived are NOT NULL with no SQL default, so a
+                        // value is mandatory on this INSERT — the exact statement
+                        // that materializes a brand-new conversation. The row is
+                        // authoritative when it exists; the repositories are
+                        // consulted only for a genuine first insert (?: lazily
+                        // short-circuits, so the common path pays nothing).
+                        pinnedOnInsert = existing?.pinned ?: (entity.threadId in pinRepositoryIds()),
+                        archivedOnInsert = existing?.archived ?: (entity.threadId in archivedRepositoryIds()),
                         lastMessageType = entity.type
                     )
 
@@ -1351,6 +1359,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 // A rebuild is authoritative: it must be able to move the
                 // projection BACKWARDS after a delete. upsertPreservingFlags is
                 // monotonic by design and is only for the realtime insert path.
+                val existingForInsert = convDao.byThread(threadId)
                 convDao.replaceProjectionPreservingFlags(
                     threadId = threadId,
                     normalizedAddress = newest.normalizedAddress,
@@ -1358,6 +1367,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     snippet = newest.body,
                     lastMessageDate = newest.date,
                     unreadCount = unread,
+                    // Same NOT NULL, no-default columns as the realtime path:
+                    // a rebuild must satisfy them too or the whole thread
+                    // vanishes. The row wins; the repositories only seed a
+                    // genuine first insert.
+                    pinnedOnInsert = existingForInsert?.pinned ?: (threadId in pinRepositoryIds()),
+                    archivedOnInsert = existingForInsert?.archived ?: (threadId in archivedRepositoryIds()),
                     lastMessageType = newest.type
                 )
             } else {

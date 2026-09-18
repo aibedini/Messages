@@ -187,11 +187,11 @@ interface ConversationDao {
         """
         INSERT INTO conversations (
             threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
-            lastMessageType
+            lastMessageType, pinned, archived
         )
         VALUES (
             :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
-            :lastMessageType
+            :lastMessageType, :pinnedOnInsert, :archivedOnInsert
         )
         ON CONFLICT(threadId) DO UPDATE SET
             normalizedAddress = excluded.normalizedAddress,
@@ -215,6 +215,17 @@ interface ConversationDao {
         snippet: String,
         lastMessageDate: Long,
         unreadCount: Int,
+        /**
+         * SQLite requires a value for every NOT NULL column without a DEFAULT.
+         * The shipped conversations schema declares pinned/archived NOT NULL
+         * with NO default, so omitting them here fails the whole INSERT with
+         * "NOT NULL constraint failed: conversations.pinned" — which is exactly
+         * the realtime path that must make a new conversation visible at once.
+         * These are INSERT-only: the ON CONFLICT branch never touches them, so
+         * user-owned state survives every subsequent upsert.
+         */
+        pinnedOnInsert: Boolean,
+        archivedOnInsert: Boolean,
         lastMessageType: Int = 1
     )
 
@@ -239,11 +250,11 @@ interface ConversationDao {
         """
         INSERT INTO conversations (
             threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
-            lastMessageType
+            lastMessageType, pinned, archived
         )
         VALUES (
             :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
-            :lastMessageType
+            :lastMessageType, :pinnedOnInsert, :archivedOnInsert
         )
         ON CONFLICT(threadId) DO UPDATE SET
             normalizedAddress = excluded.normalizedAddress,
@@ -261,6 +272,9 @@ interface ConversationDao {
         snippet: String,
         lastMessageDate: Long,
         unreadCount: Int,
+        /** See [upsertPreservingFlags]: NOT NULL, no SQL default, insert-only. */
+        pinnedOnInsert: Boolean,
+        archivedOnInsert: Boolean,
         lastMessageType: Int = 1
     )
 
