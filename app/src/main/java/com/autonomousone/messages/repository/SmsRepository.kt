@@ -1226,69 +1226,94 @@ class SmsRepository(
      * whole SMS table by phone. Address is only a fallback when the thread
      * id is unknown (threadId == 0).
      */
-    fun markThreadAsRead(threadId: Long, phone: String = "") {
-        try {
-            val values = ContentValues().apply {
-                put(Telephony.Sms.READ, 1)
-            }
-            if (threadId > 0) {
-                LocalProviderWrites.noteMarkRead(threadId)
-                context.contentResolver.update(
-                    Telephony.Sms.CONTENT_URI,
-                    values,
-                    "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
-                    arrayOf(threadId.toString())
-                )
-            } else if (phone.isNotBlank()) {
-                val normalized = ContactRepository.normalizePhone(phone)
-                val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
-                context.contentResolver.update(
-                    Telephony.Sms.CONTENT_URI,
-                    values,
-                    "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?) AND ${Telephony.Sms.READ} = 0",
-                    arrayOf("%$lastDigits%", phone)
-                )
-            }
-            // Mark matching MMS rows (thread-based) as read too
-            if (threadId > 0) {
-                val mmsValues = ContentValues().apply {
-                    put(Telephony.Mms.READ, 1)
+    fun markThreadAsReadStrict(threadId: Long, phone: String = ""): MarkReadProviderResult {
+        val smsResult: SourceWriteResult = try {
+            val values = ContentValues().apply { put(Telephony.Sms.READ, 1) }
+            val updated = when {
+                threadId > 0 -> {
+                    LocalProviderWrites.noteMarkRead(threadId)
+                    context.contentResolver.update(
+                        Telephony.Sms.CONTENT_URI,
+                        values,
+                        "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
+                        arrayOf(threadId.toString())
+                    )
                 }
-                context.contentResolver.update(
-                    Telephony.Mms.CONTENT_URI,
-                    mmsValues,
-                    "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.READ} = 0",
-                    arrayOf(threadId.toString())
-                )
+                phone.isNotBlank() -> {
+                    val normalized = ContactRepository.normalizePhone(phone)
+                    val lastDigits = if (normalized.length >= 7) normalized.takeLast(7) else normalized
+                    context.contentResolver.update(
+                        Telephony.Sms.CONTENT_URI,
+                        values,
+                        "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} = ?) AND ${Telephony.Sms.READ} = 0",
+                        arrayOf("%$lastDigits%", phone)
+                    )
+                }
+                else -> 0
             }
+            SourceWriteResult.Success(updated)
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error marking thread as read", e)
+            Log.e("SMS_DEBUG", "Error marking SMS thread as read", e)
+            SourceWriteResult.Failure(e.javaClass.simpleName, e)
         }
+
+        val mmsResult: SourceWriteResult = if (threadId > 0) {
+            try {
+                SourceWriteResult.Success(
+                    context.contentResolver.update(
+                        Telephony.Mms.CONTENT_URI,
+                        ContentValues().apply { put(Telephony.Mms.READ, 1) },
+                        "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.READ} = 0",
+                        arrayOf(threadId.toString())
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("SMS_DEBUG", "Error marking MMS thread as read", e)
+                SourceWriteResult.Failure(e.javaClass.simpleName, e)
+            }
+        } else SourceWriteResult.NotApplicable
+
+        return MarkReadProviderResult(smsResult, mmsResult)
     }
 
-    fun markAllAsRead() {
-        try {
-            val values = ContentValues().apply {
-                put(Telephony.Sms.READ, 1)
-            }
-            context.contentResolver.update(
-                Telephony.Sms.CONTENT_URI,
-                values,
-                "${Telephony.Sms.READ} = 0",
-                null
-            )
-            val mmsValues = ContentValues().apply {
-                put(Telephony.Mms.READ, 1)
-            }
-            context.contentResolver.update(
-                Telephony.Mms.CONTENT_URI,
-                mmsValues,
-                "${Telephony.Mms.READ} = 0",
-                null
+    /** Compatibility facade; correctness callers consume the strict result above. */
+    fun markThreadAsRead(threadId: Long, phone: String = "") {
+        markThreadAsReadStrict(threadId, phone)
+    }
+
+    fun markAllAsReadStrict(): MarkReadProviderResult {
+        val smsResult: SourceWriteResult = try {
+            SourceWriteResult.Success(
+                context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    ContentValues().apply { put(Telephony.Sms.READ, 1) },
+                    "${Telephony.Sms.READ} = 0",
+                    null
+                )
             )
         } catch (e: Exception) {
-            Log.e("SMS_DEBUG", "Error marking all as read", e)
+            Log.e("SMS_DEBUG", "Error marking all SMS as read", e)
+            SourceWriteResult.Failure(e.javaClass.simpleName, e)
         }
+        val mmsResult: SourceWriteResult = try {
+            SourceWriteResult.Success(
+                context.contentResolver.update(
+                    Telephony.Mms.CONTENT_URI,
+                    ContentValues().apply { put(Telephony.Mms.READ, 1) },
+                    "${Telephony.Mms.READ} = 0",
+                    null
+                )
+            )
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error marking all MMS as read", e)
+            SourceWriteResult.Failure(e.javaClass.simpleName, e)
+        }
+        return MarkReadProviderResult(smsResult, mmsResult)
+    }
+
+    /** Compatibility facade; correctness callers consume the strict result above. */
+    fun markAllAsRead() {
+        markAllAsReadStrict()
     }
 
     /**

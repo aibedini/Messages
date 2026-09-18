@@ -38,7 +38,7 @@ fun interface ThreadReadProviderWriter {
         threadId: Long,
         phone: String,
         sources: Set<ConversationReadSource>
-    )
+    ): MarkReadProviderResult
 }
 
 /** Typed diagnostic sink. Production wires DiagnosticLog.event. */
@@ -136,12 +136,11 @@ class MarkConversationReadUseCase(
         phone: String,
         sources: Set<ConversationReadSource>
     ) {
-        try {
+        val result = try {
             providerRead.markConversationRead(threadId, phone, sources)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            // Local read stays; only eventual persistence is degraded.
             diagnostics.event(
                 CATEGORY,
                 "provider-read-failed thread=$threadId sources=" + sources.joinToString(","),
@@ -150,16 +149,13 @@ class MarkConversationReadUseCase(
             requestNarrowRepair(threadId)
             return
         }
-        // Address-only targets have no MMS THREAD_ID to target, so the MMS
-        // half of the read cannot be written. Surface the partial coverage
-        // once rather than letting it be silent.
-        if (threadId <= 0L) {
+        if (result.hasFailure) {
             diagnostics.event(
                 CATEGORY,
-                "provider-read-partial thread=0 mms=unreachable sources=" +
-                    sources.joinToString(","),
+                "provider-read-partial thread=$threadId sms=${result.sms} mms=${result.mms}",
                 null
             )
+            requestNarrowRepair(threadId)
         }
     }
 
@@ -251,8 +247,11 @@ internal class SmsRepositoryThreadReadWriter(
         threadId: Long,
         phone: String,
         sources: Set<ConversationReadSource>
-    ) {
-        if (sources.isEmpty()) return
-        repository.markThreadAsRead(threadId, phone)
+    ): MarkReadProviderResult {
+        if (sources.isEmpty()) return MarkReadProviderResult(
+            SourceWriteResult.NotApplicable,
+            SourceWriteResult.NotApplicable
+        )
+        return repository.markThreadAsReadStrict(threadId, phone)
     }
 }

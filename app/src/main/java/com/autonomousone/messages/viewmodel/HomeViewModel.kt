@@ -590,14 +590,15 @@ class HomeViewModel(
             // Provider persistence stays a separate, eventual pass and is
             // failure-isolated: Home has already converged from Room above, and a
             // provider failure must never roll that back.
-            kotlin.runCatching { repository.markAllAsRead() }
-                .onFailure { e ->
-                    com.autonomousone.messages.utils.DiagnosticLog.event(
-                        "HOME_STATE",
-                        "provider mark-all-read failed; local Room read retained",
-                        e
-                    )
-                }
+            val providerResult = repository.markAllAsReadStrict()
+            if (providerResult.hasFailure) {
+                com.autonomousone.messages.utils.DiagnosticLog.event(
+                    "HOME_STATE",
+                    "provider mark-all-read partial; local Room read retained sms=${providerResult.sms} mms=${providerResult.mms}",
+                    null
+                )
+                coordinator.reconcile(com.autonomousone.messages.data.ReconcileRequest.TailDelta)
+            }
         }
     }
 
