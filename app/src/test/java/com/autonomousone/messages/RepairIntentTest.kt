@@ -34,18 +34,18 @@ class RepairIntentTest {
     private val enqueueSql =
         "INSERT INTO provider_repair_queue " +
             "(source, providerId, generation, state, attempts, nextRetryAt, leaseUntil, " +
-            "lastFailureReason, createdAt, updatedAt, intent, intentSince) " +
+            "lastFailureReason, createdAt, updatedAt, intent, intentSince, absenceCount) " +
             "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now, " +
-            ":intent, :now) " +
+            ":intent, :now, 0) " +
             "ON CONFLICT(source, providerId) DO UPDATE SET " +
             "generation = provider_repair_queue.generation + 1, " +
             "state = 'PENDING', attempts = 0, nextRetryAt = :now, leaseUntil = 0, " +
-            "updatedAt = :now, intent = :intent, intentSince = :now"
+            "updatedAt = :now, intent = :intent, intentSince = :now, absenceCount = 0"
 
     private val rearmSql =
         "UPDATE provider_repair_queue SET generation = generation + 1, " +
             "intent = :intent, intentSince = :now, state = 'PENDING', attempts = 0, " +
-            "nextRetryAt = :now, leaseUntil = 0, updatedAt = :now " +
+            "absenceCount = 0, nextRetryAt = :now, leaseUntil = 0, updatedAt = :now " +
             "WHERE source = :source AND providerId = :providerId AND generation = :generation"
 
     private val ackSql =
