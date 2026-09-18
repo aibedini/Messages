@@ -28,6 +28,8 @@ import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.sms.SmsSender
 import com.autonomousone.messages.utils.DiagnosticLog
+import com.autonomousone.messages.diagnostics.PerfMetric
+import com.autonomousone.messages.diagnostics.PerfTelemetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -572,6 +574,13 @@ class ConversationViewModel(
             .sortedWith(chronologicalOrder)
 
     fun loadConversation(threadId: Long, phone: String = "") {
+        val openPerfMark = PerfTelemetry.mark()
+        val firstPaintRecorded = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun recordFirstPaintIfNeeded() {
+            if (messages.isNotEmpty() && firstPaintRecorded.compareAndSet(false, true)) {
+                PerfTelemetry.recordSince(PerfMetric.CONVERSATION_TAP_TO_FIRST_BUBBLES, openPerfMark)
+            }
+        }
         DiagnosticLog.event(
             "CONVERSATION",
             "open thread=$threadId phone=${DiagnosticLog.phoneToken(phone)} currentMessages=${messages.size}"
@@ -650,6 +659,7 @@ class ConversationViewModel(
                             messages.addAll(mergeOptimistic(messages.toList()))
                             isLoading = false
                             loadStatus = null
+                            recordFirstPaintIfNeeded()
                         }
                         markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
                     }
@@ -667,6 +677,7 @@ class ConversationViewModel(
                     messages.addAll(mergeOptimistic(cachedList))
                     isLoading = false
                     loadStatus = null
+                    recordFirstPaintIfNeeded()
                 }
                 // Cached copy was already fresh → nothing more to do. BUT the
                 // pager must still exist, or scroll-up history and tail refresh
@@ -763,6 +774,7 @@ class ConversationViewModel(
                     if (currentThreadId != 0L || currentPhone.isNotBlank()) {
                         SmsEventBus.emitThreadRead(currentThreadId, currentPhone)
                     }
+                    recordFirstPaintIfNeeded()
                 }
                 // Store for instant re-open.
                 ThreadMessageCache.put(targetThreadId, targetPhone, loadedMessages)
