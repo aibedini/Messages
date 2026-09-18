@@ -282,8 +282,11 @@ class GatewayService : Service() {
      * onDestroy, including force-stop-adjacent kills where onDestroy fires.
      */
     private fun scheduleRestartWatchdog() {
-        if (!GatewayAccessPolicy.canStart(prefs.hasGatewayConsent)) return
-        if (!prefs.isEnabled) return // user turned the gateway OFF — stay dead
+        if (!GatewayAccessPolicy.shouldAutoReconnect(
+                prefs.hasGatewayConsent,
+                prefs.gatewayDesiredEnabled
+            )
+        ) return // no consent or user explicitly turned the gateway off
         try {
             val alarmManager = getSystemService(AlarmManager::class.java) ?: return
             val restart = Intent(this, GatewayService::class.java).apply {

@@ -214,6 +214,16 @@ class ConnectionSupervisor private constructor(
                     onLog("⚠️ Gateway reconcile failed: ${e.message ?: "unknown"} — retry pending")
                     delay(backoffMs)
                     backoffMs = (backoffMs * 2).coerceAtMost(300_000L)
+                    // Do not depend on the periodic health tick to continue
+                    // the retry ladder. A failed reconcile explicitly queues
+                    // its own successor until consent or user intent turns it off.
+                    if (GatewayAccessPolicy.shouldAutoReconnect(
+                            prefs.hasGatewayConsent,
+                            desiredEnabled
+                        )
+                    ) {
+                        reconcileNow()
+                    }
                 }
             }
         }

@@ -43,7 +43,9 @@ object SmsEventBus {
         val threadId: Long,
         val phone: String,
         val message: String,
-        val date: Long
+        val date: Long,
+        /** Real Telephony provider row id when the sender already persisted it. */
+        val providerRowId: Long? = null
     )
 
     private val _outgoingSentFlow = MutableSharedFlow<OutgoingSent>(extraBufferCapacity = 16)
@@ -74,9 +76,15 @@ object SmsEventBus {
     }
 
     /** Fired by SmsSender right after an outgoing message is persisted. */
-    fun emitOutgoingSent(threadId: Long, phone: String, message: String, date: Long) {
+    fun emitOutgoingSent(
+        threadId: Long,
+        phone: String,
+        message: String,
+        date: Long,
+        providerRowId: Long? = null
+    ) {
         _outgoingSentFlow.tryEmit(
-            OutgoingSent(threadId, phone, message, date)
+            OutgoingSent(threadId, phone, message, date, providerRowId)
         )
     }
 }

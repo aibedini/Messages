@@ -25,6 +25,7 @@ import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadPager
 import com.autonomousone.messages.repository.ConversationWindow
 import com.autonomousone.messages.repository.MarkConversationReadUseCase
+import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.sms.SmsSender
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -960,7 +961,7 @@ class ConversationViewModel(
                 ) return@collect
                 val normSent = ContactRepository.normalizePhone(sent.phone)
                 val row = Sms(
-                    id = sent.date,
+                    id = MessageIdentity.outgoingEventId(sent.providerRowId, sent.date),
                     threadId = sent.threadId.takeIf { it != 0L } ?: currentThreadId,
                     sender = normSent,
                     message = sent.message, date = sent.date, unread = false, type = 2

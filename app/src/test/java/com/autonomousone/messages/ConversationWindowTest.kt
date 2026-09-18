@@ -95,6 +95,33 @@ class ConversationWindowTest {
     }
 
     @Test
+    fun `outgoing event reuses provider identity and cannot create a second bubble`() {
+        val providerId = 52L
+        val eventDate = 9_000L
+        assertEquals(providerId, MessageIdentity.outgoingEventId(providerId, eventDate))
+        assertEquals(eventDate, MessageIdentity.outgoingEventId(null, eventDate))
+
+        val eventRow = sms(
+            MessageIdentity.outgoingEventId(providerId, eventDate),
+            eventDate,
+            body = "renewed"
+        ).copy(type = 2, status = 32)
+        // Provider timestamps need not equal the event time. Stable row
+        // identity still lets the authoritative delivered copy replace it.
+        val deliveredProviderRow = sms(providerId, 7_000L, body = "renewed")
+            .copy(type = 2, status = 0)
+
+        val merged = ConversationWindow.mergeRoomTail(
+            visible = listOf(eventRow),
+            roomTail = listOf(deliveredProviderRow)
+        )
+
+        assertEquals(1, merged.size)
+        assertEquals(providerId, merged.single().id)
+        assertEquals(0, merged.single().status)
+    }
+
+    @Test
     fun `equal-timestamp ordering is deterministic and matches Home's newest pick`() {
         val smsNewest = sms(52, 1_000).copy(type = 1)
         val smsOlder = sms(3, 1_000).copy(type = 1)

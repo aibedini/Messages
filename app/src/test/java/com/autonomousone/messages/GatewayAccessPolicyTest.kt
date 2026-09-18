@@ -17,4 +17,11 @@ class GatewayAccessPolicyTest {
         assertFalse(GatewayAccessPolicy.canTransmit(true, false))
         assertTrue(GatewayAccessPolicy.canTransmit(true, true))
     }
+
+    @Test fun `auto reconnect continues only while consent and user intent remain enabled`() {
+        assertFalse(GatewayAccessPolicy.shouldAutoReconnect(false, false))
+        assertFalse(GatewayAccessPolicy.shouldAutoReconnect(false, true))
+        assertFalse(GatewayAccessPolicy.shouldAutoReconnect(true, false))
+        assertTrue(GatewayAccessPolicy.shouldAutoReconnect(true, true))
+    }
 }
