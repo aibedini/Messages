@@ -1,6 +1,8 @@
 package com.autonomousone.messages.ui.conversation
 
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.ConversationWindow
+import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.utils.formatDateHeader
 import java.util.Calendar
 
@@ -40,15 +42,16 @@ fun buildReverseChatItems(messagesAscending: List<Sms>): List<ChatListItem> {
     // Provider refresh + live incoming can race on self-SMS and briefly hand
     // Compose the same provider row twice. LazyColumn requires unique keys and
     // throws when a duplicate reaches it. Keep the freshest copy for each
-    // provider/model id before building UI rows.
-    val uniqueMessages = LinkedHashMap<Long, Sms>()
-    messagesAscending.forEach { uniqueMessages[it.id] = it }
+    // COMPOSITE provider identity (source, providerId) so SMS 52 and MMS 52
+    // stay distinct, then order with the canonical comparator Home uses.
+    val uniqueMessages = LinkedHashMap<MessageIdentity.Key, Sms>()
+    messagesAscending.forEach { uniqueMessages[MessageIdentity.keyOf(it)] = it }
 
     return buildList {
         var currentDayKey: String? = null
         var currentHeader: String? = null
 
-        uniqueMessages.values.sortedBy { it.date }.asReversed().forEach { sms ->
+        uniqueMessages.values.sortedWith(ConversationWindow.canonical).asReversed().forEach { sms ->
             val dayKey = localDayKey(sms.date)
             val header = formatDateHeader(sms.date)
 

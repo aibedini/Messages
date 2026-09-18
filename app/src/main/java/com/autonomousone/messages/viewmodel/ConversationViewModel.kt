@@ -23,6 +23,9 @@ import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadPager
+import com.autonomousone.messages.repository.ConversationWindow
+import com.autonomousone.messages.repository.MarkConversationReadUseCase
+import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.sms.SmsSender
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
@@ -63,10 +66,17 @@ class ConversationViewModel(
          * merged table (no per-source quota), so 20 ≈ the union of the
          * provider pager's INITIAL_PER_SOURCE windows.
          */
-        private const val ROOM_WINDOW = 20
+        private const val ROOM_WINDOW = ConversationWindow.OPEN_WINDOW
     }
 
     private val repository = SmsRepository(application)
+
+    /**
+     * The single read entry point for EVERY conversation-open path (Home,
+     * search, deep link, notification action, cache/Room/provider fallback,
+     * explicit mark-read, and an incoming message into an already-open chat).
+     */
+    private val markReadUseCase = MarkConversationReadUseCase.get(getApplication())
     private val smsSender = SmsSender(application)
     private val mmsSender = MmsSender(application)
 
@@ -196,7 +206,7 @@ class ConversationViewModel(
      */
     private fun appendLiveMessage(row: Sms, source: String): Boolean {
         val duplicate = messages.any { existing ->
-            existing.id == row.id ||
+            ConversationWindow.identity(existing.id) == ConversationWindow.identity(row.id) ||
                 (existing.type == row.type &&
                     existing.message == row.message &&
                     kotlin.math.abs(existing.date - row.date) < 5000L)
@@ -250,10 +260,15 @@ class ConversationViewModel(
     // Optimistic sent rows not yet confirmed in the provider DB (kept visible on refresh).
     private val optimisticMessages = mutableListOf<Sms>()
 
-    private val observer = SmsContentObserver { _batch ->
+    private val observer = SmsContentObserver { batch ->
         // Conversation screen uses merge-based refresh (targeted tail query),
         // not full reload. The URI is not needed here because the pager's
         // loadNewerSince() already does a bounded query.
+        //
+        // Per-thread cache revision: only the threads this provider burst
+        // actually touched become stale. Activity in another conversation
+        // must NOT invalidate B/C/D's instant-open windows.
+        batch.threadIds.forEach { ThreadMessageCache.invalidateThread(it) }
         refresh()
     }
 
@@ -268,6 +283,57 @@ class ConversationViewModel(
     // Only a small page is read on open; scrolling toward either boundary pulls
     // the next keyset page. Never the whole thread.
     private var pager: ThreadPager? = null
+
+    /** ReactiveRoomTail for the currently open thread (bounded window). */
+    private var roomTailJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Builds the windowed pager for the CURRENT thread when one does not exist
+     * yet. Bounded by construction: ThreadPager only ever issues keyset pages.
+     */
+    private fun ensurePager(): ThreadPager? {
+        pager?.let { return it }
+        val thread = currentThreadId
+        val phone = currentPhone
+        if (thread == 0L && phone.isBlank()) return null
+        return ThreadPager(getApplication(), thread, phone).also { pager = it }
+    }
+
+    /**
+     * ReactiveRoomTail for the open conversation.
+     *
+     * Observes the BOUNDED newest window (MessageDao.observeThread with a
+     * LIMIT) and merges every emission into the visible list. Architecture:
+     * ReactiveRoomTail + LoadedOlderPages + OptimisticRows = VisibleMessages.
+     * A Room emission updates the recent rows' read/status but NEVER deletes
+     * older pages the user already scrolled to (ConversationWindow.mergeRoomTail).
+     */
+    private fun startRoomTail(threadId: Long, gen: Long) {
+        if (threadId <= 0L) return
+        roomTailJob = viewModelScope.launch(Dispatchers.IO + crashGuard("roomTail")) {
+            com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                .messageDao()
+                .observeThread(threadId, ConversationWindow.OPEN_WINDOW)
+                .collect { entities ->
+                    if (gen != conversationGeneration) return@collect
+                    val tail = entities.map { it.toSms() }
+                    withContext(Dispatchers.Main) {
+                        if (gen != conversationGeneration) return@withContext
+                        val optimistic = mergeOptimistic(tail)
+                        val merged = ConversationWindow.mergeRoomTail(
+                            messages.toList(),
+                            tail.map { it.copy(unread = false) },
+                            optimistic
+                        )
+                        messages.clear()
+                        messages.addAll(merged)
+                        if (windowMode == ConversationWindowMode.LATEST) {
+                            ThreadMessageCache.put(currentThreadId, currentPhone, merged)
+                        }
+                    }
+                }
+        }
+    }
 
     /** The ONE canonical order every window mutation ends in (Q). */
     private val chronologicalOrder = ThreadMerge.canonicalChronological
@@ -419,7 +485,7 @@ class ConversationViewModel(
                 val p = ThreadPager(getApplication(), thread, phone)
                 val latest = p.loadLatest()
                     .map { it.copy(unread = false) }
-                    .distinctBy { it.id }
+                    .distinctBy { ConversationWindow.identity(it.id) }
                     .sortedWith(chronologicalOrder)
 
                 if (gen != conversationGeneration) return@launch
@@ -469,7 +535,7 @@ class ConversationViewModel(
                 val p = ThreadPager(getApplication(), thread, phone)
                 val oldest = p.loadOldest()
                     .map { it.copy(unread = false) }
-                    .distinctBy { it.id }
+                    .distinctBy { ConversationWindow.identity(it.id) }
                     .sortedWith(chronologicalOrder)
 
                 if (gen != conversationGeneration) return@launch
@@ -501,7 +567,9 @@ class ConversationViewModel(
      * order, never insertion order.
      */
     private fun canonicalize(vararg lists: List<Sms>): List<Sms> =
-        (lists.asList().flatten()).distinctBy { it.id }.sortedWith(chronologicalOrder)
+        (lists.asList().flatten())
+            .distinctBy { ConversationWindow.identity(it.id) }
+            .sortedWith(chronologicalOrder)
 
     fun loadConversation(threadId: Long, phone: String = "") {
         DiagnosticLog.event(
@@ -519,8 +587,10 @@ class ConversationViewModel(
         conversationLoadJob?.cancel()
         olderMessagesJob?.cancel()
         newerMessagesJob?.cancel()
+        roomTailJob?.cancel()
         olderMessagesJob = null
         newerMessagesJob = null
+        roomTailJob = null
         // Every OPEN is deterministic: the conversation starts at the LATEST
         // boundary regardless of where a previous visit ended.
         windowMode = ConversationWindowMode.LATEST
@@ -529,6 +599,14 @@ class ConversationViewModel(
         val myThread = threadId
         val myPhone = currentPhone
         val gen = conversationGeneration
+
+        // Announce visibility to the sync core BEFORE any async read so an
+        // incoming message for this thread is written read in the same
+        // transaction that inserts it (no 0 → 1 → 0 badge flash).
+        if (threadId > 0L) VisibleConversationTracker.onOpened(threadId)
+
+        // ReactiveRoomTail: bounded Room window feeds the UI from here on.
+        startRoomTail(threadId, gen)
 
         conversationLoadJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadConversation")) {
             // ── Stale-while-revalidate: paint the cached thread INSTANTLY
@@ -558,10 +636,11 @@ class ConversationViewModel(
                             }
                             .map { it.toSms() }
                             // DAO rows come back date-DESC (newest first); the
-                            // UI is ALWAYS oldest→newest. Without this the
-                            // bottom anchor lands on the OLDEST row of the
-                            // window and the user must scroll by hand.
-                            .sortedWith(chronologicalOrder)
+                            // UI is ALWAYS oldest→newest, and the painted
+                            // window is hard-capped to ROOM_WINDOW rows so a
+                            // 100 000-message thread opens on a page, not a
+                            // scan.
+                            .let { ConversationWindow.boundedNewest(it, ROOM_WINDOW) }
                     }.getOrNull().orEmpty()
                     if (roomRows.isNotEmpty() && gen == conversationGeneration) {
                         withContext(Dispatchers.Main) {
@@ -638,7 +717,9 @@ class ConversationViewModel(
                 val targetPhone = if (currentPhone.isNotBlank()) currentPhone else loadedMessages.firstOrNull()?.sender ?: ""
 
                 if (targetThreadId != 0L || targetPhone.isNotBlank()) {
-                    repository.markThreadAsRead(targetThreadId, targetPhone)
+                    // Unified read path: local Room transaction first, the
+                    // provider write is eventual persistence.
+                    markReadUseCase.markRead(targetThreadId, targetPhone)
                 }
 
                 val readMessages = loadedMessages.map { it.copy(unread = false) }
@@ -727,21 +808,16 @@ class ConversationViewModel(
         if (phone.isNotBlank()) phone else currentPhone
 
     private fun markReadAndNotify(threadId: Long, phone: String) {
-        if (threadId != 0L || phone.isNotBlank()) {
-            // Read state is a UI-level overlay (Home badge); do NOT invalidate
-            // the thread cache for it — messages themselves didn't change, and
-            // invalidating here is what causes "Reading messages…" on every
-            // re-open of a conversation.
-            repository.markThreadAsRead(threadId, phone)
-            // Mirror the read state into the shadow so a Room-first read
-            // (fresh process) doesn't resurrect stale unread badges.
-            viewModelScope.launch(Dispatchers.IO) {
-                kotlin.runCatching {
-                    com.autonomousone.messages.data.TelephonySyncCoordinator
-                        .get(getApplication()).markThreadReadInShadow(threadId)
-                }
-            }
-            SmsEventBus.emitThreadRead(threadId, phone)
+        if (threadId == 0L && phone.isBlank()) return
+        // Read state is a UI-level overlay (Home badge); do NOT invalidate the
+        // thread cache for it — messages themselves didn't change, and
+        // invalidating here is what causes "Reading messages…" on re-open.
+        //
+        // The use case owns the order: local Room read FIRST (immediate), the
+        // optimistic SmsEventBus signal second, the provider ContentResolver
+        // write last (eventual, off the UI thread).
+        viewModelScope.launch(Dispatchers.IO) {
+            markReadUseCase.markRead(threadId, phone)
         }
     }
 
@@ -755,8 +831,12 @@ class ConversationViewModel(
                 if (isMatch) {
                     val readIncoming = incomingSms.copy(unread = false)
                     appendLiveMessage(readIncoming, source = "incoming")
+                    // An already-open conversation receiving an incoming
+                    // message takes the SAME unified read path as an open.
+                    val thread = currentThreadId
+                    val phone = currentPhone
                     viewModelScope.launch(Dispatchers.IO) {
-                        repository.markThreadAsRead(currentThreadId, currentPhone)
+                        markReadUseCase.markRead(thread, phone)
                     }
                 }
             }
@@ -807,16 +887,19 @@ class ConversationViewModel(
         // History already on screen NEVER disappears or changes shape.
         val newestShown = messages.maxOfOrNull { it.date } ?: 0L
 
-        val tail = when {
-            currentThreadId != 0L && pager != null ->
-                pager!!.loadNewerSince(newestShown)
-            currentPhone.isNotBlank() -> repository.getMessagesByPhone(
-                currentPhone, threadIdHint = currentThreadId
-            )
-            currentThreadId != 0L -> repository.getMessagesByThread(currentThreadId)
-            else -> emptyList()
+        // WINDOWED foreground refresh — never a whole-conversation provider
+        // read. Every path is bounded:
+        //   • no window yet → one newest keyset page (≤ 2 × 12 rows);
+        //   • otherwise     → rows strictly newer than the newest we show.
+        // The whole-thread getMessagesByThread/getMessagesByPhone fallbacks are
+        // gone: a 100 000-message thread is never read to paint a tail.
+        val activePager = pager ?: ensurePager()
+        val tail: List<Sms> = when {
+            activePager == null -> emptyList()
+            messages.isEmpty() -> activePager.loadLatest()
+            else -> activePager.loadNewerSince(newestShown)
         }
-        val statusRows = pager?.loadSmsRowsById(
+        val statusRows = activePager?.loadSmsRowsById(
             messages.asSequence()
                 .filter { it.type == 2 }
                 .map { it.id }
@@ -824,7 +907,7 @@ class ConversationViewModel(
         ).orEmpty()
 
         if (currentThreadId != 0L || currentPhone.isNotBlank()) {
-            repository.markThreadAsRead(currentThreadId, currentPhone)
+            markReadUseCase.markRead(currentThreadId, currentPhone)
         }
 
         withContext(Dispatchers.Main) {
@@ -1064,6 +1147,11 @@ class ConversationViewModel(
 
     override fun onCleared() {
         repository.unregisterObserver(observer)
+        roomTailJob?.cancel()
+        roomTailJob = null
+        // Leaving the conversation: the sync core must stop suppressing
+        // unread for this thread (a fresh incoming message is unread again).
+        if (currentThreadId > 0L) VisibleConversationTracker.onClosed(currentThreadId)
         SmsEventBus.activeConversationPhone = ""
         // Leaving this chat must reconcile the Home list deterministically:
         // chat → home never passes through Activity.onResume, so without this

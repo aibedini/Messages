@@ -139,7 +139,21 @@ class HomeViewModel(
      * targeted mutations instead of triggering a full provider scan.
      */
     private val observer = SmsContentObserver { batch ->
-        ThreadMessageCache.generation++ // provider changed → cached threads stale
+        // PHASE 12: invalidate ONLY the threads this burst actually touched.
+        //
+        // This used to be a global epoch bump on every provider event, which
+        // neutralised per-thread revisions completely: one incoming SMS for
+        // conversation A threw away the cached message pages of B, C and D, so
+        // opening any of them paid a full re-read again.
+        //
+        // A burst with NO identifiable thread is the one case that is genuinely
+        // global (we cannot say what changed), so only then do we invalidate all.
+        val affectedThreads = batch.threadIds
+        if (affectedThreads.isEmpty()) {
+            ThreadMessageCache.invalidateAll()
+        } else {
+            affectedThreads.forEach { ThreadMessageCache.invalidateThread(it) }
+        }
         // The accumulated burst is routed to the narrowest repair it justifies
         // (exact row -> thread -> bounded tail). An ordinary incoming SMS is an
         // O(1) exact mutation and can no longer escalate to a full reconcile.

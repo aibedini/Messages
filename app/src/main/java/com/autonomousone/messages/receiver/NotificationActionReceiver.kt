@@ -10,7 +10,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import com.autonomousone.messages.sms.SmsSender
-import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,7 +67,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     try {
                         when (intent.action) {
                             ACTION_MARK_READ -> {
-                                SmsRepository(appContext).markThreadAsRead(threadId, phone)
+                                // Same unified read path as opening the chat:
+                                // local Room read first, provider write eventual.
+                                MarkConversationReadUseCase.get(appContext)
+                                    .markRead(threadId, phone)
                                 if (notificationId != 0) {
                                     NotificationManagerCompat.from(appContext).cancel(notificationId)
                                 }

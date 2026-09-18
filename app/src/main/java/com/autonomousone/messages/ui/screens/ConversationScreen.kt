@@ -16,6 +16,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import com.autonomousone.messages.navigation.ConversationLaunchStore
+import com.autonomousone.messages.messaging.VisibleConversationTracker
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
@@ -311,6 +312,17 @@ fun ConversationScreen(
             viewModel.loadConversation(threadId, phone)
         } else {
             viewModel.setPhone(phone)
+        }
+    }
+
+    // Screen lifecycle = conversation visibility. The sync core consults this
+    // while it builds an incoming-message mutation, so an incoming SMS for the
+    // thread on screen is written read in the same transaction (no 0→1→0
+    // badge flash). Idempotent with the ViewModel's own open/close hooks.
+    DisposableEffect(threadId) {
+        if (threadId != 0L) VisibleConversationTracker.onOpened(threadId)
+        onDispose {
+            if (threadId != 0L) VisibleConversationTracker.onClosed(threadId)
         }
     }
 

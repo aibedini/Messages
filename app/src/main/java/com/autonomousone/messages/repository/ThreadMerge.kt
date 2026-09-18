@@ -22,9 +22,16 @@ import com.autonomousone.messages.model.Sms
  */
 object ThreadMerge {
 
-    /** Two rows are the "same message" when ids match, or body matches within 5 s. */
+    /**
+     * Two rows are the "same message" when their composite provider identity
+     * (source, providerId) matches, or when the body matches within 5 s.
+     *
+     * The id comparison goes through [MessageIdentity] rather than raw id
+     * equality so SMS 52 and MMS 52 (the latter carried as -52 at the UI
+     * boundary) can never collapse into one bubble.
+     */
     internal fun sameMessage(a: Sms, b: Sms): Boolean =
-        a.id == b.id ||
+        MessageIdentity.keyOf(a) == MessageIdentity.keyOf(b) ||
                 (a.type == b.type &&
                     a.message == b.message &&
                     kotlin.math.abs(a.date - b.date) < 5000L)
@@ -37,9 +44,9 @@ object ThreadMerge {
      * a real id (optimistic → persisted).
      */
     fun mergeTail(existing: List<Sms>, fresh: List<Sms>): List<Sms> {
-        if (fresh.isEmpty()) return existing.sortedBy { it.date }
+        if (fresh.isEmpty()) return existing.sortedWith(canonicalChronological)
         val out = existing.toMutableList()
-        for (row in fresh.sortedBy { it.date }) {
+        for (row in fresh.sortedWith(canonicalChronological)) {
             val idx = out.indexOfFirst { sameMessage(it, row) }
             when {
                 idx < 0 -> out.add(row)
@@ -49,7 +56,7 @@ object ThreadMerge {
                 else -> out[idx] = row.copy(unread = out[idx].unread)
             }
         }
-        return out.sortedBy { it.date }
+        return out.sortedWith(canonicalChronological)
     }
 
     /**
@@ -59,7 +66,7 @@ object ThreadMerge {
     fun prependOlder(existing: List<Sms>, olderPage: List<Sms>): List<Sms> {
         val known = existing.toHashSet() // Sms is a data class → value equality
         val novel = olderPage.filter { it !in known && existing.none { e -> sameMessage(e, it) } }
-        return (novel + existing).sortedBy { it.date }
+        return (novel + existing).sortedWith(canonicalChronological)
     }
 
     /**
@@ -79,12 +86,11 @@ object ThreadMerge {
     }
 
     /**
-     * The ONE chronological order every window mutation must end in:
-     * date, then the absolute provider id (MMS model ids are negative;
-     * abs() keeps SMS and MMS comparable on a shared axis).
+     * The ONE chronological order every window mutation must end in. Defined
+     * by [ConversationWindow.canonical]: date, then source, then providerId —
+     * the same tie-break Home uses to pick a thread's newest row.
      */
-    val canonicalChronological: Comparator<Sms> =
-        compareBy<Sms> { it.date }.thenBy { kotlin.math.abs(it.id) }
+    val canonicalChronological: Comparator<Sms> = ConversationWindow.canonical
 
     /**
      * Caps [messages] to its newest [n] entries (ascending order preserved).
