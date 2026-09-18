@@ -140,10 +140,11 @@ class ClosureInvariantsTest {
 
     @Test
     fun `the overlap boundary keeps rows that share the oldest page date`() {
-        // The provider page's oldest covered key is (date=5000, providerId=7).
-        // A Room row at the SAME date with a LOWER id is outside the page but
-        // INSIDE the covered range by date, so it must be considered - and a row
-        // at the same date with a HIGHER id is inside the page.
+        // The provider page's oldest covered key is (date=5000, providerId=7),
+        // and the page is ordered date DESC, providerId DESC. Anything OLDER than
+        // that key is NOT covered: a row at the same date with a LOWER providerId
+        // sorts after the boundary, and a row with an older date is outside the
+        // page entirely. Only ids 7 and 9 are covered.
         msg("sms", 3L, 1L, 5_000L, 1)
         msg("sms", 7L, 1L, 5_000L, 1)
         msg("sms", 9L, 1L, 5_000L, 1)
@@ -161,8 +162,14 @@ class ClosureInvariantsTest {
                     listOf(7L, 9L), ids)
             }
         }
-        // A provider-id-only boundary would have dropped id 3 from consideration
-        // while still claiming the date range was covered.
-        assertEquals(2L, db.queryLong("SELECT COUNT(*) FROM messages WHERE date = 5000"))
+        // All three rows share the boundary date; only the two inside the covered
+        // range are actionable. Id 3 is NOT covered and must never be deleted by a
+        // bounded overlap repair built on this boundary.
+        assertEquals(3L, db.queryLong("SELECT COUNT(*) FROM messages WHERE date = 5000"))
+        assertEquals(
+            "the out-of-boundary row is not part of the covered range",
+            1L,
+            db.queryLong("SELECT COUNT(*) FROM messages WHERE date = 5000 AND providerId = 3")
+        )
     }
 }

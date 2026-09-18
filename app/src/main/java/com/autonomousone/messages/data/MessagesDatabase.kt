@@ -55,7 +55,7 @@ import com.autonomousone.messages.BuildConfig
         CloudHistoryCheckpointEntity::class,
         ProviderRepairEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -423,6 +423,31 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V14_SQL.forEach(db::execSQL) }
         }
 
+        /**
+         * v15 — REPAIR INTENT (ADDITIVE, no rebuild).
+         *
+         * v14 queue rows carry no record of WHY the identity was queued, and its
+         * consumer treated any successful absence as a proven delete. That is
+         * unsafe for providerRowChanged/status work, where the row is expected to
+         * exist and is often not query-visible yet.
+         *
+         * SAFETY: every pre-existing row is migrated to EXPECT_EXISTS, the
+         * NON-DESTRUCTIVE intent. A v14 row must never become delete-capable by
+         * accident; the two-sided integrity audit resolves such rows deliberately
+         * later, through a separate VERIFY_DELETE_CANDIDATE generation.
+         *
+         * The SQL DEFAULT is declared on the entity via @ColumnInfo, so the ALTER
+         * statements below produce exactly the schema Room validates against.
+         */
+        internal val UPGRADE_TO_V15_SQL = listOf(
+            "ALTER TABLE `provider_repair_queue` ADD COLUMN `intent` TEXT NOT NULL DEFAULT 'EXPECT_EXISTS'",
+            "ALTER TABLE `provider_repair_queue` ADD COLUMN `intentSince` INTEGER NOT NULL DEFAULT 0",
+            "UPDATE `provider_repair_queue` SET `intentSince` = `updatedAt` WHERE `intentSince` = 0"
+        )
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) { UPGRADE_TO_V15_SQL.forEach(db::execSQL) }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -434,7 +459,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

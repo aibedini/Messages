@@ -128,12 +128,14 @@ object ChangeRouter {
         scope.launch {
             val queue = ProviderRepairQueue(app)
             var enqueued = false
+            // A mature exact ContentObserver identity: absence from the provider
+            // is a considered observation, so this intent may prove a delete.
             for (id in plan.exactSmsIds) {
-                queue.enqueue(MessageEntity.SOURCE_SMS, id)
+                queue.enqueue(MessageEntity.SOURCE_SMS, id, ProviderRepairIntent.RECONCILE_EXACT)
                 enqueued = true
             }
             for (id in plan.exactMmsIds) {
-                queue.enqueue(MessageEntity.SOURCE_MMS, id)
+                queue.enqueue(MessageEntity.SOURCE_MMS, id, ProviderRepairIntent.RECONCILE_EXACT)
                 enqueued = true
             }
             if (enqueued) {
@@ -188,11 +190,16 @@ object ChangeRouter {
      * whose provider source failed. Those callers must NOT have to wait for an
      * unrelated provider event to trigger a retry.
      */
-    fun enqueueExactRepair(context: Context, source: String, providerId: Long) {
+    fun enqueueExactRepair(
+        context: Context,
+        source: String,
+        providerId: Long,
+        intent: ProviderRepairIntent
+    ) {
         val app = context.applicationContext
         ensureRepairScheduler(app)
         scope.launch {
-            ProviderRepairQueue(app).enqueue(source, providerId)
+            ProviderRepairQueue(app).enqueue(source, providerId, intent)
             nudge.trySend(Unit)
         }
     }
@@ -245,8 +252,8 @@ object ChangeRouter {
             if (!queue.stillOwned(entry)) continue
 
             val outcome = when (entry.source) {
-                MessageEntity.SOURCE_SMS -> applyExactSms(repo, coordinator, entry.providerId)
-                MessageEntity.SOURCE_MMS -> applyExactMms(repo, coordinator, entry.providerId)
+                MessageEntity.SOURCE_SMS -> applyExactSms(repo, coordinator, queue, entry)
+                MessageEntity.SOURCE_MMS -> applyExactMms(repo, coordinator, queue, entry)
                 else -> ExactRepairResult.Failed("UNSUPPORTED_SOURCE")
             }
 
@@ -278,6 +285,56 @@ object ChangeRouter {
     }
 
     /**
+     * A SUCCESSFUL provider absence. What it permits depends on the PERSISTED
+     * intent plus the maturity policy - never on which caller happened to enqueue
+     * the work.
+     */
+    private suspend fun resolveAbsence(
+        entry: ProviderRepairEntity,
+        coordinator: TelephonySyncCoordinator,
+        queue: ProviderRepairQueue,
+        localRowExists: Boolean,
+        now: Long
+    ): ExactRepairResult {
+        val intent = ProviderRepairIntent.from(entry.intent)
+
+        if (intent.absenceCanProveDelete) {
+            // RECONCILE_EXACT (a mature exact observer identity) or
+            // VERIFY_DELETE_CANDIDATE (already a candidate, and this is its second
+            // independent successful absence). Both may delete - but only if there
+            // is a local row to remove.
+            if (!localRowExists) return ExactRepairResult.Done
+            val committed = coordinator.mutateAndAwaitCommit(
+                MessageMutation.Delete(entry.source, entry.providerId)
+            )
+            return if (committed) ExactRepairResult.Done
+            else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
+        }
+
+        // EXPECT_EXISTS / REFRESH_STATUS: the row is EXPECTED to exist, so an
+        // absence is a visibility race until proven otherwise.
+        val matured = (now - entry.intentSince) >= ProviderRepairQueue.VISIBILITY_GRACE_MS &&
+            entry.attempts >= ProviderRepairQueue.ABSENCE_MIN_ATTEMPTS
+        if (!matured) return ExactRepairResult.Failed("ABSENCE_NOT_MATURED")
+
+        if (!localRowExists) {
+            // Nothing local to remove, so the work is genuinely resolved. This is
+            // the only way an EXPECT_EXISTS row leaves the queue on absence.
+            return ExactRepairResult.Done
+        }
+
+        // Matured absence over a real local row: this intent is NOT allowed to
+        // delete. Convert to a fresh VERIFY_DELETE_CANDIDATE generation, which must
+        // prove absence independently before anything is removed. This generation
+        // is finished, so Done is correct: the ACK is scoped to the OLD generation
+        // and therefore cannot touch the new one.
+        queue.rearm(entry, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE, now)
+        Log.w(TAG, "matured absence for " + entry.source + ":" + entry.providerId +
+            " intent=" + intent + " -> VERIFY_DELETE_CANDIDATE generation")
+        return ExactRepairResult.Done
+    }
+
+    /**
      * Exact SMS decision.
      *
      * A DELETE is only ever issued from a SUCCESSFUL read that proves absence; a
@@ -286,20 +343,29 @@ object ChangeRouter {
     private suspend fun applyExactSms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
-        id: Long
-    ): ExactRepairResult = when (val read = repo.readSmsExactStrict(id)) {
+        queue: ProviderRepairQueue,
+        entry: ProviderRepairEntity
+    ): ExactRepairResult = when (val read = repo.readSmsExactStrict(entry.providerId)) {
         is ProviderRead.Success -> {
             val row = read.value
-            // ONE durable commit: the queue row may only be ACKed after Room (and
-            // the outbox that commits with it) accepted this mutation.
-            val committed = if (row != null) {
-                coordinator.mutateAndAwaitCommit(MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row))
+            if (row != null) {
+                // ONE durable commit: the queue row may only be ACKed after Room
+                // (and the outbox that commits with it) accepted this mutation.
+                if (coordinator.mutateAndAwaitCommit(
+                        MessageMutation.Upsert(MessageEntity.SOURCE_SMS, row)
+                    )
+                ) ExactRepairResult.Done else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
             } else {
-                // PROVEN absence: the provider answered and has no such row.
-                coordinator.mutateAndAwaitCommit(MessageMutation.Delete(MessageEntity.SOURCE_SMS, id))
+                // A successful ABSENCE. Deleting is NOT automatic: the persisted
+                // intent decides, and an expected-to-exist row must mature first.
+                resolveAbsence(
+                    entry = entry,
+                    coordinator = coordinator,
+                    queue = queue,
+                    localRowExists = coordinator.localRowExists(entry.source, entry.providerId),
+                    now = System.currentTimeMillis()
+                )
             }
-            if (committed) ExactRepairResult.Done
-            else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
         }
         is ProviderRead.Failure -> ExactRepairResult.Failed(read.reason.name)
     }
@@ -326,33 +392,41 @@ object ChangeRouter {
     private suspend fun applyExactMms(
         repo: SmsRepository,
         coordinator: TelephonySyncCoordinator,
-        id: Long
-    ): ExactRepairResult = when (val existence = repo.readMmsExistenceStrict(id)) {
+        queue: ProviderRepairQueue,
+        entry: ProviderRepairEntity
+    ): ExactRepairResult = when (val existence = repo.readMmsExistenceStrict(entry.providerId)) {
         is ProviderRead.Failure -> ExactRepairResult.Failed(existence.reason.name)
         is ProviderRead.Success -> when (existence.value) {
-            ProviderExistence.Absent -> {
-                if (coordinator.mutateAndAwaitCommit(
-                        MessageMutation.Delete(MessageEntity.SOURCE_MMS, id)
-                    )
-                ) ExactRepairResult.Done else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
-            }
-            ProviderExistence.Exists -> when (val materialized = repo.readMmsMaterializedStrict(id)) {
+            ProviderExistence.Absent -> resolveAbsence(
+                entry = entry,
+                coordinator = coordinator,
+                queue = queue,
+                localRowExists = coordinator.localRowExists(entry.source, entry.providerId),
+                now = System.currentTimeMillis()
+            )
+            ProviderExistence.Exists -> when (
+                val materialized = repo.readMmsMaterializedStrict(entry.providerId)
+            ) {
                 is ProviderRead.Failure -> ExactRepairResult.Failed(materialized.reason.name)
                 is ProviderRead.Success -> {
                     val row = materialized.value
-                    val committed = if (row != null) {
-                        coordinator.mutateAndAwaitCommit(
-                            MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row)
-                        )
+                    if (row != null) {
+                        if (coordinator.mutateAndAwaitCommit(
+                                MessageMutation.Upsert(MessageEntity.SOURCE_MMS, row)
+                            )
+                        ) ExactRepairResult.Done else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
                     } else {
-                        // The base read proved existence, this one proved absence:
-                        // the provider answered both times, so the delete is proven.
-                        coordinator.mutateAndAwaitCommit(
-                            MessageMutation.Delete(MessageEntity.SOURCE_MMS, id)
+                        // Existence said Exists, materialization said gone: the
+                        // provider answered twice, so this is a successful absence -
+                        // still subject to the intent policy.
+                        resolveAbsence(
+                            entry = entry,
+                            coordinator = coordinator,
+                            queue = queue,
+                            localRowExists = coordinator.localRowExists(entry.source, entry.providerId),
+                            now = System.currentTimeMillis()
                         )
                     }
-                    if (committed) ExactRepairResult.Done
-                    else ExactRepairResult.Failed(MUTATION_NOT_COMMITTED)
                 }
             }
         }

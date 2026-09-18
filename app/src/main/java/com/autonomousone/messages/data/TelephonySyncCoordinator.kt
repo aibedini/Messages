@@ -249,14 +249,20 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         // final would lose the update entirely. The durable queue
                         // re-reads and decides the stable state.
                         Log.i(TAG, "providerRowChanged row not visible yet " + source + ":" +
-                            providerId + " -> durable exact repair")
-                        ChangeRouter.enqueueExactRepair(appContext, source, providerId)
+                            providerId + " -> durable EXPECT_EXISTS repair")
+                        // EXPECT_EXISTS, not RECONCILE_EXACT: this path runs right
+                        // after an outgoing insert, so absence must never delete.
+                        ChangeRouter.enqueueExactRepair(
+                            appContext, source, providerId, ProviderRepairIntent.EXPECT_EXISTS
+                        )
                     }
                 }
                 is ProviderRead.Failure -> {
                     Log.w(TAG, "providerRowChanged read failed " + source + ":" + providerId +
-                        " reason=" + read.reason + " -> durable exact repair")
-                    ChangeRouter.enqueueExactRepair(appContext, source, providerId)
+                        " reason=" + read.reason + " -> durable EXPECT_EXISTS repair")
+                    ChangeRouter.enqueueExactRepair(
+                        appContext, source, providerId, ProviderRepairIntent.EXPECT_EXISTS
+                    )
                 }
             }
         }
@@ -848,8 +854,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // identity goes to the durable queue and is retried on its own
                     // timer - no provider event required.
                     Log.w(TAG, "status read unresolved " + m.source + ":" + m.providerId +
-                        " ok=" + (statusRead is ProviderRead.Success) + " -> durable exact repair")
-                    ChangeRouter.enqueueExactRepair(appContext, m.source, m.providerId)
+                        " ok=" + (statusRead is ProviderRead.Success) + " -> durable REFRESH_STATUS repair")
+                    // REFRESH_STATUS: the message is known to exist locally, so an
+                    // absence must never delete it - only a matured absence may
+                    // become a delete CANDIDATE.
+                    ChangeRouter.enqueueExactRepair(
+                        appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
+                    )
                 }
                 if (fresh != null) {
                     val entity = toEntity(fresh, m.source)
@@ -1601,6 +1612,19 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * expressed over the whole table and the UI simply follows the Flow. The
      * provider write remains a separate, eventual bulk pass.
      */
+    /**
+     * Does Room still hold this exact identity?
+     *
+     * Used ONLY by the repair-intent maturity policy: a matured absence over an
+     * EXPECT_EXISTS / REFRESH_STATUS row decides between "nothing to remove"
+     * (resolve) and "a real local row may be stale" (become a delete CANDIDATE).
+     * It is never used to justify a delete by itself.
+     */
+    suspend fun localRowExists(source: String, providerId: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            db.messageDao().findByKey(source, providerId) != null
+        }
+
     suspend fun markAllThreadsReadInShadow() = withContext(Dispatchers.IO) {
         db.withTransaction {
             db.messageDao().markAllRead()

@@ -69,16 +69,52 @@ class ProviderRepairQueue(context: Context) {
 
         /** Diagnostics snapshot bound. */
         const val MAX_SNAPSHOT = 50
+
+        /**
+         * How long an EXPECT_EXISTS / REFRESH_STATUS absence may still mean
+         * "created, not query-visible yet".
+         *
+         * This is a VISIBILITY grace, not a retry delay: a provider row written
+         * moments ago is frequently not readable yet (provider transaction still
+         * open, OEM provider page not refreshed). Within this window an absence is
+         * never evidence, and after it an absence still only produces a
+         * VERIFY_DELETE_CANDIDATE - never a direct delete.
+         */
+        const val VISIBILITY_GRACE_MS = 30_000L
+
+        /** Successful absence reads required before an absence is "mature". */
+        const val ABSENCE_MIN_ATTEMPTS = 3
     }
 
     /**
      * Records work for an exact identity, or bumps an existing entry's
      * generation. Idempotent for repeated notifications of the SAME change.
      */
-    suspend fun enqueue(source: String, providerId: Long, now: Long = System.currentTimeMillis()) {
+    suspend fun enqueue(
+        source: String,
+        providerId: Long,
+        intent: ProviderRepairIntent,
+        now: Long = System.currentTimeMillis()
+    ) {
         if (source.isBlank() || providerId <= 0L) return
-        dao.enqueue(source, providerId, now)
+        // A newer intent always wins: generation++ and intent are written together,
+        // so an older in-flight worker fails stillOwned() and can neither delete nor
+        // ACK on behalf of the newer work.
+        dao.enqueue(source, providerId, now, intent.name)
     }
+
+    /**
+     * Re-arms the CLAIMED generation under a different intent.
+     *
+     * Scoped to the caller's generation, so it can never overwrite a newer intent.
+     * Returns false when the generation was already superseded.
+     */
+    suspend fun rearm(
+        entry: ProviderRepairEntity,
+        intent: ProviderRepairIntent,
+        now: Long = System.currentTimeMillis()
+    ): Boolean =
+        dao.rearm(entry.source, entry.providerId, entry.generation, intent.name, now) == 1
 
     /** Observations due for a retry. Non-claiming: see [claim]. */
     suspend fun due(now: Long, limit: Int = MAX_CLAIM_PER_DRAIN): List<ProviderRepairEntity> =

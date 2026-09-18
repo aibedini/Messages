@@ -96,3 +96,45 @@ never retried.
    and the mutation can apply one slightly stale non-destructive write, which the
    newer generation immediately converges. A fully atomic read+mutate+ack would
    need the mutation inside the queue's own transaction.
+
+## Repair intent (v15)
+
+Identity alone does not say what an ABSENCE means, so intent is persisted with the
+queued row and is never inferred from the caller at claim time:
+
+| Intent | Enqueued by | A proven absence may delete? |
+|---|---|---|
+| `RECONCILE_EXACT` | a mature exact ContentObserver identity | YES |
+| `EXPECT_EXISTS` | `providerRowChanged` right after an outgoing insert | **NO** - retry |
+| `REFRESH_STATUS` | a delivery/status callback | **NO** - retry |
+| `VERIFY_DELETE_CANDIDATE` | bounded overlap, integrity audit | YES |
+
+Without this, making the *caller* durable only moved the race one layer deeper:
+enqueue -> generic repair -> first strict `Success(null)` -> Delete.
+
+**Maturity policy.** `EXPECT_EXISTS` and `REFRESH_STATUS` cannot retry forever, and
+must not delete on the first absence. An absence is only "mature" after
+`VISIBILITY_GRACE_MS` (30s) AND `ABSENCE_MIN_ATTEMPTS` (3) successful reads. A
+mature absence then:
+
+- if Room has no such row -> resolve (nothing to remove);
+- if Room still has the row -> `rearm` into a NEW generation with
+  `VERIFY_DELETE_CANDIDATE`, which must prove absence independently before any
+  delete.
+
+**Migration safety.** v14 rows have no recorded origin, so v15 backfills them to
+`EXPECT_EXISTS` - the non-destructive intent. A pre-existing row can never become
+delete-capable by accident.
+
+**Generation ownership.** Every enqueue bumps the generation and rewrites the
+intent together. An older in-flight worker fails `stillOwned()` and can then
+neither delete, ACK, NACK, nor modify the newer generation. In particular a stale
+`VERIFY_DELETE_CANDIDATE` worker can never delete a row that a newer
+`EXPECT_EXISTS` generation has re-claimed.
+
+## Still not implemented
+
+The two-sided periodic integrity audit (PHASE P0-7) is STILL ABSENT, so
+`integrity_audit_state` was deliberately NOT added to v15 rather than shipping an
+unused table. Consequence: an old provider row that never entered Room, or an old
+unidentified provider mutation, is still not detected.

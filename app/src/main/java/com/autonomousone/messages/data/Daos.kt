@@ -389,14 +389,39 @@ interface ProviderRepairDao {
     @Query(
         "INSERT INTO provider_repair_queue " +
             "(source, providerId, generation, state, attempts, nextRetryAt, leaseUntil, " +
-            "lastFailureReason, createdAt, updatedAt) " +
-            "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now) " +
+            "lastFailureReason, createdAt, updatedAt, intent, intentSince) " +
+            "VALUES (:source, :providerId, 1, 'PENDING', 0, :now, 0, '', :now, :now, " +
+            ":intent, :now) " +
             "ON CONFLICT(source, providerId) DO UPDATE SET " +
             "generation = provider_repair_queue.generation + 1, " +
             "state = 'PENDING', attempts = 0, nextRetryAt = :now, leaseUntil = 0, " +
-            "updatedAt = :now"
+            "updatedAt = :now, intent = :intent, intentSince = :now"
     )
-    suspend fun enqueue(source: String, providerId: Long, now: Long)
+    suspend fun enqueue(source: String, providerId: Long, now: Long, intent: String)
+
+    /**
+     * Re-arms the row under a DIFFERENT intent with a NEW generation.
+     *
+     * The absence-maturity policy needs this: a matured EXPECT_EXISTS or
+     * REFRESH_STATUS absence must never delete, so it is converted into a fresh
+     * VERIFY_DELETE_CANDIDATE generation, which requires its own independent
+     * successful absence read before any delete. Scoped to the generation the
+     * caller claimed, so a newer intent is never overwritten.
+     */
+    @Query(
+        "UPDATE provider_repair_queue SET generation = generation + 1, " +
+            "intent = :intent, intentSince = :now, state = 'PENDING', attempts = 0, " +
+            "nextRetryAt = :now, leaseUntil = 0, updatedAt = :now " +
+            "WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation"
+    )
+    suspend fun rearm(
+        source: String,
+        providerId: Long,
+        generation: Long,
+        intent: String,
+        now: Long
+    ): Int
 
     /** Earliest retry among rows nobody currently owns - the timer wake time. */
     @Query("SELECT MIN(nextRetryAt) FROM provider_repair_queue WHERE state != 'IN_FLIGHT'")

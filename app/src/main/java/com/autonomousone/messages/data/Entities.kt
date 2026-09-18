@@ -1,5 +1,6 @@
 package com.autonomousone.messages.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -144,6 +145,43 @@ data class ConversationEntity(
  *  - There is NO capacity limit and NO eviction. A correctness queue bounds its
  *    processing rate, never its state.
  */
+/**
+ * WHY a provider identity is queued for repair.
+ *
+ * The queue used to be identity-only, and its consumer treated ANY successful
+ * absence as a proven delete. That is valid for a mature exact observer event
+ * and WRONG for every other producer:
+ *
+ *   RECONCILE_EXACT         a mature exact ContentObserver identity. Absence is a
+ *                           considered observation, so a proven delete is allowed.
+ *   EXPECT_EXISTS           providerRowChanged() immediately after an outgoing
+ *                           insert. The row is EXPECTED to exist and is often not
+ *                           query-visible yet, so absence must NEVER delete.
+ *   REFRESH_STATUS          a delivery/status callback for a row we know about.
+ *                           Absence must never delete a valid message.
+ *   VERIFY_DELETE_CANDIDATE a row that is already a delete CANDIDATE (bounded
+ *                           overlap or integrity audit). A second, independent
+ *                           strict read proving absence may delete it.
+ *
+ * Inferring intent from the caller at claim time is not allowed: it is persisted
+ * with the durable row.
+ */
+enum class ProviderRepairIntent {
+    RECONCILE_EXACT,
+    EXPECT_EXISTS,
+    REFRESH_STATUS,
+    VERIFY_DELETE_CANDIDATE;
+
+    /** True only for intents where a PROVEN absence may delete the local row. */
+    val absenceCanProveDelete: Boolean
+        get() = this == RECONCILE_EXACT || this == VERIFY_DELETE_CANDIDATE
+
+    companion object {
+        fun from(value: String?): ProviderRepairIntent =
+            entries.firstOrNull { it.name == value } ?: EXPECT_EXISTS
+    }
+}
+
 @Entity(
     tableName = "provider_repair_queue",
     primaryKeys = ["source", "providerId"],
@@ -167,7 +205,22 @@ data class ProviderRepairEntity(
     /** Typed reason from the last failure (ProviderRead.Reason name). */
     val lastFailureReason: String = "",
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    /**
+     * Persisted [ProviderRepairIntent]. A SQL default is declared so the v15
+     * ALTER TABLE can add a NOT NULL column to existing rows AND still match the
+     * schema Room expects (Room validates the column default verbatim).
+     *
+     * The default is EXPECT_EXISTS - the NON-DESTRUCTIVE intent - because a row
+     * written by v14 has no recorded semantic origin and must never become
+     * delete-capable by accident. The two-sided integrity audit resolves such a
+     * row later, deliberately.
+     */
+    @ColumnInfo(defaultValue = "EXPECT_EXISTS")
+    val intent: String = ProviderRepairIntent.EXPECT_EXISTS.name,
+    /** When the current intent was recorded; the visibility-grace clock. */
+    @ColumnInfo(defaultValue = "0")
+    val intentSince: Long = 0L
 ) {
     companion object {
         const val STATE_PENDING = "PENDING"
