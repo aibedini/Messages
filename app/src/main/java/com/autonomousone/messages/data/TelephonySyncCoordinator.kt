@@ -129,6 +129,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     companion object {
         const val FIRST_BATCH = 500
         const val BACKFILL_BATCH = 500
+
+        /**
+         * Bounded provider window for a single-thread repair.
+         *
+         * A repair must never materialize a 100k-message thread, and it must
+         * never delete Room rows outside the window it actually covered.
+         */
+        const val THREAD_REPAIR_LIMIT = 200
         const val TAG = "SYNC_COORD"
 
         @Volatile
@@ -1400,28 +1408,54 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         // The observer tracks BOTH tables, so a thread repair must read both:
         // an MMS-only thread used to be repaired with an empty SMS read and the
         // repair silently did nothing.
-        val sms = smsRepository.querySmsRaw(
-            selection = "${Telephony.Sms.THREAD_ID} = ?",
-            selectionArgs = arrayOf(threadId.toString()),
-            sortOrder = "${Telephony.Sms.DATE} DESC",
-            limit = 200
-        )
-        val mms = smsRepository.queryMmsRaw(
-            selection = "${Telephony.Mms.THREAD_ID} = ?",
-            selectionArgs = arrayOf(threadId.toString()),
-            sortOrder = "${Telephony.Mms.DATE} DESC",
-            limit = 200
-        )
-        if (sms.isEmpty() && mms.isEmpty()) return@withContext
-        db.withTransaction {
-            if (sms.isNotEmpty()) {
-                db.messageDao().upsertAll(sms.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
-            }
-            if (mms.isNotEmpty()) {
-                db.messageDao().upsertAll(mms.mapNotNull { toEntity(it, MessageEntity.SOURCE_MMS) })
-            }
+        // PHASE 4.1: STRICT reads. querySmsRaw/queryMmsRaw catch every exception
+        // and return emptyList(), which makes "the provider failed" and "the
+        // provider has no such rows" indistinguishable. A repair that cannot tell
+        // them apart must not draw a destructive conclusion from either.
+        val smsRead = smsRepository.querySmsThreadStrict(threadId, limit = THREAD_REPAIR_LIMIT)
+        val mmsRead = smsRepository.queryMmsThreadStrict(threadId, limit = THREAD_REPAIR_LIMIT)
+
+        val smsOk = smsRead is ProviderRead.Success
+        val mmsOk = mmsRead is ProviderRead.Success
+        val sms = (smsRead as? ProviderRead.Success)?.value.orEmpty()
+        val mms = (mmsRead as? ProviderRead.Success)?.value.orEmpty()
+
+        if (!smsOk || !mmsOk) {
+            // Each source is independent: an SMS failure says nothing about MMS.
+            // The surviving source is still repaired; the failed one keeps its
+            // Room rows AND earns durable work in the exact-repair queue.
+            Log.w(TAG, "thread repair " + threadId + " partial: smsOk=" + smsOk +
+                " mmsOk=" + mmsOk + " -> no destructive conclusion")
+            if (!smsOk) ChangeRouter.retryPendingExactReads(appContext)
         }
-        rebuildConversationProjection(threadId, preserveFlags = true)
+
+        // PHASE 4.3: the ONLY proof that a provider thread is empty is a
+        // SUCCESSFUL, EMPTY read from BOTH sources. One failed source means
+        // UNKNOWN, and unknown never removes data.
+        //
+        // (An empty page is a real proof even with a LIMIT: a limit bounds how
+        // many rows come back, it does not invent rows that are not there.)
+        if (smsOk && mmsOk && sms.isEmpty() && mms.isEmpty()) {
+            db.withTransaction {
+                // SQL delete: a huge thread is never materialized into Kotlin.
+                db.messageDao().deleteThread(threadId)
+                db.conversationDao().delete(threadId)
+            }
+            Log.i(TAG, "thread repair " + threadId + " proved empty -> conversation removed")
+            return@withContext
+        }
+
+        if ((smsOk && sms.isNotEmpty()) || (mmsOk && mms.isNotEmpty())) {
+            db.withTransaction {
+                if (smsOk && sms.isNotEmpty()) {
+                    db.messageDao().upsertAll(sms.mapNotNull { toEntity(it, MessageEntity.SOURCE_SMS) })
+                }
+                if (mmsOk && mms.isNotEmpty()) {
+                    db.messageDao().upsertAll(mms.mapNotNull { toEntity(it, MessageEntity.SOURCE_MMS) })
+                }
+            }
+            rebuildConversationProjection(threadId, preserveFlags = true)
+        }
     }
 
     // ── Conversation projection ────────────────────────────────────────────
