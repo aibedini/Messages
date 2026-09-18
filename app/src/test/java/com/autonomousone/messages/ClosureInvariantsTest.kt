@@ -62,14 +62,20 @@ class ClosureInvariantsTest {
 
     @Test
     fun `equal date ties break by source then providerId`() {
-        // SMS id 9 and MMS id 3 share a timestamp. Provider-id-only ordering would
-        // pick the SMS (9 > 3); canonical order picks MMS, because source breaks
-        // the tie FIRST. This is the rule Home, the projection and the conversation
-        // view all use, so they can never disagree about which row is newest.
-        msg("sms", 9L, 1L, 5_000L, 1)
-        msg("mms", 3L, 1L, 5_000L, 1)
-        assertEquals("mms", firstSource("date DESC, source DESC, providerId DESC"))
-        assertEquals("sms", firstSource("date DESC, providerId DESC"))
+        // SMS id 3 and MMS id 9 share a timestamp. The canonical order breaks the
+        // tie on SOURCE first ("sms" > "mms"), so SMS is newest; ordering by
+        // providerId alone would pick MMS. This is the rule Home, the projection and
+        // the conversation view all use, so they can never disagree about which row
+        // is newest at an equal timestamp.
+        // "sms" > "mms" lexicographically, so source DESC selects SMS ...
+        msg("sms", 3L, 1L, 5_000L, 1)
+        msg("mms", 9L, 1L, 5_000L, 1)
+        assertEquals("sms", firstSource("date DESC, source DESC, providerId DESC"))
+        // ... while providerId DESC ALONE selects MMS (9 > 3). The two orderings
+        // now genuinely disagree, so this test distinguishes them. The previous
+        // data (sms 9 / mms 3) made both orders pick SMS, so the negative control
+        // proved nothing.
+        assertEquals("mms", firstSource("date DESC, providerId DESC"))
     }
 
     @Test

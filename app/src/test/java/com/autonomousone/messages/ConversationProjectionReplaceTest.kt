@@ -150,6 +150,27 @@ class ConversationProjectionReplaceTest {
         }
     }
 
+    /**
+     * Binds ONLY the SEVEN columns of the pre-fix statement.
+     *
+     * The generic write() binds nine, so calling it with
+     * legacyInsertOmittingFlags crashed in JDBC binding (ArrayIndexOutOfBounds)
+     * BEFORE SQLite ever evaluated the statement - the test never reached the
+     * NOT NULL invariant it exists to prove.
+     */
+    private fun writeLegacy(sql: String, threadId: Long, snippet: String, date: Long) {
+        db.prepareStatement(sql).use { st ->
+            st.setLong(1, threadId)
+            st.setString(2, "+98912")
+            st.setString(3, "+98912")
+            st.setString(4, snippet)
+            st.setLong(5, date)
+            st.setInt(6, 0)
+            st.setInt(7, 1)
+            st.executeUpdate()
+        }
+    }
+
     private fun string(column: String): String =
         db.scalarString("SELECT `" + column + "` FROM conversations WHERE threadId = 1") ?: ""
 
@@ -226,7 +247,7 @@ class ConversationProjectionReplaceTest {
         // path could not materialize a brand-new conversation, so an incoming
         // SMS left Home showing the previous state.
         try {
-            write(legacyInsertOmittingFlags, 1, "A", 10_000L)
+            writeLegacy(legacyInsertOmittingFlags, 1, "A", 10_000L)
             fail("expected the INSERT to violate NOT NULL")
         } catch (expected: SQLException) {
             val message = expected.message ?: ""

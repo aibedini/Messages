@@ -19,7 +19,10 @@ class ProviderReadTest {
     @Test
     fun `success carries a value and maps`() {
         val read: ProviderRead<List<Int>> = ProviderRead.Success(listOf(1, 2))
-        assertEquals(listOf(1, 2), read.map { it.size })
+        val mapped = read.map { it.size }
+        assertTrue("mapping a Success stays a Success", mapped is ProviderRead.Success)
+        // map { it.size } yields Success(2) - NOT the original list.
+        assertEquals(2, (mapped as ProviderRead.Success).value)
     }
 
     @Test
