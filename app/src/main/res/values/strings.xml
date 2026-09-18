@@ -96,6 +96,9 @@
     <string name="conv_copy_number">Copy number</string>
     <string name="conv_copy_link">Copy link</string>
     <string name="conv_add_to_contacts">Add to contacts</string>
+    <string name="conv_view_contact">View contact</string>
+    <string name="conv_number_copied">Number copied</string>
+    <string name="conv_participant_actions">Contact actions</string>
     <string name="conv_call">Call</string>
     <string name="conv_send_sms_action">Send SMS</string>
     <string name="conv_menu_copy_link_or_number">Copy link/number</string>

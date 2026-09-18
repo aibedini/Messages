@@ -96,6 +96,9 @@
     <string name="conv_copy_number">کپی شماره</string>
     <string name="conv_copy_link">کپی لینک</string>
     <string name="conv_add_to_contacts">افزودن به مخاطبان</string>
+    <string name="conv_view_contact">مشاهده مخاطب</string>
+    <string name="conv_number_copied">شماره کپی شد</string>
+    <string name="conv_participant_actions">عملیات مخاطب</string>
     <string name="conv_call">تماس</string>
     <string name="conv_send_sms_action">ارسال پیامک</string>
     <string name="conv_menu_copy_link_or_number">کپی لینک/شماره</string>

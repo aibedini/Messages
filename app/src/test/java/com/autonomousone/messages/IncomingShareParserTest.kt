@@ -49,4 +49,26 @@ class IncomingShareParserTest {
         assertEquals("", r.phone)
         assertEquals("just text", r.text)
     }
+
+    @Test
+    fun `dialer mmsto uri preserves recipient and encoded draft`() {
+        val r = IncomingShareParser.fromSendTo(
+            "mmsto:%2B989121234567?body=hello%20there",
+            null,
+            null
+        )
+        assertEquals("+989121234567", r.phone)
+        assertEquals("hello there", r.text)
+    }
+
+    @Test
+    fun `mms uri accepts sms_body query parameter`() {
+        val r = IncomingShareParser.fromSendTo(
+            "mms:09121234567?sms_body=draft%20message",
+            null,
+            null
+        )
+        assertEquals("09121234567", r.phone)
+        assertEquals("draft message", r.text)
+    }
 }

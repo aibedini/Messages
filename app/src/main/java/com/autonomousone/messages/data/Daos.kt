@@ -226,6 +226,37 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE threadId = :threadId")
     suspend fun byThread(threadId: Long): ConversationEntity?
 
+    /** Exact first pass for external sms:/smsto: launches. */
+    @Query(
+        """
+        SELECT * FROM conversations
+        WHERE normalizedAddress = :normalizedAddress
+        ORDER BY lastMessageDate DESC
+        LIMIT 1
+        """
+    )
+    suspend fun newestByNormalizedAddress(normalizedAddress: String): ConversationEntity?
+
+    /**
+     * Bounded country-code fallback. The caller still applies
+     * ContactRepository.sameConversation to every candidate, so short codes
+     * and coincidental partial matches never become a navigation target.
+     */
+    @Query(
+        """
+        SELECT * FROM conversations
+        WHERE length(normalizedAddress) >= :minimumLength
+          AND normalizedAddress LIKE '%' || :suffix
+        ORDER BY lastMessageDate DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentByAddressSuffix(
+        suffix: String,
+        minimumLength: Int,
+        limit: Int
+    ): List<ConversationEntity>
+
     @Query("SELECT * FROM conversations ORDER BY lastMessageDate DESC")
     suspend fun all(): List<ConversationEntity>
 

@@ -4,11 +4,13 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
+import android.net.Uri
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.model.Contact
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 class ContactRepository(
     private val context: Context
@@ -17,9 +19,11 @@ class ContactRepository(
     companion object {
         @Volatile
         private var cachedMap: Map<String, String>? = null
+        private val participantCache = ConcurrentHashMap<String, ConversationParticipantState>()
 
         fun clearCache() {
             cachedMap = null
+            participantCache.clear()
         }
 
         fun normalizePhone(phone: String): String {
@@ -34,6 +38,7 @@ class ContactRepository(
             } else {
                 p = p.replace("+", "")
             }
+
             return p
         }
 
@@ -56,6 +61,72 @@ class ContactRepository(
             return na.endsWith(nb) || nb.endsWith(na)
         }
     }
+
+    /** One indexed PhoneLookup query; never scans all contacts during composition. */
+    suspend fun getParticipantState(phone: String): ConversationParticipantState =
+        withContext(Dispatchers.IO) {
+            val normalized = normalizePhone(phone)
+            if (normalized.isBlank() || normalized.contains(',') || normalized.contains(';')) {
+                return@withContext ConversationParticipantState(
+                    phone = phone,
+                    normalizedPhone = normalized,
+                    displayName = phone,
+                    isKnownContact = false
+                )
+            }
+            participantCache[normalized]?.let { return@withContext it }
+
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                return@withContext unknownParticipant(phone, normalized)
+            }
+
+            val lookup = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(normalized)
+            )
+            val state = runCatching {
+                context.contentResolver.query(
+                    lookup,
+                    arrayOf(
+                        ContactsContract.PhoneLookup._ID,
+                        ContactsContract.PhoneLookup.LOOKUP_KEY,
+                        ContactsContract.PhoneLookup.DISPLAY_NAME
+                    ),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val contactId = cursor.getLong(0)
+                    val lookupKey = cursor.getString(1).orEmpty()
+                    val displayName = cursor.getString(2)?.trim().orEmpty()
+                    ConversationParticipantState(
+                        phone = phone,
+                        normalizedPhone = normalized,
+                        displayName = displayName.ifBlank { phone },
+                        isKnownContact = true,
+                        contactLookupUri = ContactsContract.Contacts
+                            .getLookupUri(contactId, lookupKey)
+                            ?.toString()
+                    )
+                }
+            }.onFailure {
+                Log.w("CONTACT_DEBUG", "Participant lookup failed", it)
+            }.getOrNull() ?: unknownParticipant(phone, normalized)
+
+            participantCache[normalized] = state
+            state
+        }
+
+    private fun unknownParticipant(phone: String, normalized: String) =
+        ConversationParticipantState(
+            phone = phone,
+            normalizedPhone = normalized,
+            displayName = phone,
+            isKnownContact = false
+        )
 
     suspend fun getContactNameMapAsync(): Map<String, String> = withContext(Dispatchers.IO) {
         val existing = cachedMap

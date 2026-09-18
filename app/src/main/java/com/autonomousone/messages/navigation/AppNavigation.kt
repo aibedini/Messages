@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.flow.first
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,14 +34,50 @@ fun AppNavigation(
     onRequestPermissions: () -> Unit
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val externalComposeResolver = remember(context) { ExternalComposeResolver(context) }
 
-    // External share/send payload: route ONCE into the new-conversation flow
-    // as a DRAFT (never auto-sent), then consume so rotation/recomposition
-    // doesn't re-trigger it.
+    // External share/send payload: resolve against the Room conversation
+    // projection off-main, then route ONCE with the body as a DRAFT.
     pendingShare?.let { share ->
         LaunchedEffect(share) {
-            navController.navigate(Screen.NewConversation.createDraftRoute(share.phone, share.text)) {
-                popUpTo(Screen.Home.route)
+            navController.currentBackStackEntryFlow.first { entry ->
+                val route = entry.destination.route
+                route == Screen.Home.route || route?.startsWith("conversation/") == true
+            }
+
+            when (val target = externalComposeResolver.resolve(share.phone, share.text)) {
+                is ExternalComposeTarget.ExistingConversation -> {
+                    // popUpTo(Home) replaces any currently open chat instead
+                    // of stacking another conversation destination. This also
+                    // lets a same-thread external launch deliver a fresh draft.
+                    navController.navigate(
+                        Screen.Conversation.createRoute(
+                            threadId = target.threadId,
+                            phone = target.phone,
+                            name = target.displayName,
+                            draft = target.draft
+                        )
+                    ) {
+                        popUpTo(Screen.Home.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+                is ExternalComposeTarget.NewConversation -> {
+                    val route = if (target.phone.isBlank()) {
+                        Screen.NewConversation.createDraftRoute("", target.draft)
+                    } else {
+                        Screen.Conversation.createNewRoute(
+                            phone = target.phone,
+                            name = target.phone,
+                            draft = target.draft
+                        )
+                    }
+                    navController.navigate(route) {
+                        popUpTo(Screen.Home.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
             }
             onShareConsumed()
         }

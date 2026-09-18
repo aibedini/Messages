@@ -125,6 +125,9 @@ import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.ConversationParticipantActions
+import com.autonomousone.messages.repository.ConversationParticipantState
+import com.autonomousone.messages.repository.ParticipantContactAction
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
@@ -134,6 +137,7 @@ import com.autonomousone.messages.ui.conversation.MessageList
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.utils.formatDateHeader
+import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.viewmodel.ConversationScrollCommand
 import com.autonomousone.messages.viewmodel.ConversationWindowMode
 import com.autonomousone.messages.viewmodel.ConversationViewModel
@@ -164,6 +168,7 @@ fun ConversationScreen(
     val context = LocalContext.current
     val scheduleSuccessToast = stringResource(R.string.sched_success_toast)
     val copiedToast = stringResource(R.string.conv_copied)
+    val numberCopiedToast = stringResource(R.string.conv_number_copied)
     val viewModel: ConversationViewModel = viewModel()
     // Process-wide reactive draft store (single-activity app: chat → home
     // never passes through Activity.onResume, so a shared StateFlow is the
@@ -181,7 +186,26 @@ fun ConversationScreen(
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var isFetchingLocation by remember { mutableStateOf(false) }
     var phoneActionNumber by remember { mutableStateOf<String?>(null) }
+    var showParticipantActions by remember { mutableStateOf(false) }
+    var participantRefresh by remember { mutableStateOf(0) }
+    var participant by remember {
+        mutableStateOf(
+            ConversationParticipantState(
+                phone = phone,
+                normalizedPhone = ContactRepository.normalizePhone(phone),
+                displayName = name.ifBlank { phone },
+                isKnownContact = name.isNotBlank() && name != phone
+            )
+        )
+    }
     var forwardSent by remember { mutableStateOf(false) }
+
+    val contactActionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        ContactRepository.clearCache()
+        participantRefresh++
+    }
 
     // ── External share draft: seed the composer ONCE, never auto-send ────────
     LaunchedEffect(draftText) {
@@ -353,6 +377,55 @@ fun ConversationScreen(
         if (phone.isNotBlank()) phone
         else if (messages.isNotEmpty()) messages.first().sender
         else ""
+    }
+
+    LaunchedEffect(recipientPhone, participantRefresh) {
+        participant = ContactRepository(context).getParticipantState(recipientPhone)
+    }
+
+    fun copyParticipantNumber() {
+        if (!participant.hasDialableNumber) return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("phone number", participant.phone)
+        )
+        android.widget.Toast.makeText(context, numberCopiedToast, android.widget.Toast.LENGTH_SHORT).show()
+        DiagnosticLog.event(
+            "CONTACT_ACTION",
+            "known=${participant.isKnownContact} action=copy " +
+                "phone=${DiagnosticLog.phoneToken(participant.phone)}"
+        )
+    }
+
+    fun callParticipant() {
+        if (!participant.hasDialableNumber) return
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_DIAL, Uri.parse("tel:${participant.normalizedPhone}"))
+            )
+        }
+        DiagnosticLog.event("CONTACT_ACTION", "known=${participant.isKnownContact} action=call")
+    }
+
+    fun addParticipantToContacts() {
+        if (!participant.hasDialableNumber) return
+        val intent = Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+            type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
+            putExtra(
+                android.provider.ContactsContract.Intents.Insert.PHONE,
+                participant.normalizedPhone
+            )
+        }
+        runCatching { contactActionLauncher.launch(intent) }
+        DiagnosticLog.event("CONTACT_ACTION", "known=false action=add")
+    }
+
+    fun viewParticipantContact() {
+        val lookup = participant.contactLookupUri ?: return
+        runCatching {
+            contactActionLauncher.launch(Intent(Intent.ACTION_VIEW, Uri.parse(lookup)))
+        }
+        DiagnosticLog.event("CONTACT_ACTION", "known=true action=view")
     }
 
     // ── Forwarded message: send once the recipient is known ─────────────────
@@ -527,8 +600,9 @@ fun ConversationScreen(
             }
     }
 
-    val title = remember(phone, name, recipientPhone) {
-        if (name.isNotBlank()) name
+    val title = remember(phone, name, recipientPhone, participant) {
+        if (participant.isKnownContact && participant.displayName.isNotBlank()) participant.displayName
+        else if (name.isNotBlank()) name
         else {
             val cached = ContactRepository(context).getCachedDisplayName(recipientPhone)
             if (cached.isNotBlank()) cached else if (recipientPhone.isNotBlank()) recipientPhone else "Conversation"
@@ -541,16 +615,13 @@ fun ConversationScreen(
             ConversationTopBar(
                 title = title,
                 phone = recipientPhone,
+                participant = participant,
                 onBackClick = { navController.popBackStack() },
-                onCallClick = {
-                    // Group threads carry comma-joined recipients; dial the first only.
-                    val dialTarget = recipientPhone.split(',', ';').firstOrNull()?.trim() ?: ""
-                    if (dialTarget.isNotBlank()) {
-                        val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$dialTarget"))
-                        context.startActivity(callIntent)
-                    }
-                },
-                onVideoClick = {},
+                onCallClick = ::callParticipant,
+                onParticipantClick = { showParticipantActions = true },
+                onCopyNumber = ::copyParticipantNumber,
+                onAddToContacts = ::addParticipantToContacts,
+                onViewContact = ::viewParticipantContact,
                 onGoToFirstMessage = { viewModel.jumpToOldest() }
             )
         }
@@ -1171,6 +1242,74 @@ fun ConversationScreen(
             }
         )
     }
+
+    if (showParticipantActions) {
+        ParticipantActionDialog(
+            participant = participant,
+            onDismiss = { showParticipantActions = false },
+            onCall = {
+                showParticipantActions = false
+                callParticipant()
+            },
+            onCopy = {
+                showParticipantActions = false
+                copyParticipantNumber()
+            },
+            onAddContact = {
+                showParticipantActions = false
+                addParticipantToContacts()
+            },
+            onViewContact = {
+                showParticipantActions = false
+                viewParticipantContact()
+            }
+        )
+    }
+}
+
+@Composable
+private fun ParticipantActionDialog(
+    participant: ConversationParticipantState,
+    onDismiss: () -> Unit,
+    onCall: () -> Unit,
+    onCopy: () -> Unit,
+    onAddContact: () -> Unit,
+    onViewContact: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.conv_participant_actions)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(participant.displayName.ifBlank { participant.phone })
+                if (participant.phone.isNotBlank() && participant.phone != participant.displayName) {
+                    Text(
+                        participant.phone,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (participant.hasDialableNumber) {
+                    TextButton(onClick = onCopy) { Text(stringResource(R.string.conv_copy_number)) }
+                    TextButton(onClick = onCall) { Text(stringResource(R.string.conv_call)) }
+                }
+                when (ConversationParticipantActions.primaryContactAction(participant)) {
+                    ParticipantContactAction.ADD_TO_CONTACTS ->
+                        TextButton(onClick = onAddContact) {
+                            Text(stringResource(R.string.conv_add_to_contacts))
+                        }
+                    ParticipantContactAction.VIEW_CONTACT ->
+                        TextButton(onClick = onViewContact) {
+                            Text(stringResource(R.string.conv_view_contact))
+                        }
+                    ParticipantContactAction.NONE -> Unit
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+        }
+    )
 }
 
 /**

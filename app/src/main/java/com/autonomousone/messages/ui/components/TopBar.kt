@@ -1,6 +1,7 @@
 package com.autonomousone.messages.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +39,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autonomousone.messages.repository.ConversationParticipantActions
+import com.autonomousone.messages.repository.ConversationParticipantState
+import com.autonomousone.messages.repository.ParticipantContactAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,10 +138,13 @@ fun MainTopBar(
 fun ConversationTopBar(
     title: String,
     phone: String,
+    participant: ConversationParticipantState,
     onBackClick: () -> Unit,
     onCallClick: () -> Unit = {},
-    onVideoClick: () -> Unit = {},
-    onSearchClick: () -> Unit = {},
+    onParticipantClick: () -> Unit = {},
+    onCopyNumber: () -> Unit = {},
+    onAddToContacts: () -> Unit = {},
+    onViewContact: () -> Unit = {},
     /** "Go to first message" — jumps the window to the true start of the
      *  thread via a direct keyset query (v2.6.7, never a full scan). */
     onGoToFirstMessage: () -> Unit = {},
@@ -158,12 +164,14 @@ fun ConversationTopBar(
         },
         title = {
             Row(
+                modifier = Modifier.clickable(onClick = onParticipantClick),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Avatar(
                     name = title,
                     size = AvatarSize.Small,
-                    isOnline = true
+                    isOnline = true,
+                    onClick = onParticipantClick
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
@@ -187,19 +195,14 @@ fun ConversationTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onCallClick) {
-                Icon(
-                    imageVector = Icons.Default.Call,
-                    contentDescription = "Call",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            IconButton(onClick = onVideoClick) {
-                Icon(
-                    imageVector = Icons.Default.Videocam,
-                    contentDescription = "Video Call",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            if (participant.hasDialableNumber) {
+                IconButton(onClick = onCallClick) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = stringResource(R.string.conv_call),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
@@ -212,23 +215,45 @@ fun ConversationTopBar(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Search in chat") },
-                        onClick = {
-                            showMenu = false
-                            onSearchClick()
-                        }
-                    )
+                    when (ConversationParticipantActions.primaryContactAction(participant)) {
+                        ParticipantContactAction.ADD_TO_CONTACTS -> DropdownMenuItem(
+                            text = { Text(stringResource(R.string.conv_add_to_contacts)) },
+                            onClick = {
+                                showMenu = false
+                                onAddToContacts()
+                            }
+                        )
+                        ParticipantContactAction.VIEW_CONTACT -> DropdownMenuItem(
+                            text = { Text(stringResource(R.string.conv_view_contact)) },
+                            onClick = {
+                                showMenu = false
+                                onViewContact()
+                            }
+                        )
+                        ParticipantContactAction.NONE -> Unit
+                    }
+                    if (participant.hasDialableNumber) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.conv_copy_number)) },
+                            onClick = {
+                                showMenu = false
+                                onCopyNumber()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.conv_call)) },
+                            onClick = {
+                                showMenu = false
+                                onCallClick()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.conv_go_to_first_message)) },
                         onClick = {
                             showMenu = false
                             onGoToFirstMessage()
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Clear conversation") },
-                        onClick = { showMenu = false }
                     )
                 }
             }

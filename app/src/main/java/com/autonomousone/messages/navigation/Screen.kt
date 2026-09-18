@@ -7,7 +7,8 @@ sealed class Screen(val route: String) {
 
     object Home : Screen("home")
 
-    object NewConversation : Screen("new_conversation?forward={forward}&draft={draft}") {
+    object NewConversation :
+        Screen("new_conversation?forward={forward}&draft={draft}&shared_phone={shared_phone}") {
 
         /** Route used from the nav graph declaration. */
         val baseRoute: String = "new_conversation"
