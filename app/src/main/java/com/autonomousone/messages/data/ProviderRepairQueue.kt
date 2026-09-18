@@ -82,8 +82,14 @@ class ProviderRepairQueue(context: Context) {
          */
         const val VISIBILITY_GRACE_MS = 30_000L
 
-        /** Successful absence reads required before an absence is "mature". */
-        const val ABSENCE_MIN_ATTEMPTS = 3
+        /**
+         * SUCCESSFUL absence observations required before an absence is "mature".
+         *
+         * Evidence, not effort: retries, provider failures and backoffs NEVER count
+         * toward this, only a provider that positively answered and did not have
+         * the row.
+         */
+        const val ABSENCE_MIN_SUCCESSES = 3
     }
 
     /**
@@ -144,6 +150,21 @@ class ProviderRepairQueue(context: Context) {
             now
         )
     }
+
+    /**
+     * Records ONE successful absence for the caller's claimed generation.
+     *
+     * @return true when the observation was actually credited. False means the
+     *         generation was superseded or the lease was lost, in which case the
+     *         caller's evidence must not be used - and, because an absence is the
+     *         only thing that can lead to a delete, it must not be used to DELETE
+     *         either.
+     */
+    suspend fun recordAbsence(
+        entry: ProviderRepairEntity,
+        now: Long = System.currentTimeMillis()
+    ): Boolean =
+        dao.recordAbsence(entry.source, entry.providerId, entry.generation, now) == 1
 
     suspend fun reclaimExpiredLeases(now: Long = System.currentTimeMillis()): Int =
         dao.reclaimExpiredLeases(now)

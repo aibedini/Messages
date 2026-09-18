@@ -442,6 +442,7 @@ abstract class MessagesDatabase : RoomDatabase() {
         internal val UPGRADE_TO_V15_SQL = listOf(
             "ALTER TABLE `provider_repair_queue` ADD COLUMN `intent` TEXT NOT NULL DEFAULT 'EXPECT_EXISTS'",
             "ALTER TABLE `provider_repair_queue` ADD COLUMN `intentSince` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `provider_repair_queue` ADD COLUMN `absenceCount` INTEGER NOT NULL DEFAULT 0",
             "UPDATE `provider_repair_queue` SET `intentSince` = `updatedAt` WHERE `intentSince` = 0"
         )
         val MIGRATION_14_15 = object : Migration(14, 15) {

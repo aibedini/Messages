@@ -113,8 +113,20 @@ Without this, making the *caller* durable only moved the race one layer deeper:
 enqueue -> generic repair -> first strict `Success(null)` -> Delete.
 
 **Maturity policy.** `EXPECT_EXISTS` and `REFRESH_STATUS` cannot retry forever, and
-must not delete on the first absence. An absence is only "mature" after
-`VISIBILITY_GRACE_MS` (30s) AND `ABSENCE_MIN_ATTEMPTS` (3) successful reads. A
+must not delete on the first absence. Evidence is a durable, generation-scoped
+`absenceCount` of **successful** absence observations — never `attempts`.
+
+> `attempts` is the retry/backoff counter. It increments for provider
+> `SECURITY`/`BINDER`/`PROVIDER_UNAVAILABLE`/query failures and for
+> `ABSENCE_NOT_MATURED` NACKs, none of which is evidence of anything. Using it
+> meant three provider *failures* plus one later absence could "mature" a row into
+> a delete candidate. `absenceCount` is reset to 0 on every new generation
+> (enqueue and rearm) and is only incremented for the generation the worker still
+> holds (IN_FLIGHT + generation match), so a stale worker can never contribute
+> evidence to — or delete on behalf of — a newer one.
+
+An absence is only "mature" after
+`VISIBILITY_GRACE_MS` (30s) AND `ABSENCE_MIN_SUCCESSES` (3) credited absences. A
 mature absence then:
 
 - if Room has no such row -> resolve (nothing to remove);

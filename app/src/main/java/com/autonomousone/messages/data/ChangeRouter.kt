@@ -121,10 +121,16 @@ object ChangeRouter {
 
         val plan = planRepair(batch, selfWrite?.threadId)
 
-        // Enqueue, then wake the scheduler. Nothing here touches the provider,
-        // and nothing here can lose work if the process dies immediately after:
-        // the queue row is already committed (or the identity will be re-derived
-        // by the next delta, which is why this is a queue and not a promise).
+        // Enqueue, then wake the scheduler. Nothing here touches the provider.
+        //
+        // HONEST DURABILITY BOUNDARY: this launch has NOT committed anything yet.
+        // Once the Room insert of the queue row commits, the exact work survives
+        // process death. If the process dies BEFORE that commit, this event is
+        // genuinely lost - a ContentObserver fires on the main looper and cannot
+        // be blocked on Room I/O, so that window is real and not zero-width.
+        // Recovery for it is the periodic two-sided integrity audit (NOT
+        // implemented yet), which re-derives the provider fact from the provider
+        // side rather than from this lost event.
         scope.launch {
             val queue = ProviderRepairQueue(app)
             var enqueued = false
@@ -313,9 +319,26 @@ object ChangeRouter {
 
         // EXPECT_EXISTS / REFRESH_STATUS: the row is EXPECTED to exist, so an
         // absence is a visibility race until proven otherwise.
+        //
+        // The evidence is a durable count of SUCCESSFUL absences, recorded
+        // atomically against the generation we still own. attempts is NOT evidence:
+        // it also counts provider failures and backoff NACKs, so using it would let
+        // three failures plus one absence mature into a delete candidate.
+        val credited = queue.recordAbsence(entry, now)
+        if (!credited) {
+            // The generation moved (or the lease was lost) while we were reading.
+            // Our absence proves nothing, and it must never become a delete.
+            return ExactRepairResult.Failed("ABSENCE_NOT_CREDITED")
+        }
+        val absences = entry.absenceCount + 1
         val matured = (now - entry.intentSince) >= ProviderRepairQueue.VISIBILITY_GRACE_MS &&
-            entry.attempts >= ProviderRepairQueue.ABSENCE_MIN_ATTEMPTS
-        if (!matured) return ExactRepairResult.Failed("ABSENCE_NOT_MATURED")
+            absences >= ProviderRepairQueue.ABSENCE_MIN_SUCCESSES
+        if (!matured) {
+            Log.i(TAG, "absence not yet mature " + entry.source + ":" + entry.providerId +
+                " intent=" + intent + " absences=" + absences + "/" +
+                ProviderRepairQueue.ABSENCE_MIN_SUCCESSES)
+            return ExactRepairResult.Failed("ABSENCE_NOT_MATURED")
+        }
 
         if (!localRowExists) {
             // Nothing local to remove, so the work is genuinely resolved. This is

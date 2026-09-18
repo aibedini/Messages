@@ -395,7 +395,7 @@ interface ProviderRepairDao {
             "ON CONFLICT(source, providerId) DO UPDATE SET " +
             "generation = provider_repair_queue.generation + 1, " +
             "state = 'PENDING', attempts = 0, nextRetryAt = :now, leaseUntil = 0, " +
-            "updatedAt = :now, intent = :intent, intentSince = :now"
+            "updatedAt = :now, intent = :intent, intentSince = :now, absenceCount = 0"
     )
     suspend fun enqueue(source: String, providerId: Long, now: Long, intent: String)
 
@@ -411,7 +411,7 @@ interface ProviderRepairDao {
     @Query(
         "UPDATE provider_repair_queue SET generation = generation + 1, " +
             "intent = :intent, intentSince = :now, state = 'PENDING', attempts = 0, " +
-            "nextRetryAt = :now, leaseUntil = 0, updatedAt = :now " +
+            "absenceCount = 0, nextRetryAt = :now, leaseUntil = 0, updatedAt = :now " +
             "WHERE source = :source AND providerId = :providerId " +
             "AND generation = :generation"
     )
@@ -422,6 +422,21 @@ interface ProviderRepairDao {
         intent: String,
         now: Long
     ): Int
+
+    /**
+     * Records ONE successful provider-absence observation.
+     *
+     * Generation- and lease-scoped: an older worker cannot contribute evidence to
+     * a newer generation, and a row that is not currently IN_FLIGHT cannot be
+     * credited. Returns the number of rows updated, so the caller can tell whether
+     * its observation actually counted.
+     */
+    @Query(
+        "UPDATE provider_repair_queue SET absenceCount = absenceCount + 1, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation AND state = 'IN_FLIGHT'"
+    )
+    suspend fun recordAbsence(source: String, providerId: Long, generation: Long, now: Long): Int
 
     /** Earliest retry among rows nobody currently owns - the timer wake time. */
     @Query("SELECT MIN(nextRetryAt) FROM provider_repair_queue WHERE state != 'IN_FLIGHT'")

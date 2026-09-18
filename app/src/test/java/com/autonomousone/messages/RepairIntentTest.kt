@@ -52,6 +52,22 @@ class RepairIntentTest {
         "DELETE FROM provider_repair_queue WHERE source = :source " +
             "AND providerId = :providerId AND generation = :generation"
 
+    private val claimSql =
+        "UPDATE provider_repair_queue SET state = 'IN_FLIGHT', leaseUntil = :leaseUntil, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation AND state != 'IN_FLIGHT'"
+
+    private val nackSql =
+        "UPDATE provider_repair_queue SET state = 'BACKOFF', attempts = attempts + 1, " +
+            "nextRetryAt = :nextRetryAt, leaseUntil = 0, lastFailureReason = :reason, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation"
+
+    private val recordAbsenceSql =
+        "UPDATE provider_repair_queue SET absenceCount = absenceCount + 1, " +
+            "updatedAt = :now WHERE source = :source AND providerId = :providerId " +
+            "AND generation = :generation AND state = 'IN_FLIGHT'"
+
     private val named = Regex(":[A-Za-z][A-Za-z0-9_]*")
 
     @Before
@@ -211,6 +227,140 @@ class RepairIntentTest {
         assertFalse(ProviderRepairIntent.from(intentOf("sms", 7L)).absenceCanProveDelete)
     }
 
+    // ── durable absence EVIDENCE (not retry effort) ────────────────────────
+
+    private fun absenceCountOf(source: String, id: Long): Long =
+        one("SELECT absenceCount FROM provider_repair_queue WHERE source = ? AND providerId = ?", source, id)
+
+    private fun attemptsOf(source: String, id: Long): Long =
+        one("SELECT attempts FROM provider_repair_queue WHERE source = ? AND providerId = ?", source, id)
+
+    /** claimSql binds in TEXTUAL order: leaseUntil, now, source, providerId, generation. */
+    private fun claim(source: String, id: Long, gen: Long, now: Long): Long =
+        exec2(claimSql, now + 30_000L, now, source, id, gen)
+
+    /** nackSql binds in TEXTUAL order: nextRetryAt, reason, now, source, providerId, generation. */
+    private fun nack(source: String, id: Long, gen: Long, now: Long): Long =
+        exec2(nackSql, now, "PROVIDER_UNAVAILABLE", now, source, id, gen)
+
+    /** recordAbsenceSql binds in TEXTUAL order: now, source, providerId, generation. */
+    private fun recordAbsence(source: String, id: Long, gen: Long, now: Long): Long =
+        exec2(recordAbsenceSql, now, source, id, gen)
+
+    @Test
+    fun `a provider FAILURE does not count as absence evidence`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+
+        var now = 1_000L
+        repeat(3) {
+            claim("sms", 7L, 1L, now)
+            nack("sms", 7L, 1L, now)
+            now += 5_000L
+        }
+        assertEquals("retries happened", 3L, attemptsOf("sms", 7L))
+        assertEquals("but NO absence was ever observed", 0L, absenceCountOf("sms", 7L))
+    }
+
+    @Test
+    fun `three provider failures plus one absence is NOT mature`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+
+        var now = 1_000L
+        repeat(3) {
+            claim("sms", 7L, 1L, now)
+            nack("sms", 7L, 1L, now)
+            now += 5_000L
+        }
+        claim("sms", 7L, 1L, now)
+        assertEquals("the one absence is credited", 1L, recordAbsence("sms", 7L, 1L, now))
+
+        // Well past the visibility grace, and attempts >= 3 - yet only ONE
+        // successful absence has ever been observed, so this must not mature.
+        now += 120_000L
+        assertEquals(1L, absenceCountOf("sms", 7L))
+        assertTrue(
+            "maturity needs successful absences, not retry attempts",
+            absenceCountOf("sms", 7L) <
+                com.autonomousone.messages.data.ProviderRepairQueue.ABSENCE_MIN_SUCCESSES
+        )
+    }
+
+    @Test
+    fun `each successful absence read is credited exactly once`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+        claim("sms", 7L, 1L, 1_000L)
+
+        var now = 1_000L
+        repeat(com.autonomousone.messages.data.ProviderRepairQueue.ABSENCE_MIN_SUCCESSES) {
+            assertEquals(1L, recordAbsence("sms", 7L, 1L, now))
+            now += 1_000L
+        }
+        assertEquals(
+            com.autonomousone.messages.data.ProviderRepairQueue.ABSENCE_MIN_SUCCESSES.toLong(),
+            absenceCountOf("sms", 7L)
+        )
+    }
+
+    @Test
+    fun `an old generation cannot credit its absence to the new one`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+        claim("sms", 7L, 1L, 1_000L)
+        // A newer intent supersedes while the old worker is in flight.
+        enqueue("sms", 7L, ProviderRepairIntent.RECONCILE_EXACT.name, 2_000L)
+
+        assertEquals("the stale generation is not credited", 0L, recordAbsence("sms", 7L, 1L, 2_000L))
+        assertEquals(0L, absenceCountOf("sms", 7L))
+        assertEquals("RECONCILE_EXACT", intentOf("sms", 7L))
+    }
+
+    @Test
+    fun `an absence is only credited while the row is IN_FLIGHT`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+        // PENDING, never claimed: evidence must not be recordable.
+        assertEquals(0L, recordAbsence("sms", 7L, 1L, 1_000L))
+        assertEquals(0L, absenceCountOf("sms", 7L))
+    }
+
+    @Test
+    fun `a new enqueue and a rearm both reset the evidence`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        enqueue("sms", 7L, ProviderRepairIntent.EXPECT_EXISTS.name, 1_000L)
+        claim("sms", 7L, 1L, 1_000L)
+        recordAbsence("sms", 7L, 1L, 1_000L)
+        recordAbsence("sms", 7L, 1L, 1_100L)
+        assertEquals(2L, absenceCountOf("sms", 7L))
+
+        enqueue("sms", 7L, ProviderRepairIntent.REFRESH_STATUS.name, 2_000L)
+        assertEquals("a new intent starts with no evidence", 0L, absenceCountOf("sms", 7L))
+
+        claim("sms", 7L, 2L, 2_000L)
+        recordAbsence("sms", 7L, 2L, 2_000L)
+        assertEquals(1L, absenceCountOf("sms", 7L))
+        exec2(
+            rearmSql,
+            ProviderRepairIntent.VERIFY_DELETE_CANDIDATE.name, 3_000L, 3_000L, 3_000L,
+            "sms", 7L, 2L
+        )
+        assertEquals("a re-armed generation starts with no evidence", 0L, absenceCountOf("sms", 7L))
+    }
+
+    @Test
+    fun `the v15 migration gives migrated rows zero absence evidence`() {
+        MessagesDatabase.UPGRADE_TO_V15_SQL.forEach { db.exec(it) }
+        db.exec(
+            "INSERT INTO provider_repair_queue (source, providerId, generation, state, " +
+                "attempts, nextRetryAt, leaseUntil, lastFailureReason, createdAt, updatedAt) " +
+                "VALUES ('sms', 99, 1, 'BACKOFF', 7, 100, 0, 'BINDER', 100, 700)"
+        )
+        assertEquals("a v14 row carries no evidence, whatever its attempts", 0L, absenceCountOf("sms", 99L))
+        assertEquals(7L, attemptsOf("sms", 99L))
+    }
+
     // ── the policy itself (pure) ───────────────────────────────────────────
 
     @Test
@@ -235,6 +385,6 @@ class RepairIntentTest {
     @Test
     fun `the visibility grace is a real interval, not a single arbitrary delay`() {
         assertTrue(com.autonomousone.messages.data.ProviderRepairQueue.VISIBILITY_GRACE_MS >= 5_000L)
-        assertTrue(com.autonomousone.messages.data.ProviderRepairQueue.ABSENCE_MIN_ATTEMPTS >= 2)
+        assertTrue(com.autonomousone.messages.data.ProviderRepairQueue.ABSENCE_MIN_SUCCESSES >= 2)
     }
 }

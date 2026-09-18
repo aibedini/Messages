@@ -220,7 +220,22 @@ data class ProviderRepairEntity(
     val intent: String = ProviderRepairIntent.EXPECT_EXISTS.name,
     /** When the current intent was recorded; the visibility-grace clock. */
     @ColumnInfo(defaultValue = "0")
-    val intentSince: Long = 0L
+    val intentSince: Long = 0L,
+    /**
+     * Consecutive SUCCESSFUL provider-absence observations for THIS generation.
+     *
+     * Deliberately separate from [attempts]. attempts is the retry/backoff counter
+     * and it increments for provider SECURITY/BINDER/PROVIDER_UNAVAILABLE/query
+     * failures and for ABSENCE_NOT_MATURED NACKs - none of which is evidence of
+     * anything. Using it as absence evidence meant three provider FAILURES plus
+     * one later absence could "mature" a row into a delete candidate, which is the
+     * opposite of the policy.
+     *
+     * Reset to 0 on every new generation (enqueue and rearm), so evidence never
+     * carries across an intent change or a supersession.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val absenceCount: Int = 0
 ) {
     companion object {
         const val STATE_PENDING = "PENDING"
