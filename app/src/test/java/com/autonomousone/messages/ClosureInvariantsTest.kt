@@ -135,4 +135,34 @@ class ClosureInvariantsTest {
             ChangeRouter.MUTATION_NOT_COMMITTED
         )
     }
+
+    // ── P0-5A: the bounded-overlap boundary predicate ──────────────────────
+
+    @Test
+    fun `the overlap boundary keeps rows that share the oldest page date`() {
+        // The provider page's oldest covered key is (date=5000, providerId=7).
+        // A Room row at the SAME date with a LOWER id is outside the page but
+        // INSIDE the covered range by date, so it must be considered - and a row
+        // at the same date with a HIGHER id is inside the page.
+        msg("sms", 3L, 1L, 5_000L, 1)
+        msg("sms", 7L, 1L, 5_000L, 1)
+        msg("sms", 9L, 1L, 5_000L, 1)
+        msg("sms", 2L, 1L, 4_000L, 1)   // older than the boundary
+
+        val covered =
+            "SELECT providerId FROM messages WHERE source = 'sms' AND threadId = 1 " +
+                "AND (date > 5000 OR (date = 5000 AND providerId >= 7)) " +
+                "ORDER BY providerId"
+        db.createStatement().use { st ->
+            st.executeQuery(covered).use { rs ->
+                val ids = mutableListOf<Long>()
+                while (rs.next()) ids += rs.getLong(1)
+                assertEquals("equal-date row at the page's oldest date is covered",
+                    listOf(7L, 9L), ids)
+            }
+        }
+        // A provider-id-only boundary would have dropped id 3 from consideration
+        // while still claiming the date range was covered.
+        assertEquals(2L, db.queryLong("SELECT COUNT(*) FROM messages WHERE date = 5000"))
+    }
 }

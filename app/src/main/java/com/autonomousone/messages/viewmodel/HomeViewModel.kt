@@ -576,13 +576,28 @@ class HomeViewModel(
 
     fun markAllAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.markAllAsRead()
-            kotlin.runCatching {
-                (conversations + archivedConversations).toList().forEach { sms ->
-                    coordinator.markThreadReadInShadow(sms.threadId)
+            // P0-11: ONE Room transaction over the WHOLE table.
+            //
+            // This used to call repository.markAllAsRead() and then loop the
+            // RENDERED conversations. That issued one shadow transaction per
+            // rendered row and skipped archived, filtered, blocked and off-screen
+            // conversations entirely - leaving unread rows behind that reappear the
+            // moment the Home filter changes. Room is the authority here, so the
+            // update is expressed over the table and the Flow clears every
+            // rendered conversation on its own; no loadSms() re-scan is needed.
+            coordinator.markAllThreadsReadInShadow()
+
+            // Provider persistence stays a separate, eventual pass and is
+            // failure-isolated: Home has already converged from Room above, and a
+            // provider failure must never roll that back.
+            kotlin.runCatching { repository.markAllAsRead() }
+                .onFailure { e ->
+                    com.autonomousone.messages.utils.DiagnosticLog.event(
+                        "HOME_STATE",
+                        "provider mark-all-read failed; local Room read retained",
+                        e
+                    )
                 }
-            }
-            loadSms()
         }
     }
 

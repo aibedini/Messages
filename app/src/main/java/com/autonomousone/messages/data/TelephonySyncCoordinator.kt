@@ -229,12 +229,29 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // not simply lose the update. It goes to the durable repair queue and
             // converges on the queue's own timer, with no provider event needed.
             when (val read = readExactMessageStrict(source, providerId)) {
-                is ProviderRead.Success -> read.value?.let {
-                    enqueue(
-                        MutationWork(
-                            MessageMutation.Upsert(source, it, originCommandId, clientMessageId)
+                is ProviderRead.Success -> {
+                    val row = read.value
+                    if (row != null) {
+                        enqueue(
+                            MutationWork(
+                                MessageMutation.Upsert(source, row, originCommandId, clientMessageId)
+                            )
                         )
-                    )
+                    } else {
+                        // P0-2: an EMPTY exact read here is NOT a delete and must not
+                        // drop the identity.
+                        //
+                        // This differs from a mature exact-observer delete on
+                        // purpose: providerRowChanged is called immediately after an
+                        // outgoing insert or a status callback, so the row is often
+                        // not query-visible yet (provider transaction still open, OEM
+                        // provider returning an empty page). Treating that instant as
+                        // final would lose the update entirely. The durable queue
+                        // re-reads and decides the stable state.
+                        Log.i(TAG, "providerRowChanged row not visible yet " + source + ":" +
+                            providerId + " -> durable exact repair")
+                        ChangeRouter.enqueueExactRepair(appContext, source, providerId)
+                    }
                 }
                 is ProviderRead.Failure -> {
                     Log.w(TAG, "providerRowChanged read failed " + source + ":" + providerId +
@@ -817,7 +834,23 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
 
             is MessageMutation.RefreshStatus -> {
-                val fresh = readExactMessage(m.source, m.providerId)
+                // P0-3: the identity is KNOWN, so this uses the STRICT read. The
+                // forgiving variant made "provider failed" and "row not there yet"
+                // identical, and the status transition was then silently dropped.
+                val statusRead = readExactMessageStrict(m.source, m.providerId)
+                val fresh: Sms? = when (statusRead) {
+                    is ProviderRead.Success -> statusRead.value
+                    is ProviderRead.Failure -> null
+                }
+                if (statusRead !is ProviderRead.Success || fresh == null) {
+                    // A delivery-status change must eventually converge even when the
+                    // first exact read fails or the row is momentarily absent, so the
+                    // identity goes to the durable queue and is retried on its own
+                    // timer - no provider event required.
+                    Log.w(TAG, "status read unresolved " + m.source + ":" + m.providerId +
+                        " ok=" + (statusRead is ProviderRead.Success) + " -> durable exact repair")
+                    ChangeRouter.enqueueExactRepair(appContext, m.source, m.providerId)
+                }
                 if (fresh != null) {
                     val entity = toEntity(fresh, m.source)
                     if (entity != null) {
