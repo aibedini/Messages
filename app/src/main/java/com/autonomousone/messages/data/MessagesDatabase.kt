@@ -408,7 +408,7 @@ abstract class MessagesDatabase : RoomDatabase() {
          * Exact provider reads that fail used to be retried from an in-process
          * map with a 256-entry cap that evicted the oldest entry. Correctness
          * work must survive process death and must never be silently discarded,
-         * so the queue is a Room table with a genation-scoped claim/ack/nack
+         * so the queue is a Room table with a generation-scoped claim/ack/nack
          * protocol (see ProviderRepairEntity).
          *
          * No existing table is touched; the exact CREATE text is pinned by
