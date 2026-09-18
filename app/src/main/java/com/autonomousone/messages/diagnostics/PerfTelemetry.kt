@@ -26,6 +26,12 @@ enum class PerfMetric {
     /** ForThread targeted provider-read duration. */
     FOR_THREAD,
 
+    /** Durable exact provider-repair claim through ACK/NACK. */
+    EXACT_REPAIR,
+
+    /** One two-sided integrity-audit batch. */
+    INTEGRITY_BATCH,
+
     /** One history-backfill batch duration. */
     HISTORY_BACKFILL_BATCH,
 }
@@ -149,15 +155,28 @@ class RollingSamples(val capacity: Int = DEFAULT_CAPACITY) {
  *  - no payload: the API only accepts a metric and a millisecond duration, so
  *    an SMS body, a phone number or a token cannot be handed to it.
  *
- * Wiring gap: the boundary timestamps live in the sync coordinator, Room
- * ingest, repository and Compose layers, none of which this change owns.
- * Callers should use [mark] + [recordSince] around the span, or [record] when
- * the duration is already known.
+ * Producers are wired in the sync, Home, conversation, read and repair hot paths.
+ * A missing runtime sample remains "no samples"; this class never manufactures
+ * latency numbers.
  */
 object PerfTelemetry {
 
+    /** Latest canonical Room mutation commit, consumed by Home's authoritative Flow. */
+    private val lastRoomCommitNanos = java.util.concurrent.atomic.AtomicLong(0L)
+
     private val buffers: Map<PerfMetric, RollingSamples> =
         PerfMetric.entries.associateWith { RollingSamples() }
+
+    /** Marks that the sync core just committed durable Room state. */
+    fun noteRoomCommit() {
+        lastRoomCommitNanos.set(System.nanoTime())
+    }
+
+    /** Records commit -> Home-observed latency once; stale marks are discarded. */
+    fun recordRoomCommitToHome() {
+        val started = lastRoomCommitNanos.getAndSet(0L)
+        if (started != 0L) recordSince(PerfMetric.ROOM_COMMIT_TO_HOME_OBSERVED, started)
+    }
 
     /** Records a completed measurement. Negative durations are ignored. */
     fun record(metric: PerfMetric, durationMs: Long) {

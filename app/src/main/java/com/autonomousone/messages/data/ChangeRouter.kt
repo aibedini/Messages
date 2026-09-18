@@ -253,14 +253,22 @@ object ChangeRouter {
             // Claim FIRST. due() is only an observation; two workers can see the
             // same row, but only one claim succeeds.
             if (!queue.claim(entry, now)) continue
-            // A newer provider event may already have replaced this generation,
-            // in which case that work owns the row and this read is obsolete.
             if (!queue.stillOwned(entry)) continue
 
-            val outcome = when (entry.source) {
+            val perfMark = com.autonomousone.messages.diagnostics.PerfTelemetry.mark()
+            com.autonomousone.messages.diagnostics.TraceSections.begin(
+                com.autonomousone.messages.diagnostics.TraceSections.EXACT_REPAIR
+            )
+            val outcome = try { when (entry.source) {
                 MessageEntity.SOURCE_SMS -> applyExactSms(repo, coordinator, queue, entry)
                 MessageEntity.SOURCE_MMS -> applyExactMms(repo, coordinator, queue, entry)
                 else -> ExactRepairResult.Failed("UNSUPPORTED_SOURCE")
+            } } finally {
+                com.autonomousone.messages.diagnostics.TraceSections.end()
+                com.autonomousone.messages.diagnostics.PerfTelemetry.recordSince(
+                    com.autonomousone.messages.diagnostics.PerfMetric.EXACT_REPAIR,
+                    perfMark
+                )
             }
 
             if (!queue.stillOwned(entry)) {

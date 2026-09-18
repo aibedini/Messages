@@ -379,7 +379,7 @@ class ThreadPager private constructor(
         return mergeAscending(sms, mms)
     }
 
-    /** Interleave two date-DESC lists into one date-DESC list. */
+    /** Interleave two provider DESC lists with the SAME cross-source order as Room. */
     private fun mergeDescending(a: List<Sms>, b: List<Sms>): List<Sms> {
         if (a.isEmpty()) return b
         if (b.isEmpty()) return a
@@ -390,14 +390,14 @@ class ThreadPager private constructor(
             val takeA = when {
                 i >= a.size -> false
                 j >= b.size -> true
-                else -> a[i].date >= b[j].date
+                else -> ConversationWindow.canonical.compare(a[i], b[j]) >= 0
             }
             if (takeA) out.add(a[i++]) else out.add(b[j++])
         }
         return out
     }
 
-    /** Interleave two date-ASC lists into one date-ASC list. */
+    /** Interleave two provider ASC lists with the SAME cross-source order as Room. */
     private fun mergeAscending(a: List<Sms>, b: List<Sms>): List<Sms> {
         if (a.isEmpty()) return b
         if (b.isEmpty()) return a
@@ -408,7 +408,7 @@ class ThreadPager private constructor(
             val takeA = when {
                 i >= a.size -> false
                 j >= b.size -> true
-                else -> a[i].date <= b[j].date
+                else -> ConversationWindow.canonical.compare(a[i], b[j]) <= 0
             }
             if (takeA) out.add(a[i++]) else out.add(b[j++])
         }
