@@ -2,6 +2,7 @@ package com.autonomousone.messages
 
 import com.autonomousone.messages.data.ProviderRead
 import com.autonomousone.messages.data.map
+import com.autonomousone.messages.data.provesAbsence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
