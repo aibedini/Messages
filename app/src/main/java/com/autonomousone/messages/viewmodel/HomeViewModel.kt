@@ -10,18 +10,24 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.data.ChangeRouter
+import com.autonomousone.messages.data.ConversationEntity
 import com.autonomousone.messages.data.DailyWindowProvider
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.ReconcileRequest
+import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ArchiveRepository
 import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.ConversationCache
 import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
+import com.autonomousone.messages.repository.ThreadSnippet
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +39,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** Where the durable conversation rows last handed to the renderer came from. */
+private enum class HomeConversationSource { NONE, ROOM, CACHE, PROVIDER_FALLBACK }
+
+/**
+ * PHASE 8 — ONE DURABLE STATE OWNER FOR HOME.
+ *
+ * After the Room bootstrap window is ready, `ConversationDao.observeAll()` is the
+ * authoritative durable list. The rendered list is ALWAYS
+ *
+ *     RenderedConversations = RoomConversations + OptimisticOverrides
+ *
+ * (see [HomeConversationState]). There is exactly one writer of the durable
+ * rows — [setRoomConversations] — and it is reachable only from:
+ *
+ *  1. [observeRoomConversations] — the authoritative Room Flow (source ROOM);
+ *  2. [performLoad] — a one-shot Room projection read while the gate opens
+ *     (source ROOM), or the last durable cache snapshot as an instant paint
+ *     before Room is ready (source CACHE);
+ *  3. [loadProviderConversations] — the explicitly GATED provider fallback,
+ *     used only while Room is not authoritative (source PROVIDER_FALLBACK) and
+ *     always accompanied by a typed HOME_STATE diagnostic.
+ *
+ * Every other realtime path (incoming, outgoing, mark-read, delete, archive,
+ * pin, block) mutates the overlay or the pin/archive/blocklist stores and then
+ * re-renders; none of them can replace the durable list. A provider-wide
+ * conversation scan is impossible on a normal Room-ready resume.
+ */
 class HomeViewModel(
     application: Application
 ) : AndroidViewModel(application) {
@@ -58,6 +91,22 @@ class HomeViewModel(
 
     /** Reactive set of pinned threadIds for sorting + UI badges. */
     val pinnedIds = mutableStateSetOf<Long>()
+
+    /**
+     * The latest durable conversation rows. This is the ONLY input to the
+     * rendered list besides [overlay]; every assignment goes through
+     * [setRoomConversations].
+     */
+    private var roomConversationsState: List<Sms> = emptyList()
+
+    /** Optimistic layer merged on top of [roomConversationsState]. */
+    private val overlay = HomeConversationState()
+
+    /** Diagnostic breadcrumb (never rendered, never contains PII). */
+    private var lastConversationSource = HomeConversationSource.NONE
+
+    private val coordinator
+        get() = TelephonySyncCoordinator.get(getApplication())
 
     /** True while a global (all-messages) search is running. */
     var isGlobalSearchBusy by mutableStateOf(false)
@@ -138,10 +187,6 @@ class HomeViewModel(
     @Volatile
     private var roomUnavailable = false
 
-    /** Newest conversation date seen in the last full load. */
-    @Volatile
-    private var newestKnownDate: Long = 0L
-
     /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
     private val pendingDeletes = mutableMapOf<Long, Job>()
 
@@ -203,6 +248,72 @@ class HomeViewModel(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Durable-row ownership (Phase 8)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The single writer of the durable rendered rows. [rows] is either the
+     * authoritative Room projection or — only while Room is not authoritative —
+     * an explicitly gated fallback list. The optimistic [overlay] is always
+     * merged on top, never replaced.
+     */
+    private fun setRoomConversations(rows: List<Sms>, source: HomeConversationSource) {
+        roomConversationsState = rows
+        lastConversationSource = source
+        overlay.onRoomConversations(rows)
+        renderConversations()
+    }
+
+    /** The single merge/render point: Room rows + overrides → the two tabs. */
+    private fun renderConversations() {
+        val blocked = blocklistRepository.getBlocked()
+        val rendered = overlay.render(
+            filterBlocked(roomConversationsState, blocked),
+            archivedIds,
+            pinnedIds
+        )
+        // The blocklist is applied AFTER the merge so an optimistic override can
+        // never re-introduce a blocked thread.
+        applySwap(conversations, filterBlocked(rendered.main, blocked))
+        applySwap(archivedConversations, filterBlocked(rendered.archived, blocked))
+    }
+
+    /** Applies the local blocklist without ever mutating the durable rows. */
+    private fun filterBlocked(rows: List<Sms>, blocked: Set<String>): List<Sms> {
+        if (blocked.isEmpty()) return rows
+        return rows.filter { !isBlockedAddress(it.sender, blocked) }
+    }
+
+    /**
+     * Opens the read-cutover latch if both sources have finished their initial
+     * window. Until then Room is not authoritative.
+     */
+    private suspend fun ensureRoomGate() {
+        if (roomReadEnabled || roomUnavailable) return
+        val ready = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
+        if (ready) {
+            roomReadEnabled = true
+            DiagnosticLog.event("HOME_STATE", "room-cutover-open source=room")
+        }
+    }
+
+    /**
+     * Bounded background catch-up through the EXISTING coordinator API.
+     *
+     * ReconcileRequest.TailDelta reads only provider rows newer than the durable
+     * per-source watermark; it never rebuilds the global projection and never
+     * re-reads the newest window. This is the ONLY provider access a normal
+     * Room-ready resume performs.
+     */
+    private fun scheduleTailDeltaCatchUp() {
+        runCatching {
+            coordinator.reconcile(ReconcileRequest.TailDelta)
+        }.onFailure { error ->
+            Log.w("SMS_DEBUG", "Tail-delta catch-up could not be scheduled", error)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Load
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -242,32 +353,79 @@ class HomeViewModel(
     }
 
     private suspend fun performLoad() {
-        val cache = com.autonomousone.messages.repository.ConversationCache.get(getApplication())
-
-        val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
-        if (!roomReadEnabled && !roomUnavailable) {
-            roomReadEnabled = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
-        }
-        if (roomReadEnabled && !hasLoadedOnce) {
-            val roomList = kotlin.runCatching {
-                roomConversations()
-            }.getOrNull()
-            if (roomList != null) {
-                replaceConversations(roomList, archiveRepository.getArchivedIds(), atomic = false)
-                newestKnownDate = roomList.maxOfOrNull { it.date } ?: 0L
-                hasLoadedOnce = true
-                withContext(Dispatchers.IO) { cache.save(roomList) }
-            }
-        }
+        ensureRoomGate()
 
         if (!hasLoadedOnce) {
-            val cached = withContext(Dispatchers.IO) { cache.load() }
+            // Instant paint from the last durable snapshot. This is the local
+            // cache, NOT a provider scan.
+            val cached = withContext(Dispatchers.IO) {
+                ConversationCache.get(getApplication()).load()
+            }
             if (cached.threads.isNotEmpty()) {
-                replaceConversations(cached.threads, archiveRepository.getArchivedIds(), atomic = false)
-                newestKnownDate = cached.threads.maxOfOrNull { it.date } ?: 0L
-                hasLoadedOnce = true
+                withContext(Dispatchers.Main) {
+                    setRoomConversations(cached.threads, HomeConversationSource.CACHE)
+                    hasLoadedOnce = true
+                }
             }
         }
+
+        if (roomReadEnabled) {
+            // Room owns the durable list. Paint its current projection once so
+            // the first frame is correct, then let the always-on observeAll()
+            // collector carry every later change. No provider conversation scan
+            // and no newest-message-per-thread probe on this path.
+            val roomList = kotlin.runCatching { roomConversations() }.getOrNull()
+            if (roomList != null) {
+                withContext(Dispatchers.Main) {
+                    setRoomConversations(roomList, HomeConversationSource.ROOM)
+                    hasLoadedOnce = true
+                }
+                withContext(Dispatchers.IO) {
+                    ConversationCache.get(getApplication()).save(roomList)
+                }
+            }
+            scheduleTailDeltaCatchUp()
+            return
+        }
+
+        // Gated provider fallback: Room is not the authoritative owner yet.
+        loadProviderConversations(
+            reason = if (roomUnavailable) "room-unavailable" else "room-not-ready"
+        )
+    }
+
+    private suspend fun silentRefresh() {
+        ensureRoomGate()
+
+        if (roomReadEnabled) {
+            // Normal Room-ready resume: the durable owner is the always-on
+            // observeAll() collector, which is already rendering. Schedule the
+            // bounded tail delta and return — ZERO provider-wide scans.
+            scheduleTailDeltaCatchUp()
+            withContext(Dispatchers.IO) {
+                ConversationCache.get(getApplication()).save(roomConversationsState)
+            }
+            return
+        }
+
+        loadProviderConversations(
+            reason = if (roomUnavailable) "room-unavailable" else "room-not-ready"
+        )
+    }
+
+    /**
+     * The ONLY path that can put provider-sourced rows into the rendered list.
+     *
+     * Explicitly gated on Room not being authoritative; every use emits a typed
+     * HOME_STATE diagnostic so a provider list appearing on Home is observable.
+     * The result is discarded if the Room gate opens while the scan is in
+     * flight, so a provider list can never overwrite the durable owner.
+     */
+    private suspend fun loadProviderConversations(reason: String) {
+        DiagnosticLog.event(
+            "HOME_STATE",
+            "provider-fallback reason=$reason previous=${lastConversationSource.name}"
+        )
 
         loadingShowJob?.cancel()
         loadingShowJob = viewModelScope.launch {
@@ -298,11 +456,15 @@ class HomeViewModel(
                     ContactRepository(getApplication()).getContactNameMapAsync()
                 }
                 val rawList = repository.getConversationsFast(progressListener) { partial ->
-                    if (!hasLoadedOnce) {
-                        viewModelScope.launch { replaceConversations(partial, archived, atomic = false) }
+                    // Progressive paint during the bootstrap fallback only; a
+                    // partial provider list must never touch a Room-owned list.
+                    if (!roomReadEnabled && !hasLoadedOnce) {
+                        viewModelScope.launch {
+                            setRoomConversations(partial, HomeConversationSource.PROVIDER_FALLBACK)
+                        }
                     }
                 }
-                val freshList = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
+                val freshList = ThreadSnippet.reconcileAll(
                     rawList, repository.newestMessagePerThread(rawList.map { it.threadId })
                 )
                 val names = contactNames.await()
@@ -310,127 +472,58 @@ class HomeViewModel(
                 freshList to archived
             }
 
-            replaceConversations(freshList, archived, atomic = true)
-            newestKnownDate = freshList.maxOfOrNull { it.date } ?: 0L
-            hasLoadedOnce = true
-            withContext(Dispatchers.IO) { cache.save(freshList) }
-        } catch (error: Exception) {
-            Log.e("SMS_DEBUG", "Unable to refresh conversations", error)
-        } finally {
-            loadingShowJob?.cancel()
-            isLoading = false
-            loadStatus = null
-            syncProgress = null
-        }
-    }
-
-    private suspend fun silentRefresh() {
-        try {
-            val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator.get(getApplication())
-            if (!roomReadEnabled && !roomUnavailable) {
-                roomReadEnabled = runCatching { coordinator.isShadowReady() }.getOrDefault(false)
-            }
-            if (roomReadEnabled) {
-                // Foreground reads must NEVER trigger a provider-wide
-                // reconciliation. The shadow is kept fresh by the targeted
-                // observer / coordinator channel; a slightly stale read here
-                // costs one frame, whereas syncNow() scans provider history and
-                // is exactly the foreground FullSync this codebase forbids
-                // (constitution: FullSync is bootstrap / recovery only).
-                val roomList = kotlin.runCatching {
-                    roomConversations()
-                }.getOrNull()
-                if (roomList != null) {
-                    replaceConversations(roomList, archiveRepository.getArchivedIds(), atomic = true)
-                    newestKnownDate = maxOf(newestKnownDate, roomList.maxOfOrNull { it.date } ?: 0L)
-                    withContext(Dispatchers.IO) {
-                        com.autonomousone.messages.repository.ConversationCache
-                            .get(getApplication()).save(roomList)
-                    }
-                    return
+            if (!roomReadEnabled) {
+                withContext(Dispatchers.Main) {
+                    archivedIds.clear()
+                    archivedIds.addAll(archived)
+                    setRoomConversations(freshList, HomeConversationSource.PROVIDER_FALLBACK)
+                    hasLoadedOnce = true
+                }
+                withContext(Dispatchers.IO) {
+                    ConversationCache.get(getApplication()).save(freshList)
                 }
             }
-
-            val (freshList, archived) = withContext(Dispatchers.IO) {
-                val archived = archiveRepository.getArchivedIds()
-                val list = repository.getConversationsFast(null, null)
-                val reconciled = com.autonomousone.messages.repository.ThreadSnippet.reconcileAll(
-                    list, repository.newestMessagePerThread(list.map { it.threadId })
-                )
-                reconciled to archived
-            }
-            replaceConversations(freshList, archived, atomic = true)
-            newestKnownDate = freshList.maxOfOrNull { it.date } ?: newestKnownDate
-            withContext(Dispatchers.IO) {
-                com.autonomousone.messages.repository.ConversationCache
-                    .get(getApplication()).save(freshList)
-            }
         } catch (error: Exception) {
-            Log.e("SMS_DEBUG", "Silent refresh failed; keeping cache", error)
+            Log.e("SMS_DEBUG", "Provider fallback load failed", error)
+        } finally {
+            loadingShowJob?.cancel()
+            withContext(Dispatchers.Main) {
+                isLoading = false
+                loadStatus = null
+                syncProgress = null
+            }
         }
     }
 
     private suspend fun roomConversations(): List<Sms> =
         withContext(Dispatchers.IO) {
-            com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+            MessagesDatabase.get(getApplication())
                 .conversationDao()
                 .all()
-                .map { c ->
-                    Sms(
-                        id = c.threadId,
-                        threadId = c.threadId,
-                        sender = c.rawAddress.ifBlank { c.normalizedAddress },
-                        message = c.snippet,
-                        date = c.lastMessageDate,
-                        unread = c.unreadCount > 0,
-                        // v2.6.7 "You" fix: the projection carries the newest
-                        // message's type — no O(N) probe back into messages.
-                        type = c.lastMessageType
-                    )
-                }
+                .map { it.toHomeSms() }
         }
 
-    private fun replaceConversations(items: List<Sms>, archived: Set<Long>, atomic: Boolean = true) {
-        val excluded = pendingDeletes.keys
-        val blocked = blocklistRepository.getBlocked()
-
-        val main = mutableListOf<Sms>()
-        val archivedOut = mutableListOf<Sms>()
-        items.forEach { sms ->
-            if (sms.threadId in excluded) return@forEach
-            if (isBlockedAddress(sms.sender, blocked)) return@forEach
-            if (sms.threadId in archived) archivedOut.add(sms) else main.add(sms)
-        }
-        sortByPin(main, pinnedIds)
-        sortByPin(archivedOut, pinnedIds)
-
-        if (atomic) {
-            applySwap(conversations, main)
-            applySwap(archivedConversations, archivedOut)
-        } else {
-            conversations.apply { clear(); addAll(main) }
-            archivedConversations.apply { clear(); addAll(archivedOut) }
-        }
-        archivedIds.clear()
-        archivedIds.addAll(archived)
-    }
+    /**
+     * One projection mapping used by BOTH the Room Flow and the one-shot read,
+     * so the authoritative list and the initial paint can never disagree. The
+     * projection carries the newest message's type — no O(N) probe back into
+     * messages.
+     */
+    private fun ConversationEntity.toHomeSms(): Sms = Sms(
+        id = threadId,
+        threadId = threadId,
+        sender = rawAddress.ifBlank { normalizedAddress },
+        message = snippet,
+        date = lastMessageDate,
+        unread = unreadCount > 0,
+        type = lastMessageType
+    )
 
     private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {
         if (target == source) return
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             target.clear()
             target.addAll(source)
-        }
-    }
-
-    private fun sortByPin(list: MutableList<Sms>, pins: Set<Long>) {
-        list.sortWith { a, b ->
-            val pa = a.threadId in pins
-            val pb = b.threadId in pins
-            when {
-                pa != pb -> if (pa) -1 else 1
-                else -> b.date.compareTo(a.date)
-            }
         }
     }
 
@@ -446,19 +539,31 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     fun markConversationReadLocally(threadId: Long, phone: String) {
-        fun matches(sms: Sms): Boolean =
-            (threadId != 0L && sms.threadId == threadId) ||
-                ContactRepository.sameConversation(sms.sender, phone)
-        conversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
-        archivedConversations.replaceAll { if (matches(it)) it.copy(unread = false) else it }
+        var changed = false
+        if (threadId != 0L) {
+            overlay.recordMarkRead(threadId)
+            changed = true
+        }
+        if (phone.isNotBlank()) {
+            val matches = LinkedHashSet<Long>()
+            roomConversationsState.forEach {
+                if (ContactRepository.sameConversation(it.sender, phone)) matches.add(it.threadId)
+            }
+            overlay.overrideRows().forEach {
+                if (ContactRepository.sameConversation(it.sender, phone)) matches.add(it.threadId)
+            }
+            matches.forEach {
+                overlay.recordMarkRead(it)
+                changed = true
+            }
+        }
+        if (changed) renderConversations()
     }
 
     fun markAllAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.markAllAsRead()
             kotlin.runCatching {
-                val coordinator = com.autonomousone.messages.data.TelephonySyncCoordinator
-                    .get(getApplication())
                 (conversations + archivedConversations).toList().forEach { sms ->
                     coordinator.markThreadReadInShadow(sms.threadId)
                 }
@@ -472,19 +577,35 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     fun deleteConversation(sms: Sms, delayMs: Long = 4_000L) {
-        conversations.removeAll { it.threadId == sms.threadId }
-        archivedConversations.removeAll { it.threadId == sms.threadId }
+        // Immediate removal is an OVERLAY, not a list mutation: the durable row
+        // stays until the actual delete commits, and Room remains the truth.
+        overlay.recordRemoval(sms.threadId)
+        renderConversations()
 
         pendingDeletes[sms.threadId]?.cancel()
 
         val job = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
-            repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
-            kotlin.runCatching {
-                com.autonomousone.messages.data.TelephonySyncCoordinator
-                    .get(getApplication()).deleteThreadFromShadow(sms.threadId)
+            var durableDeleteCommitted = false
+            try {
+                repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
+                durableDeleteCommitted = kotlin.runCatching {
+                    coordinator.deleteThreadFromShadow(sms.threadId)
+                }.isSuccess
+            } finally {
+                synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
+                if (!durableDeleteCommitted) {
+                    // The delete did not reach the durable projection: stop
+                    // hiding the row so Room stays the authoritative owner
+                    // instead of an overlay living forever.
+                    withContext(Dispatchers.Main) {
+                        overlay.clearOverride(sms.threadId)
+                        renderConversations()
+                    }
+                }
+                // On success the removal overlay is retired by the Room emission
+                // the shadow delete invalidates: reconcile sees the thread gone.
             }
-            synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
         }
         pendingDeletes[sms.threadId] = job
     }
@@ -497,15 +618,8 @@ class HomeViewModel(
         }
         job.cancel()
         synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
-
-        val targetList = if (sms.threadId in archivedIds) archivedConversations else conversations
-        insertDeduped(targetList, sms)
-    }
-
-    private fun insertDeduped(target: MutableList<Sms>, sms: Sms) {
-        target.removeAll { it.id == sms.id }
-        val insertIndex = target.indexOfFirst { it.date < sms.date }
-        if (insertIndex >= 0) target.add(insertIndex, sms) else target.add(sms)
+        overlay.clearRemoval(sms.threadId)
+        renderConversations()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -517,8 +631,7 @@ class HomeViewModel(
             archiveRepository.archiveThread(sms.threadId)
             withContext(Dispatchers.Main) {
                 archivedIds.add(sms.threadId)
-                conversations.removeAll { it.threadId == sms.threadId }
-                insertDeduped(archivedConversations, sms)
+                renderConversations()
             }
         }
     }
@@ -528,8 +641,7 @@ class HomeViewModel(
             archiveRepository.unarchiveThread(sms.threadId)
             withContext(Dispatchers.Main) {
                 archivedIds.remove(sms.threadId)
-                archivedConversations.removeAll { it.threadId == sms.threadId }
-                insertDeduped(conversations, sms)
+                renderConversations()
             }
         }
     }
@@ -542,8 +654,7 @@ class HomeViewModel(
         val isPinned = sms.threadId in pinnedIds
         if (isPinned) pinRepository.unpinThread(sms.threadId) else pinRepository.pinThread(sms.threadId)
         if (isPinned) pinnedIds.remove(sms.threadId) else pinnedIds.add(sms.threadId)
-        sortByPin(conversations, pinnedIds)
-        sortByPin(archivedConversations, pinnedIds)
+        renderConversations()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -551,17 +662,18 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     fun blockConversation(sms: Sms) {
-        conversations.removeAll { it.threadId == sms.threadId }
-        archivedConversations.removeAll { it.threadId == sms.threadId }
         viewModelScope.launch(Dispatchers.IO) {
             blocklistRepository.block(sms.sender)
+            withContext(Dispatchers.Main) { renderConversations() }
         }
     }
 
     fun unblockNumber(address: String) {
         viewModelScope.launch(Dispatchers.IO) {
             blocklistRepository.unblock(address)
-            loadSms()
+            // The durable row was never removed, only filtered, so re-rendering
+            // is enough to bring it back.
+            withContext(Dispatchers.Main) { renderConversations() }
         }
     }
 
@@ -588,7 +700,7 @@ class HomeViewModel(
                     withContext(Dispatchers.Main) { globalResults = emptyList() }
                     return@launch
                 }
-                val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                val db = MessagesDatabase.get(getApplication())
                 val hits = db.messageFtsDao().threadHits(match, limit = SEARCH_RESULT_LIMIT)
                 val blocked = blocklistRepository.getBlocked()
                 val results = hits.mapNotNull { hit ->
@@ -617,37 +729,33 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * V2: The incoming SMS was already persisted to Room via mutate(Upsert)
-     * in IncomingMessageDispatcher. We just need to optimistically prepend
-     * for instant UI feedback, then let Room Flow handle the rest.
-     *
-     * V2.6: NO silentRefresh() here anymore — the exact mutation commits to
-     * Room, invalidation fires the conversation Flow (observeRoomConversations)
-     * and Home repaints the authoritative row. A provider scan on every
-     * incoming SMS would make the O(1) mutation pointless.
+     * V2: The incoming SMS was already persisted to Room via mutate(Upsert) in
+     * IncomingMessageDispatcher. Phase 8: it is an OPTIMISTIC OVERLAY row — it
+     * appears immediately, and Room remains the durable owner. The override is
+     * retired automatically the moment the Room emission contains the thread
+     * (observeRoomConversations), so it can never shadow a newer durable row.
      */
     private fun observeIncomingSms() {
         viewModelScope.launch {
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
-                val existingIndex = conversations.indexOfFirst {
-                    ContactRepository.sameConversation(it.sender, incomingSms.sender)
-                }
-                if (existingIndex >= 0) conversations.removeAt(existingIndex)
-
-                if (incomingSms.threadId !in archivedIds) {
-                    conversations.removeAll {
-                        ContactRepository.sameConversation(it.sender, incomingSms.sender)
-                    }
-                    conversations.add(0, incomingSms)
-                }
+                val threadId = incomingSms.threadId.takeIf { it > 0L }
+                    ?: resolveThreadIdByPhone(incomingSms.sender)
+                if (threadId <= 0L) return@collect
+                overlay.recordIncoming(incomingSms.copy(threadId = threadId))
+                renderConversations()
             }
         }
     }
 
     /**
-     * Room Flow → Home list. Once the read-cutover gate is open the list is
-     * driven by Room INVALIDATION: an exact mutation commits → Flow re-emits →
-     * Home repaints — no provider scan anywhere on the realtime path.
+     * Room Flow → Home list. Once the read-cutover gate is open this is the
+     * ONLY durable writer: an exact mutation commits → Flow re-emits → Home
+     * repaints via the overlay merge — no provider scan anywhere on the
+     * realtime path.
+     *
+     * The gate can also open while Home is already on screen: every emission
+     * re-checks readiness until it does, so Room takes over without waiting for
+     * the next resume.
      *
      * Fail-safe: if the shadow DB can't be opened (bad migration, corruption),
      * we log, disable the cutover and fall back to the provider path. The app
@@ -656,36 +764,33 @@ class HomeViewModel(
     private fun observeRoomConversations() {
         viewModelScope.launch {
             try {
-                val db = com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
+                val db = MessagesDatabase.get(getApplication())
                 db.conversationDao()
                     .observeAll()
                     .collect { rows ->
-                        if (!roomReadEnabled) return@collect
-                        val converted = rows.map { c ->
-                            Sms(
-                                id = c.threadId,
-                                threadId = c.threadId,
-                                sender = c.rawAddress.ifBlank { c.normalizedAddress },
-                                message = c.snippet,
-                                date = c.lastMessageDate,
-                                unread = c.unreadCount > 0,
-                                type = c.lastMessageType
-                            )
+                        if (!roomReadEnabled && !roomUnavailable) {
+                            roomReadEnabled = runCatching {
+                                coordinator.isShadowReady()
+                            }.getOrDefault(false)
                         }
+                        if (!roomReadEnabled) return@collect
+                        val converted = rows.map { it.toHomeSms() }
                         withContext(Dispatchers.Main) {
                             if (!roomReadEnabled) return@withContext
-                            replaceConversations(
-                                converted,
-                                archiveRepository.getArchivedIds(),
-                                atomic = true
-                            )
+                            setRoomConversations(converted, HomeConversationSource.ROOM)
+                            hasLoadedOnce = true
                         }
                     }
             } catch (e: Exception) {
                 Log.e("HOME_DB", "Room startup failed — falling back to provider path", e)
+                DiagnosticLog.event(
+                    "HOME_STATE",
+                    "room-observer-failed; provider fallback",
+                    e
+                )
                 roomReadEnabled = false
                 roomUnavailable = true
-                loadSms()
+                withContext(Dispatchers.Main) { loadSms() }
             }
         }
     }
@@ -706,36 +811,57 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * Outgoing message: an optimistic overlay row. The sender emits threadId 0
+     * for the plain SMS path (resolved here by phone match); if the thread is
+     * still unknown the exact Room mutation materializes it and this event is
+     * intentionally ignored.
+     */
     private fun observeOutgoingSent() {
         viewModelScope.launch {
             SmsEventBus.outgoingSentFlow.collect { sent ->
                 val normSent = ContactRepository.normalizePhone(sent.phone)
                 if (normSent.isBlank()) return@collect
 
-                val idx = conversations.indexOfFirst {
-                    ContactRepository.sameConversation(it.sender, sent.phone)
-                }
+                val threadId = sent.threadId.takeIf { it > 0L }
+                    ?: resolveThreadIdByPhone(sent.phone)
+                if (threadId <= 0L) return@collect
 
-                val row = if (idx >= 0) {
-                    val existing = conversations.removeAt(idx)
-                    existing.copy(message = sent.message, date = sent.date, type = 2, unread = false)
-                } else {
-                    Sms(
-                        id = sent.date,
-                        threadId = 0L,
-                        sender = sent.phone,
-                        message = sent.message,
-                        date = sent.date,
-                        unread = false,
-                        type = 2
-                    )
-                }
-
-                if (row.threadId !in archivedIds) {
-                    conversations.add(0, row)
-                }
+                val existing = existingRow(threadId)
+                val row = existing?.copy(
+                    message = sent.message,
+                    date = sent.date,
+                    type = 2,
+                    unread = false
+                ) ?: Sms(
+                    id = sent.date,
+                    threadId = threadId,
+                    sender = sent.phone,
+                    message = sent.message,
+                    date = sent.date,
+                    unread = false,
+                    type = 2
+                )
+                overlay.recordOutgoingPending(row)
+                renderConversations()
             }
         }
+    }
+
+    /** The rendered row for a thread, preferring the durable Room projection. */
+    private fun existingRow(threadId: Long): Sms? =
+        roomConversationsState.firstOrNull { it.threadId == threadId }
+            ?: overlay.overrideRows().firstOrNull { it.threadId == threadId }
+
+    /** Resolves a thread id by phone across the durable rows and the overlay. */
+    private fun resolveThreadIdByPhone(phone: String): Long {
+        if (phone.isBlank()) return 0L
+        roomConversationsState.firstOrNull {
+            ContactRepository.sameConversation(it.sender, phone)
+        }?.let { return it.threadId }
+        return overlay.overrideRows().firstOrNull {
+            ContactRepository.sameConversation(it.sender, phone)
+        }?.threadId ?: 0L
     }
 
     override fun onCleared() {
