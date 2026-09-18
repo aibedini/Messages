@@ -13,6 +13,7 @@ import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.utils.NotificationHelper
+import com.autonomousone.messages.utils.DiagnosticLog
 
 /**
  * Single fan-out point for INCOMING messages (SMS and MMS alike).
@@ -45,6 +46,20 @@ object IncomingMessageDispatcher {
         sms: Sms,
         source: String = MessageEntity.SOURCE_SMS
     ) {
+        val providerId = kotlin.math.abs(sms.id)
+        if (providerId <= 0L) {
+            DiagnosticLog.event(
+                "INCOMING_DEDUP",
+                "source=$source providerId=$providerId threadId=${sms.threadId} " +
+                    "decision=reject-non-provider-identity"
+            )
+            return
+        }
+        DiagnosticLog.event(
+            "INCOMING_DEDUP",
+            "source=$source providerId=$providerId threadId=${sms.threadId} " +
+                "path=dispatcher decision=upsert"
+        )
         // Always mirror into Room first (blocking is a notification policy,
         // not a sync policy — the row stays persisted either way).
         // PR-02: the matching cloud event is committed INSIDE the same Room

@@ -209,12 +209,15 @@ class ConversationViewModel(
      */
     private fun appendLiveMessage(row: Sms, source: String): Boolean {
         val duplicate = messages.any { existing ->
-            ConversationWindow.identity(existing.id) == ConversationWindow.identity(row.id) ||
-                (existing.type == row.type &&
-                    existing.message == row.message &&
-                    kotlin.math.abs(existing.date - row.date) < 5000L)
+            ConversationWindow.identity(existing.id) == ConversationWindow.identity(row.id)
         }
-        if (duplicate) return false
+        if (duplicate) {
+            DiagnosticLog.event(
+                "INCOMING_DEDUP",
+                "source=$source identity=${ConversationWindow.identity(row.id)} decision=duplicate"
+            )
+            return false
+        }
 
         if (windowMode == ConversationWindowMode.OLDEST) {
             pendingNewMessagesCount++
@@ -239,6 +242,10 @@ class ConversationViewModel(
         DiagnosticLog.event(
             "CHAT_LIVE",
             "source=$source id=${row.id} follow=$shouldFollow"
+        )
+        DiagnosticLog.event(
+            "INCOMING_DEDUP",
+            "source=$source identity=${ConversationWindow.identity(row.id)} decision=append"
         )
         return true
     }

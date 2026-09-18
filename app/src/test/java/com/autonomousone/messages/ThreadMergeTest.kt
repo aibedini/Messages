@@ -67,6 +67,16 @@ class ThreadMergeTest {
     }
 
     @Test
+    fun `identical incoming bodies at the same time remain distinct provider messages`() {
+        val first = sms(100, 1_000, body = "hello")
+        val second = sms(101, 1_000, body = "hello")
+
+        val merged = ThreadMerge.mergeTail(listOf(first), listOf(second))
+
+        assertEquals(listOf(100L, 101L), merged.map { it.id })
+    }
+
+    @Test
     fun `prependOlder drops rows already on screen`() {
         val existing = listOf(sms(40, 400), sms(41, 410))
         val olderPage = listOf(sms(38, 380), sms(39, 390), sms(40, 400))

@@ -76,6 +76,29 @@ class ConversationWindowTest {
     }
 
     @Test
+    fun `live incoming and Room row with the same provider identity render once`() {
+        val live = sms(100, 1_000, body = "incoming").copy(unread = true, status = 32)
+        val room = live.copy(unread = false, status = 0)
+
+        val merged = ConversationWindow.mergeRoomTail(listOf(live), listOf(room))
+
+        assertEquals(1, merged.size)
+        assertEquals(100L, merged.single().id)
+        assertEquals(false, merged.single().unread)
+        assertEquals(0, merged.single().status)
+    }
+
+    @Test
+    fun `same incoming body and date with different provider identities render twice`() {
+        val first = sms(100, 1_000, body = "same")
+        val second = sms(101, 1_000, body = "same")
+
+        val merged = ConversationWindow.mergeRoomTail(listOf(first), listOf(second))
+
+        assertEquals(listOf(100L, 101L), merged.map { it.id })
+    }
+
+    @Test
     fun `SMS 52 and MMS 52 are distinct identities and both survive a merge`() {
         assertEquals(MessageIdentity.SOURCE_SMS, MessageIdentity.sourceOf(52L))
         assertEquals(MessageIdentity.SOURCE_MMS, MessageIdentity.sourceOf(-52L))

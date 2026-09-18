@@ -7,6 +7,8 @@ import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.utils.DiagnosticLog
+import java.security.MessageDigest
 
 /**
  * Receives both SMS_RECEIVED (all apps) and SMS_DELIVER (default SMS app only).
@@ -64,6 +66,7 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val sender = pdus.first().originatingAddress ?: return
+        val pduFingerprint = fingerprint(intent)
         val timestamp = pdus.first().timestampMillis.takeIf { it > 0 }
             ?: System.currentTimeMillis()
 
@@ -77,6 +80,24 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         Log.i(TAG, "incoming_sms_received from=$sender length=${body.length} action=${intent.action}")
+        DiagnosticLog.event(
+            "INCOMING_DEDUP",
+            "broadcast action=${intent.action} pdu=$pduFingerprint " +
+                "phone=${DiagnosticLog.phoneToken(sender)}"
+        )
+
+        // A non-default SMS app does not own provider persistence. The system
+        // default app will insert the row and our ContentObserver will ingest
+        // that real provider identity. Publishing the broadcast payload here
+        // used to create a timestamp-id Room row followed by the real row: one
+        // physical SMS, two bubbles (CASE C).
+        if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+            DiagnosticLog.event(
+                "INCOMING_DEDUP",
+                "pdu=$pduFingerprint path=broadcast decision=provider-observer-only"
+            )
+            return
+        }
 
         // ── 1. Persist FIRST (default-app path). Non-default apps never get
         //       SMS_DELIVER; the system default app writes the row instead and
@@ -92,15 +113,20 @@ class SmsReceiver : BroadcastReceiver() {
         // ── 2. Read back what the provider actually holds (SSOT), falling back
         //       to broadcast data when the row is not visible to us. ──────────
         val sms = readBackFromProvider(context, persistedId)
-            ?: Sms(
-                id = if (persistedId > 0) persistedId else timestamp,
-                threadId = threadId,
-                sender = sender,
-                message = body,
-                date = timestamp,
-                unread = true,
-                type = Telephony.Sms.MESSAGE_TYPE_INBOX
+        if (sms == null || sms.id <= 0L) {
+            DiagnosticLog.event(
+                "INCOMING_DEDUP",
+                "pdu=$pduFingerprint providerId=$persistedId threadId=$threadId " +
+                    "decision=defer-to-provider-observer"
             )
+            return
+        }
+
+        DiagnosticLog.event(
+            "INCOMING_DEDUP",
+            "pdu=$pduFingerprint providerId=${sms.id} threadId=${sms.threadId} " +
+                "source=sms path=eventbus decision=append-or-replace"
+        )
 
         // ── 3. One shared fan-out: bus + webhook + notification. ─────────────
         IncomingMessageDispatcher.dispatch(context, sms)
@@ -179,6 +205,16 @@ class SmsReceiver : BroadcastReceiver() {
     } catch (e: Exception) {
         false
     }
+
+    /** Privacy-safe physical broadcast token; raw PDU bytes never leave memory. */
+    private fun fingerprint(intent: Intent): String = runCatching {
+        val digest = MessageDigest.getInstance("SHA-256")
+        @Suppress("DEPRECATION")
+        val rawPdus = intent.extras?.get("pdus") as? Array<*>
+        rawPdus.orEmpty().forEach { (it as? ByteArray)?.let(digest::update) }
+        digest.update(intent.getStringExtra("format").orEmpty().toByteArray())
+        digest.digest().take(6).joinToString("") { "%02x".format(it) }
+    }.getOrDefault("unknown")
 
     private companion object {
         // PascalCase to match the receiver class name for case-sensitive logcat

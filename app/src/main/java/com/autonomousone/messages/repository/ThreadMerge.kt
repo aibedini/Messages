@@ -12,8 +12,7 @@ import com.autonomousone.messages.model.Sms
  *
  *  - [mergeTail] folds freshly-queried rows into the visible list without
  *    ever removing history already on screen, deduping by id AND by
- *    (body, time-proximity) so provider-confirmed copies of optimistic rows
- *    collapse into one bubble;
+ *    stable provider identity;
  *  - [prependOlder] extends history upward, dropping overlap;
  *  - [tailWindow] caps the list to the newest n messages so long threads
  *    keep a bounded footprint.
@@ -23,18 +22,15 @@ import com.autonomousone.messages.model.Sms
 object ThreadMerge {
 
     /**
-     * Two rows are the "same message" when their composite provider identity
-     * (source, providerId) matches, or when the body matches within 5 s.
+     * Two persisted rows are the same message only when their composite
+     * provider identity (source, providerId) matches.
      *
      * The id comparison goes through [MessageIdentity] rather than raw id
      * equality so SMS 52 and MMS 52 (the latter carried as -52 at the UI
      * boundary) can never collapse into one bubble.
      */
     internal fun sameMessage(a: Sms, b: Sms): Boolean =
-        MessageIdentity.keyOf(a) == MessageIdentity.keyOf(b) ||
-                (a.type == b.type &&
-                    a.message == b.message &&
-                    kotlin.math.abs(a.date - b.date) < 5000L)
+        MessageIdentity.keyOf(a) == MessageIdentity.keyOf(b)
 
     /**
      * Merges [fresh] (any rows newer or equal to what we show, from the
