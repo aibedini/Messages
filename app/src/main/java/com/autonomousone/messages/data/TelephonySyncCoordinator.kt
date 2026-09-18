@@ -644,6 +644,9 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     originCommandId = m.originCommandId,
                     clientMessageId = m.clientMessageId
                 )
+                m.providerObservedAtNanos?.let {
+                    PerfTelemetry.recordSince(PerfMetric.PROVIDER_PERSISTED_TO_ROOM_COMMIT, it)
+                }
             }
 
             is MessageMutation.Delete -> {
@@ -792,7 +795,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         sender = latest?.normalizedAddress ?: "",
                         body = latest?.body ?: ""
                     ) {
-                        GatewayEventFactory.threadRead(conversationIdFor(m.threadId))
+                        GatewayEventFactory.threadRead(
+                            conversationId = conversationIdFor(m.threadId),
+                            revisionKey = latest?.let { "${it.source}:${it.providerId}:${it.date}" } ?: "empty"
+                        )
                     }
                     if (latest != null) {
                         val conversation = db.conversationDao().byThread(m.threadId) ?: return@withTransaction
@@ -958,7 +964,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 try {
                     for (threadId in touched) {
                         if (threadId <= 0L) continue
-                        val newest = dao.newestForThread(threadId) ?: run {
+                        val newest = dao.newestForThread(threadId)
+                        if (newest == null) {
                             convDao.delete(threadId)
                             continue
                         }
@@ -1768,14 +1775,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 Log.e(TAG, "integrity audit failed; durable cursors retained", e)
             } finally {
                 integrityInFlight.set(false)
-                val running = kotlin.runCatching {
-                    db.integrityAuditDao().all().any { it.state == IntegrityAuditStateEntity.STATE_RUNNING }
-                }.getOrDefault(false)
-                if (running) {
-                    syncScope.launch {
-                        kotlinx.coroutines.delay(60_000L)
-                        scheduleIntegrityAudit()
-                    }
+                val states = kotlin.runCatching { db.integrityAuditDao().all() }.getOrDefault(emptyList())
+                val now = System.currentTimeMillis()
+                val delayMs = when {
+                    states.any { it.state == IntegrityAuditStateEntity.STATE_RUNNING } -> 60_000L
+                    states.isEmpty() -> 24L * 60L * 60L * 1000L
+                    else -> states.map { (it.nextRunAt - now).coerceAtLeast(60_000L) }.minOrNull()
+                        ?: 24L * 60L * 60L * 1000L
+                }
+                syncScope.launch {
+                    kotlinx.coroutines.delay(delayMs)
+                    scheduleIntegrityAudit()
                 }
             }
         }
@@ -1811,7 +1821,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             cursorDate = Long.MAX_VALUE,
             cursorProviderId = Long.MAX_VALUE,
             lastCompletedAt = now,
-            nextRunAt = now + 6L * 60L * 60L * 1000L,
+            nextRunAt = now + 24L * 60L * 60L * 1000L,
             state = IntegrityAuditStateEntity.STATE_IDLE,
             updatedAt = now
         ))
@@ -1834,14 +1844,28 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     when (val read = readExactMessageStrict(source, local.providerId)) {
                         is ProviderRead.Success -> {
                             val provider = read.value
-                            if (provider != null) ingestProviderRows(source, listOf(provider), DiscoveryMode.INTEGRITY_AUDIT)
-                            else {
+                            if (provider != null) {
+                                // READ is a user-owned local fact once true. Repair the
+                                // provider in the authoritative direction instead of
+                                // letting a stale provider READ=0 resurrect unread.
+                                if (local.read && provider.unread) {
+                                    val write = smsRepository.markProviderRowReadStrict(source, local.providerId)
+                                    if (write is com.autonomousone.messages.repository.SourceWriteResult.Failure) {
+                                        repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.EXPECT_EXISTS)
+                                        queued = true
+                                    }
+                                }
+                                ingestProviderRows(source, listOf(provider), DiscoveryMode.INTEGRITY_AUDIT)
+                            } else {
+                                // The page membership is first evidence; exact absence
+                                // verification is the second independent observation.
                                 repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE)
                                 queued = true
                             }
                         }
                         is ProviderRead.Failure -> {
-                            repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.VERIFY_DELETE_CANDIDATE)
+                            // A provider failure is UNKNOWN, never delete evidence.
+                            repairQueue.enqueue(source, local.providerId, ProviderRepairIntent.EXPECT_EXISTS)
                             queued = true
                         }
                     }

@@ -80,6 +80,7 @@ class MarkConversationReadUseCase(
 
     suspend fun markRead(threadId: Long, phone: String) {
         if (threadId <= 0L && phone.isBlank()) return
+        com.autonomousone.messages.diagnostics.PerfTelemetry.noteMarkReadRequested(threadId)
 
         // (a) + (b) local-first, then the UI signal. The signal is emitted ONLY
         // when the durable local write actually succeeded.

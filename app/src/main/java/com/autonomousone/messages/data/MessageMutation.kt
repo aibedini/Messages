@@ -18,6 +18,7 @@ sealed interface MessageMutation {
         val message: com.autonomousone.messages.model.Sms,
         val originCommandId: String? = null,
         val clientMessageId: String? = null,
+        val providerObservedAtNanos: Long? = null,
     ) : MessageMutation
 
     /** Delete a single message by exact identity. */

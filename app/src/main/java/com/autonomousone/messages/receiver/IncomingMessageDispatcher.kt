@@ -50,7 +50,11 @@ object IncomingMessageDispatcher {
         // PR-02: the matching cloud event is committed INSIDE the same Room
         // transaction (coordinator-side) — no more fire-and-forget webhook.
         TelephonySyncCoordinator.get(context).mutate(
-            MessageMutation.Upsert(source = source, message = sms)
+            MessageMutation.Upsert(
+                source = source,
+                message = sms,
+                providerObservedAtNanos = com.autonomousone.messages.diagnostics.PerfTelemetry.mark()
+            )
         )
 
         // Blocked sender: no bus event, no webhook, no notification (silent).

@@ -1316,6 +1316,33 @@ class SmsRepository(
         markAllAsReadStrict()
     }
 
+    /** Exact, typed READ repair used by the Room→Provider integrity direction. */
+    fun markProviderRowReadStrict(source: String, providerId: Long): SourceWriteResult {
+        if (providerId <= 0L) return SourceWriteResult.NotApplicable
+        return try {
+            val values = ContentValues().apply { put(Telephony.Sms.READ, 1) }
+            val updated = when (source) {
+                com.autonomousone.messages.data.MessageEntity.SOURCE_SMS -> context.contentResolver.update(
+                    Telephony.Sms.CONTENT_URI,
+                    values,
+                    "${Telephony.Sms._ID} = ? AND ${Telephony.Sms.READ} = 0",
+                    arrayOf(providerId.toString())
+                )
+                com.autonomousone.messages.data.MessageEntity.SOURCE_MMS -> context.contentResolver.update(
+                    Telephony.Mms.CONTENT_URI,
+                    ContentValues().apply { put(Telephony.Mms.READ, 1) },
+                    "${Telephony.Mms._ID} = ? AND ${Telephony.Mms.READ} = 0",
+                    arrayOf(providerId.toString())
+                )
+                else -> return SourceWriteResult.Failure("UNSUPPORTED_SOURCE")
+            }
+            SourceWriteResult.Success(updated)
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "Error marking provider row read $source:$providerId", e)
+            SourceWriteResult.Failure(e.javaClass.simpleName, e)
+        }
+    }
+
     /**
      * Permanently delete all messages belonging to [threadId] from the system SMS ContentProvider.
      * If [threadId] is 0 (unknown), falls back to deleting by [phone] address.

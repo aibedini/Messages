@@ -204,12 +204,15 @@ object GatewayEventFactory {
         )
     }
 
-    fun threadRead(conversationId: String): GatewayEventOutboxEntity {
+    fun threadRead(
+        conversationId: String,
+        revisionKey: String = "legacy"
+    ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("conversationId", conversationId)
             .put("readAtMs", System.currentTimeMillis())
         return outboxRow(
-            UUID.randomUUID().toString(),
+            UUID.nameUUIDFromBytes("thread-read:$conversationId:$revisionKey".toByteArray()).toString(),
             Types.THREAD_READ,
             conversationId,
             payload.toString()

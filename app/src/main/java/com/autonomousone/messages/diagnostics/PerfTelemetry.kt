@@ -163,6 +163,7 @@ object PerfTelemetry {
 
     /** Latest canonical Room mutation commit, consumed by Home's authoritative Flow. */
     private val lastRoomCommitNanos = java.util.concurrent.atomic.AtomicLong(0L)
+    private val markReadStarts = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
     private val buffers: Map<PerfMetric, RollingSamples> =
         PerfMetric.entries.associateWith { RollingSamples() }
@@ -176,6 +177,15 @@ object PerfTelemetry {
     fun recordRoomCommitToHome() {
         val started = lastRoomCommitNanos.getAndSet(0L)
         if (started != 0L) recordSince(PerfMetric.ROOM_COMMIT_TO_HOME_OBSERVED, started)
+    }
+
+    fun noteMarkReadRequested(threadId: Long) {
+        if (threadId > 0L) markReadStarts[threadId] = System.nanoTime()
+    }
+
+    fun recordMarkReadObserved(threadId: Long) {
+        if (threadId <= 0L) return
+        markReadStarts.remove(threadId)?.let { recordSince(PerfMetric.MARK_READ_TO_UNREAD_ZERO, it) }
     }
 
     /** Records a completed measurement. Negative durations are ignored. */

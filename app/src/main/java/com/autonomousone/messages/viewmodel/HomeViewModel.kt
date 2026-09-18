@@ -28,6 +28,8 @@ import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadSnippet
 import com.autonomousone.messages.utils.DiagnosticLog
+import com.autonomousone.messages.diagnostics.PerfTelemetry
+import com.autonomousone.messages.diagnostics.TraceSections
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -807,7 +809,13 @@ class HomeViewModel(
                         val converted = rows.map { it.toHomeSms() }
                         withContext(Dispatchers.Main) {
                             if (!roomReadEnabled) return@withContext
-                            setRoomConversations(converted, HomeConversationSource.ROOM)
+                            TraceSections.begin(TraceSections.HOME_ROOM_EMIT)
+                            try {
+                                setRoomConversations(converted, HomeConversationSource.ROOM)
+                                PerfTelemetry.recordRoomCommitToHome()
+                            } finally {
+                                TraceSections.end()
+                            }
                             hasLoadedOnce = true
                         }
                     }
@@ -837,6 +845,7 @@ class HomeViewModel(
         viewModelScope.launch {
             SmsEventBus.threadReadFlow.collect { event ->
                 markConversationReadLocally(event.threadId, event.phone)
+                PerfTelemetry.recordMarkReadObserved(event.threadId)
             }
         }
     }
