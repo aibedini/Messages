@@ -33,17 +33,33 @@ class ArchiveRepository(context: Context) {
 
     /** Marks [threadId] as archived. */
     fun archiveThread(threadId: Long) {
-        val current = prefs.getStringSet(KEY_ARCHIVED_THREADS, emptySet())
-            ?.toMutableSet() ?: mutableSetOf()
-        current.add(threadId.toString())
-        prefs.edit().putStringSet(KEY_ARCHIVED_THREADS, current).apply()
+        setArchived(listOf(threadId), archived = true)
     }
 
     /** Removes [threadId] from the archive (unarchive). */
     fun unarchiveThread(threadId: Long) {
-        val current = prefs.getStringSet(KEY_ARCHIVED_THREADS, emptySet())
-            ?.toMutableSet() ?: mutableSetOf()
-        current.remove(threadId.toString())
+        setArchived(listOf(threadId), archived = false)
+    }
+
+    /**
+     * FEATURE 10: archive / unarchive a whole selection in ONE commit.
+     *
+     * The per-thread pair above remains the single-thread API; a multi-select of
+     * 300 conversations must not issue 300 preference commits (300 disk writes
+     * and 300 listener notifications for one user action). Idempotent: a commit
+     * with no membership change writes nothing.
+     *
+     * @return the number of threads whose membership actually changed.
+     */
+    fun setArchived(threadIds: Collection<Long>, archived: Boolean): Int {
+        val ids = threadIds.filter { it > 0L }.map { it.toString() }.toSet()
+        if (ids.isEmpty()) return 0
+        val stored = prefs.getStringSet(KEY_ARCHIVED_THREADS, emptySet()).orEmpty()
+        val affected = if (archived) ids - stored else ids intersect stored
+        if (affected.isEmpty()) return 0
+        val current = stored.toMutableSet()
+        if (archived) current.addAll(affected) else current.removeAll(affected)
         prefs.edit().putStringSet(KEY_ARCHIVED_THREADS, current).apply()
+        return affected.size
     }
 }

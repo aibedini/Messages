@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -125,7 +127,33 @@ fun ChatBubble(
     onForward: ((String) -> Unit)? = null,
     onPhoneClick: ((String) -> Unit)? = null,
     /** v2.6.12: invoked with the original body when the user taps Resend. */
-    onResend: ((String) -> Unit)? = null
+    onResend: ((String) -> Unit)? = null,
+    /**
+     * FEATURE 9: multi-select is active for this list. Taps toggle the bubble's
+     * membership and a selected bubble is painted with a distinct container and
+     * an outline, so the selection is legible at a glance.
+     */
+    selectionActive: Boolean = false,
+    /** This bubble is part of the current selection. */
+    selected: Boolean = false,
+    /**
+     * Long-press entry point for selection mode. A long-press outside selection
+     * mode enters selection; a long-press INSIDE selection mode still opens the
+     * legacy action menu (copy / copy link / forward / details). Forward
+     * therefore stays the existing single-message workflow.
+     */
+    onEnterSelection: (() -> Unit)? = null,
+    /** Tap while [selectionActive]. */
+    onToggleSelection: (() -> Unit)? = null,
+    /**
+     * v3.4.0 FEATURE 7: the message's durable star state.
+     *
+     * Additive and defaulted, so every existing call site keeps its exact current
+     * rendering. The indicator is READ-ONLY: starring is toggled from the
+     * long-press menu (owned by the conversation screen) or from the starred list,
+     * and a second control inside the bubble would race those for the same state.
+     */
+    isStarred: Boolean = false
 ) {
     val incoming = sms.type == 1
 
@@ -166,16 +194,17 @@ fun ChatBubble(
         RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp)
     }
 
-    // Flat Google Messages-style surfaces — no gradients.
-    val bubbleColor = if (incoming) {
-        MaterialTheme.colorScheme.surfaceVariant
-    } else {
-        MaterialTheme.colorScheme.primaryContainer
+    // Flat Google Messages-style surfaces — no gradients. A SELECTED bubble
+    // swaps container + outline so multi-select is visible, not implied.
+    val bubbleColor = when {
+        selected -> MaterialTheme.colorScheme.tertiaryContainer
+        incoming -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.primaryContainer
     }
-    val contentColor = if (incoming) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onPrimaryContainer
+    val contentColor = when {
+        selected -> MaterialTheme.colorScheme.onTertiaryContainer
+        incoming -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
     }
     val linkColor = if (incoming) {
         MaterialTheme.colorScheme.primary
@@ -192,6 +221,13 @@ fun ChatBubble(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                } else {
+                    Color.Transparent
+                }
+            )
             .padding(vertical = 3.dp),
         horizontalArrangement = if (incoming) Arrangement.Start else Arrangement.End
     ) {
@@ -202,9 +238,29 @@ fun ChatBubble(
                         .widthIn(min = 80.dp)
                         .clip(bubbleShape)
                         .background(bubbleColor)
+                        .then(
+                            if (selected) {
+                                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, bubbleShape)
+                            } else {
+                                Modifier
+                            }
+                        )
                         .combinedClickable(
-                            onClick = { if (!incoming) showDetails = !showDetails },
-                            onLongClick = { menuOpen = true }
+                            onClick = {
+                                when {
+                                    selectionActive && onToggleSelection != null -> onToggleSelection()
+                                    !incoming -> showDetails = !showDetails
+                                }
+                            },
+                            onLongClick = {
+                                // Selection entry when idle; the legacy menu once
+                                // selection mode is on (never a lost action).
+                                if (!selectionActive && onEnterSelection != null) {
+                                    onEnterSelection()
+                                } else {
+                                    menuOpen = true
+                                }
+                            }
                         )
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
@@ -311,6 +367,20 @@ fun ChatBubble(
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            // v3.4.0 FEATURE 7: a starred message is EXEMPT from
+                            // global OTP cleanup, so the marker is durable user
+                            // state — not decoration — and it is labelled for
+                            // screen readers instead of colour-only.
+                            if (isStarred) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = stringResource(R.string.starred_indicator_cd),
+                                    tint = contentColor.copy(alpha = 0.9f),
+                                    modifier = Modifier
+                                        .padding(end = 4.dp)
+                                        .size(13.dp)
+                                )
                             }
                             Text(
                                 text = formatMessageTime(sms.date),

@@ -9,8 +9,11 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
-import com.autonomousone.messages.sms.SmsSender
+import com.autonomousone.messages.R
+import com.autonomousone.messages.repository.ArchiveRepository
 import com.autonomousone.messages.repository.MarkConversationReadUseCase
+import com.autonomousone.messages.sms.SmsSender
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,6 +45,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_REPLY = "com.autonomousone.messages.ACTION_REPLY"
         const val ACTION_COPY_OTP = "com.autonomousone.messages.ACTION_COPY_OTP"
 
+        /**
+         * v3.4.0 FEATURE 16 — archive straight from a normal message
+         * notification. This is the EXISTING archive path
+         * (`ArchiveRepository` + the archive projection), never a direct
+         * mutation of arbitrary UI state.
+         */
+        const val ACTION_ARCHIVE = "com.autonomousone.messages.ACTION_ARCHIVE"
+
         const val EXTRA_THREAD_ID = "extra_thread_id"
         const val EXTRA_PHONE = "extra_phone"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
@@ -59,9 +70,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val phone = intent.getStringExtra(EXTRA_PHONE) ?: ""
 
         when (intent.action) {
-            ACTION_MARK_READ, ACTION_REPLY -> {
-                // goAsync + IO: provider writes and rate-limited sends must
-                // never run on the main thread of a BroadcastReceiver.
+            ACTION_MARK_READ, ACTION_REPLY, ACTION_ARCHIVE -> {
+                // goAsync + IO: provider writes, archive persistence and
+                // rate-limited sends must never run on the main thread of a
+                // BroadcastReceiver.
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -71,6 +83,19 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 // local Room read first, provider write eventual.
                                 MarkConversationReadUseCase.get(appContext)
                                     .markRead(threadId, phone)
+                                if (notificationId != 0) {
+                                    NotificationManagerCompat.from(appContext).cancel(notificationId)
+                                }
+                            }
+                            ACTION_ARCHIVE -> {
+                                // Archive is a LOCAL user state (the SMS provider
+                                // has no archive concept): the durable archive
+                                // store is authoritative, and the existing
+                                // projection picks the change up reactively.
+                                if (threadId > 0L) {
+                                    ArchiveRepository(appContext).archiveThread(threadId)
+                                    DiagnosticLog.event("NOTIFICATION", "thread=$threadId archived=1")
+                                }
                                 if (notificationId != 0) {
                                     NotificationManagerCompat.from(appContext).cancel(notificationId)
                                 }
@@ -106,7 +131,17 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         val clip = ClipData.newPlainText("OTP Code", otpCode)
                         clipboard.setPrimaryClip(clip)
 
-                        Toast.makeText(appContext, "OTP $otpCode copied to clipboard", Toast.LENGTH_SHORT).show()
+                        // v3.4.0: the confirmation never echoes the code itself.
+                        // The old toast printed the OTP (and therefore the secret)
+                        // on screen, into screen recordings and into accessibility
+                        // surfaces for every copy — which defeats the point of
+                        // copying it invisibly in the first place. The code also
+                        // never reaches DiagnosticLog.
+                        Toast.makeText(
+                            appContext,
+                            appContext.getString(R.string.notif_code_copied),
+                            Toast.LENGTH_SHORT
+                        ).show()
 
                         if (notificationId != 0) {
                             NotificationManagerCompat.from(appContext).cancel(notificationId)

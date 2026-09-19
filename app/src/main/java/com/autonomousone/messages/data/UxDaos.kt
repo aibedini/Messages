@@ -24,17 +24,11 @@ import kotlinx.coroutines.flow.Flow
  *
  * The tombstone predicate is NOT re-typed in these annotations: it is
  * concatenated from [MessageCutoff], so a change to the cutoff semantics can
- * never make the SQL and the Kotlin mirror disagree.
+ * never make the SQL and the Kotlin mirror disagree. (The ACTIVE-UI reader
+ * statements that use it live in [MessageUserStateSql] / [MessageAssetSql] for
+ * the same reason: one named string per behaviour, so tests can execute the
+ * production SQL instead of re-typing it.)
  */
-
-/** ACTIVE-UI fragment: individually-trashed rows excluded (alias `m`). */
-private const val NOT_INDIVIDUALLY_TRASHED = MessageCutoff.NOT_INDIVIDUALLY_TRASHED_SQL
-
-/** ACTIVE-UI fragment: rows hidden by a thread tombstone excluded (alias `m`). */
-private const val NOT_HIDDEN_BY_TOMBSTONE = MessageCutoff.NOT_HIDDEN_BY_TOMBSTONE_SQL
-
-/** Both halves of the ACTIVE-UI contract, composed once. */
-private const val ACTIVE_MESSAGE_FILTER = MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL
 
 @Dao
 interface ConversationPreferenceDao {
@@ -63,6 +57,13 @@ interface ConversationPreferenceDao {
 
     @Query("SELECT threadId FROM conversation_preferences WHERE manualUnread = 1")
     fun observeManuallyUnreadThreadIds(): Flow<List<Long>>
+
+    /**
+     * LIVE category overrides (threadId + override only). The override is read
+     * at Home's read time so a stale copy can never beat a live user decision.
+     */
+    @Query("SELECT threadId, categoryOverride FROM conversation_preferences")
+    fun observeCategoryOverrides(): Flow<List<ThreadCategoryOverride>>
 
     @Query("SELECT threadId FROM conversation_preferences WHERE spam = 1")
     suspend fun spamThreadIds(): List<Long>
@@ -270,17 +271,31 @@ interface MessageUserStateDao {
     // its own columns. Starring therefore never un-trashes a row, and trashing
     // never loses a star (which is what protects a starred OTP from cleanup).
 
+    /**
+     * WHY THIS SQL IS INLINE (and [SET_STARRED_SQL] still exists)
+     * ---------------------------------------------------------
+     * Room's KSP processor rejects an annotation argument that is a string
+     * TEMPLATE (`@Query("$SOME_CONST")`): the assertion fails with "No property
+     * named value was found in annotation Query" and takes the whole KSP/Room
+     * code-generation step down with it. A `const val` used DIRECTLY
+     * (`@Query(SOME_CONST)`) is a valid annotation constant, but a template is
+     * not — so the production copy must be a literal here.
+     *
+     * The statement is therefore single-sourced in the other direction:
+     * [MessageUserStateSqlTest] executes the REAL statements against a real
+     * SQLite database built from Room's own schema, so the tested text is the
+     * text that runs, and the identical literal below is asserted against the
+     * constant by that test to make drift impossible to miss.
+     */
     @Query(
-        """
-        INSERT INTO message_user_state
-            (source, providerId, threadId, starred, starredAt, trashedAt, purgeAt,
-             keepFromOtpCleanup, updatedAt)
-        VALUES (:source, :providerId, :threadId, :starred, :starredAt, 0, 0, 0, :now)
-        ON CONFLICT(source, providerId) DO UPDATE SET
-            starred = excluded.starred,
-            starredAt = excluded.starredAt,
-            updatedAt = excluded.updatedAt
-        """
+        "INSERT INTO message_user_state " +
+            "(source, providerId, threadId, starred, starredAt, trashedAt, purgeAt, " +
+            "keepFromOtpCleanup, updatedAt) " +
+            "VALUES (:source, :providerId, :threadId, :starred, :starredAt, 0, 0, 0, :now) " +
+            "ON CONFLICT(source, providerId) DO UPDATE SET " +
+            "starred = excluded.starred, " +
+            "starredAt = excluded.starredAt, " +
+            "updatedAt = excluded.updatedAt"
     )
     suspend fun setStarred(
         source: String,
@@ -322,16 +337,15 @@ interface MessageUserStateDao {
     )
     suspend fun restore(source: String, providerId: Long, now: Long)
 
+    /** See [setStarred] for why this SQL is inline rather than a template. */
     @Query(
-        """
-        INSERT INTO message_user_state
-            (source, providerId, threadId, starred, starredAt, trashedAt, purgeAt,
-             keepFromOtpCleanup, updatedAt)
-        VALUES (:source, :providerId, :threadId, 0, 0, 0, 0, :keep, :now)
-        ON CONFLICT(source, providerId) DO UPDATE SET
-            keepFromOtpCleanup = excluded.keepFromOtpCleanup,
-            updatedAt = excluded.updatedAt
-        """
+        "INSERT INTO message_user_state " +
+            "(source, providerId, threadId, starred, starredAt, trashedAt, purgeAt, " +
+            "keepFromOtpCleanup, updatedAt) " +
+            "VALUES (:source, :providerId, :threadId, 0, 0, 0, 0, :keep, :now) " +
+            "ON CONFLICT(source, providerId) DO UPDATE SET " +
+            "keepFromOtpCleanup = excluded.keepFromOtpCleanup, " +
+            "updatedAt = excluded.updatedAt"
     )
     suspend fun setKeepFromOtpCleanup(
         source: String,
@@ -358,7 +372,7 @@ interface MessageUserStateDao {
                m.normalizedAddress AS normalizedAddress, us.starredAt AS starredAt
         FROM message_user_state us
         JOIN messages m ON m.source = us.source AND m.providerId = us.providerId
-        WHERE us.starred = 1 AND $ACTIVE_MESSAGE_FILTER
+        WHERE us.starred = 1 AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
         ORDER BY m.date DESC, m.source DESC, m.providerId DESC
         LIMIT :limit OFFSET :offset
         """
@@ -372,7 +386,7 @@ interface MessageUserStateDao {
                m.normalizedAddress AS normalizedAddress, us.starredAt AS starredAt
         FROM message_user_state us
         JOIN messages m ON m.source = us.source AND m.providerId = us.providerId
-        WHERE us.starred = 1 AND us.threadId = :threadId AND $ACTIVE_MESSAGE_FILTER
+        WHERE us.starred = 1 AND us.threadId = :threadId AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
         ORDER BY m.date DESC, m.source DESC, m.providerId DESC
         LIMIT :limit OFFSET :offset
         """
@@ -401,19 +415,29 @@ interface MessageUserStateDao {
     suspend fun trashedInThread(threadId: Long): List<MessageUserStateEntity>
 
     /**
+     * TRASH (FEATURE 8): user state of a tombstone's purged snapshot.
+     *
+     * Called ONLY by the trash purge, ONLY after the provider delete was
+     * CONFIRMED, and BEFORE the messages rows are deleted (the statement joins
+     * `messages` and the still-present tombstone). A message newer than the
+     * cutoff keeps its star/keep flag: the statement's predicate is the very
+     * same snapshot predicate the purge uses for the messages themselves.
+     */
+    @Query(DELETE_TRASHED_SNAPSHOT_USER_STATE_SQL)
+    suspend fun deleteTrashedSnapshotUserState(threadId: Long): Int
+
+    /**
      * Explicit orphan cleanup — the replacement for an FK CASCADE (see
      * [MessageUserStateEntity]). Only ever called for identities the provider has
-     * PROVEN gone, never on a provider refresh.
+     * PROVEN gone, never on a provider refresh. Inline for the reason documented
+     * on [setStarred]; the identical statement is pinned as [DELETE_ORPHANS_SQL].
      */
     @Query(
-        """
-        DELETE FROM message_user_state
-        WHERE NOT EXISTS (
-            SELECT 1 FROM messages m
-            WHERE m.source = message_user_state.source
-              AND m.providerId = message_user_state.providerId
-        )
-        """
+        "DELETE FROM message_user_state " +
+            "WHERE NOT EXISTS (" +
+            "SELECT 1 FROM messages m " +
+            "WHERE m.source = message_user_state.source " +
+            "AND m.providerId = message_user_state.providerId)"
     )
     suspend fun deleteOrphans(): Int
 }
@@ -437,6 +461,33 @@ data class ThreadCategoryCount(
     val category: String,
     val count: Int
 )
+
+/**
+ * One classified message's identity plus its provider direction, for the OTP
+ * retention policy. Deliberately carries NO body: the local cleanup decision
+ * never needs the message text, so it is never re-read and can never leak.
+ */
+data class ClassifiedMessageDirection(
+    val source: String,
+    val providerId: Long,
+    val messageType: Int
+)
+
+/** One thread's effective (override-aware) category — the Home filter input. */
+data class ThreadEffectiveCategory(
+    val threadId: Long,
+    val category: String
+)
+
+/**
+ * Narrow projections of the two tables Home combines into the effective
+ * category: the automatic classification, and the user override. Column sets
+ * stay minimal so the two flows never read a message body.
+ */
+data class ThreadCategoryRow(val threadId: Long, val category: String)
+
+/** The user's category override for one thread; null = follow the classifier. */
+data class ThreadCategoryOverride(val threadId: Long, val categoryOverride: String?)
 
 @Dao
 interface MessageClassificationDao {
@@ -462,6 +513,106 @@ interface MessageClassificationDao {
     suspend fun countOtpInThread(threadId: Long): Int
 
     /**
+     * Every classified message of ONE thread, with the provider direction read
+     * from the RAW mirror. `m.type` is a content fact owned by the provider, so
+     * it never belongs in the classification row; joining it here keeps the
+     * OTP-retention policy working on a per-thread basis (bounded by the thread,
+     * never by the 360K-message table).
+     */
+    @Query(
+        """
+        SELECT c.source AS source, c.providerId AS providerId, m.type AS messageType
+        FROM message_classification c
+        JOIN messages m ON m.source = c.source AND m.providerId = c.providerId
+        WHERE c.threadId = :threadId AND c.isOtp = 1
+        """
+    )
+    suspend fun otpMessagesInThread(threadId: Long): List<ClassifiedMessageDirection>
+
+    /**
+     * The newest classified message of a thread, under the canonical
+     * `date DESC, source DESC, providerId DESC` order. Feeding the conversation
+     * projection from the NEWEST message (falling back to the thread histogram,
+     * and only then to UNKNOWN) is what keeps the projection O(1) after an
+     * ingest: no per-message scan, and the projection reflects what the user
+     * just received.
+     */
+    @Query(
+        """
+        SELECT c.* FROM message_classification c
+        JOIN messages m ON m.source = c.source AND m.providerId = c.providerId
+        WHERE c.threadId = :threadId
+        ORDER BY m.date DESC, m.source DESC, m.providerId DESC
+        LIMIT 1
+        """
+    )
+    suspend fun newestForThread(threadId: Long): MessageClassificationEntity?
+
+    /** Distinct thread ids already classified — bounded by conversation count. */
+    @Query("SELECT DISTINCT threadId FROM message_classification")
+    suspend fun distinctThreadIds(): List<Long>
+
+    /**
+     * Home's category filter, as ONE indexed lookup instead of a scan.
+     *
+     * Effective category = the USER OVERRIDE when set, else the automatic
+     * `conversation_classification` projection. A missing
+     * `conversation_preferences` row means "no override", NOT "unclassified",
+     * so both halves are UNIONed explicitly. The override lives in
+     * `conversation_preferences` and is read LIVE, so it always wins and needs
+     * no copy of its own.
+     */
+    @Query(
+        """
+        SELECT COALESCE(p.categoryOverride, cc.category) AS category,
+               p.threadId AS threadId
+        FROM conversation_preferences p
+        JOIN conversation_classification cc ON cc.threadId = p.threadId
+        WHERE p.categoryOverride IS NOT NULL
+          AND p.categoryOverride IN (:categories)
+        UNION
+        SELECT cc.category AS category, cc.threadId AS threadId
+        FROM conversation_classification cc
+        WHERE cc.category IN (:categories)
+          AND (
+              NOT EXISTS (
+                  SELECT 1 FROM conversation_preferences p WHERE p.threadId = cc.threadId
+              )
+              OR EXISTS (
+                  SELECT 1 FROM conversation_preferences p
+                  WHERE p.threadId = cc.threadId AND p.categoryOverride IS NULL
+              )
+          )
+        """
+    )
+    suspend fun threadIdsByEffectiveCategory(
+        categories: List<String>
+    ): List<ThreadEffectiveCategory>
+
+    /**
+     * Home's category filter as a LIVE flow: the same indexed predicate, so the
+     * chip counts and the filtered list update the moment a classification or a
+     * user override lands. Category names only — never message content.
+     */
+    @Query(
+        """
+        SELECT COALESCE(p.categoryOverride, cc.category) AS category,
+               p.threadId AS threadId
+        FROM conversation_preferences p
+        JOIN conversation_classification cc ON cc.threadId = p.threadId
+        WHERE p.categoryOverride IS NOT NULL
+        UNION
+        SELECT cc.category AS category, cc.threadId AS threadId
+        FROM conversation_classification cc
+        WHERE NOT EXISTS (
+            SELECT 1 FROM conversation_preferences p
+            WHERE p.threadId = cc.threadId AND p.categoryOverride IS NOT NULL
+        )
+        """
+    )
+    fun observeThreadEffectiveCategories(): Flow<List<ThreadEffectiveCategory>>
+
+    /**
      * Bounded due set for the OTP cleanup worker — index-backed on
      * otpDeleteEligibleAt. ONE unique worker is scheduled for MIN of this column,
      * so this is never a table scan and never one job per OTP.
@@ -474,6 +625,117 @@ interface MessageClassificationDao {
 
     @Query("SELECT MIN(otpDeleteEligibleAt) FROM message_classification WHERE otpDeleteEligibleAt > 0")
     suspend fun earliestOtpEligibleAt(): Long?
+
+    /**
+     * How many messages are currently ENROLLED in OTP cleanup (FEATURE 14).
+     *
+     * One index range scan over `otpDeleteEligibleAt` — the same index the due
+     * query uses — so Settings can show a real count without a table scan and
+     * without ever reading a message body.
+     */
+    @Query("SELECT COUNT(*) FROM message_classification WHERE otpDeleteEligibleAt > 0")
+    suspend fun countEnrolledOtpCleanup(): Int
+
+    /**
+     * The bounded ENROLLED set, oldest deadline first (FEATURE 14 triage).
+     *
+     * Same index as the due query; used by the periodic triage pass to release
+     * messages that became protected after they were enrolled, and to heal a
+     * wrong-clock deadline. Bounded so a 100K-OTP backlog is triaged in passes
+     * instead of one unbounded transaction.
+     */
+    @Query(
+        "SELECT * FROM message_classification WHERE otpDeleteEligibleAt > 0 " +
+            "ORDER BY otpDeleteEligibleAt ASC LIMIT :limit"
+    )
+    suspend fun enrolledOtpCleanup(limit: Int): List<MessageClassificationEntity>
+
+    /**
+     * Live MIN of the enrolled deadlines (FEATURE 14 scheduling).
+     *
+     * `MIN` over an empty table is NULL and over an all-zero table is 0; both are
+     * normalised to 0 so the collector needs no nullable type. Room re-emits this
+     * whenever `message_classification` changes, which is exactly the "an OTP
+     * arrived / a deadline moved" signal the single cleanup work needs — no
+     * per-OTP job and no polling.
+     */
+    @Query("SELECT COALESCE(MIN(otpDeleteEligibleAt), 0) FROM message_classification")
+    fun observeEarliestOtpEligibleAt(): Flow<Long>
+
+    /**
+     * Explicit lifecycle checkpoint that UNSCHEDULES one message (FEATURE 14).
+     *
+     * `setOtpDeleteEligibleAt` is an UPDATE and therefore a no-op for a message
+     * that has never been classified. Starring such a message must still count as
+     * "protect it", so this INSERTs a default row first and then clears the
+     * deadline — the same insert-then-patch shape the field-scoped
+     * `MessageUserStateDao` writers already use.
+     *
+     * [category] is the persisted `MessageCategory` NAME. Callers that do not
+     * know a category pass `UNKNOWN`; the sweep re-classifies on its next pass.
+     */
+    @Query(
+        """
+        INSERT INTO message_classification
+            (source, providerId, threadId, category, confidence, isOtp,
+             otpDeleteEligibleAt, classifiedAt)
+        VALUES (:source, :providerId, :threadId, :category, 0.0, 0, 0, :now)
+        ON CONFLICT(source, providerId) DO UPDATE SET
+            otpDeleteEligibleAt = 0
+        """
+    )
+    suspend fun clearOtpDeleteEligibleAt(
+        source: String,
+        providerId: Long,
+        threadId: Long,
+        category: String,
+        now: Long
+    )
+
+    /**
+     * EXPLICIT "Apply to existing OTP messages" sweep (FEATURE 14), KEYSET and
+     * bounded.
+     *
+     * This is the ONLY read that ever walks history, and it runs only when the
+     * user taps that action — newly arriving OTPs are enrolled by the ingest
+     * path. It still must not be a full-table load: the cursor is
+     * `(date, providerId)` under the canonical order, the page is LIMIT-bounded,
+     * and only rows that are NOT starred, NOT keep-flagged and NOT already
+     * trashed are returned.
+     *
+     * The `type = 1` and confidence predicates are deliberately NOT here: they
+     * are eligibility rules, they live in exactly one place
+     * (`OtpRetentionPolicy`), and the caller re-checks every row anyway.
+     *
+     * `afterDate = Long.MAX_VALUE` starts a fresh newest-first sweep. The sort
+     * matches the `messages` index, so SQLite never materialises-and-sorts
+     * hundreds of thousands of rows.
+     */
+    @Query(
+        """
+        SELECT m.source AS source, m.providerId AS providerId, m.threadId AS threadId,
+               m.body AS body, m.date AS date, m.rawAddress AS rawAddress,
+               m.type AS messageType, c.confidence AS confidence,
+               c.otpDeleteEligibleAt AS eligibleAt
+        FROM messages m
+        JOIN message_user_state us
+          ON us.source = m.source AND us.providerId = m.providerId
+        LEFT JOIN message_classification c
+          ON c.source = m.source AND c.providerId = m.providerId
+        WHERE us.starred = 0
+          AND us.keepFromOtpCleanup = 0
+          AND us.trashedAt = 0
+          AND (m.date < :afterDate
+               OR (m.date = :afterDate AND m.providerId < :afterProviderId))
+        ORDER BY m.date DESC, m.source DESC, m.providerId DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun existingOtpCleanupCandidates(
+        afterDate: Long,
+        afterProviderId: Long,
+        limit: Int
+    ): List<ExistingOtpCleanupCandidate>
 
     /** Schedules (or unschedules with 0) the cleanup deadline for one message. */
     @Query(
@@ -537,6 +799,28 @@ interface MessageClassificationDao {
     suspend fun deleteOrphans(): Int
 }
 
+/**
+ * One row of the explicit "Apply to existing OTP messages" sweep (FEATURE 14).
+ *
+ * Carries the body because the OTP verdict is LOCAL and must be re-derived by
+ * the single [com.autonomousone.messages.messaging.OtpDetector] — reading it
+ * here keeps the sweep from issuing one query per message.
+ *
+ * [confidence] / [eligibleAt] are null for a message that has never been
+ * classified. The body and the derived code are NEVER persisted or logged.
+ */
+data class ExistingOtpCleanupCandidate(
+    val source: String,
+    val providerId: Long,
+    val threadId: Long,
+    val body: String,
+    val date: Long,
+    val rawAddress: String,
+    val messageType: Int,
+    val confidence: Float?,
+    val eligibleAt: Long?
+)
+
 @Dao
 interface ConversationClassificationDao {
 
@@ -545,6 +829,17 @@ interface ConversationClassificationDao {
 
     @Query("SELECT * FROM conversation_classification")
     suspend fun all(): List<ConversationClassificationEntity>
+
+    /**
+     * LIVE automatic categories, `threadId + name` only.
+     *
+     * Home combines this with [ConversationPreferenceDao]'s override column to
+     * derive each thread's EFFECTIVE category. Two narrow projections instead of
+     * a JOIN: the override must win at read time, and one indexed pass over the
+     * conversation-sized projection is O(conversations), never O(messages).
+     */
+    @Query("SELECT threadId, category FROM conversation_classification")
+    fun observeCategories(): Flow<List<ThreadCategoryRow>>
 
     @Upsert
     suspend fun upsert(classification: ConversationClassificationEntity)
@@ -558,6 +853,39 @@ interface ConversationClassificationDao {
     @Query("DELETE FROM conversation_classification WHERE threadId = :threadId")
     suspend fun delete(threadId: Long)
 }
+
+/**
+ * One message handed to the Media / Links / Files backfill sweep.
+ *
+ * Carries the body because link extraction is LOCAL and needs no provider read:
+ * the sweep would otherwise issue one query per message.
+ */
+data class MessageAssetBackfillRow(
+    val source: String,
+    val providerId: Long,
+    val threadId: Long,
+    val body: String,
+    val date: Long
+)
+
+/**
+ * One page row of the LINKS tab: the asset plus the body of the message it was
+ * extracted from, so the UI can derive a snippet locally (ONE query per page,
+ * never one lookup per row).
+ */
+data class MessageAssetPageRow(
+    val assetKey: String,
+    val source: String,
+    val providerId: Long,
+    val threadId: Long,
+    val kind: String,
+    val value: String,
+    val mimeType: String,
+    val displayName: String,
+    val date: Long,
+    /** null when the message row is gone (the asset is then an orphan). */
+    val body: String?
+)
 
 @Dao
 interface MessageAssetDao {
@@ -576,7 +904,7 @@ interface MessageAssetDao {
     @Query("SELECT * FROM message_assets WHERE assetKey = :assetKey LIMIT 1")
     suspend fun get(assetKey: String): MessageAssetEntity?
 
-    /** Paged tab body: newest first, indexed on (threadId, date). */
+    /** Paged tab body: newest first, indexed on (threadId, date). Bounded. */
     @Query(
         "SELECT * FROM message_assets WHERE threadId = :threadId AND kind = :kind " +
             "ORDER BY date DESC, assetKey DESC LIMIT :limit OFFSET :offset"
@@ -588,10 +916,30 @@ interface MessageAssetDao {
         offset: Int
     ): List<MessageAssetEntity>
 
-    @Query(
-        "SELECT COUNT(*) FROM message_assets WHERE threadId = :threadId AND kind = :kind"
-    )
+    @Query("SELECT COUNT(*) FROM message_assets WHERE threadId = :threadId AND kind = :kind")
     suspend fun countByKind(threadId: Long, kind: String): Int
+
+    /**
+     * LINKS tab page: the asset PLUS the source message body, so the tab can show
+     * a locally derived snippet without a per-row lookup (see
+     * [MessageAssetSql.PAGE_LINKS_WITH_BODY_SQL] for the pinned statement).
+     */
+    @Query(
+        "SELECT a.assetKey AS assetKey, a.source AS source, a.providerId AS providerId, " +
+            "a.threadId AS threadId, a.kind AS kind, a.value AS value, " +
+            "a.mimeType AS mimeType, a.displayName AS displayName, a.date AS date, " +
+            "m.body AS body " +
+            "FROM message_assets a LEFT JOIN messages m " +
+            "ON m.source = a.source AND m.providerId = a.providerId " +
+            "WHERE a.threadId = :threadId AND a.kind = :kind " +
+            "ORDER BY a.date DESC, a.assetKey DESC LIMIT :limit OFFSET :offset"
+    )
+    suspend fun pageWithBodyByKind(
+        threadId: Long,
+        kind: String,
+        limit: Int,
+        offset: Int
+    ): List<MessageAssetPageRow>
 
     /** Per-message lookup so a bubble can show its own link/attachment chip. */
     @Query(
@@ -607,15 +955,41 @@ interface MessageAssetDao {
     @Query("DELETE FROM message_assets WHERE source = :source AND providerId = :providerId")
     suspend fun deleteForMessage(source: String, providerId: Long)
 
+    /**
+     * Convergent re-index of ONE kind for ONE message: an edited body that lost a
+     * link, or an MMS whose parts changed, must not leave a stale row behind.
+     * Safe only when the authoritative source (provider row, or a SUCCESSFUL part
+     * read) really answered — a failed read must never wipe good rows.
+     */
     @Query(
-        """
-        DELETE FROM message_assets
-        WHERE NOT EXISTS (
-            SELECT 1 FROM messages m
-            WHERE m.source = message_assets.source
-              AND m.providerId = message_assets.providerId
-        )
-        """
+        "DELETE FROM message_assets " +
+            "WHERE source = :source AND providerId = :providerId AND kind = :kind"
+    )
+    suspend fun deleteForMessageKind(source: String, providerId: Long, kind: String)
+
+    /**
+     * Checkpointed backfill batch (keyset on the canonical order). See
+     * [MessageAssetSql.BACKFILL_BATCH_SQL] for why this walks `messages` rather
+     * than "messages without assets".
+     */
+    @Query(
+        "SELECT source, providerId, threadId, body, date FROM messages " +
+            "WHERE (date < :afterDate " +
+            "OR (date = :afterDate AND (source < :afterSource " +
+            "OR (source = :afterSource AND providerId < :afterProviderId)))) " +
+            "ORDER BY date DESC, source DESC, providerId DESC LIMIT :limit"
+    )
+    suspend fun backfillBatch(
+        afterDate: Long,
+        afterSource: String,
+        afterProviderId: Long,
+        limit: Int
+    ): List<MessageAssetBackfillRow>
+
+    @Query(
+        "DELETE FROM message_assets WHERE NOT EXISTS (" +
+            "SELECT 1 FROM messages m WHERE m.source = message_assets.source " +
+            "AND m.providerId = message_assets.providerId)"
     )
     suspend fun deleteOrphans(): Int
 }

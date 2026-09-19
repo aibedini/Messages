@@ -281,6 +281,37 @@ fun SettingsScreen(
                 val dataTools: DataToolsViewModel = viewModel()
                 var showDeleteDialog by remember { mutableStateOf(false) }
 
+                // v3.4.0 FEATURE 8: Recently Deleted (Trash). Additive entry point
+                // for the durable tombstone list — restore, delete forever, or empty.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController.navigate(Screen.Trash.route) },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_trash_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.settings_trash_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 // Privacy-aware rotating diagnostic log. The export contains
                 // state transitions/result codes, never SMS bodies or full
                 // phone numbers.

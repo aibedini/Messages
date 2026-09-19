@@ -17,6 +17,14 @@ package com.autonomousone.messages.messaging
  */
 object OtpDetector {
 
+    /**
+     * The confidence floor a STRONG context must reach. Smart Categories treats
+     * only a detection at or above this floor as `isOtp`, and the global OTP
+     * cleanup consumes that flag — so a weak "code is …" match can never become
+     * an auto-deletable OTP by accident.
+     */
+    const val HIGH_CONFIDENCE = 0.7f
+
     enum class OtpKind {
         OTP,
         VERIFICATION,

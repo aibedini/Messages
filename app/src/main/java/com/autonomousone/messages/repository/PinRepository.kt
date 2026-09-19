@@ -30,16 +30,30 @@ class PinRepository(context: Context) {
     fun isPinned(threadId: Long): Boolean = threadId in getPinnedIds()
 
     fun pinThread(threadId: Long) {
-        val current = prefs.getStringSet(KEY_PINNED_THREADS, emptySet())
-            ?.toMutableSet() ?: mutableSetOf()
-        current.add(threadId.toString())
-        prefs.edit().putStringSet(KEY_PINNED_THREADS, current).apply()
+        setPinned(listOf(threadId), pinned = true)
     }
 
     fun unpinThread(threadId: Long) {
-        val current = prefs.getStringSet(KEY_PINNED_THREADS, emptySet())
-            ?.toMutableSet() ?: mutableSetOf()
-        current.remove(threadId.toString())
+        setPinned(listOf(threadId), pinned = false)
+    }
+
+    /**
+     * FEATURE 10: pin / unpin a whole selection in ONE commit.
+     *
+     * Idempotent: a commit with no membership change writes nothing, so a bulk
+     * "Pin" over already-pinned rows is a quiet no-op.
+     *
+     * @return the number of threads whose membership actually changed.
+     */
+    fun setPinned(threadIds: Collection<Long>, pinned: Boolean): Int {
+        val ids = threadIds.filter { it > 0L }.map { it.toString() }.toSet()
+        if (ids.isEmpty()) return 0
+        val stored = prefs.getStringSet(KEY_PINNED_THREADS, emptySet()).orEmpty()
+        val affected = if (pinned) ids - stored else ids intersect stored
+        if (affected.isEmpty()) return 0
+        val current = stored.toMutableSet()
+        if (pinned) current.addAll(affected) else current.removeAll(affected)
         prefs.edit().putStringSet(KEY_PINNED_THREADS, current).apply()
+        return affected.size
     }
 }

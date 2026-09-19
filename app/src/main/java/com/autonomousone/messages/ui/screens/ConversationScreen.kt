@@ -127,11 +127,14 @@ import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.ConversationParticipantActions
 import com.autonomousone.messages.repository.ConversationParticipantState
+import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.repository.ParticipantContactAction
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
+import com.autonomousone.messages.ui.conversation.ConversationSearchResults
+import com.autonomousone.messages.ui.conversation.ConversationSearchTopBar
 import com.autonomousone.messages.ui.conversation.MessageEntrance
 import com.autonomousone.messages.ui.conversation.MessageList
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
@@ -139,6 +142,7 @@ import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.utils.formatDateHeader
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.viewmodel.ConversationScrollCommand
+import com.autonomousone.messages.viewmodel.ConversationSearchState
 import com.autonomousone.messages.viewmodel.ConversationWindowMode
 import com.autonomousone.messages.viewmodel.ConversationViewModel
 import com.google.android.gms.location.LocationServices
@@ -363,11 +367,37 @@ fun ConversationScreen(
 
     val messages = viewModel.messages
 
+    // ── v3.4.0 FEATURE 1: search inside this conversation ───────────────────
+    // The conversation window (`viewModel.messages`) is owned by the ViewModel
+    // and is NEVER replaced by search. While the user is parked on a search
+    // hit, the list paints a SEPARATE bounded window around that hit; leaving
+    // search drops it and the original conversation window is repainted exactly
+    // as it was.
+    val searchJumpWindow = viewModel.searchJumpWindow
+    val searchState = viewModel.searchState
+    val conversationRows = searchJumpWindow?.rows ?: messages
+    val selectedSearchKey = remember(searchState, viewModel.searchIndex) {
+        (searchState as? ConversationSearchState.Content)
+            ?.hits
+            ?.getOrNull(viewModel.searchIndex)
+            ?.let { MessageIdentity.Key(it.source, it.providerId) }
+    }
+
+    // Debounced query pipeline. Keyed on the search revision so a keystroke
+    // re-arms it while an unrelated recomposition does not; the coroutine is
+    // cancelled the moment the revision changes, which is what makes the 280 ms
+    // quiet period a real debounce instead of just a delay. A cancelled run
+    // publishes nothing, so a slow query can never overtake a fast one.
+    LaunchedEffect(viewModel.searchRevision, threadId) {
+        if (!viewModel.isSearchActive) return@LaunchedEffect
+        viewModel.runSearchPipeline()
+    }
+
     // v2.6.7: the LazyColumn renders reverseLayout, so the DATA order is
     // newest→oldest and the mapper owns the date-separator placement.
     // Canonical ViewModel order (oldest→newest) never changes.
     val chatItems by remember {
-        derivedStateOf { buildReverseChatItems(messages) }
+        derivedStateOf { buildReverseChatItems(conversationRows) }
     }
     // Long-lived scroll collectors must see the latest mapped list without
     // restarting (and potentially missing) a one-shot SharedFlow command.
@@ -377,6 +407,16 @@ fun ConversationScreen(
         if (phone.isNotBlank()) phone
         else if (messages.isNotEmpty()) messages.first().sender
         else ""
+    }
+
+    // Debounced query pipeline. Keyed on the search revision so a keystroke
+    // re-arms it while an unrelated recomposition does not; the coroutine is
+    // cancelled the moment the revision changes, which is what makes the 280 ms
+    // quiet period a real debounce instead of just a delay. A cancelled run
+    // publishes nothing, so a slow query can never overtake a fast one.
+    LaunchedEffect(viewModel.searchRevision, threadId) {
+        if (!viewModel.isSearchActive) return@LaunchedEffect
+        viewModel.runSearchPipeline()
     }
 
     LaunchedEffect(recipientPhone, participantRefresh) {
@@ -527,6 +567,34 @@ fun ConversationScreen(
                         .takeIf { it >= 0 } ?: (chatItems.size - 1)
                     listState.scrollToItem(target)
                 }
+                is ConversationScrollCommand.SearchHit -> {
+                    // v3.4.0 FEATURE 1: the bounded window around the hit is
+                    // already the painted source (`conversationRows`), so this
+                    // only has to land on the row with the SAME COMPOSITE
+                    // IDENTITY — SMS 100 and MMS 100 are different rows and
+                    // only one of them is the search result.
+                    //
+                    // The VM publishes the window and the command together, so
+                    // wait until the mapper actually carries the row, then
+                    // resolve the index from the LATEST mapped list (a stale
+                    // index computed before the window swapped would point at
+                    // the wrong row).
+                    withTimeoutOrNull(1_000) {
+                        snapshotFlow {
+                            currentChatItems.any { item ->
+                                item is ChatListItem.MessageItem &&
+                                    MessageIdentity.keyOf(item.sms.id) == cmd.key
+                            }
+                        }.first { it }
+                    }
+                    val targetIndex = currentChatItems.indexOfFirst { item ->
+                        item is ChatListItem.MessageItem &&
+                            MessageIdentity.keyOf(item.sms.id) == cmd.key
+                    }
+                    // The window is ≤ 40 rows, so a direct scroll is cheap and
+                    // never animates through thousands of messages.
+                    if (targetIndex >= 0) listState.scrollToItem(targetIndex)
+                }
             }
         }
     }
@@ -612,18 +680,33 @@ fun ConversationScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            ConversationTopBar(
-                title = title,
-                phone = recipientPhone,
-                participant = participant,
-                onBackClick = { navController.popBackStack() },
-                onCallClick = ::callParticipant,
-                onParticipantClick = { showParticipantActions = true },
-                onCopyNumber = ::copyParticipantNumber,
-                onAddToContacts = ::addParticipantToContacts,
-                onViewContact = ::viewParticipantContact,
-                onGoToFirstMessage = { viewModel.jumpToOldest() }
-            )
+            if (viewModel.isSearchActive) {
+                // v3.4.0 FEATURE 1: [←] [Search messages…] [3 of 14] [↑] [↓] [X]
+                ConversationSearchTopBar(
+                    query = viewModel.searchQuery,
+                    onQueryChange = { viewModel.onQueryChange(it) },
+                    onClearQuery = { viewModel.onQueryChange("") },
+                    onClose = { viewModel.closeSearch() },
+                    index = viewModel.searchIndex,
+                    total = viewModel.searchTotal,
+                    onPrevious = { viewModel.previousHit() },
+                    onNext = { viewModel.nextHit() }
+                )
+            } else {
+                ConversationTopBar(
+                    title = title,
+                    phone = recipientPhone,
+                    participant = participant,
+                    onBackClick = { navController.popBackStack() },
+                    onCallClick = ::callParticipant,
+                    onParticipantClick = { showParticipantActions = true },
+                    onCopyNumber = ::copyParticipantNumber,
+                    onAddToContacts = ::addParticipantToContacts,
+                    onViewContact = ::viewParticipantContact,
+                    onGoToFirstMessage = { viewModel.jumpToOldest() },
+                    onSearchClick = { viewModel.openSearch() }
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -632,6 +715,29 @@ fun ConversationScreen(
                 .padding(padding)
                 .imePadding()
         ) {
+            // ── v3.4.0 FEATURE 1: search panel ──────────────────────────────
+            // The results take the top half of the body while search mode is
+            // on; the conversation stays visible underneath, already scrolled
+            // to the selected hit, so "tap a result" is a visible jump rather
+            // than a mode switch the user has to guess at.
+            if (viewModel.isSearchActive) {
+                ConversationSearchResults(
+                    query = viewModel.searchQuery,
+                    isLoading = viewModel.isSearchLoading,
+                    hits = (searchState as? ConversationSearchState.Content)?.hits.orEmpty(),
+                    errorMessage = (searchState as? ConversationSearchState.Error)?.message,
+                    selectedKey = selectedSearchKey,
+                    onHitClick = { hit -> viewModel.jumpToMessage(hit.source, hit.providerId) },
+                    onRetry = { viewModel.retrySearch() },
+                    onLoadMore = { viewModel.loadMoreSearchResults() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.48f)
+                )
+                androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+            }
             // v2.6.12: per-conversation SIM override is hoisted here (was
             // composer-local) so the bubble Resend action reuses the exact
             // SIM selection the composer chip would pick.
@@ -705,6 +811,10 @@ fun ConversationScreen(
                 }
             }
 
+            // v3.4.0 FEATURE 1: the composer is hidden while search mode is
+            // on. The message list above still shows the conversation (scrolled
+            // to the selected hit), so search never blanks the chat out.
+            if (!viewModel.isSearchActive) {
             // ── Attachment Preview Card ─────────────────────────────────────
             AnimatedVisibility(
                 visible = attachedImageUri != null || attachedAudioUri != null,
@@ -1129,6 +1239,7 @@ fun ConversationScreen(
                         }
                     }
                 }
+            }
             }
         }
 

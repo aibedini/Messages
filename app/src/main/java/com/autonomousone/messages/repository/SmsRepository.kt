@@ -1347,8 +1347,7 @@ class SmsRepository(
      * Permanently delete all messages belonging to [threadId] from the system SMS ContentProvider.
      * If [threadId] is 0 (unknown), falls back to deleting by [phone] address.
      */
-    fun deleteThread(threadId: Long, phone: String = "") {
-        try {
+    fun deleteThread(threadId: Long, phone: String = "") {        try {
             if (threadId > 0) {
                 context.contentResolver.delete(
                     Telephony.Sms.CONTENT_URI,
@@ -1374,6 +1373,101 @@ class SmsRepository(
         } catch (e: Exception) {
             Log.e("SMS_DEBUG", "Error deleting thread $threadId", e)
         }
+    }
+
+    // ── STRICT, RANGE-BOUNDED provider delete (TRASH purge, v3.4.0) ────────
+    //
+    // [deleteThread] is the whole-thread, failure-swallowing convenience delete
+    // the old 4-second Undo Delete used. A TRASH purge needs the opposite
+    // properties, so it uses the separate path below:
+    //
+    //  1. RANGE, not thread: only rows at-or-before the tombstone cutoff
+    //     ([TrashProviderRange]) — a message that arrived after the conversation
+    //     was deleted must survive a purge.
+    //  2. STRICT: a provider failure returns Failure and the caller keeps the
+    //     trash state for a retry. Silence is never success.
+    //  3. VERIFIED: after the delete, the same range is re-read. A provider that
+    //     silently refuses (or a partially applied delete) is reported as a
+    //     failure instead of "deleted".
+
+    /**
+     * Permanently deletes the canonical range [tombstone] stands for, from BOTH
+     * provider sources.
+     *
+     * Requires default-SMS-app status; without it the provider throws and this
+     * returns a Failure, which leaves Trash intact.
+     *
+     * @return Success(deletedRows) only when both sources were deleted AND the
+     *         range was proven empty. Failure otherwise — nothing may be reported
+     *         as destroyed on a Failure.
+     */
+    fun deleteThreadSnapshotStrict(tombstone: com.autonomousone.messages.data.TrashedThreadEntity): SourceWriteResult {
+        if (tombstone.threadId <= 0L) return SourceWriteResult.NotApplicable
+        val sms = deleteSourceSnapshotStrict(MessageEntity.SOURCE_SMS, tombstone)
+        if (sms is SourceWriteResult.Failure) return sms
+        val mms = deleteSourceSnapshotStrict(MessageEntity.SOURCE_MMS, tombstone)
+        if (mms is SourceWriteResult.Failure) return mms
+        val deleted = (sms as SourceWriteResult.Success).updatedRows +
+            (mms as SourceWriteResult.Success).updatedRows
+        return SourceWriteResult.Success(deleted)
+    }
+
+    private fun deleteSourceSnapshotStrict(
+        source: String,
+        tombstone: com.autonomousone.messages.data.TrashedThreadEntity
+    ): SourceWriteResult {
+        val range = TrashProviderRange.selectionFor(
+            source = source,
+            threadId = tombstone.threadId,
+            cutoffDate = tombstone.cutoffDate,
+            cutoffSource = tombstone.cutoffSource,
+            cutoffProviderId = tombstone.cutoffProviderId
+        ) ?: return SourceWriteResult.NotApplicable
+
+        return try {
+            val uri = when (source) {
+                MessageEntity.SOURCE_MMS -> Telephony.Mms.CONTENT_URI
+                else -> Telephony.Sms.CONTENT_URI
+            }
+            val deleted = context.contentResolver.delete(uri, range.selection, range.selectionArgs)
+            when (val remaining = sourceSnapshotExistsStrict(source, range)) {
+                is ProviderRead.Failure ->
+                    SourceWriteResult.Failure("PURGE_VERIFY_" + remaining.reason.name, remaining.cause)
+                is ProviderRead.Success ->
+                    if (remaining.value) SourceWriteResult.Failure("PURGE_INCOMPLETE")
+                    else SourceWriteResult.Success(deleted)
+            }
+        } catch (e: Exception) {
+            Log.e("SMS_DEBUG", "deleteSourceSnapshotStrict failed for $source", e)
+            SourceWriteResult.Failure(e.javaClass.simpleName, e)
+        }
+    }
+
+    /**
+     * Does the provider still hold ANY row inside [range]?
+     *
+     * Bounded by construction: a thread-scoped range with `LIMIT 1`, not a
+     * thread materialization and not a table scan. `Failure` means UNKNOWN and is
+     * never treated as "gone".
+     */
+    private fun sourceSnapshotExistsStrict(
+        source: String,
+        range: TrashProviderRange.Selection
+    ): ProviderRead<Boolean> = when (source) {
+        MessageEntity.SOURCE_MMS -> readMmsRowsStrict(
+            selection = range.selection,
+            selectionArgs = range.selectionArgs,
+            sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
+            limit = 1,
+            offset = 0
+        ).map { it.isNotEmpty() }
+
+        else -> readSmsStrict(
+            selection = range.selection,
+            selectionArgs = range.selectionArgs,
+            sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
+            limit = 1
+        ).map { it.isNotEmpty() }
     }
 
     /**

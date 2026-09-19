@@ -148,6 +148,8 @@ fun ConversationTopBar(
     /** "Go to first message" — jumps the window to the true start of the
      *  thread via a direct keyset query (v2.6.7, never a full scan). */
     onGoToFirstMessage: () -> Unit = {},
+    /** v3.4.0 FEATURE 1 — enter in-conversation search. */
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -215,6 +217,20 @@ fun ConversationTopBar(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    // Search first: it is the most-used item in this menu.
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.conv_search_in_chat)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onSearchClick()
+                        }
+                    )
                     when (ConversationParticipantActions.primaryContactAction(participant)) {
                         ParticipantContactAction.ADD_TO_CONTACTS -> DropdownMenuItem(
                             text = { Text(stringResource(R.string.conv_add_to_contacts)) },

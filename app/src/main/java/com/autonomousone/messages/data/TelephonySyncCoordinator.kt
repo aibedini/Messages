@@ -8,6 +8,8 @@ import com.autonomousone.messages.diagnostics.DiagnosticsBreadcrumbs
 import com.autonomousone.messages.diagnostics.PerfMetric
 import com.autonomousone.messages.diagnostics.PerfTelemetry
 import com.autonomousone.messages.diagnostics.TraceSections
+import com.autonomousone.messages.media.IndexableMessage
+import com.autonomousone.messages.media.MessageAssetIndexer
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
@@ -76,6 +78,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     private val messagingPrefs =
         com.autonomousone.messages.messaging.MessagingPreferences(appContext)
     private val db get() = databaseOverride ?: MessagesDatabase.get(appContext)
+
+    /**
+     * FEATURE 6 (v3.4.0): the Media / Links / Files index.
+     *
+     * Derived, rebuildable data — never a source of truth, and never allowed to
+     * affect a message write. Every entry point on it is fail-safe and
+     * non-blocking (see [MessageAssetIndexer.enqueue]), so a problem here can only
+     * ever cost an index row, never an ingested message.
+     */
+    private val assetIndexer = MessageAssetIndexer.get(appContext)
 
     /**
      * ADR-006 SyncEligibility gate (kill-switch + future firewall hook).
@@ -680,6 +692,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // 2. Remove exactly that composite key.
                     dao.deleteBySourceAndId(m.source, m.providerId)
 
+                    // FEATURE 6: a PROVEN delete takes the message's assets with
+                    // it, in the SAME transaction, so the Media / Links / Files
+                    // browser can never show content of a message that no longer
+                    // exists. Composite identity — SMS 100 never touches MMS 100.
+                    db.messageAssetDao().deleteForMessage(m.source, m.providerId)
+
                     // 3. MESSAGE_DELETED commits with the delete. Its identity
                     //    comes from stable provider facts, so a re-notification of
                     //    the same deletion dedupes instead of manufacturing a new
@@ -705,7 +723,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     //    SAME order rebuildConversationProjection uses, so deleting
                     //    the newest message moves Home BACKWARDS to the true newest
                     //    surviving row, and mixed SMS/MMS fallback works.
-                    val newest = dao.newestForThread(threadId)
+                    //
+                    //    ACTIVE, not RAW: `conversations` is the ACTIVE UI. When
+                    //    the newest row is hidden (individually trashed, or inside
+                    //    a trashed-conversation snapshot — TRASH, v3.4.0 FEATURE 8)
+                    //    the projection must roll back to the newest row the user
+                    //    can actually SEE, and to no row at all when none is left.
+                    //    The RAW mirror keeps the hidden row: sync, the integrity
+                    //    audit and the repair queue still see the whole provider.
+                    val newest = dao.newestActiveForThread(threadId)
                     val conversationId = conversationIdFor(threadId)
                     if (newest == null) {
                         // 5a. The thread is now empty: the conversation must
@@ -733,7 +759,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         rawAddress = newest.rawAddress,
                         snippet = newest.body,
                         lastMessageDate = newest.date,
-                        unreadCount = dao.countUnread(threadId),
+                        unreadCount = dao.countActiveUnread(threadId),
                         pinnedOnInsert = existing?.pinned ?: (threadId in pinRepositoryIds()),
                         archivedOnInsert = existing?.archived ?: (threadId in archivedRepositoryIds()),
                         lastMessageType = newest.type
@@ -828,6 +854,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             is MessageMutation.DeleteThread -> {
                 db.messageDao().deleteThread(m.threadId)
                 db.conversationDao().delete(m.threadId)
+                // FEATURE 6: the thread's messages are gone, so its assets are now
+                // orphans. The explicit orphan sweep is the replacement for an FK
+                // CASCADE (a message delete must never silently abort, and a
+                // provider repair must never take the index with it).
+                assetIndexer.deleteOrphans()
             }
         }
     }
@@ -859,6 +890,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     ): Set<Long> = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext emptySet()
         val touched = LinkedHashSet<Long>()
+        // FEATURE 12: the rows this call actually wrote, classified off-thread
+        // once the transaction below has committed. Local state only — never
+        // part of the durable message row.
+        val inserted = ArrayList<MessageEntity>(rows.size)
         val pinnedIds = pinRepositoryIds()
         val archivedIds = archivedRepositoryIds()
         TraceSections.begin(TraceSections.ROOM_INGEST)
@@ -884,6 +919,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     dao.upsertAll(listOf(entity))
                     touched += entity.threadId
                     transitions += transition to entity
+                    // FEATURE 12: collected for classification AFTER the commit.
+                    // Captured inside the transaction on purpose: if it rolls
+                    // back, the scope under which the coroutine resumes is gone,
+                    // so this variable is never read.
+                    inserted += entity
 
                     if (mode == DiscoveryMode.HISTORY_BACKFILL || mode == DiscoveryMode.STARTUP_DELTA) {
                         enqueueHistorical(entity)
@@ -964,12 +1004,19 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 try {
                     for (threadId in touched) {
                         if (threadId <= 0L) continue
-                        val newest = dao.newestForThread(threadId)
+                        // ACTIVE-UI projection (TRASH, v3.4.0 FEATURE 8): the
+                        // provider row was ingested into the RAW mirror above, but
+                        // a reconciliation of a trashed conversation must NOT
+                        // restore its UI item. Rebuilding from the ACTIVE rows
+                        // means the tombstone keeps hiding the snapshot, while a
+                        // genuinely NEW message (newer than the cutoff) becomes the
+                        // newest active row and re-creates the conversation.
+                        val newest = dao.newestActiveForThread(threadId)
                         if (newest == null) {
                             convDao.delete(threadId)
                             continue
                         }
-                        val unread = dao.countUnread(threadId)
+                        val unread = dao.countActiveUnread(threadId)
                         val existing = convDao.byThread(threadId)
                         val pinned = existing?.pinned ?: (threadId in pinnedIds)
                         val archived = existing?.archived ?: (threadId in archivedIds)
@@ -1026,6 +1073,35 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 }
             }
             if (touched.isNotEmpty()) PerfTelemetry.noteRoomCommit()
+            // ── FEATURE 12 (Smart Categories): immediate local classification ──
+            // AFTER the message transaction commits, and handed to a dedicated
+            // background scope that returns immediately, so a classifier problem
+            // can never break or delay ingest. Rows whose classification is lost
+            // to process death are picked up by the checkpointed backfill.
+            if (inserted.isNotEmpty()) {
+                runCatching {
+                    com.autonomousone.messages.classification.MessageClassificationService
+                        .schedule(appContext, inserted)
+                }
+                // ── FEATURE 6 (Media / Links / Files): asset index ──────────────
+                // AFTER the message transaction commits, and handed to a dedicated
+                // bounded queue that returns immediately, so extracting links or
+                // reading MMS part metadata can never fail or delay ingest.
+                // LINKS come from the body we just read (no provider call at all);
+                // MMS parts cost ONE part query per batch. No history scan here —
+                // pre-existing rows are covered by the checkpointed sweep.
+                assetIndexer.enqueue(
+                    inserted.map {
+                        IndexableMessage(
+                            source = it.source,
+                            providerId = it.providerId,
+                            threadId = it.threadId,
+                            body = it.body,
+                            date = it.date
+                        )
+                    }
+                )
+            }
             touched
         } finally {
             TraceSections.end()
@@ -1636,6 +1712,31 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     /**
+     * Rebuilds ONE thread's ACTIVE-UI conversation projection from the Room
+     * mirror. NO provider access: it re-reads the mirror Room already holds.
+     *
+     * This is the whole Room-side half of TRASH (v3.4.0 FEATURE 8), and it is
+     * deliberately ONE entry point for both directions:
+     *
+     *  - after a conversation is moved to Trash: the tombstone now hides its
+     *    deleted snapshot, so the projection rolls back to the newest ACTIVE
+     *    message (or disappears entirely when none is left). The user sees the
+     *    row vanish immediately, and the RAW mirror keeps every row, which is
+     *    what makes Undo a no-op for the provider;
+     *  - after a Restore: the tombstone is gone, so the SAME call rebuilds the
+     *    pre-trash projection (snippet, date, unread count) from the mirror.
+     *
+     * Idempotent and cheap: `newestActiveForThread` + `countActiveUnread` are
+     * indexed single-thread reads, and the projection write is one statement.
+     * The caller owns the tombstone state (TrashRepository) — this method only
+     * makes the projection agree with it.
+     */
+    suspend fun rebuildThreadProjectionFromMirror(threadId: Long) = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext
+        rebuildConversationProjection(threadId, preserveFlags = true)
+    }
+
+    /**
      * Marks a thread read in Room.
      *
      * PHASE 10.2: ONE transaction. The per-message read flags and the
@@ -1914,6 +2015,18 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * Rebuilds ONE conversation row from the messages table.
      * Uses SQL COUNT for unread — O(unread_count) instead of O(total_messages).
      * Message + Conversation update in a single Room transaction.
+     *
+     * ACTIVE-UI, deliberately: `conversations` is what Home renders, so it is
+     * rebuilt from the newest row the user can SEE. The RAW mirror is untouched.
+     *
+     * This ONE function therefore serves both halves of TRASH (v3.4.0 FEATURE 8):
+     *
+     *  - TRASH a conversation → the tombstone hides the snapshot, so the newest
+     *    active row is either an OLDER surviving message (Home rolls back, never
+     *    showing the deleted snippet) or nothing at all (the conversation leaves
+     *    Home). No row is deleted from Room, so Restore needs no re-insert.
+     *  - RESTORE it → clearing the tombstone makes the snapshot active again and
+     *    the very same call rebuilds the pre-trash projection from the mirror.
      */
     private suspend fun rebuildConversationProjection(threadId: Long, preserveFlags: Boolean) {
         if (threadId <= 0L) return
@@ -1926,14 +2039,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             // DESC). pageForThread orders by date DESC, providerId DESC, so at an
             // equal timestamp SMS and MMS could disagree about which row is
             // newest depending on which query a caller happened to use.
-            val newest = dao.newestForThread(threadId)
+            val newest = dao.newestActiveForThread(threadId)
             if (newest == null) {
-                // Last message in the thread was deleted → the conversation must
-                // disappear from Home, not keep a stale snippet/date forever.
+                // No ACTIVE message is left in the thread — every row is deleted,
+                // individually trashed, or hidden by a trashed-conversation
+                // tombstone → the conversation must disappear from Home, not keep
+                // a stale snippet/date forever.
                 convDao.delete(threadId)
                 return@withTransaction
             }
-            val unread = dao.countUnread(threadId)
+            val unread = dao.countActiveUnread(threadId)
 
             if (preserveFlags) {
                 // A rebuild is authoritative: it must be able to move the
@@ -2009,8 +2124,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         val dao = database.messageDao()
         val convDao = database.conversationDao()
 
-        val newestByThread = dao.newestPerThread()
-        val unreadByThread = dao.unreadCountsByThread().associate { it.threadId to it.unreadCount }
+        // ACTIVE-UI authority (TRASH, v3.4.0 FEATURE 8). This rebuild OWNS the
+        // `conversations` projection, and that projection is the ACTIVE UI. A
+        // trashed conversation therefore does not appear in newestByThread — and
+        // the stale-projection removal below then drops its row, which is exactly
+        // "the item stays deleted" rather than "sync resurrected it from the
+        // complete provider mirror it is allowed to keep in `messages`".
+        val newestByThread = dao.newestActivePerThread()
+        val unreadByThread = dao.unreadActiveCountsByThread().associate { it.threadId to it.unreadCount }
         val existingByThread = convDao.all().associateBy { it.threadId }
         val pinnedIds = pinRepositoryIds()
         val archivedIds = archivedRepositoryIds()

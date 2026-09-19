@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,12 +45,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.autonomousone.messages.R
+import com.autonomousone.messages.messaging.CustomRetentionRange
 import com.autonomousone.messages.messaging.MessagingPreferences
+import com.autonomousone.messages.utils.formatFullTimestamp
 import com.autonomousone.messages.viewmodel.MessagingSettingsViewModel
+import com.autonomousone.messages.viewmodel.OtpRetentionViewModel
+import com.autonomousone.messages.messaging.CustomRetentionRange.DAY_MS
+import com.autonomousone.messages.messaging.CustomRetentionRange.HOUR_MS
 
 /**
  * Google Messages-style messaging options. Nothing is pre-enabled: every switch
@@ -283,6 +293,10 @@ fun MessagingSettingsScreen(navController: NavController) {
                 }
             }
 
+            SettingsCard(title = stringResource(R.string.otp_retention_card_title)) {
+                OtpRetentionContent()
+            }
+
             SettingsCard(title = "Conversations") {
                 SettingSwitch(
                     title = "Show iPhone reactions as emoji",
@@ -352,6 +366,276 @@ private fun SimSlotContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/**
+ * v3.4.0 FEATURE 14 — global OTP retention.
+ *
+ * Three deliberate properties of this card:
+ *  - the master switch is OFF until the user turns it on, and turning it on
+ *    moves NOTHING by itself;
+ *  - "Apply to existing OTP messages" is a separate, explicit action — it is the
+ *    only thing that ever enrolls history;
+ *  - every string says the message is MOVED TO TRASH, never "deleted", because
+ *    that is exactly what happens and the user can still restore it.
+ */
+@Composable
+private fun OtpRetentionContent() {
+    val viewModel: OtpRetentionViewModel = viewModel()
+
+    SettingSwitch(
+        title = stringResource(R.string.otp_retention_switch_title),
+        subtitle = stringResource(R.string.otp_retention_switch_subtitle),
+        checked = viewModel.enabled,
+        onCheckedChange = { viewModel.setEnabled(it) }
+    )
+
+    if (viewModel.enabled) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.otp_retention_after_label),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        OtpPresetRows(
+            retentionMillis = viewModel.retentionMillis,
+            onSelectPreset = { viewModel.selectPreset(it) },
+            onSelectCustom = { viewModel.openCustomEditor() }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = { viewModel.applyToExisting() },
+            enabled = !viewModel.applying,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (viewModel.applying) {
+                    stringResource(R.string.otp_retention_apply_existing_running)
+                } else {
+                    stringResource(R.string.otp_retention_apply_existing)
+                }
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.otp_retention_apply_existing_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        val outcome = viewModel.applyResult
+        if (outcome != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = when {
+                    !outcome.enabled -> stringResource(R.string.otp_retention_apply_existing_disabled)
+                    outcome.finished -> stringResource(
+                        R.string.otp_retention_apply_existing_done_fmt,
+                        outcome.enrolled,
+                        outcome.scanned
+                    )
+                    else -> stringResource(
+                        R.string.otp_retention_apply_existing_partial_fmt,
+                        outcome.enrolled
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = when {
+                viewModel.enrolledCount == 0 -> stringResource(R.string.otp_retention_status_none)
+                else -> stringResource(
+                    R.string.otp_retention_status_count_fmt,
+                    viewModel.enrolledCount
+                )
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (viewModel.nextEligibleAt > 0L) {
+            Text(
+                text = stringResource(
+                    R.string.otp_retention_status_next_fmt,
+                    formatFullTimestamp(viewModel.nextEligibleAt)
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    } else {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.otp_retention_status_off),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    if (viewModel.customOpen) {
+        OtpCustomRetentionDialog(viewModel)
+    }
+}
+
+private fun presetLabel(option: Long): Int = when (option) {
+    HOUR_MS -> R.string.otp_retention_preset_1h
+    6L * HOUR_MS -> R.string.otp_retention_preset_6h
+    24L * HOUR_MS -> R.string.otp_retention_preset_24h
+    3L * DAY_MS -> R.string.otp_retention_preset_3d
+    7L * DAY_MS -> R.string.otp_retention_preset_7d
+    else -> R.string.otp_retention_preset_custom
+}
+
+/**
+ * Preset radio list plus the Custom entry.
+ *
+ * The presets come from `CustomRetentionRange.PRESETS` — the same list the
+ * validator's bounds check uses — so a preset the policy would reject cannot
+ * exist here.
+ */
+@Composable
+private fun OtpPresetRows(
+    retentionMillis: Long,
+    onSelectPreset: (Long) -> Unit,
+    onSelectCustom: () -> Unit
+) {
+    CustomRetentionRange.PRESETS.forEach { option ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSelectPreset(option) },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(selected = retentionMillis == option, onClick = { onSelectPreset(option) })
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = stringResource(presetLabel(option)),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+    val isCustom = !retentionMillis.isPreset()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectCustom() },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = isCustom, onClick = { onSelectCustom() })
+        Spacer(modifier = Modifier.width(6.dp))
+        Column {
+            Text(
+                text = stringResource(R.string.otp_retention_preset_custom),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (isCustom) {
+                Text(
+                    text = describeRetention(retentionMillis),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun describeRetention(millis: Long): String {
+    val hours = CustomRetentionRange.hoursOf(millis)
+    val value = if (hours % 24L == 0L && hours >= 24L) hours / 24L else hours
+    val format = if (hours % 24L == 0L && hours >= 24L) {
+        R.string.otp_retention_status_retention_days_fmt
+    } else {
+        R.string.otp_retention_status_retention_hours_fmt
+    }
+    return stringResource(format, value)
+}
+
+private fun Long.isPreset(): Boolean = CustomRetentionRange.PRESETS.contains(this)
+
+/**
+ * Custom retention editor.
+ *
+ * A rejected range keeps the dialog OPEN and shows the reason, so the user sees
+ * visible feedback instead of a silently clamped value. Only a valid value is
+ * persisted.
+ */
+@Composable
+private fun OtpCustomRetentionDialog(viewModel: OtpRetentionViewModel) {
+    val error = viewModel.customError
+    AlertDialog(
+        onDismissRequest = { viewModel.dismissCustomEditor() },
+        title = { Text(stringResource(R.string.otp_retention_custom_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.otp_retention_custom_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = viewModel.customValue,
+                    onValueChange = { viewModel.updateCustomValue(it) },
+                    label = { Text(stringResource(R.string.otp_retention_custom_value_label)) },
+                    singleLine = true,
+                    isError = error != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = viewModel.customUnit == CustomRetentionRange.Unit.HOURS,
+                        onClick = { viewModel.selectCustomUnit(CustomRetentionRange.Unit.HOURS) }
+                    )
+                    Text(
+                        text = stringResource(R.string.otp_retention_custom_unit_hours),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    RadioButton(
+                        selected = viewModel.customUnit == CustomRetentionRange.Unit.DAYS,
+                        onClick = { viewModel.selectCustomUnit(CustomRetentionRange.Unit.DAYS) }
+                    )
+                    Text(
+                        text = stringResource(R.string.otp_retention_custom_unit_days),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                if (error != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = when (error) {
+                            CustomRetentionRange.Rejection.NOT_A_NUMBER ->
+                                stringResource(R.string.otp_retention_custom_invalid_number)
+                            CustomRetentionRange.Rejection.TOO_SMALL ->
+                                stringResource(R.string.otp_retention_custom_too_small)
+                            CustomRetentionRange.Rejection.TOO_LARGE ->
+                                stringResource(R.string.otp_retention_custom_too_large)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { viewModel.commitCustomRetention() }) {
+                Text(stringResource(R.string.otp_retention_custom_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { viewModel.dismissCustomEditor() }) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }
 
 @Composable

@@ -36,6 +36,15 @@ import com.autonomousone.messages.BuildConfig
  *    ALL ADDITIVE. User-owned state lives HERE, never on MessageEntity, so a
  *    provider Upsert can never overwrite a star, a mute or a manual unread.
  *
+ * v17 adds (v3.4.0 FEATURE 11 = Send delay / Undo Send, see
+ * PendingDelayedSend.kt):
+ *  - pending_delayed_sends — ADDITIVE. The durable undo-send ledger. It exists
+ *    because "sending in 10 seconds" is a promise about the FUTURE: the
+ *    WorkManager timer says when to try, this table says whether the single
+ *    send permission was ever handed out. The job is at-least-once, the
+ *    compare-and-set claim is at-most-once, and only the two together are
+ *    exactly-once.
+ *
  * v7 adds (PR-01 / Messaging Platform durability foundation, see docs/adr/):
  *  - remote_conversation_map, gateway_event_outbox, remote_commands,
  *    remote_command_executions, sync_cursors — all ADDITIVE (no rebuilds);
@@ -67,9 +76,11 @@ import com.autonomousone.messages.BuildConfig
         TrashedThreadEntity::class,
         MessageClassificationEntity::class,
         ConversationClassificationEntity::class,
-        MessageAssetEntity::class
+        MessageAssetEntity::class,
+        // v17 — Send delay / Undo Send (ADDITIVE; see PendingDelayedSend.kt).
+        PendingDelayedSendEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -98,6 +109,8 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun messageClassificationDao(): MessageClassificationDao
     abstract fun conversationClassificationDao(): ConversationClassificationDao
     abstract fun messageAssetDao(): MessageAssetDao
+    // v17 — Send delay / Undo Send.
+    abstract fun pendingDelayedSendDao(): PendingDelayedSendDao
 
     companion object {
         @Volatile
@@ -538,6 +551,40 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /** Room schema version this build's entity set matches. */
+        const val CURRENT_SCHEMA_VERSION = 17
+
+        /** Previous schema version the newest migration starts from. */
+        const val PREVIOUS_SCHEMA_VERSION = 16
+
+        /**
+         * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
+         *
+         * ADDITIVE and non-destructive, like every migration here: one fresh
+         * CREATE TABLE plus its two indices. No existing table is rebuilt,
+         * altered or dropped, so the 360K-message mirror, the send_segments
+         * ledger and the v16 user-state tables are untouched.
+         *
+         * The table starts EMPTY on every upgraded install: an upgrade must
+         * never invent a pending send the user did not schedule, and an empty
+         * ledger means "nothing is held back", which is exactly the default
+         * (delay OFF).
+         *
+         * `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` on
+         * purpose — Room re-runs a migration after a partially-failed open.
+         */
+        internal val UPGRADE_TO_V17_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `pending_delayed_sends` (`intentId` TEXT NOT NULL, `body` TEXT NOT NULL, `phoneToken` TEXT NOT NULL, `threadId` INTEGER NOT NULL, `state` TEXT NOT NULL, `dueAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `claimedAt` INTEGER NOT NULL, `sentRowId` INTEGER NOT NULL, `attempts` INTEGER NOT NULL, `failureCode` TEXT, PRIMARY KEY(`intentId`))",
+            "CREATE INDEX IF NOT EXISTS `index_pending_delayed_sends_threadId` ON `pending_delayed_sends` (`threadId`)",
+            "CREATE INDEX IF NOT EXISTS `index_pending_delayed_sends_dueAt` ON `pending_delayed_sends` (`dueAt`)"
+        )
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V17_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -549,7 +596,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

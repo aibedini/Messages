@@ -12,7 +12,16 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.R
+import com.autonomousone.messages.data.ConversationSearchHit
+import com.autonomousone.messages.data.MessageKey
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.repository.BulkActionRepository
+import com.autonomousone.messages.repository.BulkFeedback
+import com.autonomousone.messages.repository.InConversationSearchRepository
+import com.autonomousone.messages.repository.MessageUserStateRepository
+import com.autonomousone.messages.repository.SearchDebounce
+import com.autonomousone.messages.repository.SearchJumpWindow
+import com.autonomousone.messages.repository.SearchOutcome
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadMerge
 import com.autonomousone.messages.messaging.MessagingPreferences
@@ -28,6 +37,7 @@ import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.sms.SmsSender
+import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.diagnostics.PerfMetric
 import com.autonomousone.messages.diagnostics.PerfTelemetry
@@ -57,6 +67,52 @@ enum class ConversationWindowMode {
 sealed interface ConversationScrollCommand {
     data class Latest(val messageId: Long?) : ConversationScrollCommand
     data class Oldest(val messageId: Long?) : ConversationScrollCommand
+
+    /**
+     * v3.4.0 FEATURE 1 — land on ONE searched message.
+     *
+     * The target is the COMPOSITE identity `(source, providerId)`, never a raw
+     * id: a row list built from Room/Sms mixes sources, and scrolling to "100"
+     * would be ambiguous between SMS 100 and MMS 100. The row list itself is
+     * already in canonical order, so the screen only has to resolve the key to
+     * an index — it never re-sorts or re-queries.
+     */
+    data class SearchHit(val key: MessageIdentity.Key) : ConversationScrollCommand
+}
+
+/**
+ * The in-conversation search surface (v3.4.0 FEATURE 1).
+ *
+ * Loading / Content / Empty / Error are mutually exclusive and total: the UI
+ * renders the state it is handed and never a blank panel.
+ */
+sealed interface ConversationSearchState {
+
+    /** Search mode is off, or on with a query too short to execute. */
+    data object Idle : ConversationSearchState
+
+    /** A debounced query is in flight. */
+    data class Loading(val query: String) : ConversationSearchState
+
+    /**
+     * At least one active hit inside this thread.
+     *
+     * [hits] is one bounded page (newest-first, matching the DAO order); the
+     * screen asks for the next page when the list nears its end, so the paging
+     * stays bounded regardless of how many messages match.
+     */
+    data class Content(
+        val query: String,
+        val hits: List<ConversationSearchHit>,
+        val total: Int,
+        val loadingMore: Boolean
+    ) : ConversationSearchState
+
+    /** The query ran and matched nothing (never shown for a too-short query). */
+    data class Empty(val query: String) : ConversationSearchState
+
+    /** The query failed. [message] is a user-facing string, already localized. */
+    data class Error(val message: String) : ConversationSearchState
 }
 
 class ConversationViewModel(
@@ -82,6 +138,12 @@ class ConversationViewModel(
     private val markReadUseCase = MarkConversationReadUseCase.get(getApplication())
     private val smsSender = SmsSender(application)
     private val mmsSender = MmsSender(application)
+
+    /** FEATURE 10: the single batched entry point for bulk message actions. */
+    private val bulkActions = BulkActionRepository.get(application)
+
+    /** FEATURE 9/10: per-message user state (star / individual trash). */
+    private val userState = MessageUserStateRepository(application)
 
     val messages = mutableStateListOf<Sms>()
 
@@ -269,6 +331,47 @@ class ConversationViewModel(
 
     // Optimistic sent rows not yet confirmed in the provider DB (kept visible on refresh).
     private val optimisticMessages = mutableListOf<Sms>()
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v3.4.0 FEATURE 11 — Send delay / Undo Send (composer only).
+    //
+    // The delay decision itself lives in DelayedSendGate, the durable state and
+    // the at-most-once claim live in pending_delayed_sends, and the TIMER is the
+    // app's existing scheduler (ScheduledSms → WorkManager). This ViewModel only
+    // ROUTES the composer send and RENDERS the pending intent, so there is
+    // exactly one scheduling engine and exactly one copy of the policy.
+    //
+    // The recipient is NOT tracked here: the kind of a pending bubble comes from
+    // the durable ledger, never from a ViewModel field, so a process death
+    // cannot leave the composer showing a state the worker does not agree with.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /** Synthetic `Sms.id` of every rendered pending bubble, oldest first. */
+    private val pendingDelayedScanIds = mutableListOf<Long>()
+
+    /** Live ledger observer for the OPEN conversation; cancelled on switch. */
+    private var pendingDelayedJob: kotlinx.coroutines.Job? = null
+
+    /** Composer routing + undo for delayed sends. */
+    private val delayedSend: com.autonomousone.messages.messaging.DelayedSendCoordinator by lazy {
+        com.autonomousone.messages.messaging.DelayedSendCoordinator(
+            context = application,
+            sink = com.autonomousone.messages.sms.DelayedSendSink { phone, body, subscriptionId ->
+                smsSender.sendForResult(phone, body, subscriptionId)
+            }
+        )
+    }
+
+    /**
+     * Told when the composer's message was HELD instead of sent, so the screen
+     * can show "Sending in N seconds" with UNDO. A one-shot signal, not state:
+     * the Snackbar is an event.
+     */
+    private val _delayedSendStarted = MutableSharedFlow<DelayedSendNotice>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val delayedSendStarted = _delayedSendStarted.asSharedFlow()
 
     private val observer = SmsContentObserver { batch ->
         // Conversation screen uses merge-based refresh (targeted tail query),
@@ -613,6 +716,14 @@ class ConversationViewModel(
         windowMode = ConversationWindowMode.LATEST
         pendingNewMessagesCount = 0
         conversationGeneration++
+        // A search result set belongs to the thread it was queried in: a switch
+        // must drop it rather than let another conversation inherit the panel.
+        if (isSearchActive || searchState !is ConversationSearchState.Idle) {
+            isSearchActive = false
+            searchLoadMoreJob?.cancel()
+            searchLoadMoreJob = null
+            clearSearchResults()
+        }
         val myThread = threadId
         val myPhone = currentPhone
         val gen = conversationGeneration
@@ -624,6 +735,11 @@ class ConversationViewModel(
 
         // ReactiveRoomTail: bounded Room window feeds the UI from here on.
         startRoomTail(threadId, gen)
+
+        // v3.4.0 FEATURE 11: render the OPEN conversation's held messages from
+        // the durable ledger, bounded by threadId. Unrelated threads are never
+        // read, and the collector is replaced on every conversation switch.
+        observePendingDelayedSends(threadId, gen)
 
         conversationLoadJob = viewModelScope.launch(Dispatchers.IO + crashGuard("loadConversation")) {
             // ── Stale-while-revalidate: paint the cached thread INSTANTLY
@@ -826,6 +942,362 @@ class ConversationViewModel(
 
     private fun phoneIfBlank(phone: String): String =
         if (phone.isNotBlank()) phone else currentPhone
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v3.4.0 FEATURE 1 — SEARCH INSIDE THIS CONVERSATION
+    //
+    // Isolation contract (why the search surface is a SEPARATE list):
+    //  • `messages` (the conversation window) is NEVER mutated by search;
+    //  • `searchJumpWindow` is the bounded window painted while search mode is
+    //    on, so jumping to a hit does not have to page `messages` to it and
+    //    does not destroy the reader's position;
+    //  • leaving search drops the search window and the LazyColumn falls back
+    //    to `messages` exactly as it was when search opened.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /** The search repository — one FTS index (`messages_fts`), no second copy. */
+    private val conversationSearch: InConversationSearchRepository by lazy {
+        InConversationSearchRepository.create(getApplication())
+    }
+
+    /** Raw query typed by the user (already debounced downstream). */
+    var searchQuery by mutableStateOf("")
+        private set
+
+    /** Loading / Content / Empty / Error for the search surface. */
+    var searchState: ConversationSearchState by mutableStateOf(ConversationSearchState.Idle)
+        private set
+
+    /** True while the search TOP BAR owns the conversation header. */
+    var isSearchActive by mutableStateOf(false)
+        private set
+
+    /**
+     * Position in the FULL result set (not just the loaded page) for the
+     * "3 of 14" counter. -1 when there is nothing to point at.
+     */
+    var searchIndex by mutableIntStateOf(ConversationSearchNavigation.NO_INDEX)
+        private set
+
+    /** Total active matches for the current query (counter denominator). */
+    var searchTotal by mutableIntStateOf(0)
+        private set
+
+    /**
+     * The bounded window painted while the user is inside a search hit. Null in
+     * normal mode → the screen paints `messages`.
+     */
+    var searchJumpWindow by mutableStateOf<SearchJumpWindow?>(null)
+        private set
+
+    /**
+     * Monotonic search-session revision. Incremented by every query/keyboard
+     * change and by (re)entering search mode, and the key of the screen's
+     * debounced search effect — so a keystroke re-arms the pipeline while an
+     * unrelated recomposition does not.
+     */
+    var searchRevision by mutableIntStateOf(0)
+        private set
+
+    /** True while a debounced query is in flight (drives the progress state). */
+    var isSearchLoading by mutableStateOf(false)
+        private set
+
+    /** Every hit loaded so far (bounded pages), newest-first like the DAO. */
+    private var searchHits: List<ConversationSearchHit> = emptyList()
+
+    private var searchExhausted = false
+    private var searchLoadMoreJob: kotlinx.coroutines.Job? = null
+
+    /** Enter search mode. The conversation window is left untouched. */
+    fun openSearch() {
+        if (isSearchActive) return
+        isSearchActive = true
+        searchRevision++
+        DiagnosticLog.event(
+            "CONV_SEARCH",
+            "open thread=$currentThreadId index=$searchIndex total=$searchTotal"
+        )
+    }
+
+    /**
+     * Leave search mode. Drops every search artefact and repaints the ORIGINAL
+     * conversation window from `messages` — closing search must not disturb it.
+     */
+    fun closeSearch() {
+        if (!isSearchActive) return
+        isSearchActive = false
+        searchLoadMoreJob?.cancel()
+        searchLoadMoreJob = null
+        clearSearchResults()
+        DiagnosticLog.event("CONV_SEARCH", "close thread=$currentThreadId")
+    }
+
+    /**
+     * Drop the search surface without emitting diagnostics. Called from
+     * closeSearch and from a conversation switch — a result set belongs to the
+     * thread it was queried in and must never leak into another one.
+     */
+    private fun clearSearchResults() {
+        searchQuery = ""
+        searchHits = emptyList()
+        searchExhausted = false
+        searchTotal = 0
+        searchIndex = ConversationSearchNavigation.NO_INDEX
+        searchJumpWindow = null
+        searchState = ConversationSearchState.Idle
+        isSearchLoading = false
+        searchRevision++
+    }
+
+    /**
+     * One keystroke. Nothing is queried here — the value is debounced by the
+     * screen's search effect, so typing in a 100K-message thread stays free.
+     */
+    fun onQueryChange(q: String) {
+        if (searchQuery == q) return
+        searchQuery = q
+        searchRevision++
+    }
+
+    /**
+     * Re-run the CURRENT query after an Error. Nothing about the query changed,
+     * so the revision is bumped to re-arm the debounced pipeline; the retry is
+     * therefore debounced exactly like a keystroke.
+     */
+    fun retrySearch() {
+        if (!isSearchActive) return
+        DiagnosticLog.event(
+            "CONV_SEARCH",
+            "retry thread=$currentThreadId query=" +
+                InConversationSearchRepository.queryToken(searchQuery)
+        )
+        searchRevision++
+    }
+
+    /**
+     * The query pipeline: debounce, then ONE search.
+     *
+     * `debounceMillis` is the quiet period that must elapse after the last
+     * keystroke, enforced by the repository's injectable-delay flow (so the
+     * policy is unit-testable without wall-clock waiting). The screen's
+     * `LaunchedEffect(searchRevision)` cancels this coroutine the instant the
+     * query changes again, so a cancelled pipeline never publishes anything —
+     * that cancellation is the debounce, not a second timer.
+     *
+     * Every settled query replaces the result page and re-anchors the jump
+     * window onto its first hit, so the arrows and the message view can never
+     * disagree.
+     */
+    suspend fun runSearchPipeline(
+        debounceMillis: Long = SearchDebounce.DEBOUNCE_MS
+    ) {
+        if (!isSearchActive) return
+        val threadId = currentThreadId
+        if (threadId <= 0L) return
+        val gen = conversationGeneration
+        val raw = searchQuery
+        if (!SearchDebounce.isExecutable(raw)) {
+            // A one-character query never reaches FTS: it would match the whole
+            // thread. The surface returns to Idle rather than showing results.
+            if (searchState !is ConversationSearchState.Idle) clearSearchResults()
+            return
+        }
+
+        // The viewModelScope runs on Main, so this write is part of the same
+        // uninterrupted block as the await below: a later keystroke cannot see
+        // a half-published state.
+        isSearchLoading = true
+
+        val outcome = try {
+            conversationSearch.outcomes(
+                threadId = threadId,
+                queryFlow = kotlinx.coroutines.flow.flowOf(raw),
+                debounceMillis = debounceMillis
+            ).first()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // The user kept typing (or left search): the pipeline is superseded.
+            // Reset the progress flag and publish NOTHING — a cancelled query
+            // must never flash stale results.
+            isSearchLoading = false
+            throw cancelled
+        } catch (failure: Exception) {
+            DiagnosticLog.event(
+                InConversationSearchRepository.LOG_CATEGORY,
+                "search failed thread=$threadId query=" +
+                    InConversationSearchRepository.queryToken(raw),
+                failure
+            )
+            withContext(Dispatchers.Main) {
+                isSearchLoading = false
+                if (threadId == currentThreadId && gen == conversationGeneration) {
+                    searchState = ConversationSearchState.Error(
+                        getApplication<Application>().getString(R.string.conv_search_failed)
+                    )
+                }
+            }
+            return
+        }
+
+        withContext(Dispatchers.Main) {
+            isSearchLoading = false
+            if (threadId != currentThreadId || gen != conversationGeneration) return@withContext
+            if (raw != searchQuery) return@withContext
+            when (outcome) {
+                is SearchOutcome.Skipped -> clearSearchResults()
+                is SearchOutcome.Completed -> {
+                    val page = outcome.page
+                    searchHits = page.hits
+                    searchTotal = page.total
+                    searchExhausted = page.hits.size < InConversationSearchRepository.MAX_PAGE
+                    searchIndex = ConversationSearchNavigation.initial(page.total)
+                    searchState = if (page.total <= 0 || page.hits.isEmpty()) {
+                        ConversationSearchState.Empty(outcome.query)
+                    } else {
+                        ConversationSearchState.Content(
+                            query = outcome.query,
+                            hits = page.hits,
+                            total = page.total,
+                            loadingMore = false
+                        )
+                    }
+                    // A fresh result set re-anchors the message view onto the
+                    // first hit, so arrows and content never disagree.
+                    if (page.hits.isNotEmpty()) jumpToIndex(searchIndex) else searchJumpWindow = null
+                }
+            }
+        }
+    }
+
+    /**
+     * Append the next bounded page. Called by the results list as it nears its
+     * end; a no-op once the set is exhausted or a page is already in flight.
+     */
+    fun loadMoreSearchResults() {
+        val query = searchQuery
+        if (query.length < SearchDebounce.MIN_QUERY_LENGTH || searchExhausted) return
+        if (searchLoadMoreJob?.isActive == true) return
+        val current = searchState
+        if (current !is ConversationSearchState.Content) return
+        val loaded = searchHits.size
+        if (loaded <= 0) return
+
+        searchState = current.copy(loadingMore = true)
+        val threadId = currentThreadId
+        val gen = conversationGeneration
+        searchLoadMoreJob = viewModelScope.launch(Dispatchers.IO + crashGuard("conversationSearchMore")) {
+            val outcome = runCatching {
+                conversationSearch.loadMore(threadId, query, offset = loaded)
+            }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (threadId != currentThreadId || gen != conversationGeneration) return@withContext
+                if (query != searchQuery) return@withContext
+                val latest = searchState
+                if (latest !is ConversationSearchState.Content) return@withContext
+                val page = (outcome as? SearchOutcome.Completed)?.page
+                if (page == null || page.hits.isEmpty()) {
+                    searchExhausted = true
+                    searchState = latest.copy(loadingMore = false)
+                    return@withContext
+                }
+                // The FTS index can change between pages (a message arrives, a
+                // row is trashed), so the merge is by composite identity.
+                val merged = (searchHits + page.hits)
+                    .distinctBy { MessageIdentity.Key(it.source, it.providerId) }
+                searchHits = merged
+                searchExhausted = page.hits.size < InConversationSearchRepository.MAX_PAGE
+                searchState = latest.copy(
+                    hits = merged,
+                    loadingMore = false,
+                    total = maxOf(latest.total, page.total)
+                )
+            }
+        }
+    }
+
+    /**
+     * ↓ — next hit. Rendered DISABLED (not called) when there is exactly one
+     * hit; with several, navigation WRAPS (see [ConversationSearchNavigation]).
+     */
+    fun nextHit() {
+        moveSelection { index, total -> ConversationSearchNavigation.next(index, total) }
+    }
+
+    /** ↑ — previous hit, same wrap rule. */
+    fun previousHit() {
+        moveSelection { index, total -> ConversationSearchNavigation.previous(index, total) }
+    }
+
+    private fun moveSelection(step: (Int, Int) -> Int) {
+        val total = searchTotal
+        if (total <= 0) return
+        val target = step(searchIndex, total)
+        if (target < 0) return
+        searchIndex = target
+        DiagnosticLog.event(
+            "CONV_SEARCH",
+            "navigate thread=$currentThreadId index=${ConversationSearchNavigation.displayOrdinal(target, total)} " +
+                "total=$total"
+        )
+        // A page that has not been fetched yet is pulled first; the selection
+        // is applied as soon as it lands (loadMore keeps searchIndex).
+        if (target >= searchHits.size && !searchExhausted) {
+            loadMoreSearchResults()
+            return
+        }
+        jumpToIndex(target)
+    }
+
+    /** Select + scroll to the hit at [index] of the loaded page. */
+    private fun jumpToIndex(index: Int) {
+        val hit = searchHits.getOrNull(index) ?: return
+        jumpToMessage(hit.source, hit.providerId)
+    }
+
+    /**
+     * Jump to ONE result by exact composite identity.
+     *
+     * Returns the bounded window around the message and emits a
+     * [ConversationScrollCommand.SearchHit] carrying `(source, providerId)` so
+     * SMS 100 and MMS 100 can never be confused on the way to the list. The
+     * conversation window in [messages] is NOT touched.
+     */
+    fun jumpToMessage(source: String, providerId: Long) {
+        val key = MessageIdentity.Key(source, providerId)
+        val threadId = currentThreadId
+        val gen = conversationGeneration
+        viewModelScope.launch(Dispatchers.IO + crashGuard("conversationSearchJump")) {
+            val window = conversationSearch.jumpToMessage(source, providerId, threadId)
+            withContext(Dispatchers.Main) {
+                // Stale-result guard, same shape as loadConversation's: the
+                // conversation may have been switched while the window loaded.
+                // A phone-only open (threadId 0) is NOT stale just because the
+                // real thread id was resolved meanwhile.
+                if (threadId != 0L && threadId != currentThreadId) return@withContext
+                if (gen != conversationGeneration) return@withContext
+                if (window == null) {
+                    // The hit was trashed (or repaired away) between the query
+                    // and the tap. Drop it from the page instead of scrolling
+                    // into history that no longer exists.
+                    val remaining = searchHits.filterNot {
+                        MessageIdentity.Key(it.source, it.providerId) == key
+                    }
+                    searchHits = remaining
+                    searchTotal = maxOf(0, searchTotal - 1)
+                    searchState = (searchState as? ConversationSearchState.Content)?.let { content ->
+                        if (remaining.isEmpty()) ConversationSearchState.Empty(content.query)
+                        else content.copy(hits = remaining, total = maxOf(remaining.size, searchTotal))
+                    } ?: searchState
+                    if (searchIndex >= remaining.size) {
+                        searchIndex = ConversationSearchNavigation.initial(remaining.size)
+                    }
+                    return@withContext
+                }
+                searchJumpWindow = window
+                _scrollCommands.tryEmit(ConversationScrollCommand.SearchHit(key))
+            }
+        }
+    }
 
     private fun markReadAndNotify(threadId: Long, phone: String) {
         if (threadId == 0L && phone.isBlank()) return
@@ -1046,6 +1518,28 @@ class ConversationViewModel(
             try {
                 val recipients = splitRecipients(targetPhone)
                 when {
+                    // ── v3.4.0 FEATURE 11: the delay gate ────────────────────
+                    // A plain text composer send is the ONLY thing Undo Send may
+                    // hold back. With the setting OFF (the default) this returns
+                    // null and the code below runs exactly as it did in v3.3.6.
+                    // Group sends and attachments stay immediate: a held group
+                    // would need per-recipient undo semantics, and this feature
+                    // does not have them.
+                    recipients.size == 1 && routeComposerSend(
+                        phone = recipients.first(),
+                        body = trimmedMsg,
+                        threadId = currentThreadId,
+                        subscriptionId = subscriptionOverride
+                    ) != null -> {
+                        // Held: the durable ledger owns the message now, and its
+                        // worker will send it. Nothing is sent from here.
+                        com.autonomousone.messages.utils.DiagnosticLog.event(
+                            "SEND_DELAY",
+                            "composer-held thread=$currentThreadId token=" +
+                                com.autonomousone.messages.utils.DiagnosticLog
+                                    .phoneToken(recipients.first())
+                        )
+                    }
                     // Google Messages-style group chat: ONE group MMS instead of N SMS.
                     recipients.size > 1 &&
                             MessagingPreferences(getApplication()).groupMessagingEnabled -> {
@@ -1089,6 +1583,207 @@ class ConversationViewModel(
         raw.split(',', ';')
             .map { ContactRepository.normalizePhone(it.trim()) }
             .filter { it.isNotBlank() }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v3.4.0 FEATURE 11 — Send delay / Undo Send
+    // ════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Routes ONE already-composed message through the delay gate.
+     *
+     * Returns the durable intent id when the message was HELD (the caller must
+     * not treat it as delivered), or null when it must go out through the
+     * unchanged direct path.
+     *
+     * ── Why this is a bounded blocking call ──────────────────────────────────
+     * This is the moment the user's tap must be answered (composer cleared,
+     * Snackbar with UNDO shown), and the answer depends on ONE durable decision:
+     * insert a single small row into a work-queue table. The call is bounded by
+     * [HOLD_DECISION_TIMEOUT_MILLIS] so a wedged database can never freeze the
+     * composer; on timeout or failure the caller falls back to the immediate
+     * send, which means a message is never lost to a ledger problem. No provider
+     * read, no scan and no Room query is performed here — only the one INSERT.
+     */
+    private fun routeComposerSend(
+        phone: String,
+        body: String,
+        threadId: Long,
+        subscriptionId: Int?
+    ): String? = runCatching {
+        kotlinx.coroutines.runBlocking {
+            withTimeoutOrNull(HOLD_DECISION_TIMEOUT_MILLIS) {
+                delayedSend.send(
+                    phone = phone,
+                    body = body,
+                    threadId = threadId,
+                    subscriptionId = subscriptionId,
+                    source = com.autonomousone.messages.sms.SendSource.COMPOSER
+                )
+            }
+        }
+    }.fold(
+        onSuccess = { result ->
+            if (result is com.autonomousone.messages.messaging.SendResult.DelayedSend) {
+                _delayedSendStarted.tryEmit(
+                    DelayedSendNotice(
+                        intentId = result.row.intentId,
+                        seconds = result.delaySeconds,
+                        body = result.row.body
+                    )
+                )
+                result.row.intentId
+            } else {
+                // Immediate (delay OFF), ignored, or the bounded wait expired.
+                null
+            }
+        },
+        onFailure = { error ->
+            // A ledger/timer failure must never silently drop a message the user
+            // just typed: fall back to the immediate send.
+            com.autonomousone.messages.utils.DiagnosticLog.event(
+                "SEND_DELAY",
+                "hold-failed fallback=immediate token=" +
+                    com.autonomousone.messages.utils.DiagnosticLog.phoneToken(phone),
+                error
+            )
+            null
+        }
+    )
+
+    /**
+     * UNDO the pending message [intentId].
+     *
+     * Returns the restored text so the caller can put it back in the composer, or
+     * null when it was too late (the deadline was already claimed) — in which
+     * case the message IS on its way and the UI must say so rather than pretend
+     * the undo worked.
+     *
+     * Like [routeComposerSend] this is bounded and blocking: it is one
+     * compare-and-set the user is watching.
+     */
+    fun undoDelayedSend(intentId: String): String? = runCatching {
+        kotlinx.coroutines.runBlocking {
+            withTimeoutOrNull(HOLD_DECISION_TIMEOUT_MILLIS) { delayedSend.undo(intentId) }
+        }
+    }.getOrNull().let { outcome ->
+        when (outcome) {
+            is com.autonomousone.messages.sms.DelayedSendStateMachine.Undo.Cancelled -> {
+                removePendingDelayedBubble(intentId)
+                outcome.body
+            }
+            // Too late, or the bounded wait expired: the bubble stays exactly as
+            // the durable ledger describes it.
+            else -> null
+        }
+    }
+
+    /**
+     * Mirrors the OPEN conversation's live ledger rows into the bubble list.
+     *
+     * A row observed in PENDING becomes a bubble with the never-reached
+     * `STATUS_DELAYED_PENDING` sentinel, so the UI can render a clock and
+     * "Sending…" WITHOUT the screen having to know about the ledger. The bubble
+     * leaves on the ordinary path: once the send really happens its provider row
+     * is merged in, and [mergeOptimistic] prunes the optimistic copy.
+     */
+    private fun observePendingDelayedSends(threadId: Long, gen: Long) {
+        pendingDelayedJob?.cancel()
+        pendingDelayedJob = null
+        if (threadId <= 0L) return
+        pendingDelayedJob = viewModelScope.launch(Dispatchers.IO + crashGuard("pendingDelayed")) {
+            delayedSend.observeLive(threadId).collect { rows ->
+                val pending = rows.filter {
+                    it.state == com.autonomousone.messages.sms.DelayedSendState.PENDING
+                }
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    applyPendingDelayedRows(threadId, pending)
+                }
+            }
+        }
+    }
+
+    /** Main-thread projection of the ledger onto the visible bubble list. */
+    private fun applyPendingDelayedRows(
+        threadId: Long,
+        pending: List<com.autonomousone.messages.sms.PendingDelayedSend>
+    ) {
+        val wanted = pending.associateBy { pendingDelayedBubbleId(it.intentId) }
+
+        // Drop bubbles whose intent is gone (claimed, undone, failed, pruned).
+        pendingDelayedScanIds.removeAll { id ->
+            val keep = wanted.containsKey(id)
+            if (!keep) {
+                val index = messages.indexOfFirst { it.id == id }
+                if (index >= 0) messages.removeAt(index)
+                optimisticMessages.removeAll { it.id == id }
+            }
+            !keep
+        }
+
+        // Add a bubble for every newly-durable intent, oldest first so the
+        // canonical order of the list is preserved by the sort below.
+        wanted.forEach { (id, row) ->
+            if (pendingDelayedScanIds.contains(id)) return@forEach
+            val bubble = Sms(
+                id = id,
+                threadId = threadId,
+                sender = currentPhone,
+                message = row.body,
+                date = row.dueAt,
+                unread = false,
+                type = 2,
+                status = STATUS_DELAYED_PENDING
+            )
+            pendingDelayedScanIds.add(id)
+            markForEntryAnimation(bubble.id)
+            messages.add(bubble)
+            optimisticMessages.add(bubble)
+        }
+        messages.sortWith(chronologicalOrder)
+    }
+
+    /**
+     * Deterministic synthetic id for a pending bubble.
+     *
+     * Derived from the intent id so the same intent always renders as the same
+     * row, and the SAME derivation the sender uses for a real outgoing event —
+     * so a bubble can never collide with a persisted provider row.
+     */
+    private fun pendingDelayedBubbleId(intentId: String): Long =
+        MessageIdentity.outgoingEventId(
+            providerRowId = intentId.hashCode().toLong(),
+            fallbackDate = intentId.hashCode().toLong()
+        )
+
+    /** Removes a pending bubble immediately, without waiting for Room. */
+    private fun removePendingDelayedBubble(intentId: String) {
+        val id = pendingDelayedBubbleId(intentId)
+        pendingDelayedScanIds.remove(id)
+        val index = messages.indexOfFirst { it.id == id }
+        if (index >= 0) messages.removeAt(index)
+        optimisticMessages.removeAll { it.id == id }
+    }
+
+    companion object {
+        /**
+         * `Sms.status` sentinel for a message held by Undo Send.
+         *
+         * Deliberately outside every `Telephony.Sms.STATUS_*` value: it is OUR
+         * UI state, and a value the provider also uses would make a delayed
+         * bubble indistinguishable from a real pending/failed provider row after
+         * a merge.
+         */
+        const val STATUS_DELAYED_PENDING = -11
+
+        /**
+         * Bound on the ONE durable decision the composer tap waits for (the
+         * ledger INSERT, or the undo compare-and-set). Generous for a single-row
+         * write and short enough that a wedged database cannot freeze the
+         * composer; both callers have a safe fallback when it expires.
+         */
+        private const val HOLD_DECISION_TIMEOUT_MILLIS = 1_500L
+    }
 
     fun sendImageMessage(threadId: Long, phone: String, imageUri: Uri, caption: String = "") {
         val targetPhone = if (phone.isNotBlank()) phone else currentPhone
@@ -1165,10 +1860,175 @@ class ConversationViewModel(
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // FEATURE 9/10 — message multi-select + bulk actions (additive)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Message selection, keyed by the COMPOSITE identity
+     * ([MessageIdentity.Key] = (source, providerId)) — never a raw id, because
+     * SMS 100 and MMS 100 are different messages.
+     *
+     * The state lives here, not in the rendered list, so a Room tail emission or
+     * a refresh cannot drop it; [reconcileMessageSelection] intersects it
+     * explicitly when the window changes.
+     */
+    var messageSelection by mutableStateOf(SelectionState.idle<MessageIdentity.Key>())
+        private set
+
+    /** True while a bulk message action is in flight. */
+    var bulkInProgress by mutableStateOf(false)
+        private set
+
+    /** One-shot bulk outcome for the screen's snackbar. */
+    var bulkFeedback by mutableStateOf<BulkFeedback?>(null)
+        private set
+
+    /** True when every selected message is starred (Star/Unstar toggle). */
+    var selectionAllStarred by mutableStateOf(false)
+        private set
+
+    private var selectionStarredJob: kotlinx.coroutines.Job? = null
+
+    fun consumeBulkFeedback() {
+        bulkFeedback = null
+    }
+
+    /** Long-press entry point. */
+    fun enterMessageSelection(sms: Sms) {
+        val key = MessageIdentity.keyOf(sms.id)
+        if (key.providerId <= 0L) return
+        messageSelection = messageSelection.start(key)
+        refreshSelectionStarred()
+    }
+
+    fun toggleMessageSelection(sms: Sms) {
+        val key = MessageIdentity.keyOf(sms.id)
+        if (key.providerId <= 0L) return
+        messageSelection = messageSelection.toggle(key)
+        refreshSelectionStarred()
+    }
+
+    /** X in the selection top bar, BACK, or leaving the screen. */
+    fun clearMessageSelection() {
+        selectionStarredJob?.cancel()
+        selectionStarredJob = null
+        selectionAllStarred = false
+        if (messageSelection.active) messageSelection = messageSelection.clear()
+    }
+
+    /**
+     * Explicit reconciliation against the window that is now on screen. Merging
+     * and paging replace the list, so the selection is intersected — a refresh
+     * that still holds the selected rows keeps the selection intact.
+     */
+    fun reconcileMessageSelection(present: Set<MessageIdentity.Key>) {
+        if (!messageSelection.active) return
+        val next = messageSelection.afterListRefresh(present)
+        if (next != messageSelection) {
+            messageSelection = next
+            refreshSelectionStarred()
+        }
+    }
+
+    /** Star/unstar every selected message (composite identity preserved). */
+    fun starSelection(starred: Boolean) {
+        val keys = messageSelection.keys
+        if (keys.isEmpty() || bulkInProgress) return
+        viewModelScope.launch {
+            bulkInProgress = true
+            try {
+                val result = bulkActions.star(keys, starred)
+                if (result.succeeded > 0) selectionAllStarred = starred
+                bulkFeedback = BulkFeedback.from(result)
+                if (!result.isCompleteFailure) messageSelection = messageSelection.clear()
+            } finally {
+                bulkInProgress = false
+            }
+        }
+    }
+
+    /**
+     * Move the selection to Trash. The durable per-message state is written by
+     * [BulkActionRepository]; the rows are ALSO dropped from the visible window
+     * so the conversation matches the ACTIVE-UI rule immediately.
+     */
+    fun trashSelection() {
+        val keys = messageSelection.keys
+        if (keys.isEmpty() || bulkInProgress) return
+        viewModelScope.launch {
+            bulkInProgress = true
+            try {
+                val result = bulkActions.moveToTrash(keys)
+                val failed = result.failed.mapNotNull { key ->
+                    key.source?.let { source -> key.providerId?.let { id -> MessageKey(source, id) } }
+                }.toSet()
+                val applied = keys - failed
+                if (applied.isNotEmpty()) {
+                    messages.removeAll { row -> MessageIdentity.keyOf(row.id) in applied }
+                    if (windowMode == ConversationWindowMode.LATEST) {
+                        // The instant-open cache must not resurrect a trashed row.
+                        ThreadMessageCache.put(currentThreadId, currentPhone, messages.toList())
+                    } else {
+                        ThreadMessageCache.invalidateThread(currentThreadId)
+                    }
+                }
+                bulkFeedback = BulkFeedback.from(result)
+                if (!result.isCompleteFailure) messageSelection = messageSelection.clear()
+            } finally {
+                bulkInProgress = false
+            }
+        }
+    }
+
+    /**
+     * The copy payload of the current selection: message bodies joined in the
+     * canonical order of the visible window. Never logged, never persisted.
+     */
+    fun selectedText(): String {
+        val keys = messageSelection.keys
+        if (keys.isEmpty()) return ""
+        return messages
+            .filter { MessageIdentity.keyOf(it.id) in keys }
+            .joinToString(separator = "\n\n") { it.message }
+    }
+
+    /** The single body of a one-message selection, for the Forward workflow. */
+    fun selectedSingleText(): String? {
+        val keys = messageSelection.keys
+        if (keys.size != 1) return null
+        return messages.firstOrNull { MessageIdentity.keyOf(it.id) in keys }?.message
+    }
+
+    /** Called by the screen after a successful copy. */
+    fun onSelectionCopied(count: Int) {
+        if (count > 0) messageSelection = messageSelection.clear()
+    }
+
+    /** Starred state of the CURRENT selection, refreshed off the composition path. */
+    private fun refreshSelectionStarred() {
+        selectionStarredJob?.cancel()
+        val keys = messageSelection.keys
+        if (keys.isEmpty()) {
+            selectionAllStarred = false
+            return
+        }
+        selectionStarredJob = viewModelScope.launch(Dispatchers.IO) {
+            val all = keys.all { userState.isStarred(it.source, it.providerId) }
+            withContext(Dispatchers.Main) {
+                // Only publish if the selection has not moved on meanwhile.
+                if (messageSelection.keys == keys) selectionAllStarred = all
+            }
+        }
+    }
+
     override fun onCleared() {
         repository.unregisterObserver(observer)
         roomTailJob?.cancel()
         roomTailJob = null
+        searchLoadMoreJob?.cancel()
+        searchLoadMoreJob = null
+        clearMessageSelection()
         // Leaving the conversation: the sync core must stop suppressing
         // unread for this thread (a fresh incoming message is unread again).
         if (currentThreadId > 0L) VisibleConversationTracker.onClosed(currentThreadId)

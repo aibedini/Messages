@@ -233,7 +233,20 @@ class SmsSender(
      * PR-03: through the single funnel (durable queue when the flag is on).
      */
     fun sendForResult(phone: String, text: String): Long? =
-        when (val outcome = sendWithOutcome(phone, text)) {
+        sendForResult(phone, text, null)
+
+    /**
+     * Same as [sendForResult] with an explicit SIM for this message only.
+     *
+     * v3.4.0 (Send delay): a message held for N seconds is dispatched in a NEW
+     * process, so the in-chat SIM choice has to be carried into the durable
+     * request and handed back here — otherwise the message would leave on the
+     * global default line instead of the one the user picked.
+     *
+     * @param subscriptionIdOverride null = the user's Messaging preference.
+     */
+    fun sendForResult(phone: String, text: String, subscriptionIdOverride: Int?): Long? =
+        when (val outcome = sendWithOutcome(phone, text, subscriptionIdOverride)) {
             is SendOutcome.Accepted -> outcome.rowId
             is SendOutcome.Rejected -> null
         }

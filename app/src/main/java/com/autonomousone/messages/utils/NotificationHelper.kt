@@ -232,6 +232,36 @@ object NotificationHelper {
         ).build()
         builder.addAction(markReadAction)
 
+        // 4. Archive Action — NORMAL messages only (v3.4.0 FEATURE 16).
+        //
+        // Contextual priority instead of a fixed list: Android shows only ~3
+        // collapsed actions, so the OTP notification spends its budget on
+        // "Copy code / Reply / Mark as read" (copying the code is the whole
+        // reason the user opened it), while a normal message gets
+        // "Reply / Mark as read / Archive". Adding Archive to the OTP
+        // notification would push the Copy action out of the collapsed view
+        // exactly where it is most needed.
+        if (otpCode == null) {
+            val archiveIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_ARCHIVE
+                putExtra(NotificationActionReceiver.EXTRA_THREAD_ID, sms.threadId)
+                putExtra(NotificationActionReceiver.EXTRA_PHONE, sms.sender)
+                putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            }
+            val archivePendingIntent = PendingIntent.getBroadcast(
+                context,
+                (sms.sender + "_archive").hashCode(),
+                archiveIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val archiveAction = NotificationCompat.Action.Builder(
+                R.mipmap.ic_launcher,
+                context.getString(R.string.notif_action_archive),
+                archivePendingIntent
+            ).build()
+            builder.addAction(archiveAction)
+        }
+
         try {
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         } catch (e: SecurityException) {

@@ -100,6 +100,48 @@ interface MessageDao {
     )
     suspend fun newestForThread(threadId: Long): MessageEntity?
 
+    // ── ACTIVE-UI twins (v3.4.0 FEATURE 8, TRASH) ───────────────────────────
+    //
+    // `conversations` is the ACTIVE UI — what Home renders — so a projection
+    // builder must NEVER read `newestForThread` (RAW MIRROR): it still holds the
+    // rows of a trashed conversation, and rebuilding from it would resurrect
+    // exactly the item the user deleted. These twins apply the ONE shared
+    // ACTIVE-UI predicate, so "hidden" and "not projected" cannot drift.
+    //
+    // The RAW queries above stay untouched: sync, the integrity audit and the
+    // repair queue must keep seeing the complete provider mirror.
+
+    /**
+     * NEWEST ACTIVE row of one thread, or null when every row is hidden by user
+     * state (individually trashed, or inside a trashed-conversation snapshot).
+     * A null answers "this conversation must leave Home"; a row answers "this is
+     * the snippet Home shows".
+     */
+    @Query(NEWEST_ACTIVE_FOR_THREAD_SQL)
+    suspend fun newestActiveForThread(threadId: Long): MessageEntity?
+
+    /** Incoming unread count of the ACTIVE rows of one thread. */
+    @Query(COUNT_ACTIVE_UNREAD_SQL)
+    suspend fun countActiveUnread(threadId: Long): Int
+
+    /** Newest ACTIVE row per thread, for the recovery projection rebuild. */
+    @Query(NEWEST_ACTIVE_PER_THREAD_SQL)
+    suspend fun newestActivePerThread(): List<MessageEntity>
+
+    /** ACTIVE incoming unread count per thread, for the same rebuild. */
+    @Query(UNREAD_ACTIVE_COUNTS_BY_THREAD_SQL)
+    suspend fun unreadActiveCountsByThread(): List<ThreadUnreadCount>
+
+    /**
+     * PERMANENT purge of one tombstone's Room range (TRASH).
+     *
+     * Called ONLY after the provider delete for the same range was CONFIRMED, and
+     * only while the tombstone row still exists. Returns the number of removed
+     * rows. It never touches a message newer than the tombstone cutoff.
+     */
+    @Query(DELETE_TRASHED_SNAPSHOT_SQL)
+    suspend fun deleteTrashedSnapshot(threadId: Long): Int
+
     @Query("SELECT MAX(date) FROM messages WHERE source = :source")
     suspend fun newestDateFor(source: String): Long?
 
@@ -136,6 +178,21 @@ interface MessageDao {
         LIMIT :limit
     """)
     suspend fun recentThreadIds(limit: Int): List<Long>
+
+    /**
+     * Provider DIRECTION of one message (FEATURE 14 eligibility).
+     *
+     * `message_classification` deliberately does not duplicate provider truth, so
+     * the OTP cleanup must read `type` from the mirror. Point lookup on the
+     * composite primary key; null when the row is not mirrored (in which case
+     * cleanup refuses to act — never trash on missing data).
+     */
+    @Query("SELECT type FROM messages WHERE source = :source AND providerId = :providerId")
+    suspend fun typeOf(source: String, providerId: Long): Int?
+
+    /** Own timestamp of one message (FEATURE 14 wrong-clock healing). */
+    @Query("SELECT date FROM messages WHERE source = :source AND providerId = :providerId")
+    suspend fun dateOf(source: String, providerId: Long): Long?
 
     @Upsert
     suspend fun upsertAll(messages: List<MessageEntity>)
@@ -206,6 +263,90 @@ interface MessageDao {
         """
     )
     suspend fun findByKey(source: String, providerId: Long): MessageEntity?
+
+    /**
+     * Resolve ONE row by composite identity under the ACTIVE-UI contract.
+     *
+     * [findByKey] is deliberately RAW (sync/integrity callers need the row even
+     * when the user trashed it). In-conversation search must never land on a
+     * trashed hit, so JUMP-TO-RESULT uses this variant: the same indexed
+     * (source, providerId) primary-key lookup, with the individually-trashed row
+     * excluded so a search result the user deleted cannot be jumped to.
+     */
+    @Query(
+        """
+        SELECT * FROM messages m
+        WHERE m.source = :source AND m.providerId = :providerId
+          AND ${MessageCutoff.NOT_INDIVIDUALLY_TRASHED_SQL}
+        LIMIT 1
+        """
+    )
+    suspend fun findActiveByKey(source: String, providerId: Long): MessageEntity?
+
+    /**
+     * IN-CONVERSATION SEARCH (v3.4.0 FEATURE 1): bounded window OLDER than the
+     * canonical window anchor `(afterDate, afterSource, afterProviderId)`.
+     *
+     * Keyset, never OFFSET: `(date, source, providerId)` is the exact canonical
+     * order of this table, so the predicate seeks straight into the index on
+     * `(threadId, date, providerId)` and reads at most :limit rows. Rows are
+     * returned newest-first (the reverse of the paint order) because the loader
+     * appends them to the front of the window; callers flip, never re-sort.
+     *
+     * ACTIVE-UI filtered (individually-trashed rows and rows inside a trashed
+     * conversation's snapshot excluded) — same predicates as [MessageFtsDao].
+     * The `m` alias is a hard requirement of those shared SQL fragments.
+     *
+     * The comparison tuple may be INCLUSIVE (`afterProviderId` = the target's
+     * own provider id), which lets the same query carry the anchor row itself.
+     */
+    @Query(
+        """
+        SELECT * FROM messages m
+        WHERE m.threadId = :threadId
+          AND (m.date < :afterDate
+               OR (m.date = :afterDate AND m.source < :afterSource)
+               OR (m.date = :afterDate AND m.source = :afterSource
+                   AND m.providerId <= :afterProviderId))
+          AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+        ORDER BY m.date DESC, m.source DESC, m.providerId DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun windowBefore(
+        threadId: Long,
+        afterDate: Long,
+        afterSource: String,
+        afterProviderId: Long,
+        limit: Int
+    ): List<MessageEntity>
+
+    /**
+     * IN-CONVERSATION SEARCH (v3.4.0 FEATURE 1): bounded window NEWER than
+     * `(afterDate, afterSource, afterProviderId)`, returned in canonical
+     * ASCENDING order (the paint order). Strictly-after on the anchor, so the
+     * two window halves never overlap and the anchor row is counted once.
+     */
+    @Query(
+        """
+        SELECT * FROM messages m
+        WHERE m.threadId = :threadId
+          AND (m.date > :afterDate
+               OR (m.date = :afterDate AND m.source > :afterSource)
+               OR (m.date = :afterDate AND m.source = :afterSource
+                   AND m.providerId > :afterProviderId))
+          AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+        ORDER BY m.date ASC, m.source ASC, m.providerId ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun windowAfter(
+        threadId: Long,
+        afterDate: Long,
+        afterSource: String,
+        afterProviderId: Long,
+        limit: Int
+    ): List<MessageEntity>
 
     /** Delete a single message by composite key. */
     @Query(
@@ -649,6 +790,13 @@ interface MessageFtsDao {
      * pin (`m.threadId = :threadId`) is what bounds a 100K-message conversation,
      * and trashed rows (individually, or hidden by a thread tombstone) are
      * excluded so search never resurfaces deleted history.
+     *
+     * OFFSET here is bounded by the number of MATCHING rows actually paged
+     * through (the FTS index answers the MATCH first, then the join), not by
+     * the size of the thread: a 100K-message conversation whose query matches
+     * 40 rows costs 40. Jump-to-message never pages at all — it resolves the
+     * exact row and reads a bounded keyset window (MessageDao.windowBefore /
+     * windowAfter).
      */
     @Query(
         """

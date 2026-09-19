@@ -16,6 +16,7 @@
     <string name="action_restore">بازیابی</string>
     <string name="action_unlock">بازکردن قفل</string>
     <string name="action_unblock">رفع مسدودی</string>
+    <string name="action_retry">تلاش دوباره</string>
 
     <!-- ══════════ فهرست مکالمات ══════════ -->
     <string name="home_title">پیام‌ها</string>
@@ -47,6 +48,15 @@
     <string name="home_tab_all">همه پیام‌ها</string>
     <string name="home_tab_unread">خوانده‌نشده</string>
     <string name="home_tab_archived">بایگانی‌شده</string>
+
+    <!-- ══════════ دسته‌بندی هوشمند (ویژگی ۱۲ نسخه ۳.۴.۰) ══════════ -->
+    <string name="category_chip_personal">شخصی</string>
+    <string name="category_chip_otp">رمز یکبار‌مصرف</string>
+    <string name="category_chip_transactions">تراکنش‌ها</string>
+    <string name="category_chip_promotions">تبلیغات</string>
+    <string name="category_chip_spam">هرزنامه</string>
+    <string name="category_chip_count_fmt">%1$s، %2$d مکالمه</string>
+    <string name="category_chip_selected_fmt">%1$s، %2$d مکالمه، انتخاب‌شده. برای نمایش همه دسته‌ها دوباره بزنید.</string>
     <string name="home_empty_title">هنوز مکالمه‌ای ندارید</string>
     <string name="home_empty_subtitle">هنوز پیامی ندارید. برای شروع، یک گفتگوی جدید باز کنید.</string>
     <string name="home_empty_archived_title">مکالمه بایگانی‌شده‌ای نیست</string>
@@ -65,7 +75,7 @@
     <string name="home_snackbar_deleted">مکالمه حذف شد</string>
     <string name="home_confirm_archive_title">این مکالمه بایگانی شود؟</string>
     <string name="home_confirm_unarchive_title">به صندوق بازگردد؟</string>
-    <string name="home_confirm_delete_title">این مکالمه حذف شود؟</string>
+    <string name="home_confirm_delete_title">این مکالمه به سطل زباله منتقل شود؟</string>
     <string name="home_snackbar_blocked">شماره مسدود شد</string>
     <string name="home_sent_today_chip">%1$d پیامک امروز</string>
 
@@ -106,6 +116,18 @@
     <string name="conv_menu_hide_details">پنهان کردن جزئیات</string>
     <string name="conv_clear_conversation">پاک‌سازی گفتگو</string>
     <string name="conv_search_in_chat">جستجو در گفتگو</string>
+    <!-- ══════════ جستجو در گفتگو (نسخه ۳.۴.۰) ══════════ -->
+    <string name="conv_search_hint">جستجوی پیام‌ها…</string>
+    <string name="conv_search_close">بستن جستجو</string>
+    <string name="conv_search_clear">پاک کردن جستجو</string>
+    <string name="conv_search_previous">نتیجه قبلی</string>
+    <string name="conv_search_next">نتیجه بعدی</string>
+    <string name="conv_search_counter_fmt">%1$d از %2$d</string>
+    <string name="conv_search_searching">در حال جستجو…</string>
+    <string name="conv_search_idle_hint">برای جستجو در این گفتگو حداقل ۲ حرف بنویسید.</string>
+    <string name="conv_search_empty_title">نتیجه‌ای یافت نشد</string>
+    <string name="conv_search_empty_body">در این گفتگو پیامی حاوی «%1$s» پیدا نشد.</string>
+    <string name="conv_search_failed">جستجو ناموفق بود. دوباره تلاش کنید.</string>
     <string name="conv_sent_at_fmt">ارسal شده در %1$s</string>
     <string name="conv_delivered_at_fmt"> · تحویل در %1$s</string>
     <string name="conv_status_not_delivered"> · تحویل نشد</string>
@@ -292,4 +314,186 @@
     <string name="onb_open_settings">بازکردن تنظیمات برنامه</string>
     <string name="onb_sms_denied_forever">دسترسی پیامک برای همیشه رد شده. از تنظیمات اندروید فعالش کنید.</string>
     <string name="onb_grant_permission">اعطای دسترسی</string>
+
+    <!-- v3.4.0 FEATURE 15 — local spam report / block -->
+    <string name="notif_code_copied">کد کپی شد</string>
+    <string name="notif_action_archive">بایگانی</string>
+    <string name="spam_report_title">این گفتگو به‌عنوان هرزنامه علامت‌گذاری شود؟</string>
+    <string name="spam_report_body">پیام‌های این فرستنده به هرزنامه منتقل و فرستنده مسدود می‌شود. بعداً می‌توانید این کار را برگردانید.</string>
+    <string name="spam_report_confirm">علامت‌گذاری به‌عنوان هرزنامه</string>
+    <string name="spam_report_cancel">لغو</string>
+    <string name="spam_reported_snackbar">به‌عنوان هرزنامه علامت‌گذاری و مسدود شد</string>
+    <string name="spam_report_undo">برگرداندن</string>
+    <string name="spam_not_spam">هرزنامه نیست</string>
+    <string name="spam_not_spam_done">به صندوق ورودی برگشت</string>
+    <string name="spam_block">مسدود کردن</string>
+    <string name="spam_unblock">رفع مسدودی</string>
+    <string name="spam_blocked_snackbar">فرستنده مسدود شد</string>
+    <string name="spam_unblocked_snackbar">مسدودی فرستنده برداشته شد</string>
+    <string name="spam_empty">گفتگوی هرزنامه‌ای وجود ندارد</string>
+
+    <!-- v3.4.0 FEATURE 6 — مرورگر رسانه / پیوندها / فایل‌ها -->
+    <string name="media_screen_title">رسانه، پیوندها و فایل‌ها</string>
+    <string name="media_back">بازگشت</string>
+    <string name="media_refresh">به‌روزرسانی</string>
+    <string name="media_tab_label_count">%1$s (%2$d)</string>
+    <string name="media_tab_media">رسانه</string>
+    <string name="media_tab_links">پیوندها</string>
+    <string name="media_tab_files">فایل‌ها</string>
+    <string name="media_empty_media">هیچ رسانه‌ای در این گفتگو به اشتراک گذاشته نشده است</string>
+    <string name="media_empty_links">هیچ پیوندی اینجا به اشتراک گذاشته نشده است</string>
+    <string name="media_empty_files">هیچ فایلی اینجا به اشتراک گذاشته نشده است</string>
+    <string name="media_error_title">بارگذاری محتوای به‌اشتراک‌گذاشته‌شده ناموفق بود</string>
+    <string name="media_retry">تلاش دوباره</string>
+    <string name="media_load_more_failed">بارگذاری موارد بیشتر ناموفق بود</string>
+    <string name="media_open_failed">برنامه‌ای برای باز کردن این مورد یافت نشد</string>
+    <string name="media_item_media_desc">پیوست رسانه‌ای %1$s</string>
+    <string name="media_item_link_desc">پیوند به %1$s</string>
+    <string name="media_item_file_desc">فایل %1$s</string>
+    <string name="media_unnamed_file">پیوست</string>
+
+    <!-- v3.4.0 FEATURE 14 - OTP retention (auto-move to Trash) -->
+    <string name="otp_retention_card_title">کدهای یکبار مصرف و تایید</string>
+    <string name="otp_retention_switch_title">حذف خودکار پیام‌های کد یکبار مصرف</string>
+    <string name="otp_retention_switch_subtitle">کدهای قدیمی به سبد حذف‌شده‌ها منتقل می‌شوند، نه اینکه فوراً پاک شوند — هنوز می‌توانید آن‌ها را بازیابی کنید.</string>
+    <string name="otp_retention_after_label">انتقال پیام‌های کد یکبار مصرف به سبد حذف‌شده‌ها پس از</string>
+    <string name="otp_retention_preset_1h">۱ ساعت</string>
+    <string name="otp_retention_preset_6h">۶ ساعت</string>
+    <string name="otp_retention_preset_24h">۲۴ ساعت</string>
+    <string name="otp_retention_preset_3d">۳ روز</string>
+    <string name="otp_retention_preset_7d">۷ روز</string>
+    <string name="otp_retention_preset_custom">سفارشی…</string>
+    <string name="otp_retention_custom_title">مدت نگه‌داری سفارشی</string>
+    <string name="otp_retention_custom_hint">بین ۱ ساعت تا ۳۰ روز</string>
+    <string name="otp_retention_custom_value_label">مدت نگه‌داری</string>
+    <string name="otp_retention_custom_unit_hours">ساعت</string>
+    <string name="otp_retention_custom_unit_days">روز</string>
+    <string name="otp_retention_custom_save">اعمال</string>
+    <string name="otp_retention_custom_invalid_number">یک عدد وارد کنید.</string>
+    <string name="otp_retention_custom_too_small">کوتاه‌ترین مدت نگه‌داری ۱ ساعت است.</string>
+    <string name="otp_retention_custom_too_large">بیشترین مدت نگه‌داری ۳۰ روز است.</string>
+    <string name="otp_retention_apply_existing">اعمال روی پیام‌های کد یکبار مصرف موجود</string>
+    <string name="otp_retention_apply_existing_desc">برای کدهایی که قبلاً دریافت کرده‌اید هم زمان‌بندی انجام شود. تا وقتی این دکمه را نزنید، هیچ پیام موجودی تغییر نمی‌کند.</string>
+    <string name="otp_retention_apply_existing_running">بررسی پیام‌های موجود…</string>
+    <string name="otp_retention_apply_existing_done_fmt">%1$d از %2$d پیام کد یکبار مصرف برای پاک‌سازی زمان‌بندی شد</string>
+    <string name="otp_retention_apply_existing_partial_fmt">تا اینجا %1$d پیام زمان‌بندی شد — برای ادامه دوباره بزنید</string>
+    <string name="otp_retention_apply_existing_disabled">ابتدا حذف خودکار را روشن کنید</string>
+    <string name="otp_retention_status_none">هیچ پیام کد یکبار مصرفی برای پاک‌سازی زمان‌بندی نشده است.</string>
+    <string name="otp_retention_status_count_fmt">%1$d پیام کد یکبار مصرف برای پاک‌سازی زمان‌بندی شده است</string>
+    <string name="otp_retention_status_next_fmt">انتقال بعدی به سبد حذف‌شده‌ها: %1$s</string>
+    <string name="otp_retention_status_retention_hours_fmt">%1$d ساعت</string>
+    <string name="otp_retention_status_retention_days_fmt">%1$d روز</string>
+    <string name="otp_retention_status_off">حذف خودکار خاموش است. هیچ پیامی به سبد حذف‌شده‌ها منتقل نمی‌شود.</string>
+
+    <!-- Conversation Info (v3.4.0 FEATURE 5) -->
+    <string name="conv_info_title">اطلاعات گفتگو</string>
+    <string name="conv_info_section_notifications">اعلان‌ها</string>
+    <string name="conv_info_section_content">محتوا</string>
+    <string name="conv_info_section_category">دسته‌بندی</string>
+    <string name="conv_info_section_spam">هرزنامه و مسدودسازی</string>
+    <string name="conv_info_section_danger">منطقه خطر</string>
+    <string name="conv_info_mute">بی‌صدا</string>
+    <string name="conv_info_unmute">لغو بی‌صدا</string>
+    <string name="conv_info_mute_1h">بی‌صدا برای ۱ ساعت</string>
+    <string name="conv_info_mute_8h">بی‌صدا برای ۸ ساعت</string>
+    <string name="conv_info_mute_24h">بی‌صدا برای ۲۴ ساعت</string>
+    <string name="conv_info_mute_7d">بی‌صدا برای ۷ روز</string>
+    <string name="conv_info_mute_forever">بی‌صدا برای همیشه</string>
+    <string name="conv_info_muted_until">بی‌صدا تا %1$s</string>
+    <string name="conv_info_muted_forever">بی‌صدا</string>
+    <string name="conv_info_custom_notifications">اعلان سفارشی</string>
+    <string name="conv_info_custom_default">پیش‌فرض</string>
+    <string name="conv_info_custom_active">سفارشی · صدا و لرزش را در تنظیمات سیستم تعیین کنید</string>
+    <string name="conv_info_media">رسانه، پیوندها و فایل‌ها</string>
+    <string name="conv_info_media_count">%1$d مورد</string>
+    <string name="conv_info_starred">پیام‌های ستاره‌دار</string>
+    <string name="conv_info_category">دسته‌بندی</string>
+    <string name="conv_info_category_automatic">خودکار</string>
+    <string name="conv_info_category_automatic_value">خودکار · %1$s</string>
+    <string name="conv_info_category_manual_value">سفارشی · %1$s</string>
+    <string name="conv_info_category_personal">شخصی</string>
+    <string name="conv_info_category_otp">کد یکبار مصرف</string>
+    <string name="conv_info_category_transaction">تراکنش‌ها</string>
+    <string name="conv_info_category_promotion">تبلیغات</string>
+    <string name="conv_info_category_spam">هرزنامه</string>
+    <string name="conv_info_category_unknown">نامشخص</string>
+    <string name="conv_info_block">مسدود کردن</string>
+    <string name="conv_info_unblock">لغو مسدودی</string>
+    <string name="conv_info_report_spam">گزارش هرزنامه</string>
+    <string name="conv_info_not_spam">هرزنامه نیست</string>
+    <string name="conv_info_spam_reported">به عنوان هرزنامه گزارش شده</string>
+    <string name="conv_info_move_to_trash">انتقال گفتگو به سبد حذف‌شده‌ها</string>
+    <string name="conv_info_move_to_trash_hint">تا ۳۰ روز می‌توانید آن را از «حذف‌شده‌های اخیر» بازگردانید.</string>
+    <string name="conv_info_trash_confirm_title">به سبد حذف‌شده‌ها منتقل شود؟</string>
+    <string name="conv_info_trash_confirm_body">این گفتگو به «حذف‌شده‌های اخیر» منتقل می‌شود و تا ۳۰ روز قابل بازگردانی است.</string>
+    <string name="conv_info_message">پیام</string>
+    <string name="conv_info_contact_failed">برنامه مخاطبین در دسترس نیست</string>
+    <string name="conv_info_loading">در حال بارگذاری اطلاعات گفتگو…</string>
+    <string name="conv_info_error">بارگذاری اطلاعات گفتگو ناموفق بود</string>
+    <string name="conv_info_retry">تلاش دوباره</string>
+
+    <!-- Starred messages (v3.4.0 FEATURE 7) -->
+    <string name="starred_title">پیام‌های ستاره‌دار</string>
+    <string name="starred_empty">پیام ستاره‌داری وجود ندارد</string>
+    <string name="starred_loading">در حال بارگذاری پیام‌های ستاره‌دار…</string>
+    <string name="starred_error">بارگذاری پیام‌های ستاره‌دار ناموفق بود</string>
+    <string name="starred_retry">تلاش دوباره</string>
+    <string name="starred_indicator_cd">ستاره‌دار</string>
+    <string name="starred_unstar_cd">حذف ستاره از «%1$s»</string>
+
+    <!-- v3.4.0 FEATURES 9 + 10 — multi-select and bulk actions (shared by the
+         Home conversation list and the in-conversation message list). -->
+    <string name="bulk_exit_selection">خروج از حالت انتخاب</string>
+    <string name="bulk_selected_count_fmt">%1$d انتخاب‌شده</string>
+    <string name="bulk_mark_read">علامت‌گذاری به‌عنوان خوانده‌شده</string>
+    <string name="bulk_mark_unread">علامت‌گذاری به‌عنوان خوانده‌نشده</string>
+    <string name="bulk_archive">بایگانی</string>
+    <string name="bulk_unarchive">خروج از بایگانی</string>
+    <string name="bulk_mute">بی‌صدا کردن</string>
+    <string name="bulk_unmute">لغو بی‌صدا</string>
+    <string name="bulk_mute_1h">بی‌صدا برای ۱ ساعت</string>
+    <string name="bulk_mute_8h">بی‌صدا برای ۸ ساعت</string>
+    <string name="bulk_mute_1d">بی‌صدا برای ۲۴ ساعت</string>
+    <string name="bulk_mute_forever">بی‌صدا برای همیشه</string>
+    <string name="bulk_pin">سنجاق کردن</string>
+    <string name="bulk_unpin">لغو سنجاق</string>
+    <string name="bulk_move_to_trash">انتقال به زباله‌دان</string>
+    <string name="bulk_star">ستاره‌دار کردن</string>
+    <string name="bulk_unstar">حذف ستاره</string>
+    <string name="bulk_copy_text">کپی متن</string>
+    <string name="bulk_updated_fmt">%1$d مورد به‌روزرسانی شد</string>
+    <string name="bulk_updated_partial_fmt">%1$d مورد به‌روزرسانی شد، %2$d مورد انجام نشد</string>
+    <string name="bulk_failed_fmt">%1$d مورد به‌روزرسانی نشد</string>
+    <string name="bulk_moved_to_trash_fmt">%1$d مورد به زباله‌دان منتقل شد</string>
+    <string name="bulk_moved_to_trash_partial_fmt">%1$d مورد به زباله‌دان منتقل شد، %2$d مورد انجام نشد</string>
+    <string name="list_more_actions">کارهای بیشتر</string>
+
+    <!-- ══════════ سطل زباله / اخیراً حذف‌شده (v3.4.0 FEATURE 8) ══════════ -->
+    <string name="trash_screen_title">اخیراً حذف‌شده</string>
+    <string name="trash_screen_hint">گفت‌وگوهای این بخش پس از ۳۰ روز برای همیشه حذف می‌شوند.</string>
+    <string name="trash_menu_more">گزینه‌های بیشتر</string>
+    <string name="trash_empty_action">خالی‌کردن سطل زباله</string>
+    <string name="trash_empty_title">سطل زباله خالی است</string>
+    <string name="trash_empty_subtitle">گفت‌وگوهایی که حذف می‌کنید ۳۰ روز اینجا می‌مانند تا بتوانید بازشان گردانید.</string>
+    <string name="trash_error_title">بارگذاری سطل زباله انجام نشد</string>
+    <string name="trash_error_subtitle">گفت‌وگوهای حذف‌شدهٔ شما امن هستند. دوباره تلاش کنید.</string>
+    <string name="trash_unknown_contact">مخاطب ناشناس</string>
+    <string name="trash_deleted_on_fmt">حذف‌شده در %1$s</string>
+    <string name="trash_days_left_fmt">حذف همیشگی تا %1$d روز دیگر</string>
+    <string name="trash_purge_pending">به‌زودی برای همیشه حذف می‌شود</string>
+    <string name="trash_delete_forever">حذف همیشگی</string>
+    <string name="trash_delete_confirm_title">برای همیشه حذف شود؟</string>
+    <string name="trash_delete_confirm_body">این گفت‌وگو با %1$s برای همیشه از این دستگاه حذف می‌شود و بازگردانی آن ممکن نیست.</string>
+    <string name="trash_empty_confirm_title">سطل زباله خالی شود؟</string>
+    <string name="trash_empty_confirm_body">همهٔ گفت‌وگوهای داخل سطل زباله برای همیشه از این دستگاه حذف می‌شوند و بازگردانی آن‌ها ممکن نیست.</string>
+    <string name="trash_snackbar_moved">به سطل زباله منتقل شد</string>
+    <string name="trash_snackbar_move_failed">انتقال به سطل زباله انجام نشد — چیزی حذف نشد</string>
+    <string name="trash_snackbar_restored">گفت‌وگو بازگردانده شد</string>
+    <string name="trash_snackbar_restore_failed">بازگردانی این گفت‌وگو انجام نشد</string>
+    <string name="trash_snackbar_deleted_permanently">برای همیشه حذف شد</string>
+    <string name="trash_snackbar_delete_failed">حذف انجام نشد — چیزی پاک نشد</string>
+    <string name="trash_snackbar_emptied">سطل زباله خالی شد</string>
+    <string name="trash_snackbar_emptied_partial">%1$d حذف شد، %2$d باقی ماند — دوباره تلاش کنید</string>
+    <string name="settings_trash_title">اخیراً حذف‌شده</string>
+    <string name="settings_trash_hint">بازگردانی یا حذف همیشگی گفت‌وگوها</string>
 </resources>

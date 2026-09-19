@@ -44,6 +44,8 @@ data class HomeRow(
     val isPinned: Boolean,
     val isArchived: Boolean,
     val showYouMarker: Boolean,
+    /** FEATURE 9: this conversation is part of the current multi-selection. */
+    val selected: Boolean = false,
 )
 
 /**
@@ -76,6 +78,10 @@ fun ConversationList(
     onRowBlock: (HomeRow) -> Unit,
     onRowArchive: (HomeRow) -> Unit,
     onRowDelete: (HomeRow) -> Unit,
+    /** FEATURE 9: multi-select is on; taps toggle and a long-press enters it. */
+    selectionMode: Boolean = false,
+    onRowLongPress: (HomeRow) -> Unit = {},
+    onRowToggleSelect: (HomeRow) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
@@ -180,6 +186,10 @@ fun ConversationList(
                     onBlock = { onRowBlock(row) },
                     onArchive = { onRowArchive(row) },
                     onDelete = { onRowDelete(row) },
+                    selectionMode = selectionMode,
+                    selected = row.selected,
+                    onLongPress = { onRowLongPress(row) },
+                    onToggleSelect = { onRowToggleSelect(row) },
                 )
             }
         }

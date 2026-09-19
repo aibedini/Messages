@@ -64,6 +64,41 @@ sealed class Screen(val route: String) {
 
     object ScheduledMessages : Screen("scheduled_messages")
 
+    /**
+     * Conversation Info (v3.4.0 FEATURE 5).
+     *
+     * `phone`/`name` are carried from the conversation the user came from so the
+     * header paints IMMEDIATELY (no blank title while the contact lookup runs) and
+     * so a thread reached without an address (e.g. from the global Starred list)
+     * still has a usable one. Arguments follow the [Conversation] conventions: a
+     * Long path segment plus percent-encoded query args ([encode]), read back with
+     * [cleanArg] so a leaked route PATTERN can never render as user data.
+     *
+     * Wired centrally in AppNavigation.kt by the coordinator.
+     */
+    object ConversationInfo :
+        Screen("conversation_info/{threadId}?phone={phone}&name={name}") {
+
+        fun createRoute(threadId: Long, phone: String = "", name: String = ""): String =
+            "conversation_info/$threadId?phone=${encode(phone)}&name=${encode(name)}"
+    }
+
+    /**
+     * Starred messages inside ONE conversation (v3.4.0 FEATURE 7).
+     *
+     * Deliberately separate from [StarredMessages] rather than one route with an
+     * optional thread argument: a wired argument cannot be optional, so the global
+     * list can never be reached through a thread route whose id was lost — which
+     * would silently show every conversation's stars under a conversation's title.
+     */
+    object ConversationStarred : Screen("conversation_starred/{threadId}") {
+
+        fun createRoute(threadId: Long): String = "conversation_starred/$threadId"
+    }
+
+    /** Global Starred browser (v3.4.0 FEATURE 7). */
+    object StarredMessages : Screen("starred_messages")
+
     object Conversation :
         Screen("conversation/{threadId}?phone={phone}&name={name}&forward={forward}&draft={draft}") {
 
@@ -88,4 +123,34 @@ sealed class Screen(val route: String) {
                 "?phone=${encode(phone)}&name=${encode(name)}" +
                 "&forward=${encode(forward)}&draft=${encode(draft)}"
     }
+
+    /**
+     * v3.4.0 FEATURE 6 — Media / Links / Files browser for ONE conversation.
+     *
+     * Same argument conventions as [Conversation]: a Long `threadId` path segment
+     * and a percent-encoded `name` (see [encode]); args are read with
+     * `Screen.cleanArg` so a leaked route PATTERN can never be shown as a name.
+     * Wired centrally in AppNavigation.kt by the coordinator.
+     */
+    object ConversationMedia : Screen("conversation_media/{threadId}?name={name}") {
+
+        fun createRoute(threadId: Long, name: String = ""): String =
+            "conversation_media/$threadId?name=${encode(name)}"
+    }
+
+    /**
+     * Recently Deleted / Trash (v3.4.0 FEATURE 8).
+     *
+     * No arguments: Trash is a global list of conversation tombstones, each row
+     * carrying its own threadId. The screen restores a row, permanently deletes a
+     * row, or empties Trash — all by id from the list, so a deep link cannot ask
+     * for a purge of an arbitrary thread.
+     *
+     * Wired centrally in AppNavigation.kt by the coordinator:
+     *
+     *     composable(Screen.Trash.route) {
+     *         RecentlyDeletedScreen(navController = navController)
+     *     }
+     */
+    object Trash : Screen("trash")
 }

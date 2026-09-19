@@ -16,6 +16,7 @@
     <string name="action_restore">Restore</string>
     <string name="action_unlock">Unlock</string>
     <string name="action_unblock">Unblock</string>
+    <string name="action_retry">Try again</string>
 
     <!-- ══════════ Home / conversation list ══════════ -->
     <string name="home_title">Messages</string>
@@ -47,6 +48,15 @@
     <string name="home_tab_all">All Messages</string>
     <string name="home_tab_unread">Unread</string>
     <string name="home_tab_archived">Archived</string>
+
+    <!-- ══════════ Smart Categories (v3.4.0 FEATURE 12) ══════════ -->
+    <string name="category_chip_personal">Personal</string>
+    <string name="category_chip_otp">OTP</string>
+    <string name="category_chip_transactions">Transactions</string>
+    <string name="category_chip_promotions">Promotions</string>
+    <string name="category_chip_spam">Spam</string>
+    <string name="category_chip_count_fmt">%1$s, %2$d conversations</string>
+    <string name="category_chip_selected_fmt">%1$s, %2$d conversations, selected. Tap again to show every category.</string>
     <string name="home_empty_title">No Conversations</string>
     <string name="home_empty_subtitle">You don\'t have any messages yet. Start a new conversation below.</string>
     <string name="home_empty_archived_title">No Archived Conversations</string>
@@ -65,7 +75,7 @@
     <string name="home_snackbar_deleted">Conversation deleted</string>
     <string name="home_confirm_archive_title">Archive this conversation?</string>
     <string name="home_confirm_unarchive_title">Move back to inbox?</string>
-    <string name="home_confirm_delete_title">Delete this conversation?</string>
+    <string name="home_confirm_delete_title">Move this conversation to Trash?</string>
     <string name="home_snackbar_blocked">Number blocked</string>
     <string name="home_sent_today_chip">%1$d SMS today</string>
 
@@ -106,6 +116,18 @@
     <string name="conv_menu_hide_details">Hide details</string>
     <string name="conv_clear_conversation">Clear conversation</string>
     <string name="conv_search_in_chat">Search in chat</string>
+    <!-- ══════════ In-conversation search (v3.4.0 FEATURE 1) ══════════ -->
+    <string name="conv_search_hint">Search messages…</string>
+    <string name="conv_search_close">Close search</string>
+    <string name="conv_search_clear">Clear search</string>
+    <string name="conv_search_previous">Previous result</string>
+    <string name="conv_search_next">Next result</string>
+    <string name="conv_search_counter_fmt">%1$d of %2$d</string>
+    <string name="conv_search_searching">Searching…</string>
+    <string name="conv_search_idle_hint">Type at least 2 characters to search this conversation.</string>
+    <string name="conv_search_empty_title">No matches</string>
+    <string name="conv_search_empty_body">No messages in this conversation contain \u201C%1$s\u201D.</string>
+    <string name="conv_search_failed">Search failed. Please try again.</string>
     <string name="conv_sent_at_fmt">Sent %1$s</string>
     <string name="conv_delivered_at_fmt"> · Delivered %1$s</string>
     <string name="conv_status_not_delivered"> · Not delivered</string>
@@ -292,4 +314,186 @@
     <string name="onb_open_settings">Open app settings</string>
     <string name="onb_sms_denied_forever">SMS access was permanently denied. Enable it in Android app settings to continue.</string>
     <string name="onb_grant_permission">Grant permission</string>
+
+    <!-- v3.4.0 FEATURE 15 — local spam report / block -->
+    <string name="notif_code_copied">Code copied</string>
+    <string name="notif_action_archive">Archive</string>
+    <string name="spam_report_title">Mark this conversation as spam?</string>
+    <string name="spam_report_body">Messages from this sender will be moved to Spam and the sender will be blocked. You can undo this later.</string>
+    <string name="spam_report_confirm">Mark as spam</string>
+    <string name="spam_report_cancel">Cancel</string>
+    <string name="spam_reported_snackbar">Marked as spam and blocked</string>
+    <string name="spam_report_undo">Undo</string>
+    <string name="spam_not_spam">Not spam</string>
+    <string name="spam_not_spam_done">Returned to Inbox</string>
+    <string name="spam_block">Block</string>
+    <string name="spam_unblock">Unblock</string>
+    <string name="spam_blocked_snackbar">Sender blocked</string>
+    <string name="spam_unblocked_snackbar">Sender unblocked</string>
+    <string name="spam_empty">No spam conversations</string>
+
+    <!-- v3.4.0 FEATURE 6 — Media / Links / Files browser -->
+    <string name="media_screen_title">Media, links and files</string>
+    <string name="media_back">Back</string>
+    <string name="media_refresh">Refresh</string>
+    <string name="media_tab_label_count">%1$s (%2$d)</string>
+    <string name="media_tab_media">Media</string>
+    <string name="media_tab_links">Links</string>
+    <string name="media_tab_files">Files</string>
+    <string name="media_empty_media">No media shared in this conversation</string>
+    <string name="media_empty_links">No links shared here</string>
+    <string name="media_empty_files">No files shared here</string>
+    <string name="media_error_title">Couldn\'t load shared content</string>
+    <string name="media_retry">Retry</string>
+    <string name="media_load_more_failed">Couldn\'t load more items</string>
+    <string name="media_open_failed">No app can open this item</string>
+    <string name="media_item_media_desc">Media attachment %1$s</string>
+    <string name="media_item_link_desc">Link to %1$s</string>
+    <string name="media_item_file_desc">File %1$s</string>
+    <string name="media_unnamed_file">Attachment</string>
+
+    <!-- v3.4.0 FEATURE 14 - global OTP retention (auto-move to Trash) -->
+    <string name="otp_retention_card_title">OTP &amp; verification codes</string>
+    <string name="otp_retention_switch_title">Automatically delete OTP messages</string>
+    <string name="otp_retention_switch_subtitle">Old one-time codes are moved to Trash, never deleted right away - you can still restore them from Trash.</string>
+    <string name="otp_retention_after_label">Move OTP messages to Trash after</string>
+    <string name="otp_retention_preset_1h">1 hour</string>
+    <string name="otp_retention_preset_6h">6 hours</string>
+    <string name="otp_retention_preset_24h">24 hours</string>
+    <string name="otp_retention_preset_3d">3 days</string>
+    <string name="otp_retention_preset_7d">7 days</string>
+    <string name="otp_retention_preset_custom">Custom...</string>
+    <string name="otp_retention_custom_title">Custom retention</string>
+    <string name="otp_retention_custom_hint">Between 1 hour and 30 days</string>
+    <string name="otp_retention_custom_value_label">Keep for</string>
+    <string name="otp_retention_custom_unit_hours">Hours</string>
+    <string name="otp_retention_custom_unit_days">Days</string>
+    <string name="otp_retention_custom_save">Apply</string>
+    <string name="otp_retention_custom_invalid_number">Enter a number.</string>
+    <string name="otp_retention_custom_too_small">The shortest retention is 1 hour.</string>
+    <string name="otp_retention_custom_too_large">The longest retention is 30 days.</string>
+    <string name="otp_retention_apply_existing">Apply to existing OTP messages</string>
+    <string name="otp_retention_apply_existing_desc">Also schedule codes you already received. Nothing already in your inbox is touched unless you tap this.</string>
+    <string name="otp_retention_apply_existing_running">Checking your existing messages...</string>
+    <string name="otp_retention_apply_existing_done_fmt">Scheduled %1$d of %2$d OTP messages for cleanup</string>
+    <string name="otp_retention_apply_existing_partial_fmt">Scheduled %1$d so far - tap again to continue</string>
+    <string name="otp_retention_apply_existing_disabled">Turn on automatic deletion first</string>
+    <string name="otp_retention_status_none">No OTP messages are scheduled for cleanup.</string>
+    <string name="otp_retention_status_count_fmt">%1$d OTP messages scheduled for cleanup</string>
+    <string name="otp_retention_status_next_fmt">Next move to Trash: %1$s</string>
+    <string name="otp_retention_status_retention_hours_fmt">%1$d hours</string>
+    <string name="otp_retention_status_retention_days_fmt">%1$d days</string>
+    <string name="otp_retention_status_off">Automatic deletion is off. Nothing will be moved to Trash.</string>
+
+    <!-- Conversation Info (v3.4.0 FEATURE 5) -->
+    <string name="conv_info_title">Conversation info</string>
+    <string name="conv_info_section_notifications">Notifications</string>
+    <string name="conv_info_section_content">Content</string>
+    <string name="conv_info_section_category">Category</string>
+    <string name="conv_info_section_spam">Spam &amp; blocking</string>
+    <string name="conv_info_section_danger">Danger zone</string>
+    <string name="conv_info_mute">Mute</string>
+    <string name="conv_info_unmute">Unmute</string>
+    <string name="conv_info_mute_1h">Mute for 1 hour</string>
+    <string name="conv_info_mute_8h">Mute for 8 hours</string>
+    <string name="conv_info_mute_24h">Mute for 24 hours</string>
+    <string name="conv_info_mute_7d">Mute for 7 days</string>
+    <string name="conv_info_mute_forever">Mute forever</string>
+    <string name="conv_info_muted_until">Muted until %1$s</string>
+    <string name="conv_info_muted_forever">Muted</string>
+    <string name="conv_info_custom_notifications">Custom notifications</string>
+    <string name="conv_info_custom_default">Default</string>
+    <string name="conv_info_custom_active">Custom · set sound and vibration in system settings</string>
+    <string name="conv_info_media">Media, links &amp; files</string>
+    <string name="conv_info_media_count">%1$d items</string>
+    <string name="conv_info_starred">Starred messages</string>
+    <string name="conv_info_category">Category</string>
+    <string name="conv_info_category_automatic">Automatic</string>
+    <string name="conv_info_category_automatic_value">Automatic · %1$s</string>
+    <string name="conv_info_category_manual_value">Custom · %1$s</string>
+    <string name="conv_info_category_personal">Personal</string>
+    <string name="conv_info_category_otp">One-time codes</string>
+    <string name="conv_info_category_transaction">Transactions</string>
+    <string name="conv_info_category_promotion">Promotions</string>
+    <string name="conv_info_category_spam">Spam</string>
+    <string name="conv_info_category_unknown">Unknown</string>
+    <string name="conv_info_block">Block</string>
+    <string name="conv_info_unblock">Unblock</string>
+    <string name="conv_info_report_spam">Report spam</string>
+    <string name="conv_info_not_spam">Not spam</string>
+    <string name="conv_info_spam_reported">Reported as spam</string>
+    <string name="conv_info_move_to_trash">Move conversation to trash</string>
+    <string name="conv_info_move_to_trash_hint">You can restore it from Recently deleted for 30 days.</string>
+    <string name="conv_info_trash_confirm_title">Move to trash?</string>
+    <string name="conv_info_trash_confirm_body">This conversation will be moved to Recently deleted. You can restore it for 30 days.</string>
+    <string name="conv_info_message">Message</string>
+    <string name="conv_info_contact_failed">No contacts app available</string>
+    <string name="conv_info_loading">Loading conversation info…</string>
+    <string name="conv_info_error">Could not load conversation info</string>
+    <string name="conv_info_retry">Retry</string>
+
+    <!-- Starred messages (v3.4.0 FEATURE 7) -->
+    <string name="starred_title">Starred messages</string>
+    <string name="starred_empty">No starred messages</string>
+    <string name="starred_loading">Loading starred messages…</string>
+    <string name="starred_error">Could not load starred messages</string>
+    <string name="starred_retry">Retry</string>
+    <string name="starred_indicator_cd">Starred</string>
+    <string name="starred_unstar_cd">Remove star from “%1$s”</string>
+
+    <!-- v3.4.0 FEATURES 9 + 10 — multi-select and bulk actions (shared by the
+         Home conversation list and the in-conversation message list). -->
+    <string name="bulk_exit_selection">Exit selection</string>
+    <string name="bulk_selected_count_fmt">%1$d selected</string>
+    <string name="bulk_mark_read">Mark as read</string>
+    <string name="bulk_mark_unread">Mark as unread</string>
+    <string name="bulk_archive">Archive</string>
+    <string name="bulk_unarchive">Unarchive</string>
+    <string name="bulk_mute">Mute</string>
+    <string name="bulk_unmute">Unmute</string>
+    <string name="bulk_mute_1h">Mute for 1 hour</string>
+    <string name="bulk_mute_8h">Mute for 8 hours</string>
+    <string name="bulk_mute_1d">Mute for 24 hours</string>
+    <string name="bulk_mute_forever">Mute forever</string>
+    <string name="bulk_pin">Pin</string>
+    <string name="bulk_unpin">Unpin</string>
+    <string name="bulk_move_to_trash">Move to trash</string>
+    <string name="bulk_star">Star</string>
+    <string name="bulk_unstar">Remove star</string>
+    <string name="bulk_copy_text">Copy text</string>
+    <string name="bulk_updated_fmt">Updated %1$d</string>
+    <string name="bulk_updated_partial_fmt">Updated %1$d, %2$d could not be updated</string>
+    <string name="bulk_failed_fmt">Could not update %1$d</string>
+    <string name="bulk_moved_to_trash_fmt">Moved %1$d to trash</string>
+    <string name="bulk_moved_to_trash_partial_fmt">Moved %1$d to trash, %2$d could not be moved</string>
+    <string name="list_more_actions">More actions</string>
+
+    <!-- ══════════ TRASH / Recently Deleted (v3.4.0 FEATURE 8) ══════════ -->
+    <string name="trash_screen_title">Recently deleted</string>
+    <string name="trash_screen_hint">Conversations here are deleted permanently after 30 days.</string>
+    <string name="trash_menu_more">More options</string>
+    <string name="trash_empty_action">Empty trash</string>
+    <string name="trash_empty_title">Trash is empty</string>
+    <string name="trash_empty_subtitle">Conversations you delete stay here for 30 days, so you can restore them.</string>
+    <string name="trash_error_title">Couldn\'t load Trash</string>
+    <string name="trash_error_subtitle">Your deleted conversations are safe. Please try again.</string>
+    <string name="trash_unknown_contact">Unknown contact</string>
+    <string name="trash_deleted_on_fmt">Deleted %1$s</string>
+    <string name="trash_days_left_fmt">Permanently deleted in %1$d days</string>
+    <string name="trash_purge_pending">Will be permanently deleted shortly</string>
+    <string name="trash_delete_forever">Delete forever</string>
+    <string name="trash_delete_confirm_title">Delete permanently?</string>
+    <string name="trash_delete_confirm_body">This conversation with %1$s will be removed from this device permanently. This can\'t be undone.</string>
+    <string name="trash_empty_confirm_title">Empty trash?</string>
+    <string name="trash_empty_confirm_body">Every conversation in Trash will be removed from this device permanently. This can\'t be undone.</string>
+    <string name="trash_snackbar_moved">Moved to Trash</string>
+    <string name="trash_snackbar_move_failed">Couldn\'t move to Trash — nothing was deleted</string>
+    <string name="trash_snackbar_restored">Conversation restored</string>
+    <string name="trash_snackbar_restore_failed">Couldn\'t restore this conversation</string>
+    <string name="trash_snackbar_deleted_permanently">Deleted permanently</string>
+    <string name="trash_snackbar_delete_failed">Couldn\'t delete — nothing was removed</string>
+    <string name="trash_snackbar_emptied">Trash emptied</string>
+    <string name="trash_snackbar_emptied_partial">%1$d deleted, %2$d kept — please try again</string>
+    <string name="settings_trash_title">Recently deleted</string>
+    <string name="settings_trash_hint">Restore or permanently delete conversations</string>
 </resources>

@@ -60,6 +60,7 @@ class MessagesApp : Application() {
         // once at startup (throttled to 7 days) so the history is waiting in
         // the outbox when the user finally links a browser.
         maybeTriggerStartupCloudBackfill()
+        scheduleSmartCategoryBackfill()
         installDiagnostics()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
@@ -103,6 +104,31 @@ class MessagesApp : Application() {
                 .requestCloudBackfillForLinkedDevice("app-start")
         } catch (e: Throwable) {
             Log.w("SYNC_COORD", "startup cloud backfill schedule failed", e)
+        }
+    }
+
+    /**
+     * FEATURE 12 — Smart Categories history backfill.
+     *
+     * IDEMPOTENT and non-blocking: unique WorkManager work with KEEP policy, so
+     * every app start collapses into the already-pending sweep instead of
+     * stacking duplicates. The worker itself runs one bounded keyset batch per
+     * wake-up and persists its cursor, so nothing here touches the 360K-message
+     * history synchronously, and an interrupted sweep resumes exactly where it
+     * stopped.
+     */
+    private fun scheduleSmartCategoryBackfill() {
+        try {
+            com.autonomousone.messages.classification.ClassificationBackfillWorker
+                .enqueue(this)
+            Log.i(
+                "CATEGORY",
+                "smart-category backfill scheduled (bounded, checkpointed, resumable)"
+            )
+        } catch (e: Throwable) {
+            // Classification is best-effort: a scheduling failure must never
+            // stop the app from starting or from receiving messages.
+            Log.w("CATEGORY", "smart-category backfill could not be scheduled", e)
         }
     }
 

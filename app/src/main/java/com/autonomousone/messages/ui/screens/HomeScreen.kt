@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -58,6 +59,8 @@ import com.autonomousone.messages.repository.DraftRepository
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
+import com.autonomousone.messages.ui.home.CategoryFilter
+import com.autonomousone.messages.ui.home.CategoryFilterBar
 import com.autonomousone.messages.ui.home.ConversationFilter
 import com.autonomousone.messages.ui.home.ConversationList
 import com.autonomousone.messages.ui.home.ConversationListSkeleton
@@ -67,8 +70,10 @@ import com.autonomousone.messages.ui.home.HomeFab
 import com.autonomousone.messages.ui.home.HomeFilterBar
 import com.autonomousone.messages.ui.home.HomeRow
 import com.autonomousone.messages.ui.home.HomeSearch
+import com.autonomousone.messages.ui.home.HomeSelectionTopBar
 import com.autonomousone.messages.ui.home.SentTodayChip
 import com.autonomousone.messages.ui.home.SyncBanner
+import com.autonomousone.messages.ui.selection.formatBulkFeedback
 import com.autonomousone.messages.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 
@@ -114,6 +119,61 @@ fun HomeScreen(
 
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }
+    // FEATURE 12: null = every category (All). Owned here, filtered in the VM.
+    var selectedCategory by remember { mutableStateOf<CategoryFilter?>(null) }
+
+    // ── FEATURE 9/10: multi-select + bulk actions ─────────────────────────────
+    // The selection lives in the ViewModel, so a Room refresh cannot drop it;
+    // the screen only renders it and routes the actions. Leaving the screen
+    // clears it, so navigating into a conversation never returns to a stale
+    // selection.
+    val selectionActive = viewModel.selection.active
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearSelection() }
+    }
+    // BACK exits selection mode FIRST — before navigating up or clearing a filter.
+    BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
+
+    val bulkUpdatedFmt = stringResource(R.string.bulk_updated_fmt)
+    val bulkUpdatedPartialFmt = stringResource(R.string.bulk_updated_partial_fmt)
+    val bulkFailedFmt = stringResource(R.string.bulk_failed_fmt)
+    val bulkTrashFmt = stringResource(R.string.bulk_moved_to_trash_fmt)
+    val bulkTrashPartialFmt = stringResource(R.string.bulk_moved_to_trash_partial_fmt)
+    val bulkUndoLabel = stringResource(R.string.action_undo)
+
+    // ONE snackbar per completed bulk action. A partial result ALWAYS states how
+    // many items could not be updated — never a bare "done".
+    val bulkFeedback = viewModel.bulkFeedback
+    LaunchedEffect(bulkFeedback) {
+        val feedback = bulkFeedback ?: return@LaunchedEffect
+        viewModel.consumeBulkFeedback()
+        val isTrash = feedback.trashedThreadIds.isNotEmpty()
+        val message = if (isTrash) {
+            formatBulkFeedback(
+                successTemplate = bulkTrashFmt,
+                partialTemplate = bulkTrashPartialFmt,
+                failureTemplate = bulkFailedFmt,
+                succeeded = feedback.succeeded,
+                failed = feedback.failed
+            )
+        } else {
+            formatBulkFeedback(
+                successTemplate = bulkUpdatedFmt,
+                partialTemplate = bulkUpdatedPartialFmt,
+                failureTemplate = bulkFailedFmt,
+                succeeded = feedback.succeeded,
+                failed = feedback.failed
+            )
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = if (isTrash) bulkUndoLabel else null,
+            duration = SnackbarDuration.Long
+        )
+        if (isTrash && result == SnackbarResult.ActionPerformed) {
+            viewModel.undoBulkTrash()
+        }
+    }
 
     // v2.6.19: swipe no longer mutates anything on its own. It parks the
     // row here and Home asks for confirmation first — a thumb grazing
@@ -149,14 +209,21 @@ fun HomeScreen(
     // screen saves a draft, no refresh signal needed.
     val draftMap by viewModel.drafts.collectAsState()
 
-    // The base list to filter from depends on the selected tab.
-    val sourceList by remember(selectedFilter) {
+    // The base list to filter from depends on the selected tab AND, additively,
+    // on the Smart Categories chip (null = every category).
+    val sourceList by remember(selectedFilter, selectedCategory) {
         derivedStateOf {
-            if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
+            val tabList =
+                if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
+            // The category narrows the tab list through the indexed thread-id set
+            // the ViewModel already resolved; null means "no category selected".
+            viewModel.smartCategoryThreadIds(selectedCategory)
+                ?.let { ids -> tabList.filter { it.threadId in ids } }
+                ?: tabList
         }
     }
 
-    val filteredList by remember(search, selectedFilter, smsList, archivedList) {
+    val filteredList by remember(search, selectedFilter, selectedCategory, smsList, archivedList) {
         derivedStateOf {
             sourceList.filter { sms ->
                 val searchMatch = HomeSearch.matches(sms, search, viewModel.contactNames)
@@ -185,31 +252,56 @@ fun HomeScreen(
             }
         },
         topBar = {
-            MainTopBar(
-                title = stringResource(R.string.app_name),
-                titleBadge = {
-                    // Real per-SEGMENT today counter (3-part send = 3), fed by
-                    // the send_segments ledger via Room Flow — bumps live on
-                    // each RESULT_OK callback without a Home reload.
-                    SentTodayChip(viewModel.sentSegmentsToday)
-                },
-                onProfileClick = {},
-                onSearchClick = null,
-                onMarkAllReadClick = { viewModel.markAllAsRead() },
-                onGatewayClick = { navController.navigate(Screen.Gateway.route) },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) }
-            )
+            if (selectionActive) {
+                // FEATURE 9/10: `X   3 selected   [actions]`. Only the actions
+                // that are valid for this selection and this tab are rendered.
+                HomeSelectionTopBar(
+                    selectedCount = viewModel.selection.count,
+                    busy = viewModel.bulkInProgress,
+                    archivedView = selectedFilter == ConversationFilter.Archived,
+                    allSelectedPinned = viewModel.allSelectedPinned(),
+                    allSelectedMuted = viewModel.allSelectedMuted(),
+                    onClose = { viewModel.clearSelection() },
+                    onMarkRead = { viewModel.bulkMarkRead() },
+                    onMarkUnread = { viewModel.bulkMarkUnread() },
+                    onArchive = { viewModel.bulkArchive() },
+                    onUnarchive = { viewModel.bulkUnarchive() },
+                    onMute = { until -> viewModel.bulkMute(until) },
+                    onUnmute = { viewModel.bulkUnmute() },
+                    onPin = { viewModel.bulkPin() },
+                    onUnpin = { viewModel.bulkUnpin() },
+                    onTrash = { viewModel.bulkMoveToTrash() }
+                )
+            } else {
+                MainTopBar(
+                    title = stringResource(R.string.app_name),
+                    titleBadge = {
+                        // Real per-SEGMENT today counter (3-part send = 3), fed by
+                        // the send_segments ledger via Room Flow — bumps live on
+                        // each RESULT_OK callback without a Home reload.
+                        SentTodayChip(viewModel.sentSegmentsToday)
+                    },
+                    onProfileClick = {},
+                    onSearchClick = null,
+                    onMarkAllReadClick = { viewModel.markAllAsRead() },
+                    onGatewayClick = { navController.navigate(Screen.Gateway.route) },
+                    onSettingsClick = { navController.navigate(Screen.Settings.route) }
+                )
+            }
         },
         floatingActionButton = {
-            HomeFab(
-                expanded = isExpanded,
-                onClick = {
-                    // v2.6.12: baseRoute, NOT route — the route pattern carries
-                    // literal "{forward}/{draft}" placeholders which the nav
-                    // library then delivered AS the argument value.
-                    navController.navigate(Screen.NewConversation.baseRoute)
-                }
-            )
+            // A compose FAB must never float over a selection action bar.
+            if (!selectionActive) {
+                HomeFab(
+                    expanded = isExpanded,
+                    onClick = {
+                        // v2.6.12: baseRoute, NOT route — the route pattern carries
+                        // literal "{forward}/{draft}" placeholders which the nav
+                        // library then delivered AS the argument value.
+                        navController.navigate(Screen.NewConversation.baseRoute)
+                    }
+                )
+            }
         }
     ) { padding ->
         if (!hasPermission) {
@@ -251,6 +343,15 @@ fun HomeScreen(
             )
 
             HomeFilterBar(selected = selectedFilter, onSelect = { selectedFilter = it })
+
+            // FEATURE 12 — Smart Categories (additive): a second, independently
+            // selected axis under the All/Unread/Archived tabs. Chips appear only
+            // for categories that actually contain conversations.
+            CategoryFilterBar(
+                selected = selectedCategory,
+                counts = viewModel.smartCategoryCounts(),
+                onSelect = { selectedCategory = it }
+            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -314,6 +415,7 @@ fun HomeScreen(
                         isPinned = sms.threadId in viewModel.pinnedIds,
                         isArchived = isInArchivedView,
                         showYouMarker = sms.type == 2,
+                        selected = sms.threadId in viewModel.selection.keys,
                     )
                 }
 
@@ -403,6 +505,9 @@ fun HomeScreen(
                     },
                     onRowArchive = { row -> pendingArchive = row.sms },
                     onRowDelete = { row -> pendingDelete = row.sms },
+                    selectionMode = selectionActive,
+                    onRowLongPress = { row -> viewModel.enterSelection(row.sms.threadId) },
+                    onRowToggleSelect = { row -> viewModel.toggleSelection(row.sms.threadId) },
                     modifier = Modifier.weight(1f)
                 )
 
@@ -450,7 +555,15 @@ fun HomeScreen(
                 }
 
                 pendingDelete?.let { target ->
-                    val confirmDeletedMsg = stringResource(R.string.home_snackbar_deleted)
+                    // TRASH (FEATURE 8): the row is moved to Recently Deleted, not
+                    // destroyed. The snackbar says exactly that, and its UNDO is a
+                    // local tombstone delete (no provider re-insert). The message is
+                    // only shown AFTER the durable tombstone committed, so
+                    // "Moved to Trash" is never a claim about work that failed.
+                    val movedMsg = stringResource(R.string.trash_snackbar_moved)
+                    val failedMsg = stringResource(R.string.trash_snackbar_move_failed)
+                    val restoredMsg = stringResource(R.string.trash_snackbar_restored)
+                    val restoreFailedMsg = stringResource(R.string.trash_snackbar_restore_failed)
                     val confirmUndo = stringResource(R.string.action_undo)
                     HomeConfirmDialog(
                         title = stringResource(R.string.home_confirm_delete_title),
@@ -460,14 +573,26 @@ fun HomeScreen(
                         destructive = true,
                         onConfirm = {
                             pendingDelete = null
-                            viewModel.deleteConversation(target)
                             scope.launch {
+                                if (!viewModel.deleteConversation(target)) {
+                                    snackbarHostState.showSnackbar(
+                                        message = failedMsg,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                    return@launch
+                                }
                                 val r = snackbarHostState.showSnackbar(
-                                    message = confirmDeletedMsg,
+                                    message = movedMsg,
                                     actionLabel = confirmUndo,
-                                    duration = SnackbarDuration.Long)
-                                if (r == SnackbarResult.ActionPerformed)
-                                    viewModel.undoDelete(target)
+                                    duration = SnackbarDuration.Long
+                                )
+                                if (r == SnackbarResult.ActionPerformed) {
+                                    val restored = viewModel.undoDelete(target)
+                                    snackbarHostState.showSnackbar(
+                                        message = if (restored) restoredMsg else restoreFailedMsg,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
                             }
                         },
                         onDismiss = { pendingDelete = null }

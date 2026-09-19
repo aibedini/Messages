@@ -23,15 +23,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
@@ -83,9 +86,28 @@ fun SmsItem(
     showYouMarker: Boolean = false,
     /** When true, the left swipe shows "Unarchive" instead of "Archive". */
     isArchived: Boolean = false,
+    /**
+     * FEATURE 9: multi-select is active for this list. Taps toggle selection and
+     * the row paints a checkbox; a long-press still opens the row menu so Pin /
+     * Block / Archive / Delete stay reachable while selecting.
+     */
+    selectionMode: Boolean = false,
+    /** This row is part of the current selection. */
+    selected: Boolean = false,
+    /**
+     * Long-press entry point for selection mode. When it is set, a long-press
+     * outside selection mode SELECTS the row instead of opening the menu (the
+     * menu moves to the trailing overflow button, so nothing becomes
+     * unreachable).
+     */
+    onLongPress: (() -> Unit)? = null,
+    /** Tap while [selectionMode] is on. */
+    onToggleSelect: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+
+    val hasRowMenu = onPin != null || onBlock != null || onArchive != null || onDelete != null
 
     val dismissState = rememberSwipeToDismissBoxState(
         // v2.6.19: accidental side-drags while scrolling vertically used
@@ -145,8 +167,10 @@ fun SmsItem(
 
     SwipeToDismissBox(
         state = dismissState,
-        enableDismissFromStartToEnd = onArchive != null,
-        enableDismissFromEndToStart = onDelete != null,
+        // FEATURE 9: swipes are disabled while selecting — a horizontal drag
+        // during multi-select must never fire archive/delete on one row.
+        enableDismissFromStartToEnd = onArchive != null && !selectionMode,
+        enableDismissFromEndToStart = onDelete != null && !selectionMode,
         backgroundContent = {
             Box(
                 modifier = Modifier
@@ -209,15 +233,22 @@ fun SmsItem(
                 modifier = modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = onClick,
-                        onLongClick = if (onPin != null || onBlock != null) {
-                            { menuOpen = true }
-                        } else null
+                        onClick = {
+                            if (selectionMode && onToggleSelect != null) onToggleSelect() else onClick()
+                        },
+                        onLongClick = when {
+                            // FEATURE 9: long-press is the selection entry gesture.
+                            !selectionMode && onLongPress != null -> onLongPress
+                            // In selection mode (and for rows without a selection
+                            // entry) the row menu keeps every legacy action reachable.
+                            hasRowMenu -> ({ menuOpen = true })
+                            else -> null
+                        }
                     ),
-                color = if (sms.unread) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
-                } else {
-                    MaterialTheme.colorScheme.background
+                color = when {
+                    selected -> MaterialTheme.colorScheme.secondaryContainer
+                    sms.unread -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+                    else -> MaterialTheme.colorScheme.background
                 }
             ) {
                 Column(
@@ -229,6 +260,15 @@ fun SmsItem(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (selectionMode) {
+                            // Display-only: the whole row is the touch target.
+                            Checkbox(
+                                checked = selected,
+                                onCheckedChange = null,
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+
                         Avatar(
                             name = displayName,
                             size = AvatarSize.Medium
@@ -336,6 +376,22 @@ fun SmsItem(
                                         .size(8.dp)
                                         .clip(CircleShape)
                                         .background(UnreadBadgeColor)
+                                )
+                            }
+                        }
+
+                        // FEATURE 9: the row menu's permanent affordance. With
+                        // long-press taken by selection mode, this is what keeps
+                        // Pin / Block / Archive / Delete reachable on Home.
+                        if (hasRowMenu) {
+                            IconButton(
+                                onClick = { menuOpen = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.list_more_actions),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
@@ -12,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.data.ChangeRouter
 import com.autonomousone.messages.data.ConversationEntity
 import com.autonomousone.messages.data.DailyWindowProvider
+import com.autonomousone.messages.data.MessageCategory
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.ReconcileRequest
 import com.autonomousone.messages.data.TelephonySyncCoordinator
@@ -20,13 +22,20 @@ import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
 import com.autonomousone.messages.repository.ArchiveRepository
 import com.autonomousone.messages.repository.BlocklistRepository
+import com.autonomousone.messages.repository.BulkActionRepository
+import com.autonomousone.messages.repository.BulkFeedback
+import com.autonomousone.messages.repository.BulkResult
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.ConversationCache
+import com.autonomousone.messages.repository.ConversationPreferenceRepository
 import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadSnippet
+import com.autonomousone.messages.ui.home.CategoryFilter
+import com.autonomousone.messages.ui.home.HomeCategoryFilter
+import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.diagnostics.PerfTelemetry
 import com.autonomousone.messages.diagnostics.TraceSections
@@ -36,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,6 +91,12 @@ class HomeViewModel(
     private val archiveRepository = ArchiveRepository(application)
     private val pinRepository = PinRepository(application)
     private val blocklistRepository = BlocklistRepository(application)
+
+    /** FEATURE 10: the single batched entry point for every bulk action. */
+    private val bulkActions = BulkActionRepository.get(application)
+
+    /** FEATURE 9/10: the `manualUnread` bookmark store (never Telephony READ). */
+    private val preferenceRepository = ConversationPreferenceRepository(application)
 
     /** All conversations that are NOT archived — shown in "All" and "Unread" tabs. */
     val conversations = mutableStateListOf<Sms>()
@@ -203,8 +219,14 @@ class HomeViewModel(
     @Volatile
     private var roomUnavailable = false
 
-    /** Holds a pending delete job per threadId so it can be cancelled on Undo. */
-    private val pendingDeletes = mutableMapOf<Long, Job>()
+    /**
+     * TRASH (FEATURE 8): the durable tombstone store. Lazy because constructing it
+     * opens Room (`MessagesDatabase.get`), and this ViewModel is built on the main
+     * thread — every use below is already inside an IO coroutine.
+     */
+    private val trashRepository by lazy {
+        com.autonomousone.messages.repository.TrashRepository.get(getApplication())
+    }
 
     /** Delays the spinner so quick reloads never flash the progress bar. */
     private var loadingShowJob: Job? = null
@@ -219,6 +241,152 @@ class HomeViewModel(
         observeOutgoingSent()
         observeReloadRequests()
         observeSentSegmentsToday()
+        observeSmartCategories()
+        observeConversationUserState()
+        observeTrashState()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TRASH (FEATURE 8) — the durable replacement for the 4-second undo
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Keeps the ACTIVE-UI conversation projection in agreement with the durable
+     * tombstones, and keeps the ONE purge worker armed.
+     *
+     * WHY AN OBSERVER, NOT A CALL SITE: `trashed_threads` has several legitimate
+     * writers (this screen's delete, the multi-select bulk trash, and a future
+     * OTP-retention move), and a rebuild call in each of them would drift — the
+     * projector would eventually miss one and a trashed conversation would
+     * reappear on Home. Room invalidation is the ONE signal that covers all of
+     * them.
+     *
+     * IT ALSO HEALS PROCESS DEATH: the first emission of every process rebuilds
+     * every trashed thread's projection, so a crash between the tombstone write
+     * and the projection write cannot leave the deleted conversation on Home.
+     * Later emissions only touch threads whose tombstone actually CHANGED (or
+     * disappeared on Restore), so the work is proportional to the user's action,
+     * never to the size of Trash.
+     *
+     * `rebuildThreadProjectionFromMirror` is idempotent and reads no provider: it
+     * re-derives the projection from the newest ACTIVE row of the mirror Room
+     * still holds.
+     */
+    private fun observeTrashState() {
+        viewModelScope.launch {
+            val known = HashMap<Long, com.autonomousone.messages.data.TrashedThreadEntity>()
+            trashRepository.observeAll()
+                .catch { error ->
+                    DiagnosticLog.event("TRASH", "trash-observer-failed", error)
+                }
+                .collect { tombstones ->
+                    val current = tombstones.associateBy { it.threadId }
+                    val changed = (current.keys + known.keys).filter { current[it] != known[it] }
+                    known.clear()
+                    known.putAll(current)
+                    withContext(Dispatchers.IO) {
+                        if (changed.isNotEmpty()) {
+                            changed.forEach {
+                                runCatching { coordinator.rebuildThreadProjectionFromMirror(it) }
+                                    .onFailure { error ->
+                                        DiagnosticLog.event("TRASH", "projection-sync-failed thread=$it", error)
+                                    }
+                            }
+                            DiagnosticLog.event("TRASH", "projection-synced count=${changed.size}")
+                        }
+                        // Cheap safety net (one indexed MIN read): a deadline that
+                        // survived process death is re-armed even if the app is
+                        // killed right after a trash action.
+                        runCatching {
+                            com.autonomousone.messages.trash.TrashPurgeScheduler
+                                .scheduleNext(getApplication())
+                        }
+                    }
+                }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FEATURE 12 — Smart Categories (additive; no existing Home path changes)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Per-thread EFFECTIVE category, kept live from the two conversation-sized
+     * tables ([ConversationClassificationDao.observeCategories] = the automatic
+     * classifier, [ConversationPreferenceDao.observeCategoryOverrides] = the user
+     * override). Both are O(conversations); neither reads a message.
+     *
+     * Public READ-ONLY so Compose creates a proper snapshot subscription: a read
+     * of the state map during composition is what recomposes Home when a
+     * classification or an override lands.
+     */
+    val effectiveCategories:
+        androidx.compose.runtime.snapshots.SnapshotStateMap<Long, MessageCategory> =
+        androidx.compose.runtime.mutableStateMapOf()
+
+    /**
+     * Thread ids per chip, precomputed ONCE per projection update.
+     *
+     * Precomputing keeps the per-recomposition cost of the chip row at a map
+     * read: selecting a chip triggers no query, no scan and no set rebuild.
+     */
+    private val categoryThreadIds =
+        androidx.compose.runtime.mutableStateMapOf<CategoryFilter, Set<Long>>()
+
+    /** Live conversation count per chip; absent = the category has no data. */
+    private val categoryCounts =
+        androidx.compose.runtime.mutableStateMapOf<CategoryFilter, Int>()
+
+    private fun observeSmartCategories() {
+        viewModelScope.launch {
+            val db = MessagesDatabase.get(getApplication())
+            val automatic = db.conversationClassificationDao().observeCategories()
+            val overrides = db.conversationPreferenceDao().observeCategoryOverrides()
+            val userSpam = db.conversationPreferenceDao().observeSpamThreadIds()
+            combine(automatic, overrides, userSpam) { a, o, s ->
+                HomeCategoryFilter.effectiveCategories(a, o, s.toSet())
+            }.collect { rows ->
+                // Precompute off the composition path.
+                val ids = LinkedHashMap<CategoryFilter, MutableSet<Long>>()
+                for (row in rows) {
+                    CategoryFilter.displayOrder
+                        .firstOrNull { it.category == row.category }
+                        ?.let { chips -> ids.getOrPut(chips) { linkedSetOf() }.add(row.threadId) }
+                }
+                withContext(Dispatchers.Main) {
+                    effectiveCategories.clear()
+                    rows.forEach { effectiveCategories[it.threadId] = it.category }
+                    categoryThreadIds.clear()
+                    ids.forEach { (chip, threadIds) -> categoryThreadIds[chip] = threadIds }
+                    categoryCounts.clear()
+                    ids.forEach { (chip, threadIds) -> categoryCounts[chip] = threadIds.size }
+                }
+            }
+        }
+    }
+
+    /**
+     * The thread ids a category chip narrows to, or null for "All".
+     *
+     * A precomputed set read — selecting a chip issues NO query and NO message
+     * scan, and the filtering the UI then does is a set lookup over the
+     * already-loaded conversations.
+     */
+    fun smartCategoryThreadIds(selected: CategoryFilter?): Set<Long>? {
+        if (selected == null) return null
+        return categoryThreadIds[selected] ?: emptySet()
+    }
+
+    /** Live conversation counts per chip; a category with no data is absent. */
+    fun smartCategoryCounts(): Map<CategoryFilter, Int> = categoryCounts.toMap()
+
+    /**
+     * The durable conversation rows narrowed to ONE category, or null when the
+     * chip row is showing "All" (no category selected).
+     */
+    fun conversationsForCategory(selected: CategoryFilter?): List<Sms>? {
+        val threadIds = smartCategoryThreadIds(selected) ?: return null
+        return roomConversationsState.filter { it.threadId in threadIds }
     }
 
     /**
@@ -290,8 +458,34 @@ class HomeViewModel(
         )
         // The blocklist is applied AFTER the merge so an optimistic override can
         // never re-introduce a blocked thread.
-        applySwap(conversations, filterBlocked(rendered.main, blocked))
-        applySwap(archivedConversations, filterBlocked(rendered.archived, blocked))
+        applySwap(conversations, filterBlocked(rendered.main, blocked).withManualUnread())
+        applySwap(archivedConversations, filterBlocked(rendered.archived, blocked).withManualUnread())
+        // FEATURE 9: the ONE explicit place a durable list change reconciles the
+        // multi-selection. A refresh that still contains the selected rows leaves
+        // the selection untouched — nothing here can silently reset it.
+        if (selection.active) {
+            selection = selection.afterListRefresh(visibleThreadIds())
+        }
+    }
+
+    /**
+     * FEATURE 9/10: Home unread = real unread OR the user's `manualUnread`
+     * bookmark. Applied at render time (never written into the durable row), so
+     * the bookmark and the provider's READ column can never fight.
+     */
+    private fun List<Sms>.withManualUnread(): List<Sms> {
+        if (manuallyUnreadIds.isEmpty()) return this
+        return map { row ->
+            if (!row.unread && row.threadId in manuallyUnreadIds) row.copy(unread = true) else row
+        }
+    }
+
+    /** Every thread id Home is currently rendering (both tabs). */
+    private fun visibleThreadIds(): Set<Long> {
+        val ids = LinkedHashSet<Long>(conversations.size + archivedConversations.size)
+        conversations.forEach { ids.add(it.threadId) }
+        archivedConversations.forEach { ids.add(it.threadId) }
+        return ids
     }
 
     /** Applies the local blocklist without ever mutating the durable rows. */
@@ -605,54 +799,121 @@ class HomeViewModel(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Delete (with undo)
+    // Delete → Trash (with undo)
     // ─────────────────────────────────────────────────────────────────────────
 
-    fun deleteConversation(sms: Sms, delayMs: Long = 4_000L) {
-        // Immediate removal is an OVERLAY, not a list mutation: the durable row
-        // stays until the actual delete commits, and Room remains the truth.
-        overlay.recordRemoval(sms.threadId)
+    /**
+     * Moves a conversation to TRASH. This is THE one delete flow.
+     *
+     * The old implementation hid the row optimistically and, 4 seconds later,
+     * PERMANENTLY deleted the thread from the provider and from Room unless the
+     * user pressed Undo in time. Two defects followed from that shape and both are
+     * gone here:
+     *
+     *  - A "delete" destroyed data the user never confirmed twice, and any missed
+     *    snackbar (process death, rotation, another screen) made it unrecoverable.
+     *  - It had no durable state: after a restart nothing remembered the delete,
+     *    and a provider reconcile could resurrect the thread.
+     *
+     * The replacement is a DURABLE TOMBSTONE: the provider rows are left alone, the
+     * cutoff is the newest row at trash time, and the projection rolls back to the
+     * newest ACTIVE message (or disappears). Undo is then a local tombstone delete
+     * — instant, with no provider re-insert — and the 30-day retention in
+     * [TrashRepository] is what eventually makes the deletion permanent.
+     *
+     * @return true when the durable tombstone was written. On false nothing was
+     *         trashed and the row is un-hidden again, so the caller must not claim
+     *         success — it tells the user the delete failed instead.
+     */
+    suspend fun deleteConversation(sms: Sms): Boolean {
+        val threadId = sms.threadId
+        if (threadId <= 0L) return false
+
+        // 1. Immediate hide. This is an OVERLAY on the durable list, not a list
+        //    mutation: the row disappears in the same frame as the tap, while Room
+        //    remains the authority. It retires on its own once the durable
+        //    projection no longer contains the thread.
+        overlay.recordRemoval(threadId)
         renderConversations()
 
-        pendingDeletes[sms.threadId]?.cancel()
-
-        val job = viewModelScope.launch(Dispatchers.IO) {
-            delay(delayMs)
-            var durableDeleteCommitted = false
-            try {
-                repository.deleteThread(threadId = sms.threadId, phone = sms.sender)
-                durableDeleteCommitted = kotlin.runCatching {
-                    coordinator.deleteThreadFromShadow(sms.threadId)
-                }.isSuccess
-            } finally {
-                synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
-                if (!durableDeleteCommitted) {
-                    // The delete did not reach the durable projection: stop
-                    // hiding the row so Room stays the authoritative owner
-                    // instead of an overlay living forever.
-                    withContext(Dispatchers.Main) {
-                        overlay.clearOverride(sms.threadId)
-                        renderConversations()
-                    }
-                }
-                // On success the removal overlay is retired by the Room emission
-                // the shadow delete invalidates: reconcile sees the thread gone.
+        // 2. Durable tombstone, off-main. NO provider write happens here: that is
+        //    exactly what keeps Undo free and immediate.
+        return withContext(Dispatchers.IO) {
+            val trashed = runCatching {
+                val newest = MessagesDatabase.get(getApplication())
+                    .messageDao()
+                    .newestForThread(threadId)
+                trashRepository.moveToTrash(
+                    threadId = threadId,
+                    newestActive = newest,
+                    now = System.currentTimeMillis()
+                )
+                // 3. The Home projection IS the ACTIVE UI, so it must now roll
+                //    back to the newest ACTIVE message. The tombstone Flow
+                //    observer does this too (and repairs a crash window); doing it
+                //    here as well makes the rollout immediate for the tap.
+                coordinator.rebuildThreadProjectionFromMirror(threadId)
+                true
+            }.getOrElse { error ->
+                DiagnosticLog.event("TRASH", "move-failed thread=$threadId", error)
+                false
             }
+
+            if (trashed) {
+                // Arm the ONE purge worker for the new deadline.
+                runCatching {
+                    com.autonomousone.messages.trash.TrashPurgeScheduler
+                        .scheduleNext(getApplication())
+                }
+            } else {
+                // Nothing durable was written, so Room stays the authoritative
+                // owner: stop hiding the row instead of letting an overlay live
+                // forever.
+                withContext(Dispatchers.Main) {
+                    overlay.clearOverride(threadId)
+                    renderConversations()
+                }
+            }
+            trashed
         }
-        pendingDeletes[sms.threadId] = job
     }
 
-    fun undoDelete(sms: Sms) {
-        val job = synchronized(pendingDeletes) { pendingDeletes[sms.threadId] }
-        if (job == null || !job.isActive) {
-            loadSms()
-            return
+    /**
+     * Undo of [deleteConversation]: clears the durable tombstone.
+     *
+     * The provider rows were never touched, so nothing is re-inserted — clearing
+     * the tombstone is enough, and the SAME projection rebuild re-derives the
+     * pre-trash snippet, date and unread count from the mirror.
+     *
+     * @return true when the tombstone was cleared (the conversation is back).
+     */
+    suspend fun undoDelete(sms: Sms): Boolean {
+        val threadId = sms.threadId
+        if (threadId <= 0L) return false
+        return withContext(Dispatchers.IO) {
+            val restored = runCatching {
+                trashRepository.restore(threadId)
+                coordinator.rebuildThreadProjectionFromMirror(threadId)
+                true
+            }.getOrElse { error ->
+                DiagnosticLog.event("TRASH", "restore-failed thread=$threadId", error)
+                false
+            }
+            // The removal overlay must go even on failure: while it is set it hides
+            // the thread forever (a removal is "satisfied" only by an absent Room
+            // row, and Room intentionally keeps the rows in Trash).
+            withContext(Dispatchers.Main) {
+                overlay.clearRemoval(threadId)
+                renderConversations()
+            }
+            runCatching {
+                com.autonomousone.messages.trash.TrashPurgeScheduler
+                    .scheduleNext(getApplication())
+            }
+            restored
         }
-        job.cancel()
-        synchronized(pendingDeletes) { pendingDeletes.remove(sms.threadId) }
-        overlay.clearRemoval(sms.threadId)
-        renderConversations()
     }
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // Archive / Unarchive
@@ -903,8 +1164,211 @@ class HomeViewModel(
         }?.threadId ?: 0L
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // FEATURE 9 — multi-select (additive; owns no durable state)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Home's selection, keyed by conversation `threadId` (never a message id).
+     *
+     * Held HERE, not derived from the rendered list, so a Room refresh cannot
+     * drop it; [renderConversations] reconciles it explicitly.
+     */
+    var selection by mutableStateOf(SelectionState.idle<Long>())
+        private set
+
+    /** True while a bulk action is in flight (progress indicator + disabled actions). */
+    var bulkInProgress by mutableStateOf(false)
+        private set
+
+    /** One-shot bulk outcome for the screen's snackbar. */
+    var bulkFeedback by mutableStateOf<BulkFeedback?>(null)
+        private set
+
+    /** Threads the last bulk Trash moved, so the snackbar can offer Undo. */
+    private var lastBulkTrashedIds: List<Long> = emptyList()
+
+    /** Threads bookmarked unread (`manualUnread`), live from Room. */
+    private val manuallyUnreadIds = mutableStateSetOf<Long>()
+
+    /** Threads muted RIGHT NOW; drives the Mute/Unmute toggle. */
+    private val mutedIds = mutableStateSetOf<Long>()
+
+    /** Called by the screen once the snackbar for [bulkFeedback] was shown. */
+    fun consumeBulkFeedback() {
+        bulkFeedback = null
+    }
+
+    /** Long-press entry point. */
+    fun enterSelection(threadId: Long) {
+        if (threadId <= 0L) return
+        selection = selection.start(threadId)
+    }
+
+    fun toggleSelection(threadId: Long) {
+        if (threadId <= 0L) return
+        selection = selection.toggle(threadId)
+    }
+
+    /** X in the selection top bar, BACK, or leaving the screen. */
+    fun clearSelection() {
+        if (selection.active) selection = selection.clear()
+    }
+
+    /** True when every selected conversation is pinned (drives Pin/Unpin). */
+    fun allSelectedPinned(): Boolean =
+        selection.keys.isNotEmpty() && selection.keys.all { it in pinnedIds }
+
+    /** True when every selected conversation is currently muted. */
+    fun allSelectedMuted(): Boolean =
+        selection.keys.isNotEmpty() && selection.keys.all { it in mutedIds }
+
+    fun bulkMarkRead() = runBulkAction(
+        action = { bulkActions.markRead(it) },
+        onApplied = { applied ->
+            applied.forEach { manuallyUnreadIds.remove(it) }
+            renderConversations()
+        }
+    )
+
+    fun bulkMarkUnread() = runBulkAction(
+        action = { bulkActions.markUnread(it) },
+        onApplied = { applied ->
+            applied.forEach { manuallyUnreadIds.add(it) }
+            renderConversations()
+        }
+    )
+
+    fun bulkArchive() = runBulkAction(
+        action = { bulkActions.archive(it) },
+        onApplied = { applied ->
+            archivedIds.addAll(applied)
+            renderConversations()
+        }
+    )
+
+    fun bulkUnarchive() = runBulkAction(
+        action = { bulkActions.unarchive(it) },
+        onApplied = { applied ->
+            archivedIds.removeAll(applied)
+            renderConversations()
+        }
+    )
+
+    fun bulkMute(until: Long) = runBulkAction(
+        action = { bulkActions.mute(it, until) },
+        onApplied = { applied -> mutedIds.addAll(applied) }
+    )
+
+    fun bulkUnmute() = runBulkAction(
+        action = { bulkActions.unmute(it) },
+        onApplied = { applied -> mutedIds.removeAll(applied) }
+    )
+
+    fun bulkPin() = runBulkAction(
+        action = { bulkActions.pin(it, pinned = true) },
+        onApplied = { applied ->
+            pinnedIds.addAll(applied)
+            renderConversations()
+        }
+    )
+
+    fun bulkUnpin() = runBulkAction(
+        action = { bulkActions.pin(it, pinned = false) },
+        onApplied = { applied ->
+            pinnedIds.removeAll(applied)
+            renderConversations()
+        }
+    )
+
+    /**
+     * Move the selection to Trash. Durable tombstones are written by
+     * [BulkActionRepository]; the removal is ALSO applied to the optimistic
+     * overlay so the rows disappear immediately, and the applied ids are kept so
+     * the snackbar can offer Undo.
+     */
+    fun bulkMoveToTrash() = runBulkAction(
+        action = { bulkActions.moveToTrash(it) },
+        onApplied = { applied ->
+            lastBulkTrashedIds = applied.toList()
+            applied.forEach { overlay.recordRemoval(it) }
+            renderConversations()
+        }
+    )
+
+    /** Undo of [bulkMoveToTrash]: clears the tombstones (provider rows untouched). */
+    fun undoBulkTrash() {
+        val ids = lastBulkTrashedIds
+        if (ids.isEmpty()) return
+        lastBulkTrashedIds = emptyList()
+        viewModelScope.launch {
+            runCatching { bulkActions.restoreFromTrash(ids.toSet()) }
+            ids.forEach { overlay.clearRemoval(it) }
+            renderConversations()
+        }
+    }
+
+    /**
+     * One bulk action, one coroutine.
+     *
+     * Selection exits as soon as the action could apply to anything; on a TOTAL
+     * failure the selection is KEPT so the user can retry instead of losing the
+     * work they just marked. An empty selection is a quiet no-op — no coroutine,
+     * no snackbar, no progress indicator.
+     */
+    private fun runBulkAction(
+        action: suspend (Set<Long>) -> BulkResult,
+        onApplied: (Set<Long>) -> Unit = {}
+    ) {
+        val ids = selection.keys
+        if (ids.isEmpty() || bulkInProgress) return
+        viewModelScope.launch {
+            bulkInProgress = true
+            lastBulkTrashedIds = emptyList()
+            try {
+                val result = action(ids)
+                val applied = ids - result.failedThreadIds()
+                if (applied.isNotEmpty()) onApplied(applied)
+                bulkFeedback = BulkFeedback.from(
+                    result = result,
+                    trashedThreadIds = lastBulkTrashedIds
+                )
+                if (!result.isCompleteFailure) selection = selection.clear()
+            } finally {
+                bulkInProgress = false
+            }
+        }
+    }
+
+    /**
+     * FEATURE 9/10: live `manualUnread` + mute state so the Home badge and the
+     * Mute/Unmute toggle reflect the durable bookmark without a reload.
+     */
+    private fun observeConversationUserState() {
+        viewModelScope.launch {
+            preferenceRepository.observeManuallyUnreadThreadIds().collect { ids ->
+                withContext(Dispatchers.Main) {
+                    manuallyUnreadIds.clear()
+                    manuallyUnreadIds.addAll(ids)
+                    renderConversations()
+                }
+            }
+        }
+        viewModelScope.launch {
+            preferenceRepository.observeMutedThreadIds(System.currentTimeMillis()).collect { ids ->
+                withContext(Dispatchers.Main) {
+                    mutedIds.clear()
+                    mutedIds.addAll(ids)
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
-        pendingDeletes.values.forEach { it.cancel() }
+        // TRASH changed this from "cancel the 4-second pending permanent delete" to
+        // "nothing to cancel": the trash state is durable Room data plus a
+        // WorkManager request, so leaving the screen (or dying) can no longer
+        // destroy or resurrect anything.
         reloadRequests.close()
         repository.unregisterObserver(observer)
         super.onCleared()

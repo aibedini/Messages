@@ -32,6 +32,22 @@ class BlocklistRepository(private val context: Context) {
     }
 
     /**
+     * Pre-write provenance probe for the spam workflow (v3.4.0).
+     *
+     * `isBlocked` folds country-code prefixes through
+     * [ContactRepository.sameConversation], which is the right question for
+     * "should this be hidden?". The spam report asks a narrower question — "was
+     * THIS normalized address already on the user's list?" — because it stores a
+     * durable boolean claiming the block as its own. Reusing the fuzzy matcher
+     * there would let a report claim a DIFFERENT stored number as its own block
+     * and then remove it on Undo, so this probe is exact.
+     */
+    fun isBlockedNorm(normalizedAddress: String): Boolean {
+        if (normalizedAddress.isBlank()) return false
+        return getBlocked().contains(normalizedAddress)
+    }
+
+    /**
      * Blocks [address]: adds to the local mirror and tries the system
      * contract (best-effort — the platform enforces silently where available).
      */

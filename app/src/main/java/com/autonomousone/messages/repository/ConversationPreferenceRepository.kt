@@ -97,4 +97,36 @@ class ConversationPreferenceRepository(context: Context) {
             "thread=$threadId reported=0 clearBlockProvenance=$clearBlockProvenance"
         )
     }
+
+    /**
+     * Production wiring for [SpamRepository]: the ONE blocklist
+     * ([BlocklistRepository]) plus the field-scoped spam writers above.
+     *
+     * Reads use the exact-match provenance probe; NOTHING here deletes a message,
+     * and an explicit manual block is never recorded as report provenance.
+     */
+    fun spamBlockPort(blocklist: BlocklistRepository): SpamBlockPort = object : SpamBlockPort {
+        override fun isBlocked(normalizedAddress: String): Boolean =
+            blocklist.isBlockedNorm(normalizedAddress)
+
+        override fun block(address: String) {
+            blocklist.block(address)
+        }
+
+        override fun unblock(address: String) {
+            blocklist.unblock(address)
+        }
+
+        override suspend fun markSpam(threadId: Long, blockedByReport: Boolean, now: Long) {
+            this@ConversationPreferenceRepository.markSpam(threadId, blockedByReport, now)
+        }
+
+        override suspend fun clearSpam(
+            threadId: Long,
+            clearBlockProvenance: Boolean,
+            now: Long
+        ) {
+            this@ConversationPreferenceRepository.clearSpam(threadId, clearBlockProvenance, now)
+        }
+    }
 }

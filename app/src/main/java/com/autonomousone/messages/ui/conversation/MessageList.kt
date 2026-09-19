@@ -39,6 +39,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autonomousone.messages.R
+import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.design.MessagesMotion
 import com.autonomousone.messages.ui.design.MessagesSpacing
@@ -69,6 +71,15 @@ fun MessageList(
     onForward: (String) -> Unit,
     onPhoneClick: (String) -> Unit,
     onResend: (String) -> Unit,
+    /** FEATURE 9: multi-select is on for this list. */
+    selectionActive: Boolean = false,
+    /**
+     * Composite identities currently selected. NEVER raw message ids: SMS 100
+     * and MMS 100 are different messages ([MessageIdentity]).
+     */
+    selectedKeys: Set<MessageIdentity.Key> = emptySet(),
+    onEnterSelection: (Sms) -> Unit = {},
+    onToggleSelection: (Sms) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -162,7 +173,11 @@ fun MessageList(
                                     sms = sms,
                                     onForward = onForward,
                                     onPhoneClick = onPhoneClick,
-                                    onResend = onResend
+                                    onResend = onResend,
+                                    selectionActive = selectionActive,
+                                    selected = MessageIdentity.keyOf(sms.id) in selectedKeys,
+                                    onEnterSelection = { onEnterSelection(sms) },
+                                    onToggleSelection = { onToggleSelection(sms) }
                                 )
                             }
                         }

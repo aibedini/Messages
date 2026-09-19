@@ -51,7 +51,16 @@ class MessagingPreferences(context: Context) {
     }
 
     companion object {
-        private const val PREF_NAME = "messaging_prefs"
+        /**
+         * The ONE messaging preference file on the device.
+         *
+         * Public because feature-scoped preference classes (e.g.
+         * `SendDelayPreferences`) must write into this same store — a second
+         * file would split the user's messaging settings across two stores that
+         * backup/restore and "reset messaging settings" would have to know about
+         * separately.
+         */
+        const val PREF_NAME = "messaging_prefs"
 
         private const val KEY_DELIVERY_REPORTS = "delivery_reports_enabled"
         private const val KEY_SUBSCRIPTION_ID = "send_subscription_id"
