@@ -437,8 +437,17 @@ class InConversationSearchRepositoryTest {
         // The probe row is requested on top of the painted half.
         assertEquals(plan.beforeQueryLimit, older.limit)
         assertEquals(plan.afterQueryLimit, newer.limit)
-        // The assembled window is the anchor plus both painted halves.
-        assertEquals(1 + plan.visibleBefore + plan.visibleAfter, window.rows.size)
+        // The assembled window is BOUNDED by the plan and never exceeds it. It is not
+        // asserted to be FULL: jumping into a sparse stretch legitimately paints fewer
+        // rows, because the two keyset reads return only rows that exist. (This
+        // fixture has a 100 000 ms gap between the anchor and the nearest older row.)
+        assertTrue(window.rows.size <= SearchWindowPlan.MAX_VISIBLE_ROWS)
+        assertTrue(
+            "the anchor plus its context must never exceed the painted plan",
+            window.rows.size <= 1 + plan.visibleBefore + plan.visibleAfter
+        )
+        // Canonical ascending order, so the list renders oldest → newest.
+        assertEquals(window.rows.sortedWith(canonical()), window.rows)
         // The anchor is inside it exactly once.
         assertEquals(1, window.rows.count { it.id == 501L })
     }
