@@ -1,61 +1,33 @@
 ﻿> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
-> Task :app:generateDebugBuildConfig
-> Task :app:generateDebugResValues
-> Task :app:checkDebugAarMetadata
-> Task :app:mapDebugSourceSetPaths
-> Task :app:generateDebugResources
-> Task :app:packageDebugResources
-> Task :app:createDebugCompatibleScreenManifests
-> Task :app:extractDeepLinksDebug
-> Task :app:parseDebugLocalResources
-> Task :app:processDebugMainManifest
-> Task :app:processDebugManifest
-> Task :app:preDebugUnitTestBuild UP-TO-DATE
-> Task :app:javaPreCompileDebugUnitTest
-> Task :app:javaPreCompileDebug
-> Task :app:processDebugManifestForPackage
-> Task :app:mergeDebugResources
-> Task :app:processDebugResources
-> Task :app:kspDebugKotlin
-> Task :app:compileDebugKotlin
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/messaging/SimManager.kt:42:40 'static fun from(p0: Context!): SubscriptionManager!' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/messaging/SimManager.kt:53:30 'fun getNumber(): String!' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/security/MessageCrypto.kt:122:25 'static fun <P : Any!> getPrimitive(typeUrl: String!, serializedKey: ByteString!, primitiveClass: Class<P!>!): P!' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/components/SmsItem.kt:112:24 'fun rememberSwipeToDismissBoxState(initialValue: SwipeToDismissBoxValue = ..., confirmValueChange: (SwipeToDismissBoxValue) -> Boolean = ..., positionalThreshold: (@ParameterName(...) Float) -> Float = ...): SwipeToDismissBoxState' is deprecated. confirmValueChange is deprecated without replacement. Rather than relying on a callback to veto state changes, the anchor set should not include disallowed anchors. See androidx.compose.foundation.samples.AnchoredDraggableDynamicAnchorsSample for an example of using dynamic anchors over confirmValueChange.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/conversation/ConversationSelectionTopBar.kt:110:57 'val Icons.Filled.Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Forward.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/home/CategoryFilter.kt:19:5 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
-- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
-- To keep applying to the value parameter only, use the '@param:' annotation target.
-
-See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/home/ConversationFilter.kt:7:31 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
-- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
-- To keep applying to the value parameter only, use the '@param:' annotation target.
-
-See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/ConversationMediaScreen.kt:184:13 'fun TabRow(selectedTabIndex: Int, modifier: Modifier = ..., containerColor: Color = ..., contentColor: Color = ..., indicator: @Composable() ComposableFunction1<@ParameterName(...) List<TabPosition>, Unit> = ..., divider: @Composable() ComposableFunction0<Unit> = ..., tabs: @Composable() ComposableFunction0<Unit>): Unit' is deprecated. Replaced with PrimaryTabRow and SecondaryTabRow.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/ConversationMediaScreen.kt:488:27 'val Icons.Filled.InsertDriveFile: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.InsertDriveFile.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/LinkedDevicesScreen.kt:85:21 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/LinkedDevicesScreen.kt:845:26 'val LocalLifecycleOwner: ProvidableCompositionLocal<LifecycleOwner>' is deprecated. Moved to lifecycle-runtime-compose library in androidx.lifecycle.compose package.
-
-> Task :app:compileDebugJavaWithJavac
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:kspDebugKotlin UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
 > Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
-> Task :app:processDebugJavaRes
-> Task :app:bundleDebugClassesToRuntimeJar
-> Task :app:kspDebugUnitTestKotlin
-
-> Task :app:compileDebugUnitTestKotlin
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:520:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:522:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:524:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/MessageCryptoTest.kt:36:55 'static fun <P : Any!> getPrimitive(typeUrl: String!, serializedKey: ByteString!, primitiveClass: Class<P!>!): P!' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/OtpRetentionTestSupport.kt:70:23 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
-w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/navigation/NavigationRouteEncodingTest.kt:22:9 Name contains character(s) that can cause problems on Windows: %
-
+> Task :app:kspDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
 > Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
-> Task :app:processDebugUnitTestJavaRes
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
 
 > Task :app:testDebugUnitTest
 
@@ -121,17 +93,14 @@ OtpRetentionPolicyTest > a starred OTP reports STARRED not a generic refusal FAI
 
 SmartCategoriesContractTest > the cursor advances strictly backwards through the canonical order FAILED
     java.lang.AssertionError at SmartCategoriesContractTest.kt:272
-
-LinkExtractorTest > an email address is not a link - documented rule FAILED
-    java.lang.AssertionError at LinkExtractorTest.kt:181
 .\gradlew.bat : 
-At line:1 char:239
-+ ... lyContinue; .\gradlew.bat testDebugUnitTest --offline '-Pkotlin.daemo ...
+At line:1 char:170
++ ... \Messages"; .\gradlew.bat testDebugUnitTest --offline '-Pkotlin.daemo ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-1098 tests completed, 22 failed
+1098 tests completed, 21 failed
 
 > Task :app:testDebugUnitTest FAILED
 
@@ -145,5 +114,5 @@ file:///C:/Users/Mahna/sms%20center/Messages/app/build/reports/tests/testDebugUn
 * Try:
 > Run with --scan to get full insights.
 
-BUILD FAILED in 1m 14s
-26 actionable tasks: 25 executed, 1 up-to-date
+BUILD FAILED in 10s
+26 actionable tasks: 1 executed, 25 up-to-date
