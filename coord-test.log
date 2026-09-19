@@ -1,24 +1,24 @@
 ﻿> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
-> Task :app:generateDebugBuildConfig UP-TO-DATE
-> Task :app:checkDebugAarMetadata UP-TO-DATE
-> Task :app:generateDebugResValues UP-TO-DATE
-> Task :app:mapDebugSourceSetPaths UP-TO-DATE
-> Task :app:generateDebugResources UP-TO-DATE
-> Task :app:mergeDebugResources UP-TO-DATE
-> Task :app:packageDebugResources UP-TO-DATE
-> Task :app:parseDebugLocalResources UP-TO-DATE
-> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
-> Task :app:extractDeepLinksDebug UP-TO-DATE
-> Task :app:processDebugMainManifest UP-TO-DATE
-> Task :app:processDebugManifest UP-TO-DATE
-> Task :app:processDebugManifestForPackage UP-TO-DATE
-> Task :app:processDebugResources UP-TO-DATE
-> Task :app:kspDebugKotlin UP-TO-DATE
-> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
 > Task :app:preDebugUnitTestBuild UP-TO-DATE
-> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugManifestForPackage
+> Task :app:mergeDebugResources
+> Task :app:processDebugResources
+> Task :app:kspDebugKotlin
 > Task :app:compileDebugKotlin
 w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/messaging/SimManager.kt:42:40 'static fun from(p0: Context!): SubscriptionManager!' is deprecated. Deprecated in Java.
 w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/messaging/SimManager.kt:53:30 'fun getNumber(): String!' is deprecated. Deprecated in Java.
@@ -40,13 +40,18 @@ w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomous
 w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/LinkedDevicesScreen.kt:85:21 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
 w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/main/java/com/autonomousone/messages/ui/screens/LinkedDevicesScreen.kt:845:26 'val LocalLifecycleOwner: ProvidableCompositionLocal<LifecycleOwner>' is deprecated. Moved to lifecycle-runtime-compose library in androidx.lifecycle.compose package.
 
-> Task :app:compileDebugJavaWithJavac UP-TO-DATE
-> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac
 > Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
-> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToRuntimeJar
 > Task :app:kspDebugUnitTestKotlin
 
 > Task :app:compileDebugUnitTestKotlin
+w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:520:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
+w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:522:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
+w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/InConversationSearchRepositoryTest.kt:524:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
+w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/MessageCryptoTest.kt:36:55 'static fun <P : Any!> getPrimitive(typeUrl: String!, serializedKey: ByteString!, primitiveClass: Class<P!>!): P!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/OtpRetentionTestSupport.kt:70:23 This declaration needs opt-in. Its usage should be marked with '@kotlinx.coroutines.ExperimentalCoroutinesApi' or '@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)'
 w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomousone/messages/navigation/NavigationRouteEncodingTest.kt:22:9 Name contains character(s) that can cause problems on Windows: %
 
 > Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
@@ -54,98 +59,20 @@ w: file:///C:/Users/Mahna/sms%20center/Messages/app/src/test/java/com/autonomous
 
 > Task :app:testDebugUnitTest
 
-LinkExtractorTest > an email address is not a link - documented rule FAILED
-    java.lang.AssertionError at LinkExtractorTest.kt:181
-
-MmsAssetMapperTest > never copies bytes - only the provider uri is stored FAILED
-    java.lang.AssertionError at MmsAssetMapperTest.kt:108
-
 ClassificationBackfillSqlTest > a re-run does not re-classify the same rows FAILED
-    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:316
+    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:332
 
 ClassificationBackfillSqlTest > a completed sweep is idempotent FAILED
-    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:316
+    java.lang.AssertionError at ClassificationBackfillSqlTest.kt:175
 
 ClassificationBackfillSqlTest > a full batch is capped at the requested limit and never exceeds it FAILED
-    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:316
-
-ClassificationBackfillSqlTest > the test predicate matches the DAO annotation FAILED
-    java.lang.AssertionError at ClassificationBackfillSqlTest.kt:226
+    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:332
 
 ClassificationBackfillSqlTest > the cursor advances and resumes correctly FAILED
-    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:316
+    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:332
 
 ClassificationBackfillSqlTest > the final short batch ends the sweep FAILED
-    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:316
-
-DelayedSendPersistenceTest > a refused send becomes terminal FAILED and is not retried FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > the SIM chosen in the composer reaches the sink FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > cancelled can never become sent - the claim refuses it FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a message that already sent is never sendable again FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > pruning is idempotent FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > an empty body is rejected before anything is inserted FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a run that died inside the radio call is failed, never resent FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a duplicate worker observes a lost claim and sends nothing FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a tampered recipient is refused before the claim FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a hundred concurrent executions still produce exactly one send FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > the claim succeeds exactly once for one intent FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > the live reader returns only pending and sending intents of one thread FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > undoable returns the newest pending intent only FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > diagnostics counts rows per state without touching bodies FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > cancel race resolved by the claim - a claimed send cannot be undone FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a fresh claim is not treated as stranded FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > retention prunes terminal rows and keeps live ones FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > undo race resolves against the loser - the cancelled row is never sent FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > after the delay a reconstructed worker sends exactly once FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > undo before the deadline cancels the intent and no SMS is ever sent FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a legacy row without a token still sends FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a throwing send records a stable failure code and sends once FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
-
-DelayedSendPersistenceTest > a pending send survives process death and still sends after the delay FAILED
-    org.sqlite.SQLiteException at DelayedSendPersistenceTest.kt:561
+    org.sqlite.SQLiteException at ClassificationBackfillSqlTest.kt:332
 
 DelayedSendStateMachineTest > sendable states are derived from the transition table FAILED
     java.lang.AssertionError at DelayedSendStateMachineTest.kt:162
@@ -195,22 +122,16 @@ OtpRetentionPolicyTest > a starred OTP reports STARRED not a generic refusal FAI
 SmartCategoriesContractTest > the cursor advances strictly backwards through the canonical order FAILED
     java.lang.AssertionError at SmartCategoriesContractTest.kt:272
 
-TrashSqlTest > a purge with an mms cutoff keeps a same-second sms and newer mms rows FAILED
-    java.lang.AssertionError at TrashSqlTest.kt:316
-
-UxSqlLiteralDriftTest > message_user_state literals match their constants FAILED
-    org.junit.ComparisonFailure at UxSqlLiteralDriftTest.kt:105
-
-UxSqlLiteralDriftTest > message_assets page literals match their constants FAILED
-    org.junit.ComparisonFailure at UxSqlLiteralDriftTest.kt:105
+LinkExtractorTest > an email address is not a link - documented rule FAILED
+    java.lang.AssertionError at LinkExtractorTest.kt:181
 .\gradlew.bat : 
-At line:1 char:246
+At line:1 char:239
 + ... lyContinue; .\gradlew.bat testDebugUnitTest --offline '-Pkotlin.daemo ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-1098 tests completed, 50 failed
+1098 tests completed, 22 failed
 
 > Task :app:testDebugUnitTest FAILED
 
@@ -224,5 +145,5 @@ file:///C:/Users/Mahna/sms%20center/Messages/app/build/reports/tests/testDebugUn
 * Try:
 > Run with --scan to get full insights.
 
-BUILD FAILED in 1m 30s
-26 actionable tasks: 5 executed, 21 up-to-date
+BUILD FAILED in 1m 14s
+26 actionable tasks: 25 executed, 1 up-to-date

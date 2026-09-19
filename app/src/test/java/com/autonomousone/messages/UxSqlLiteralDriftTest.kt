@@ -33,11 +33,31 @@ import org.junit.Test
  */
 class UxSqlLiteralDriftTest {
 
-    private val sourceDir = "src/main/java/com/autonomousone/messages/data"
+    /**
+     * Where the DAO sources live, resolved against the WORKING DIRECTORY Gradle
+     * actually uses for JVM unit tests.
+     *
+     * Gradle runs these tests with the MODULE directory (`app/`) as the working
+     * directory — that is why the sibling SQL tests read `schemas/…` directly. A
+     * hard-coded `src/main/java/...` therefore resolves to `app/src/main/java/...`
+     * and is correct HERE, but an absolute-agnostic candidate list is used anyway so
+     * the guard cannot silently degrade into "expected <[]>" (which is exactly how
+     * it failed the first time: the file was not found, the extracted literal came
+     * back empty, and every comparison reported drift that did not exist).
+     */
+    private val sourceCandidates = listOf(
+        "src/main/java/com/autonomousone/messages/data",
+        "app/src/main/java/com/autonomousone/messages/data"
+    )
 
     private fun source(name: String): String {
-        val file = java.io.File(sourceDir, name)
-        assertTrue("missing source file ${file.absolutePath}", file.isFile)
+        val file = sourceCandidates
+            .map { java.io.File(it, name) }
+            .firstOrNull { it.isFile }
+            ?: error(
+                "cannot locate $name; looked in " +
+                    sourceCandidates.joinToString { java.io.File(it, name).absolutePath }
+            )
         return file.readText()
     }
 
@@ -49,12 +69,27 @@ class UxSqlLiteralDriftTest {
     private fun assertQueryMatches(
         file: String,
         functionName: String,
-        expected: String
+        expected: String,
+        /**
+         * Disambiguates a function name that exists MORE THAN ONCE in the file.
+         * `deleteOrphans()` is declared on both MessageUserStateDao and
+         * MessageAssetDao, so searching for the declaration alone finds whichever
+         * comes first and then compares it against the OTHER table's constant —
+         * a false drift report. Give a fragment that only the intended declaration
+         * sits after (e.g. "message_user_state").
+         */
+        after: String = ""
     ) {
         val text = source(file)
+        val searchFrom = if (after.isEmpty()) 0 else {
+            val anchor = text.indexOf(after)
+            assertTrue("anchor '$after' not found in $file", anchor >= 0)
+            anchor
+        }
         val marker = "suspend fun $functionName("
         val markerAlt = "fun $functionName("
-        val at = text.indexOf(marker).takeIf { it >= 0 } ?: text.indexOf(markerAlt)
+        val at = text.indexOf(marker, searchFrom).takeIf { it >= 0 }
+            ?: text.indexOf(markerAlt, searchFrom)
         assertTrue("function $functionName not found in $file", at >= 0)
 
         // Walk BACKWARDS from the declaration to the nearest @Query( ... ).
@@ -84,8 +119,9 @@ class UxSqlLiteralDriftTest {
                 c == '"' -> {
                     i++
                     while (i < text.length && text[i] != '"') {
-                        if (text[i] == '\\') i++
-                        i++
+                        // Skip an escaped character as a unit so a trailing `\"`
+                        // cannot be mistaken for the closing quote.
+                        i += if (text[i] == '\\') 2 else 1
                     }
                 }
                 c == '(' -> depth++
@@ -104,17 +140,37 @@ class UxSqlLiteralDriftTest {
         val raw = text.substring(open + 1, close)
         assertEquals(
             "SQL literal for $functionName drifted from its pinned constant",
-            normalise(expected),
-            normalise(raw)
+            collapse(expected),
+            foldAnnotationSource(raw)
         )
     }
 
     /**
-     * Flattens a Kotlin string expression into the value the compiler folds it
-     * to: strip the surrounding quotes, drop `+`, unescape `\n`/`\"`, collapse
-     * runs of whitespace, and trim.
+     * Folds the ANNOTATION SOURCE (a Kotlin expression) into the string value the
+     * compiler produces: strip `//` comments, keep the CONTENT of every string
+     * literal (handling `"""…"""` and `\n`/`\"` escapes), drop the `+` operators,
+     * then collapse whitespace.
+     *
+     * NEVER apply this to the pinned constant: that is already a plain SQL string, so
+     * [collectStringContent] would drop every character outside quotes, yield "",
+     * and make every comparison report drift. That is precisely the false failure
+     * this guard produced first time round (and again when one `fold(expected)` call
+     * site survived the split into [collapse] + [foldAnnotationSource]).
      */
-    private fun normalise(expression: String): String {
+    private fun foldAnnotationSource(expression: String): String =
+        collapse(collectStringContent(expression))
+
+    /**
+     * Collapses whitespace only.
+     *
+     * The pinned CONSTANT is already a plain SQL string, so it must NOT go through
+     * [collectStringContent]: doing that would strip every character that is not
+     * inside quotes — leaving the empty string and making every comparison report
+     * drift (exactly the false failure this guard produced first time round).
+     */
+    private fun collapse(sql: String): String = sql.replace(Regex("\\s+"), " ").trim()
+
+    private fun collectStringContent(expression: String): String {
         val withoutComments = expression
             .lineSequence()
             .joinToString("\n") { line ->
@@ -154,7 +210,7 @@ class UxSqlLiteralDriftTest {
                 else -> i++
             }
         }
-        return sb.toString().replace(Regex("\\s+"), " ").trim()
+        return sb.toString()
     }
 
     @Test
@@ -168,13 +224,14 @@ class UxSqlLiteralDriftTest {
         )
         assertQueryMatches("UxDaos.kt", "forMessage", MessageAssetSql.FOR_MESSAGE_SQL)
         assertQueryMatches("UxDaos.kt", "deleteForMessage", MessageAssetSql.DELETE_FOR_MESSAGE_SQL)
+        assertQueryMatches("UxDaos.kt", "deleteForMessageKind", MessageAssetSql.DELETE_FOR_MESSAGE_KIND_SQL)
+        assertQueryMatches("UxDaos.kt", "backfillBatch", MessageAssetSql.BACKFILL_BATCH_SQL)
         assertQueryMatches(
             "UxDaos.kt",
-            "deleteForMessageKind",
-            MessageAssetSql.DELETE_FOR_MESSAGE_KIND_SQL
+            "deleteOrphans",
+            MessageAssetSql.DELETE_ORPHANS_SQL,
+            after = "interface MessageAssetDao"
         )
-        assertQueryMatches("UxDaos.kt", "backfillBatch", MessageAssetSql.BACKFILL_BATCH_SQL)
-        assertQueryMatches("UxDaos.kt", "deleteOrphans", MessageAssetSql.DELETE_ORPHANS_SQL)
     }
 
     /**
@@ -194,6 +251,11 @@ class UxSqlLiteralDriftTest {
             SET_KEEP_FROM_OTP_CLEANUP_SQL
         )
         assertQueryMatches("UxDaos.kt", "countStarredInThread", COUNT_STARRED_IN_THREAD_SQL)
-        assertQueryMatches("UxDaos.kt", "deleteOrphans", DELETE_ORPHANS_SQL)
+        assertQueryMatches(
+            "UxDaos.kt",
+            "deleteOrphans",
+            DELETE_ORPHANS_SQL,
+            after = "interface MessageUserStateDao"
+        )
     }
 }

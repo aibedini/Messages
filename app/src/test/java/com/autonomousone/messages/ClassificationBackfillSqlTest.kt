@@ -204,8 +204,15 @@ class ClassificationBackfillSqlTest {
         val text = source.readText()
         val start = text.indexOf("suspend fun unclassifiedBatch")
         assertTrue("unclassifiedBatch must still exist", start > 0)
-        // The annotation sits directly above the declaration.
-        val annotation = text.substring(maxOf(0, start - 1_200), start)
+        // Slice EXACTLY this annotation: from its own `@Query(` to the declaration.
+        //
+        // A fixed-size window backwards was wrong twice over: it swallowed the
+        // PREVIOUS method's annotation (which legitimately pages `LIMIT … OFFSET`)
+        // and it swallowed this method's own KDoc, whose text says "never OFFSET" —
+        // so the guard reported a violation that did not exist.
+        val queryAt = text.lastIndexOf("@Query(", start)
+        assertTrue("unclassifiedBatch must still carry a @Query", queryAt in 0 until start)
+        val annotation = text.substring(queryAt, start)
         for (fragment in listOf(
             "FROM messages m",
             "SELECT 1 FROM message_classification c",
@@ -293,8 +300,19 @@ class ClassificationBackfillSqlTest {
         }
 
     /**
-     * 1000 rows spread across both sources, newest first by `date`, with a
-     * same-date SMS/MMS pair to prove the composite tie-break works.
+     * `count` sequential SMS rows (newest first by `date`), plus a same-date MMS
+     * that proves the composite identity/tie-break.
+     *
+     * EXACTLY `count` MESSAGES. Every batch assertion here is phrased in row counts
+     * and cursor dates ("400 newest rows are dates 1000…601", "the final short batch
+     * ends the sweep"), so the seed must not inflate the table: planting an EXTRA
+     * row per 250 shifted every date boundary by one and the failures looked like SQL
+     * bugs. A second row at an EXISTING index keeps the counts exact while still
+     * giving one date two different sources.
+     *
+     * The MMS provider id is OUTSIDE the 1..count range because the provider `_id`
+     * is unique per source across the whole table — a fixed id would collide with the
+     * sequential SMS row that reaches it.
      */
     private fun seedMessages(count: Int) {
         db.autoCommit = false
@@ -304,13 +322,11 @@ class ClassificationBackfillSqlTest {
         ).use { statement ->
             for (index in 1..count) {
                 val date = index.toLong()
-                if (index % 250 == 0) {
-                    // Same date on BOTH sources: the tie-break must keep them
-                    // distinct (SMS 100 and MMS 100 are different messages).
-                    addRow(statement, "sms", 100L, date, index)
-                    addRow(statement, "mms", 100L, date, index)
-                } else {
-                    addRow(statement, "sms", index.toLong(), date, index)
+                addRow(statement, "sms", index.toLong(), date, index)
+                if (index % SAME_DATE_PAIR_STEP == 0) {
+                    // The SAME date on BOTH sources: the tie-break must keep them
+                    // distinct (SMS N and MMS 900001 are different messages).
+                    addRow(statement, "mms", SAME_DATE_ID, date, index)
                 }
             }
             statement.executeBatch()
@@ -339,5 +355,17 @@ class ClassificationBackfillSqlTest {
         row.date != cursor.date -> row.date < cursor.date
         row.source != cursor.source -> row.source < cursor.source
         else -> row.providerId < cursor.providerId
+    }
+
+    private companion object {
+        /**
+         * The same-date SMS/MMS pair's provider id. Outside 1..count so it cannot
+         * collide with the sequential row of the same id (the provider `_id` is
+         * unique per source across the whole table).
+         */
+        const val SAME_DATE_ID = 900_001L
+
+        /** How often a second (MMS) row shares an existing date. */
+        const val SAME_DATE_PAIR_STEP = 250
     }
 }

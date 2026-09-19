@@ -314,7 +314,10 @@ class TrashSqlTest {
 
         assertEquals("mms 100, 199, the cutoff row 200 and sms 100 go; nothing else", 4, deleted)
         assertEquals(
-            listOf("mms:201", "sms:150"),
+            // Canonical order is date DESC, source DESC, providerId DESC — and
+            // 'sms' > 'mms' lexicographically, so the surviving SMS sorts FIRST at
+            // an equal timestamp. (The live-database test above pins the same rule.)
+            listOf("sms:150", "mms:201"),
             rows("SELECT * FROM messages WHERE threadId = :threadId ORDER BY date DESC, source DESC, providerId DESC")
         )
     }

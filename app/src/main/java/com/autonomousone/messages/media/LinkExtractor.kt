@@ -116,7 +116,25 @@ object LinkExtractor {
     )
 
     private val SCHEME = Regex("(?i)^https?://")
-    private val EMAIL_LIKE = Regex("^[^/]*@")
+
+    /**
+     * An `@` in the AUTHORITY means this candidate is (part of) an EMAIL ADDRESS,
+     * not a link.
+     *
+     * The lookbehind in [CANDIDATE] already stops the extractor from starting a
+     * candidate immediately after `@`, which handles `user@example.com`. It cannot
+     * handle a MULTI-LABEL local part: in `user.name+tag@mail.example.co.uk` the
+     * regex starts at position 0 and matches the local part `user.name`, whose last
+     * label `name` is also a valid TLD — so a fragment of an email address became a
+     * LINK asset. Checking the authority for `@` rejects the whole family.
+     *
+     * Only the authority is inspected, so an explicit-scheme URL stays a link and
+     * keeps its documented userinfo-dropping behaviour: in
+     * `https://user@host/path` the `@` is in the authority, but [normalize] strips
+     * userinfo from a scheme-bearing candidate before this check would matter — the
+     * check is therefore applied only when there is NO scheme.
+     */
+    private val EMAIL_AUTHORITY = Regex("^[^/?#]*@")
 
     /** Bidi/zero-width marks that Persian text can glue to the end of a URL. */
     private val INVISIBLE = Regex("[\u200b-\u200f\u202a-\u202e\ufeff\u2060]")
@@ -152,8 +170,8 @@ object LinkExtractor {
 
         val hasScheme = SCHEME.containsMatchIn(candidate)
         if (!hasScheme) {
-            // An email address is NOT a link (documented rule).
-            if (EMAIL_LIKE.containsMatchIn(candidate)) return null
+            // An email address (or a fragment of one) is NOT a link (documented rule).
+            if (EMAIL_AUTHORITY.containsMatchIn(candidate)) return null
             // A candidate with no letters at all is a number/phone/version.
             if (candidate.none { it.isLetter() }) return null
         }

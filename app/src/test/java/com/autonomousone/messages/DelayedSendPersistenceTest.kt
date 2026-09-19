@@ -9,6 +9,7 @@ import com.autonomousone.messages.data.DelayedSendStateCount
 import com.autonomousone.messages.data.FAILED_STATE
 import com.autonomousone.messages.data.FAIL_PENDING_DELAYED_SEND
 import com.autonomousone.messages.data.FAIL_STRANDED_DELAYED_SEND
+import com.autonomousone.messages.data.INSERT_PENDING_DELAYED_SEND
 import com.autonomousone.messages.data.MARK_DELAYED_SEND_FAILED
 import com.autonomousone.messages.data.MARK_DELAYED_SEND_SENT
 import com.autonomousone.messages.data.PENDING_STATE
@@ -83,7 +84,7 @@ class DelayedSendPersistenceTest {
 
         val row = row("dly_1")
         assertEquals(SENDING_STATE, row["state"])
-        assertEquals("attempts counts claims, it never re-opens one", 1L, row["attempts"])
+        assertEquals("attempts counts claims, it never re-opens one", 1L, (row["attempts"] as Number).toLong())
     }
 
     @Test
@@ -539,18 +540,12 @@ class DelayedSendPersistenceTest {
         createdAt: Long = now,
         phoneToken: String = com.autonomousone.messages.utils.PhoneToken.of("+989121234567")
     ) {
-        db.prepareStatement(INSERT_NAMED.replace(NAMED, "?")).use { st ->
-            st.setString(1, intentId)
-            st.setString(2, body)
-            st.setString(3, phoneToken)
-            st.setLong(4, threadId)
-            st.setString(5, PENDING_STATE)
-            st.setLong(6, dueAt)
-            st.setLong(7, createdAt)
-        }
-        // The prepared statement above is built from the shipped column list; the
-        // executeUpdate is separate so the parameter binding stays explicit.
-        db.prepareStatement(INSERT_NAMED.replace(NAMED, "?")).use { st ->
+        // Runs the SHIPPED insert text, exactly like the claim below runs the
+        // shipped claim. The earlier version bound seven columns and left the
+        // remaining four to their (absent) SQL defaults, which fails NOT NULL on
+        // `claimedAt` — and it prepared the statement twice, so the row was only
+        // ever written by the second pass.
+        db.prepareStatement(INSERT_PENDING_DELAYED_SEND.replace(NAMED, "?")).use { st ->
             st.setString(1, intentId)
             st.setString(2, body)
             st.setString(3, phoneToken)
@@ -631,7 +626,9 @@ class DelayedSendPersistenceTest {
     private inner class SqlitePendingSendDao(private val connection: Connection) : PendingDelayedSendDao {
 
         override suspend fun insert(entity: PendingDelayedSendEntity) {
-            connection.prepareStatement(INSERT_NAMED.replace(NAMED, "?")).use { st ->
+            // The SHIPPED insert, so this fake cannot drift from the real DAO (and
+            // so every NOT NULL column, including claimedAt, is written).
+            connection.prepareStatement(INSERT_PENDING_DELAYED_SEND.replace(NAMED, "?")).use { st ->
                 st.setString(1, entity.intentId)
                 st.setString(2, entity.body)
                 st.setString(3, entity.phoneToken)
@@ -746,11 +743,5 @@ class DelayedSendPersistenceTest {
 
     private companion object {
         val NAMED = Regex(":[A-Za-z][A-Za-z0-9_]*")
-
-        /** The shipped column list, in the order [SqlitePendingSendDao.insert] binds. */
-        const val INSERT_NAMED =
-            "INSERT INTO `pending_delayed_sends` " +
-                "(`intentId`,`body`,`phoneToken`,`threadId`,`state`,`dueAt`,`createdAt`) " +
-                "VALUES (:intentId,:body,:phoneToken,:threadId,:state,:dueAt,:createdAt)"
     }
 }

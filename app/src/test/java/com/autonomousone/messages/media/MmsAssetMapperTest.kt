@@ -105,8 +105,12 @@ class MmsAssetMapperTest {
         val asset = MmsAssetMapper.toAssets(mms, 1L, 1L, 1L, listOf(part(9L, "image/png"))).single()
         assertTrue(asset.value.startsWith(MmsAssetMapper.PART_URI_PREFIX))
         // The entity has no byte/blob field at all: metadata only, by construction.
+        // The count is pinned on purpose — adding a bytes column WOULD change it,
+        // which is the point. It is 10 as of v3.4.0: assetKey, source, providerId,
+        // threadId, kind, value, mimeType, displayName, date, and the `$stable`
+        // field the Compose compiler adds to a data class with an unstable member.
         assertEquals(
-            9,
+            10,
             com.autonomousone.messages.data.MessageAssetEntity::class.java.declaredFields
                 .count { !it.isSynthetic }
         )
