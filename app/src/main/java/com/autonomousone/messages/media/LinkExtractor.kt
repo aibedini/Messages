@@ -152,12 +152,42 @@ object LinkExtractor {
         val result = ArrayList<ExtractedLink>()
         for (match in CANDIDATE.findAll(haystack)) {
             val raw = match.value
+            // A candidate that is immediately followed by `@` is the LOCAL PART of an
+            // email address, not a link.
+            //
+            // The lookbehind in [CANDIDATE] stops a candidate from STARTING after
+            // `@`, but it cannot stop one from ENDING before it: in
+            // `write to user@example.com` the regex happily matches `user` (a single
+            // label with no TLD requirement when there is nothing else to match), and
+            // in `user.name+tag@mail.example.co.uk` it matches `user.name`, whose last
+            // label is a valid TLD. Both are fragments of an email address and were
+            // being indexed as LINK assets.
+            if (isEmailContinuation(haystack, match.range.last + 1)) continue
             val normalized = normalize(raw) ?: continue
             if (seen.add(normalized)) {
                 result += ExtractedLink(raw = raw, normalized = normalized, host = hostOf(normalized))
             }
         }
         return result
+    }
+
+    /**
+     * True when position [after] continues an email address.
+     *
+     * The robust question is "does this candidate run into an `@` before the address
+     * ends?" — that covers every shape at once: `user` + `@example.com`,
+     * `user.name` + `@mail.example.co.uk`, `user.name` + `+tag@host`, and the
+     * `example.com` inside `a@example.com`. Prose punctuation still terminates the
+     * lookahead, so `(user@host)` and `user@host.` are unaffected, and an
+     * explicit-scheme URL is never inspected this way because the SCHEME branch of
+     * [CANDIDATE] consumes the whole match.
+     */
+    private val EMAIL_SUFFIX = Regex("^[^\\s@]{0,64}@")
+
+    private fun isEmailContinuation(haystack: String, after: Int): Boolean {
+        if (after >= haystack.length) return false
+        val rest = haystack.substring(after, minOf(haystack.length, after + 65))
+        return EMAIL_SUFFIX.containsMatchIn(rest)
     }
 
     /**
