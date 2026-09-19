@@ -213,17 +213,27 @@ object SearchWindowAssembler {
         plan: SearchWindowPlan = SearchWindowPlan.around()
     ): SearchJumpWindow {
         val older = ArrayDeque<MessageEntityView>()
-        var overflowOlder = false
+        var olderCandidates = 0
         before.forEach { row ->
             if (row.key == anchor.key) return@forEach
-            if (older.size < plan.visibleBefore) older.addLast(row) else overflowOlder = true
+            olderCandidates++
+            if (older.size < plan.visibleBefore) older.addLast(row)
         }
+        // THE PROBE IS THE EXTRA ROW THE QUERY WAS ASKED FOR. The caller requests
+        // `visibleBefore + 1` rows, so receiving MORE candidate rows than we paint is
+        // exactly the evidence that older history exists. The previous version instead
+        // set the flag only when a row was DISCARDED after the half was full, which can
+        // never happen when the query returned exactly `limit` rows — so `hasOlder` was
+        // false for an anchor sitting in the middle of a 1 000-row thread.
+        val overflowOlder = olderCandidates > plan.visibleBefore
         val newer = ArrayList<MessageEntityView>(plan.visibleAfter)
-        var overflowNewer = false
+        var newerCandidates = 0
         after.forEach { row ->
             if (row.key == anchor.key) return@forEach
-            if (newer.size < plan.visibleAfter) newer.add(row) else overflowNewer = true
+            newerCandidates++
+            if (newer.size < plan.visibleAfter) newer.add(row)
         }
+        val overflowNewer = newerCandidates > plan.visibleAfter
 
         val rows = ArrayList<Sms>(older.size + 1 + newer.size)
         // `before` arrives newest-first; `older` was filled in that order, so

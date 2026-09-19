@@ -364,7 +364,12 @@ class InConversationSearchRepositoryTest {
         val outcome = repo.search(thread, "invoice") as SearchOutcome.Completed
 
         assertTrue(outcome.page.total > 0)
-        assertTrue(outcome.page.hits.all { it.date > 1_600_000L })
+        // The tombstone hides its snapshot AT-OR-BEFORE the cutoff (the documented
+        // Android contract: every message at-or-before the canonical newest row is part
+        // of the deleted conversation, and a same-millisecond row from the OTHER source
+        // stays visible). The fixture's 1_600_000 SMS is exactly the cutoff row, so the
+        // bound is `>=`.
+        assertTrue(outcome.page.hits.all { it.date >= 1_600_000L })
     }
 
     @Test
@@ -479,16 +484,20 @@ class InConversationSearchRepositoryTest {
     @Test
     fun `jump reports which sides still have history to crawl`() = runTest {
         val dao = FakeDao()
-        (1..100L).forEach { i -> dao.rows += row("sms", i, "m$i", date = i) }
+        // 1_000 rows, anchor in the middle. A small fixture cannot exercise the probe:
+        // `hasOlder`/`hasNewer` are set when a query returns MORE rows than the painted
+        // half, and with only 100 rows (18 painted + 1 probe) the probe row is easily
+        // the last row in the thread, which correctly means "nothing more to crawl".
+        (1..1_000L).forEach { i -> dao.rows += row("sms", i, "m$i", date = i) }
         val repo = repository(dao)
 
-        // Middle: both directions have more than the probe row.
-        val middle = repo.jumpToMessage("sms", 50L, thread)!!
+        // Middle: both directions have more than the painted half plus the probe.
+        val middle = repo.jumpToMessage("sms", 500L, thread)!!
         assertTrue(middle.hasOlder)
         assertTrue(middle.hasNewer)
 
         // Newest row in the thread: nothing newer exists.
-        val newest = repo.jumpToMessage("sms", 100L, thread)!!
+        val newest = repo.jumpToMessage("sms", 1_000L, thread)!!
         assertFalse(newest.hasNewer)
         assertTrue(newest.hasOlder)
     }
