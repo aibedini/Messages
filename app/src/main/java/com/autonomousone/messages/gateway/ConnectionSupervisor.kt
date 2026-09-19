@@ -135,10 +135,18 @@ class ConnectionSupervisor private constructor(
     /** Begin supervising (idempotent). Called from every ACTION_START entry:
      *  user toggle, boot receiver, START_STICKY revival. */
     fun start() {
+        val phaseStart = System.currentTimeMillis()
         desiredEnabled = true
         prefs.gatewayDesiredEnabled = true
         ensureLoop()
         reconcileNow()
+        // HOW LONG DID THE ENTRY POINT ITSELF TAKE? `start()` only flips desired state
+        // and nudges the conflated reconcile, so this number is expected to be ~0ms; if
+        // it is not, the caller is doing synchronous work on the UI thread.
+        com.autonomousone.messages.utils.DiagnosticLog.event(
+            "GATEWAY_START",
+            "phase=SUPERVISOR_START durationMs=${System.currentTimeMillis() - phaseStart}"
+        )
     }
 
     /** User intent OFF: stop components and stay down until start() again.
@@ -230,6 +238,21 @@ class ConnectionSupervisor private constructor(
     }
 
     private fun reconcile() {
+        // PER-PHASE TIMING. The "gateway never turns green after an update" report
+        // needs to point at a phase, not at a suspicion: each step below logs its own
+        // duration, so a stall localises to network validation, LAN bind or component
+        // start instead of being an opaque hang.
+        val reconcileStart = System.currentTimeMillis()
+        var phaseStart = reconcileStart
+        fun notePhase(phase: String) {
+            val now = System.currentTimeMillis()
+            com.autonomousone.messages.utils.DiagnosticLog.event(
+                "GATEWAY_START",
+                "phase=$phase durationMs=${now - phaseStart} totalMs=${now - reconcileStart}"
+            )
+            phaseStart = now
+        }
+
         if (!desiredEnabled || !prefs.hasGatewayConsent) {
             if (_stateFlow.value != State.DISABLED) {
                 prefs.isEnabled = false // runtime gate off FIRST: components stop transmitting
@@ -248,6 +271,7 @@ class ConnectionSupervisor private constructor(
         }
 
         val online = networkMonitor.isOnline()
+        notePhase("NETWORK_SNAPSHOT")
         if (!online) {
             if (_stateFlow.value != State.WAITING_FOR_NETWORK) {
                 prefs.isEnabled = false // gate transmission while offline (poller/heartbeat stop below)
@@ -265,6 +289,7 @@ class ConnectionSupervisor private constructor(
 
         // ── LAN server: (re)bind when down or stale ────────────────────────
         val currentIp = if (prefs.bindAllInterfaces) "0.0.0.0" else GatewayServer.getLocalIpAddress()
+        notePhase("LAN_ADDRESS_LOOKUP")
         val s = server
         val needsBind = s?.isRunning() != true || (boundIp != "0.0.0.0" && currentIp != "127.0.0.1" && boundIp != currentIp)
         if (needsBind) {
@@ -281,11 +306,19 @@ class ConnectionSupervisor private constructor(
             boundIp = currentIp
             onLog("🚀 Gateway server on http://$currentIp:${prefs.port}")
         }
+        notePhase("LAN_BIND")
 
         // ── Cloud + GMweb + shadow sync (idempotent starts) ────────────────
+        // These are the prime suspect for a slow first start: each one may touch the
+        // DB or the network, and `components.startSync()` kicks TelephonySyncCoordinator
+        // (tail delta / history backfill). Timing them separately is what separates a
+        // slow heartbeat from a slow history sweep.
         components.startHeartbeat()
+        notePhase("HEARTBEAT_START")
         components.startEventUploader() // PR-02: durable outbox → GMweb transmitter
+        notePhase("EVENT_UPLOADER_START")
         components.startTrustPublisher()
+        notePhase("TRUST_PUBLISHER_START")
         // A SEND_SMS command must have exactly one intake owner. Keep the
         // migration switch explicit; never run both consumers concurrently.
         when (components.deliveryIntake) {
@@ -298,11 +331,14 @@ class ConnectionSupervisor private constructor(
                 components.startCommandPoller()
             }
         }
+        notePhase("POLLER_OR_COMMAND_START")
         components.startSync()
+        notePhase("SYNC_START_REQUEST")
 
         backoffMs = 5_000L
         lastError = null
         prefs.isEnabled = true // runtime state — now DERIVED by the supervisor, never clobbered elsewhere
         _stateFlow.value = State.CONNECTED
+        notePhase("CONNECTED")
     }
 }

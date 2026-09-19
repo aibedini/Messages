@@ -467,6 +467,10 @@ class ConversationViewModel(
                         )
                         messages.clear()
                         messages.addAll(merged)
+                        // AUTHORITATIVE PAINT: from here on, a slower cache read that
+                        // started before this emission must not repaint an older window
+                        // over it (the bug where the newest message vanished on open).
+                        ThreadMessageCache.markAuthoritativePaint()
                         // A search JUMP paints a bounded window that is NOT the
                         // conversation; caching it here would reopen this chat
                         // on 40 messages tomorrow. The window is stored only
@@ -779,6 +783,10 @@ class ConversationViewModel(
             // (Google Messages-style), then refresh from the provider.
             val cache = ThreadMessageCache
             val cacheKeyThread = if (threadId != 0L) threadId else 0L
+            // Snapshot the authority clock BEFORE reading. If an authoritative Room
+            // window is published while this read is in flight, the cache below is
+            // older than what the user can already see and MUST NOT be published.
+            val cacheReadRevision = cache.authorityRevision
             val stale = if (cacheKeyThread != 0L || phone.isNotBlank())
                 cache.getStale(cacheKeyThread, phone.ifBlank { currentPhone }) else null
 
@@ -817,6 +825,8 @@ class ConversationViewModel(
                             isLoading = false
                             loadStatus = null
                             recordFirstPaintIfNeeded()
+                            // This window came from Room, so it is authoritative too.
+                            ThreadMessageCache.markAuthoritativePaint()
                         }
                         markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
                     }
@@ -827,14 +837,29 @@ class ConversationViewModel(
                 // R: the cache may predate this release and hold unsorted
                 // rows — canonicalize before painting, never trust insertion.
                 val cachedList = canonicalize(stale.first.map { it.copy(unread = false) })
-                withContext(Dispatchers.Main) {
-                    if (gen != conversationGeneration) return@withContext
-                    messages.clear()
-                    messages.addAll(cachedList)
-                    messages.addAll(mergeOptimistic(cachedList))
-                    isLoading = false
-                    loadStatus = null
-                    recordFirstPaintIfNeeded()
+                // THE AUTHORITY GUARD. A cache read that started before an
+                // authoritative Room paint may not repaint over it: doing so is how
+                // the newest message disappeared when a conversation was opened
+                // (Room emitted [A,B,C], the slower cache published [A,B], and
+                // `messages.clear()` dropped C). The cache exists to fill the gap
+                // BEFORE Room speaks, never to undo it.
+                val authorityMoved = cache.authorityRevision != cacheReadRevision
+                if (!authorityMoved) {
+                    withContext(Dispatchers.Main) {
+                        if (gen != conversationGeneration) return@withContext
+                        messages.clear()
+                        messages.addAll(cachedList)
+                        messages.addAll(mergeOptimistic(cachedList))
+                        isLoading = false
+                        loadStatus = null
+                        recordFirstPaintIfNeeded()
+                    }
+                } else {
+                    com.autonomousone.messages.utils.DiagnosticLog.event(
+                        "CONVERSATION_LOAD",
+                        "cache_paint_discarded thread=$currentThreadId " +
+                            "reason=room-authority-arrived cached=${cachedList.size}"
+                    )
                 }
                 // Cached copy was already fresh → nothing more to do. BUT the
                 // pager must still exist, or scroll-up history and tail refresh

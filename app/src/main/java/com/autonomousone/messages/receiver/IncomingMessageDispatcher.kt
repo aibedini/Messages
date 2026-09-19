@@ -12,6 +12,7 @@ import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.BlocklistRepository
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.utils.NotificationHelper
 import com.autonomousone.messages.utils.DiagnosticLog
 
@@ -71,6 +72,20 @@ object IncomingMessageDispatcher {
                 providerObservedAtNanos = com.autonomousone.messages.diagnostics.PerfTelemetry.mark()
             )
         )
+
+        // THE ROW IS DURABLE NOW, SO ANY CACHED WINDOW FOR THIS THREAD IS STALE.
+        // Without this, opening the conversation could paint a cached list that
+        // predates the just-persisted message, and (before the authority guard in
+        // ConversationViewModel) that stale paint could even overwrite the fresh Room
+        // tail — the "Home shows it, the chat does not" report. O(1), exactly one
+        // thread, and it runs BEFORE the UI fan-out so no observer can read the old
+        // entry. A message with no resolvable thread id has no per-thread entry to
+        // target, so it falls back to the deliberate global invalidation.
+        if (sms.threadId > 0L) {
+            ThreadMessageCache.invalidateThread(sms.threadId)
+        } else {
+            ThreadMessageCache.invalidateAll()
+        }
 
         // Blocked sender: no bus event, no webhook, no notification (silent).
         if (BlocklistRepository.isBlocked(context, sms.sender)) {

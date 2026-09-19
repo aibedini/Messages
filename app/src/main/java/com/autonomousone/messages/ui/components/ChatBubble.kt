@@ -297,7 +297,9 @@ fun ChatBubble(
                                         MaterialTheme.typography.bodySmall
                                     ),
                                     fontStyle = FontStyle.Italic,
-                                    color = contentColor.copy(alpha = 0.85f)
+                                    color = contentColor.copy(alpha = 0.85f),
+                                    // Own line box, for the same reason as the body.
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         } else if (captionText.isNotBlank()) {
@@ -352,7 +354,18 @@ fun ChatBubble(
                                     MaterialTheme.typography.bodyLarge
                                 ),
                                 fontSize = 15.sp,
-                                lineHeight = 21.sp
+                                lineHeight = 21.sp,
+                                // THE PARAGRAPH NEEDS ROOM TO ALIGN ITSELF. `TextAlign`
+                                // positions the line inside the Text node's own width,
+                                // and a Text that wraps to its intrinsic content is only
+                                // as wide as its longest line — so without this, an RTL
+                                // paragraph with `TextDirection.Rtl` still sat on the
+                                // LEFT of a wide bubble. Filling the width makes
+                                // `TextAlign.Start` mean "start of the paragraph" on a
+                                // real line box. It constrains only the TEXT: the bubble
+                                // side, the metadata row below and every control keep
+                                // their own layout.
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
 

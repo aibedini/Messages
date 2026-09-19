@@ -38,6 +38,32 @@ object ThreadMessageCache {
         private set
 
     /**
+     * Monotonic counter of AUTHORITATIVE paints.
+     *
+     * Bumped every time the reactive Room tail (or another authoritative source)
+     * publishes a window. A caller that is about to paint a CACHE result captures
+     * this before it reads and re-checks it before it publishes: if it moved, an
+     * authoritative window arrived in the meantime and the stale cache must be
+     * DISCARDED rather than allowed to overwrite it.
+     *
+     * This is the fix for the production bug where Home showed a newest message that
+     * was missing when the conversation was opened: the Room tail painted
+     * [A, B, C], then a slower cache read published [A, B] and `messages.clear()`
+     * dropped C. The invariant is:
+     *
+     *   CACHE MAY PAINT FIRST. CACHE MAY NEVER OVERWRITE AUTHORITATIVE ROOM STATE
+     *   THAT HAS ALREADY ARRIVED.
+     */
+    @Volatile
+    var authorityRevision: Long = 0L
+        private set
+
+    /** Records that an authoritative window was just published. */
+    fun markAuthoritativePaint() {
+        authorityRevision += 1L
+    }
+
+    /**
      * Per-thread revisions. Keyed by thread id when known, else by the phone
      * key hash — so every entry stored for thread 7 (with any phone key) is
      * invalidated by one `invalidateThread(7)`.
@@ -184,6 +210,7 @@ object ThreadMessageCache {
             lru.clear()
             revisions.clear()
             globalEpoch = 0L
+            authorityRevision = 0L
         }
     }
 }
