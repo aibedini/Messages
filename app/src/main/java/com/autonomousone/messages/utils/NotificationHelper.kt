@@ -15,14 +15,19 @@ import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.R
+import com.autonomousone.messages.messaging.ConversationNotificationChannels
+import com.autonomousone.messages.messaging.OtpDetector
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.AppLaunchIntent
 import com.autonomousone.messages.receiver.NotificationActionReceiver
 import com.autonomousone.messages.repository.ContactRepository
+import com.autonomousone.messages.repository.ConversationPreferenceRepository
+import com.autonomousone.messages.repository.BlocklistRepository
 
 object NotificationHelper {
 
-    private const val CHANNEL_ID = "messages_notification_channel"
+    /** Public since v3.4.0: conversation channels fall back to this id. */
+    const val CHANNEL_ID = "messages_notification_channel"
     private const val CHANNEL_NAME = "SMS Messages"
     private const val CHANNEL_DESC = "Notifications for incoming SMS messages"
 
@@ -41,19 +46,13 @@ object NotificationHelper {
 
     /**
      * Extract OTP or verification codes (4 to 8 digits) from message content.
+     *
+     * DELEGATES to [OtpDetector] — the single detection engine. Kept as a shim
+     * because several call sites still reference the historical name; a second
+     * OTP engine living beside the detector is exactly what v3.4.0 removes.
      */
-    fun extractOtpCode(message: String): String? {
-        if (message.isBlank()) return null
-        val lowerMsg = message.lowercase()
-        val keywords = listOf("otp", "code", "verification", "passcode", "pin", "security", "one time", "auth", "verif", "secret")
-        val hasKeyword = keywords.any { lowerMsg.contains(it) }
-
-        if (!hasKeyword) return null
-
-        val regex = Regex("""\b(\d{4,8})\b""")
-        val match = regex.find(message)
-        return match?.groupValues?.get(1)
-    }
+    fun extractOtpCode(message: String): String? =
+        OtpDetector.detect(sender = "", body = message)?.code
 
     fun showSmsNotification(context: Context, sms: Sms) {
         // Verify notification permission on Android 13+
@@ -65,6 +64,28 @@ object NotificationHelper {
             ) {
                 return
             }
+        }
+
+        // ── MUTE GATE (v3.4.0) ─────────────────────────────────────────────
+        // A muted conversation is never POSTED locally. This suppresses the
+        // Android alert ONLY: Room ingest, the gateway, linked-device sync and
+        // the unread count are all untouched, and expiry is a comparison against
+        // now — no unmute worker is scheduled, so an expired mute simply stops
+        // matching. Runs before the channel is created, so muting never has the
+        // side effect of creating a channel.
+        val preferences = ConversationPreferenceRepository(context)
+        val now = System.currentTimeMillis()
+        if (preferences.isMutedBlocking(sms.threadId, now)) {
+            DiagnosticLog.event("NOTIFICATION", "thread=${sms.threadId} suppressed=muted")
+            return
+        }
+        // Blocked senders are also never notified (the blocklist owns this).
+        if (BlocklistRepository.isBlocked(context, sms.sender)) {
+            DiagnosticLog.event(
+                "NOTIFICATION",
+                "thread=${sms.threadId} suppressed=blocked phone=${DiagnosticLog.phoneToken(sms.sender)}"
+            )
+            return
         }
 
         createNotificationChannel(context)
@@ -119,11 +140,21 @@ object NotificationHelper {
             displayName
         }
 
+        // ── CHANNEL SELECTION (v3.4.0) ─────────────────────────────────────
+        // Default: the existing global channel, unchanged from v3.3.6. Only a
+        // conversation the user explicitly customised gets its own channel, and
+        // its flag was set at that moment (never proactively per contact).
+        val notificationChannelId = if (preferences.hasCustomNotificationChannelBlocking(sms.threadId)) {
+            ConversationNotificationChannels.ensure(context, sms.threadId, displayName)
+        } else {
+            CHANNEL_ID
+        }
+
         // Quiet hours: notification still appears but silently (no sound/vibrate).
         val inQuietHours = QuietHoursPreferences(context).isInQuietWindow()
         val defaults = if (inQuietHours) 0 else NotificationCompat.DEFAULT_ALL
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, notificationChannelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(titleText)
             .setContentText(sms.message)

@@ -42,6 +42,18 @@ interface ConversationPreferenceDao {
     @Query("SELECT * FROM conversation_preferences WHERE threadId = :threadId LIMIT 1")
     suspend fun get(threadId: Long): ConversationPreferenceEntity?
 
+    /**
+     * BLOCKING read for the notification path only.
+     *
+     * `NotificationHelper.showSmsNotification` runs on a background thread (the
+     * same thread that already does the provider contact lookup) and cannot be
+     * suspend, so it needs a plain blocking query. NEVER call this from a Compose
+     * main thread — that is exactly the work the architecture rules forbid
+     * putting on the UI thread.
+     */
+    @Query("SELECT * FROM conversation_preferences WHERE threadId = :threadId LIMIT 1")
+    fun getBlocking(threadId: Long): ConversationPreferenceEntity?
+
     @Query("SELECT * FROM conversation_preferences WHERE threadId = :threadId LIMIT 1")
     fun observe(threadId: Long): Flow<ConversationPreferenceEntity?>
 

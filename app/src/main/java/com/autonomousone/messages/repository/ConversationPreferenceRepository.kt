@@ -44,6 +44,18 @@ class ConversationPreferenceRepository(context: Context) {
     suspend fun isMuted(threadId: Long, now: Long): Boolean =
         dao.get(threadId)?.isMuted(now) ?: false
 
+    /**
+     * Blocking variant for `NotificationHelper` (background thread only — see
+     * ConversationPreferenceDao.getBlocking). The mute gate must not suspend,
+     * because showSmsNotification is a plain object method.
+     */
+    fun isMutedBlocking(threadId: Long, now: Long): Boolean =
+        dao.getBlocking(threadId)?.isMuted(now) ?: false
+
+    /** Blocking variant for the notification channel decision. */
+    fun hasCustomNotificationChannelBlocking(threadId: Long): Boolean =
+        dao.getBlocking(threadId)?.customNotificationChannel == true
+
     suspend fun hasCustomNotificationChannel(threadId: Long): Boolean =
         dao.get(threadId)?.customNotificationChannel == true
 
