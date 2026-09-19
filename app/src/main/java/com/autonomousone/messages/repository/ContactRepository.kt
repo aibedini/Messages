@@ -26,21 +26,13 @@ class ContactRepository(
             participantCache.clear()
         }
 
-        fun normalizePhone(phone: String): String {
-            var p = phone
-                .replace(" ", "")
-                .replace("-", "")
-                .replace("(", "")
-                .replace(")", "")
-
-            if (p.startsWith("+")) {
-                p = "+" + p.substring(1).replace("+", "")
-            } else {
-                p = p.replace("+", "")
-            }
-
-            return p
-        }
+        /**
+         * Formatting-only normalization. Delegates to [PhoneIdentity] so there is
+         * exactly ONE definition of "the same number written differently" in the app.
+         * The previous hand-rolled version stripped spaces/dashes/parentheses but
+         * carried no equivalence rules at all, which is half of the Home-name bug.
+         */
+        fun normalizePhone(phone: String): String = PhoneIdentity.normalize(phone)
 
         /**
          * True when [a] and [b] plausibly belong to the same conversation:
@@ -59,6 +51,25 @@ class ContactRepository(
             val minLen = minOf(na.length, nb.length)
             if (minLen < 7) return false
             return na.endsWith(nb) || nb.endsWith(na)
+        }
+
+        /**
+         * THE display-name resolver. Every surface that shows a contact name for an
+         * address goes through this: the Home row, Home search hits, the navigation
+         * snapshot, confirmation dialogs, archive/delete labels.
+         *
+         * Static on purpose — it is a pure function of (directory, address), so callers
+         * need no repository instance and no ContentResolver. It tries every spelling
+         * of the address (see [PhoneIdentity.lookupKeys]) so the local `0912…` form
+         * finds a contact stored as `+98912…`, and it falls back to the address itself
+         * — never to a blank string — so an unknown sender still renders.
+         */
+        fun displayNameFrom(map: Map<String, String>, address: String): String {
+            if (address.isBlank()) return address
+            PhoneIdentity.lookupKeys(address).forEach { key ->
+                map[key]?.let { return it }
+            }
+            return address
         }
     }
 
@@ -166,7 +177,14 @@ class ContactRepository(
                     val name = if (nameIndex >= 0) cursor.getString(nameIndex)?.trim() else null
                     val phone = if (phoneIndex >= 0) cursor.getString(phoneIndex)?.trim() else null
                     if (!name.isNullOrEmpty() && !phone.isNullOrEmpty()) {
-                        map[normalizePhone(phone)] = name
+                        // Register EVERY spelling of the contact's number, so a
+                        // conversation whose provider address is the local `0912…`
+                        // form still finds a contact stored as `+98912…`.
+                        // `putIfAbsent` keeps the FIRST contact for a shared line
+                        // instead of letting cursor order decide the winner.
+                        PhoneIdentity.lookupKeys(phone).forEach { key ->
+                            map.putIfAbsent(key, name)
+                        }
                     }
                 }
             }
@@ -180,8 +198,7 @@ class ContactRepository(
     fun getCachedDisplayName(phone: String): String {
         if (phone.isBlank()) return "Unknown"
         val map = cachedMap ?: return phone
-        val norm = normalizePhone(phone)
-        return map[norm] ?: map[phone] ?: phone
+        return displayNameFrom(map, phone)
     }
 
     fun getContacts(

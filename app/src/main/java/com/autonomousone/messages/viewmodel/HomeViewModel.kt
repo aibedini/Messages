@@ -189,9 +189,22 @@ class HomeViewModel(
     var syncProgress by mutableStateOf<SyncProgress?>(null)
         private set
 
-    /** Normalized-phone → contact display name, used by search. */
+    /**
+     * Normalized-phone → contact display name.
+     *
+     * KEYED BY EVERY SPELLING of a number (see [PhoneIdentity.lookupKeys]), so a
+     * conversation addressed as `0912…` finds a contact stored as `+98912…`.
+     */
     var contactNames by mutableStateOf<Map<String, String>>(emptyMap())
         private set
+
+    /**
+     * THE display-name resolver for every Home surface: rows, search hits, the
+     * navigation snapshot and confirmation dialogs. Uses the alias policy above and
+     * falls back to the address so an unknown sender still renders.
+     */
+    fun displayNameFor(address: String): String =
+        ContactRepository.displayNameFrom(contactNames, address)
 
     /** conversation key → draft text (non-empty only). */
     val drafts: StateFlow<Map<String, String>> =
@@ -229,12 +242,52 @@ class HomeViewModel(
         com.autonomousone.messages.repository.TrashRepository.get(getApplication())
     }
 
+    /**
+     * Reloads the directory after the Contacts provider actually changed.
+     *
+     * The cached directory is invalidated FIRST: [ContactRepository.clearCache] also
+     * clears the single-recipient participant cache, so the conversation header and
+     * Home agree again after a rename instead of the header keeping a stale name.
+     */
+    private fun onContactsDirectoryChanged() {
+        ContactRepository.clearCache()
+        refreshContactNames()
+    }
+
+    /**
+     * Registers the Contacts observer while Home is on screen. Called on resume and
+     * released in [onCleared], so a backgrounded app does not hold a provider
+     * registration it cannot use.
+     */
+    private fun observeContactsChanges() {
+        contactsObserver.register()
+    }
+
     /** Delays the spinner so quick reloads never flash the progress bar. */
     private var loadingShowJob: Job? = null
+
+    /** In-flight contact-directory load, so a burst of triggers issues ONE query. */
+    private var contactLoadJob: Job? = null
+
+    /** Contacts-provider watcher; debounces a burst of change notifications. */
+    private val contactsObserver by lazy {
+        com.autonomousone.messages.observer.ContactsChangeObserver(
+            context = getApplication(),
+            onContactsChanged = { onContactsDirectoryChanged() }
+        )
+    }
 
     init {
         repository.registerObserver(observer)
         loadArchivedIds()
+        // CONTACTS ARE LOADED HERE, NOT INSIDE THE PROVIDER FALLBACK.
+        //
+        // `loadProviderConversations()` was the only caller of the contact map, and
+        // the Room read-SSOT path returns before reaching it — so on a normal launch
+        // `contactNames` stayed empty and Home rendered raw numbers while the chat
+        // header showed the name. Contact names are UI metadata; where the message
+        // rows came from is irrelevant to them.
+        refreshContactNames()
         observeIncomingSms()
         observeRoomConversations()
         observeRefreshSignal()
@@ -245,6 +298,32 @@ class HomeViewModel(
         observeSmartCategories()
         observeConversationUserState()
         observeTrashState()
+    }
+
+    /**
+     * Loads the contact directory in the background and publishes it on Main.
+     *
+     * Deliberately INDEPENDENT of Room, of the provider fallback and of message sync:
+     * it never scans SMS, it never blocks the first Room paint (numbers render first
+     * and are replaced by names when the map arrives), and it runs on IO because the
+     * Contacts query must never touch the main thread.
+     *
+     * A no-op while a load is already in flight, so bursts (a Contacts change plus a
+     * resume) collapse into one query. [force] invalidates [ContactRepository]'s cache
+     * first — used after the user edits a contact.
+     */
+    fun refreshContactNames(force: Boolean = false) {
+        if (contactLoadJob?.isActive == true) return
+        contactLoadJob = viewModelScope.launch(Dispatchers.IO) {
+            if (force) ContactRepository.clearCache()
+            val names = runCatching {
+                ContactRepository(getApplication()).getContactNameMapAsync()
+            }.getOrDefault(emptyMap())
+            withContext(Dispatchers.Main) {
+                contactNames = names
+                DiagnosticLog.event("CONTACT_DIRECTORY", "loaded=${names.size}")
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -430,6 +509,14 @@ class HomeViewModel(
      */
     fun onDayWindowMaybeChanged() {
         observeSentSegmentsToday()
+        // Resume is also the cheap moment to pick up contacts changed while the app
+        // was backgrounded (create/rename/delete, or READ_CONTACTS granted in
+        // Settings). `getContactNameMapAsync` returns the cached directory without
+        // touching the provider, so this is one map read when nothing changed.
+        refreshContactNames()
+        // ...and while Home is visible, watch the provider so a contact edited in
+        // another app lands here without a restart.
+        observeContactsChanges()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1485,6 +1572,7 @@ class HomeViewModel(
         // destroy or resurrect anything.
         reloadRequests.close()
         repository.unregisterObserver(observer)
+        runCatching { contactsObserver.unregister() }
         super.onCleared()
     }
 }

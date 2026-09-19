@@ -419,9 +419,10 @@ fun HomeScreen(
                 // composition of the list item (RFP §8/§9). No I/O here.
                 val blockedMsg = stringResource(R.string.home_snackbar_blocked)
                 val rows = filteredList.map { sms ->
-                    val displayName = viewModel.contactNames[
-                        ContactRepository.normalizePhone(sms.sender)
-                    ] ?: sms.sender
+                    // ONE resolver: the alias-aware contact policy lives in the
+                    // ViewModel, so a row, a search hit and a dialog label can never
+                    // disagree about the same conversation.
+                    val displayName = viewModel.displayNameFor(sms.sender)
                     HomeRow(
                         sms = sms,
                         displayName = displayName,
@@ -453,9 +454,7 @@ fun HomeScreen(
                     },
                     globalHeaderText = stringResource(R.string.home_search_global_header),
                     globalHits = viewModel.globalResults.map { hit ->
-                        val displayName = viewModel.contactNames[
-                            ContactRepository.normalizePhone(hit.sms.sender)
-                        ] ?: hit.sms.sender
+                        val displayName = viewModel.displayNameFor(hit.sms.sender)
                         HomeRow(
                             sms = hit.sms,
                             displayName = displayName,
@@ -487,9 +486,7 @@ fun HomeScreen(
                         // v2.6.9 first-paint handoff: the row Home is showing
                         // right now IS the conversation's last bubble. Stash it
                         // (no IO) so Conversation's very first frame is never blank.
-                        val displayName = viewModel.contactNames[
-                            ContactRepository.normalizePhone(row.sms.sender)
-                        ] ?: row.sms.sender
+                        val displayName = viewModel.displayNameFor(row.sms.sender)
                         ConversationLaunchStore.put(
                             ConversationLaunchStore.Snapshot(
                                 threadId = row.sms.threadId,
@@ -537,9 +534,7 @@ fun HomeScreen(
                             if (isInArchivedView) R.string.home_confirm_unarchive_title
                             else R.string.home_confirm_archive_title
                         ),
-                        body = viewModel.contactNames[
-                            ContactRepository.normalizePhone(target.sender)
-                        ] ?: target.sender,
+                        body = viewModel.displayNameFor(target.sender),
                         destructive = false,
                         onConfirm = {
                             pendingArchive = null
@@ -582,9 +577,7 @@ fun HomeScreen(
                     val confirmUndo = stringResource(R.string.action_undo)
                     HomeConfirmDialog(
                         title = stringResource(R.string.home_confirm_delete_title),
-                        body = viewModel.contactNames[
-                            ContactRepository.normalizePhone(target.sender)
-                        ] ?: target.sender,
+                        body = viewModel.displayNameFor(target.sender),
                         destructive = true,
                         onConfirm = {
                             pendingDelete = null

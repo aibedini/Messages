@@ -17,7 +17,11 @@ object HomeSearch {
         if (query.isBlank()) return true
         val q = query.trim()
 
-        val displayName = contactNames[ContactRepository.normalizePhone(sms.sender)] ?: ""
+        // The SAME alias-aware resolver the row uses, so a search by a contact's
+        // name matches whenever the row displays that name.
+        val displayName = ContactRepository.displayNameFrom(contactNames, sms.sender)
+            .takeIf { it != sms.sender }
+            .orEmpty()
         if (displayName.contains(q, ignoreCase = true)) return true
 
         if (sms.sender.contains(q, ignoreCase = true) ||
