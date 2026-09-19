@@ -641,4 +641,72 @@ interface MessageFtsDao {
     /** Total matching messages (for "N results" labeling). */
     @Query("SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH :query")
     suspend fun countMatches(query: String): Int
+
+    /**
+     * IN-CONVERSATION SEARCH (v3.4.0).
+     *
+     * Reuses the SAME `messages_fts` index — NO second FTS index. The per-thread
+     * pin (`m.threadId = :threadId`) is what bounds a 100K-message conversation,
+     * and trashed rows (individually, or hidden by a thread tombstone) are
+     * excluded so search never resurfaces deleted history.
+     */
+    @Query(
+        """
+        SELECT m.source AS source, m.providerId AS providerId, m.threadId AS threadId,
+               m.body AS body, m.date AS date
+        FROM messages_fts
+        JOIN messages m ON messages_fts.docid = m.rowid
+        WHERE messages_fts MATCH :match
+          AND m.threadId = :threadId
+          AND NOT EXISTS (
+              SELECT 1 FROM message_user_state us
+              WHERE us.source = m.source
+                AND us.providerId = m.providerId
+                AND us.trashedAt > 0
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM trashed_threads t
+              WHERE t.threadId = m.threadId AND ${MessageCutoff.HIDDEN_BY_TOMBSTONE_SQL}
+          )
+        ORDER BY m.date DESC, m.source DESC, m.providerId DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun searchThread(
+        threadId: Long,
+        match: String,
+        limit: Int,
+        offset: Int
+    ): List<ConversationSearchHit>
+
+    /** Total in-conversation matches, for the "3 of 14" counter. */
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM messages_fts
+        JOIN messages m ON messages_fts.docid = m.rowid
+        WHERE messages_fts MATCH :match
+          AND m.threadId = :threadId
+          AND NOT EXISTS (
+              SELECT 1 FROM message_user_state us
+              WHERE us.source = m.source
+                AND us.providerId = m.providerId
+                AND us.trashedAt > 0
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM trashed_threads t
+              WHERE t.threadId = m.threadId AND ${MessageCutoff.HIDDEN_BY_TOMBSTONE_SQL}
+          )
+        """
+    )
+    suspend fun countThreadMatches(threadId: Long, match: String): Int
 }
+
+/** In-conversation search result (v3.4.0 FEATURE 1). */
+data class ConversationSearchHit(
+    val source: String,
+    val providerId: Long,
+    val threadId: Long,
+    val body: String,
+    val date: Long
+)
