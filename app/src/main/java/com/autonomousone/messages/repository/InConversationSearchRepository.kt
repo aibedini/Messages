@@ -214,14 +214,14 @@ class InConversationSearchRepository(
             date = anchorEntity.date,
             source = anchorEntity.source,
             providerId = anchorEntity.providerId,
-            limit = plan.beforeQueryLimit
+            limit = plan.beforeProbeQueryLimit
         )
         val newer = dao.windowAfter(
             threadId = effectiveThread,
             date = anchorEntity.date,
             source = anchorEntity.source,
             providerId = anchorEntity.providerId,
-            limit = plan.afterQueryLimit
+            limit = plan.afterProbeQueryLimit
         )
 
         val window = SearchWindowAssembler.assemble(anchorEntity, older, newer, plan)

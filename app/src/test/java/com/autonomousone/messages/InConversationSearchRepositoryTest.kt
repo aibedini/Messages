@@ -439,9 +439,11 @@ class InConversationSearchRepositoryTest {
         assertEquals(1_600_000L, newer.date)
         assertEquals(thread, older.thread)
         assertEquals(thread, newer.thread)
-        // The probe row is requested on top of the painted half.
-        assertEquals(plan.beforeQueryLimit, older.limit)
-        assertEquals(plan.afterQueryLimit, newer.limit)
+        // The probe row is requested on top of the painted half. The BEFORE read is
+        // INCLUSIVE of the anchor, so it asks for one more slot than the AFTER read:
+        // otherwise the anchor consumes the probe and continuation can never be proven.
+        assertEquals(plan.beforeProbeQueryLimit, older.limit)
+        assertEquals(plan.afterProbeQueryLimit, newer.limit)
         // The assembled window is BOUNDED by the plan and never exceeds it. It is not
         // asserted to be FULL: jumping into a sparse stretch legitimately paints fewer
         // rows, because the two keyset reads return only rows that exist. (This

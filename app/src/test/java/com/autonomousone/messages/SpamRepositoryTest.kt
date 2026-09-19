@@ -126,6 +126,14 @@ class SpamRepositoryTest {
         val spamWrites = mutableListOf<Pair<Long, Boolean>>()
         val spamClears = mutableListOf<Pair<Long, Boolean>>()
 
+        /**
+         * Trash writes. STRUCTURALLY ALWAYS EMPTY: [SpamBlockPort] exposes no way to
+         * move a message to Trash, so the spam workflow cannot delete any message even
+         * by mistake. The list exists so the assertion reads as behaviour rather than
+         * as a missing method.
+         */
+        val trashWrites = mutableListOf<Pair<String, Long>>()
+
         override fun isBlocked(normalizedAddress: String): Boolean = normalizedAddress in blocked
         override fun block(address: String) {
             blockedAdds += address
@@ -246,5 +254,47 @@ class SpamRepositoryTest {
         assertEquals("09123456789", com.autonomousone.messages.repository.BlocklistRepository.normalize("0912 345 6789"))
         assertEquals("09123456789", com.autonomousone.messages.repository.BlocklistRepository.normalize("989123456789"))
         assertEquals("", com.autonomousone.messages.repository.BlocklistRepository.normalize("not a number"))
+    }
+
+    // ── Spam is NOT Trash (the invariant a release must not get wrong) ───────
+
+    /**
+     * MARK AS SPAM must never be a delete. The conversation keeps every message, the
+     * sender is blocked, and the conversation is *categorised* as Spam — the only
+     * flows allowed to move a message to Trash are an explicit user delete and the
+     * expired-OTP cleanup.
+     *
+     * This is asserted against the public surface (no delete/trash/purge member can
+     * exist at all) as well as behaviourally (a report writes ONLY block + spam
+     * state), because the failure mode — spam silently deleting a user's messages —
+     * is unrecoverable.
+     */
+    @Test
+    fun `a spam report never trashes or deletes anything`() = runBlocking {
+        val port = FakePort()
+        val outcome = repository(port).reportSpam(threadId = 42L, address = "09123456789")
+
+        assertTrue(outcome is SpamReportOutcome.Reported)
+        // Behaviour: only a block and a spam-state write happened.
+        assertEquals(listOf("09123456789"), port.blockedAdds)
+        assertEquals(listOf(42L to true), port.spamWrites)
+        assertTrue("a report must not touch trash state", port.trashWrites.isEmpty())
+        assertTrue("a report must not unblock anything", port.blockedRemovals.isEmpty())
+
+        // Surface: there is no member that could move a message to Trash.
+        val members = SpamRepository::class.java.methods.map { it.name }
+        assertFalse(members.any { it.contains("trash", ignoreCase = true) })
+        assertFalse(members.any { it.contains("purge", ignoreCase = true) })
+        assertFalse(members.any { it.contains("delete", ignoreCase = true) })
+    }
+
+    @Test
+    fun `not spam restores the conversation and never trashes it`() = runBlocking {
+        val port = FakePort()
+        repository(port).reportSpam(threadId = 42L, address = "09123456789")
+        repository(port).notSpam(threadId = 42L, address = "09123456789", blockedByReport = true)
+
+        assertEquals(listOf(42L to true), port.spamClears)
+        assertTrue(port.trashWrites.isEmpty())
     }
 }

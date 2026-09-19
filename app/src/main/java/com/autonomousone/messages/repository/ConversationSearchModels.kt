@@ -55,6 +55,19 @@ data class SearchWindowPlan(
     /** Rows painted for the newer half, probe row excluded. */
     val visibleAfter: Int get() = after
 
+    /**
+     * Rows to ASK an inclusive `windowBefore` read for.
+     *
+     * [beforeQueryLimit] alone is not enough to prove continuation: the inclusive read
+     * carries the ANCHOR itself, so the anchor occupies one of the requested slots and
+     * the probe row never arrives. One extra slot guarantees the raw candidate list is
+     * one longer than what gets painted whenever more history exists.
+     */
+    val beforeProbeQueryLimit: Int get() = visibleBefore + 2
+
+    /** Rows to ask an exclusive `windowAfter` read for; the probe row here is real. */
+    val afterProbeQueryLimit: Int get() = visibleAfter + 2
+
     /** Visible rows in the worst case: the anchor plus both halves. */
     val maxVisibleRows: Int get() = 1 + before + after
 
@@ -219,13 +232,6 @@ object SearchWindowAssembler {
             olderCandidates++
             if (older.size < plan.visibleBefore) older.addLast(row)
         }
-        // THE PROBE IS THE EXTRA ROW THE QUERY WAS ASKED FOR. The caller requests
-        // `visibleBefore + 1` rows, so receiving MORE candidate rows than we paint is
-        // exactly the evidence that older history exists. The previous version instead
-        // set the flag only when a row was DISCARDED after the half was full, which can
-        // never happen when the query returned exactly `limit` rows — so `hasOlder` was
-        // false for an anchor sitting in the middle of a 1 000-row thread.
-        val overflowOlder = olderCandidates > plan.visibleBefore
         val newer = ArrayList<MessageEntityView>(plan.visibleAfter)
         var newerCandidates = 0
         after.forEach { row ->
@@ -233,7 +239,23 @@ object SearchWindowAssembler {
             newerCandidates++
             if (newer.size < plan.visibleAfter) newer.add(row)
         }
-        val overflowNewer = newerCandidates > plan.visibleAfter
+
+        // CONTINUATION IS "MORE ROWS WERE AVAILABLE THAN WERE PAINTED".
+        //
+        // The caller requests one probe row per side ON TOP of what it paints, so a
+        // side whose candidate list is longer than its selected list proves there is
+        // more history beyond the window. Two traps this comparison avoids:
+        //
+        //  1. `selected.size > quota` can never be true, because the selection is
+        //     capped at the quota.
+        //  2. `candidates.size > quota` is wrong when the query returned exactly its
+        //     limit: the INCLUSIVE `windowBefore` read carries the ANCHOR itself, so
+        //     the anchor consumes one of the requested slots and the real probe row is
+        //     never fetched. Comparing raw candidates against the SELECTED list stays
+        //     correct regardless of how many slots the anchor used, and regardless of
+        //     any later rebalancing between the two sides.
+        val overflowOlder = olderCandidates > older.size
+        val overflowNewer = newerCandidates > newer.size
 
         val rows = ArrayList<Sms>(older.size + 1 + newer.size)
         // `before` arrives newest-first; `older` was filled in that order, so
