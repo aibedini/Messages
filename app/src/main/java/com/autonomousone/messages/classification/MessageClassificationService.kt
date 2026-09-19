@@ -3,6 +3,7 @@ package com.autonomousone.messages.classification
 import android.content.Context
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.repository.ClassificationRepository
+import com.autonomousone.messages.repository.toForClassification
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

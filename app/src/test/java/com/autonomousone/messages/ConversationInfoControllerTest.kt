@@ -249,7 +249,13 @@ class ConversationInfoControllerTest {
     ) {
         val starred = FakeStarredStore()
         val preferences = FakePreferences()
-        val blocklist = FakeBlocklist(blockedNumbers)
+        // The production blocklist stores NORMALIZED numbers, so an
+        // already-blocked fixture must be normalized the same way — otherwise a
+        // test could "prove" provenance with a number the real store would not
+        // have matched.
+        val blocklist = FakeBlocklist(
+            blockedNumbers.map { BlocklistRepository.normalize(it) }.toSet()
+        )
         val spamPort = FakeSpamPort(blocklist, preferences)
         val gate = FakeChannelGate()
         val trashing = FakeTrashing()
@@ -621,3 +627,4 @@ class ConversationInfoControllerTest {
         assertTrue(fresh.clearBlockProvenanceOnUndo)
     }
 }
+

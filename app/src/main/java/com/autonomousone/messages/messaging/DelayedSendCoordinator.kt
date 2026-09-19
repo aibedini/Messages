@@ -3,7 +3,6 @@ package com.autonomousone.messages.messaging
 import android.content.Context
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.PendingDelayedSendEntity
-import com.autonomousone.messages.data.toDomain
 import com.autonomousone.messages.sms.DelayPlan
 import com.autonomousone.messages.sms.DelayedSendExecutor
 import com.autonomousone.messages.sms.DelayedSendGate
@@ -75,7 +74,7 @@ class DelayedSendCoordinator(
     ): SendResult {
         if (body.isBlank() || phone.isBlank()) return SendResult.Ignored
 
-        return when (val plan = DelayedSendGate.plan(source, delayMillis(), now)) {
+        return when (val plan = DelayedSendGate.plan(source, delayMillis().toLong(), now)) {
             is DelayPlan.Immediate -> {
                 // The unchanged path. A message that is not delayed must not
                 // create ANY delay state, or "OFF" would still leave a trace.
@@ -115,8 +114,8 @@ class DelayedSendCoordinator(
                 DiagnosticLog.event("SEND_DELAY", "armed id=$intentId work=$workName")
 
                 SendResult.DelayedSend(
-                    row = row.toDomain(),
-                    delaySeconds = plan.delayMillis / 1000
+                    row = row.domain(),
+                    delaySeconds = (plan.delayMillis / 1000L)
                 )
             }
         }
@@ -149,10 +148,10 @@ class DelayedSendCoordinator(
 
     /** Live (PENDING/SENDING) messages of one conversation, for the composer. */
     fun observeLive(threadId: Long): Flow<List<PendingDelayedSend>> =
-        dao.observeLiveForThread(threadId).map { rows -> rows.map { it.toDomain() } }
+        dao.observeLiveForThread(threadId).map { rows -> rows.map { it.domain() } }
 
     /** Every live message, newest first. */
-    suspend fun live(): List<PendingDelayedSend> = dao.live().map { it.toDomain() }
+    suspend fun live(): List<PendingDelayedSend> = dao.live().map { it.domain() }
 
     /**
      * Startup maintenance: fail sends stranded by a process death inside the
@@ -168,6 +167,27 @@ class DelayedSendCoordinator(
     private fun newIntentId(): String =
         "dly_" + UUID.randomUUID().toString().replace("-", "").take(16)
 }
+
+/**
+ * Domain view of a ledger row.
+ *
+ * The state NAME is decoded through [DelayedSendState.from], the single place
+ * that owns the persisted vocabulary — an unknown value degrades to FAILED
+ * ("never send"), never to PENDING.
+ */
+private fun PendingDelayedSendEntity.domain(): PendingDelayedSend = PendingDelayedSend(
+    intentId = intentId,
+    body = body,
+    phoneToken = phoneToken,
+    threadId = threadId,
+    state = DelayedSendState.from(state),
+    dueAt = dueAt,
+    createdAt = createdAt,
+    claimedAt = claimedAt,
+    sentRowId = sentRowId,
+    attempts = attempts,
+    failureCode = failureCode
+)
 
 /** Outcome of routing one composed message. */
 sealed interface SendResult {
@@ -187,3 +207,16 @@ sealed interface SendResult {
      */
     data class DelayedSend(val row: PendingDelayedSend, val delaySeconds: Long) : SendResult
 }
+
+/**
+ * "Sending in N seconds" — the one-shot signal a screen renders as a Snackbar
+ * with UNDO.
+ *
+ * [body] is carried so the Undo can put the text back in the composer: the user
+ * who taps Undo has, by definition, just lost their draft off the send button.
+ */
+data class DelayedSendNotice(
+    val intentId: String,
+    val seconds: Long,
+    val body: String
+)

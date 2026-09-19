@@ -36,48 +36,61 @@ class OtpRetentionViewModel(
 
     // ── Observable state ────────────────────────────────────────────────────
 
-    /** The global switch. OFF on a fresh install. */
-    var enabled by mutableStateOf(prefs.enabled)
-        private set
+    /**
+     * The global switch. OFF on a fresh install.
+     *
+     * NOTE ON SHAPE: these are private mutable states in front of public read-only
+     * properties, NOT `var … private set`. A `var` named for the setting (e.g.
+     * `enabled`) synthesises a `setX` method, and that collides on the JVM with the
+     * `setEnabled(Boolean)` ACTION below:
+     *
+     *     Platform declaration clash: the following declarations have the same JVM
+     *     signature (setEnabled(Z)V)
+     *
+     * Compose reads the value identically either way; only the writer differs, and
+     * the writer is a named action that also re-points the cleanup work.
+     */
+    private var enabledState by mutableStateOf(prefs.enabled)
+    val enabled: Boolean get() = enabledState
 
-    var retentionMillis by mutableStateOf(prefs.retentionMillis)
-        private set
+    private var retentionMillisState by mutableStateOf(prefs.retentionMillis)
+    val retentionMillis: Long get() = retentionMillisState
 
     /** Non-null while the Custom editor is open (transient UI state only). */
-    var customOpen by mutableStateOf(false)
-        private set
+    private var customOpenState by mutableStateOf(false)
+    val customOpen: Boolean get() = customOpenState
 
-    var customValue by mutableStateOf("")
-        private set
+    private var customValueState by mutableStateOf("")
+    val customValue: String get() = customValueState
 
-    var customUnit by mutableStateOf(CustomRetentionRange.Unit.HOURS)
-        private set
+    private var customUnitState by mutableStateOf(CustomRetentionRange.Unit.HOURS)
+    val customUnit: CustomRetentionRange.Unit get() = customUnitState
 
     /** Visible feedback for a rejected custom value; null = no error. */
-    var customError by mutableStateOf<CustomRetentionRange.Rejection?>(null)
-        private set
+    private var customErrorState by mutableStateOf<CustomRetentionRange.Rejection?>(null)
+    val customError: CustomRetentionRange.Rejection? get() = customErrorState
 
     /** Messages currently enrolled in automatic cleanup. */
-    var enrolledCount by mutableStateOf(0)
-        private set
+    private var enrolledCountState by mutableStateOf(0)
+    val enrolledCount: Int get() = enrolledCountState
 
     /** Next cleanup instant, or 0 when nothing is scheduled. */
-    var nextEligibleAt by mutableStateOf(0L)
-        private set
+    private var nextEligibleAtState by mutableStateOf(0L)
+    val nextEligibleAt: Long get() = nextEligibleAtState
 
     /** True while the explicit "apply to existing" action is running. */
-    var applying by mutableStateOf(false)
-        private set
+    private var applyingState by mutableStateOf(false)
+    val applying: Boolean get() = applyingState
 
     /** Non-null after the explicit action, describing what it did. */
-    var applyResult by mutableStateOf<OtpRetentionService.SweepOutcome?>(null)
-        private set
+    private var applyResultState by mutableStateOf<OtpRetentionService.SweepOutcome?>(null)
+    val applyResult: OtpRetentionService.SweepOutcome? get() = applyResultState
 
     init {
         viewModelScope.launch {
             prefs.stateFlow().collectLatest { state ->
-                enabled = state.enabled
-                retentionMillis = state.retentionMillis
+                enabledState = state.enabled
+                retentionMillisState = state.retentionMillis
             }
         }
         refreshDiagnostics()
@@ -91,8 +104,8 @@ class OtpRetentionViewModel(
             val count = runCatching { service.enrolledCount() }.getOrDefault(0)
             val next = runCatching { service.nextEligibleAt() }.getOrDefault(null) ?: 0L
             withContext(Dispatchers.Main) {
-                enrolledCount = count
-                nextEligibleAt = next
+                enrolledCountState = count
+                nextEligibleAtState = next
             }
         }
     }
@@ -111,8 +124,8 @@ class OtpRetentionViewModel(
      */
     fun setEnabled(value: Boolean) {
         prefs.enabled = value
-        enabled = value
-        applyResult = null
+        enabledState = value
+        applyResultState = null
         if (value) {
             OtpCleanupScheduler.reschedule(getApplication())
         } else {
@@ -126,23 +139,23 @@ class OtpRetentionViewModel(
     /** Applies one of the fixed presets (1h / 6h / 24h / 3d / 7d). */
     fun selectPreset(millis: Long) {
         val stored = prefs.setRetentionMillisValidated(millis)
-        retentionMillis = stored
-        customOpen = false
-        customError = null
+        retentionMillisState = stored
+        customOpenState = false
+        customErrorState = null
         if (prefs.enabled) OtpCleanupScheduler.reschedule(getApplication())
     }
 
     /** Opens the Custom editor seeded with the value currently in force. */
     fun openCustomEditor() {
-        customOpen = true
-        customError = null
+        customOpenState = true
+        customErrorState = null
         val hours = CustomRetentionRange.hoursOf(retentionMillis)
-        customUnit = if (hours % 24L == 0L && hours >= 24L) {
+        customUnitState = if (hours % 24L == 0L && hours >= 24L) {
             CustomRetentionRange.Unit.DAYS
         } else {
             CustomRetentionRange.Unit.HOURS
         }
-        customValue = if (customUnit == CustomRetentionRange.Unit.DAYS) {
+        customValueState = if (customUnit == CustomRetentionRange.Unit.DAYS) {
             (hours / 24L).toString()
         } else {
             hours.toString()
@@ -150,20 +163,20 @@ class OtpRetentionViewModel(
     }
 
     fun dismissCustomEditor() {
-        customOpen = false
-        customError = null
+        customOpenState = false
+        customErrorState = null
     }
 
     fun updateCustomValue(value: String) {
         // Digits only: the validator rejects everything else anyway, and filtering
         // here keeps the field from ever showing a value that cannot be stored.
-        customValue = value.filter { it.isDigit() }.take(MAX_CUSTOM_DIGITS)
-        customError = null
+        customValueState = value.filter { it.isDigit() }.take(MAX_CUSTOM_DIGITS)
+        customErrorState = null
     }
 
     fun selectCustomUnit(unit: CustomRetentionRange.Unit) {
-        customUnit = unit
-        customError = null
+        customUnitState = unit
+        customErrorState = null
     }
 
     /**
@@ -176,13 +189,13 @@ class OtpRetentionViewModel(
     fun commitCustomRetention(): Boolean {
         val result = CustomRetentionRange.validate(customValue, customUnit)
         if (!result.isValid) {
-            customError = result.rejection
+            customErrorState = result.rejection
             return false
         }
         val stored = prefs.setRetentionMillisValidated(result.millis!!)
-        retentionMillis = stored
-        customOpen = false
-        customError = null
+        retentionMillisState = stored
+        customOpenState = false
+        customErrorState = null
         if (prefs.enabled) OtpCleanupScheduler.reschedule(getApplication())
         return true
     }
@@ -202,20 +215,20 @@ class OtpRetentionViewModel(
      */
     fun applyToExisting() {
         if (applying) return
-        applying = true
-        applyResult = null
+        applyingState = true
+        applyResultState = null
         viewModelScope.launch {
             val outcome = runCatching {
                 service.applyToExistingOtpMessages()
             }.getOrNull()
-            applying = false
-            applyResult = outcome
+            applyingState = false
+            applyResultState = outcome
             refreshDiagnostics()
         }
     }
 
     fun clearApplyResult() {
-        applyResult = null
+        applyResultState = null
     }
 
     private companion object {

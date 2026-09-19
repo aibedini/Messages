@@ -17,6 +17,8 @@ import com.autonomousone.messages.messaging.MessageClassifier
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -71,21 +73,45 @@ class ClassificationRepository(
     // ── Read side (Home filter + diagnostics) ───────────────────────────────
 
     /**
-     * Thread ids whose EFFECTIVE category is one of [categories]. Indexed lookup
-     * over the projection plus the live override — never a message scan.
+     * Thread ids whose EFFECTIVE category is one of [categories].
+     *
+     * Reads the conversation-sized projections ONLY (one row per thread, never a
+     * message) and resolves the override through
+     * [ConversationCategoryResolver.effectiveCategories] — the SAME rule Home applies — so
+     * the repository and the UI can never disagree about who wins.
      */
-    suspend fun threadIdsByCategory(categories: Collection<MessageCategory>): Set<Long> =
-        withContext(Dispatchers.IO) {
-            if (categories.isEmpty()) return@withContext emptySet()
-            runCatching {
-                messageDao.threadIdsByEffectiveCategory(categories.map { it.name })
-                    .mapTo(HashSet()) { it.threadId }
-            }.getOrDefault(emptySet())
+    suspend fun threadIdsByCategory(categories: Collection<MessageCategory>): Set<Long> {
+        if (categories.isEmpty()) return emptySet()
+        return withContext(Dispatchers.IO) { effectiveCategories() }
+            .asSequence()
+            .filter { it.category in categories }
+            .map { it.threadId }
+            .toHashSet()
+    }
+
+    /** One-shot effective category per thread. */
+    suspend fun categoriesByThread(): Map<Long, MessageCategory> =
+        withContext(Dispatchers.IO) { effectiveCategories() }
+            .associate { it.threadId to it.category }
+
+    /**
+     * Live version of [threadIdsByCategory] for Home: the same override-first
+     * resolution, recomputed whenever a classification or an override lands.
+     */
+    fun observeCategories(): Flow<List<ThreadEffectiveCategory>> =
+        combine(
+            conversationDao.observeCategories(),
+            preferenceDao.observeCategoryOverrides()
+        ) { automatic, overrides ->
+            ConversationCategoryResolver.effectiveCategories(automatic, overrides)
+                .map { ThreadEffectiveCategory(it.threadId, it.category.name) }
         }
 
-    /** Live version of [threadIdsByCategory] for Home. */
-    fun observeThreadCategories(): Flow<List<ThreadEffectiveCategory>> =
-        conversationDao.observeThreadEffectiveCategories()
+    private suspend fun effectiveCategories(): List<ConversationCategoryResolver.EffectiveCategory> =
+        ConversationCategoryResolver.effectiveCategories(
+            automatic = conversationDao.observeCategories().first(),
+            overrides = preferenceDao.observeCategoryOverrides().first()
+        )
 
     /**
      * Effective category of ONE thread: the user override first, the automatic
@@ -373,20 +399,28 @@ class ClassificationRepository(
             if (retentionMillis <= 0L) return 0L
             return if (dateMs <= 0L) 0L else dateMs + retentionMillis
         }
-
-        /** Convenience for a message handed in from the sync coordinator. */
-        fun MessageEntity.toForClassification(): MessageForClassification =
-            MessageForClassification(
-                source = source,
-                providerId = providerId,
-                threadId = threadId,
-                body = body,
-                date = date,
-                rawAddress = rawAddress.ifBlank { normalizedAddress },
-                messageType = type
-            )
     }
 }
+
+/**
+ * Adapt a persisted row into the classifier's input shape.
+ *
+ * TOP-LEVEL (not a companion member) on purpose: the immediate-ingest hook in
+ * another package imports it by name, and a companion-member extension is not
+ * importable that way.
+ */
+fun MessageEntity.toForClassification(): MessageForClassification =
+    MessageForClassification(
+        source = source,
+        providerId = providerId,
+        threadId = threadId,
+        body = body,
+        date = date,
+        // The sender the user sees, which is what the classifier's sender-shape
+        // rules expect; the normalized address is the fallback.
+        rawAddress = rawAddress.ifBlank { normalizedAddress },
+        messageType = type
+    )
 
 /**
  * Keyset cursor of the classification backfill.

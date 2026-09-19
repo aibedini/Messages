@@ -100,7 +100,10 @@ sealed class Screen(val route: String) {
     object StarredMessages : Screen("starred_messages")
 
     object Conversation :
-        Screen("conversation/{threadId}?phone={phone}&name={name}&forward={forward}&draft={draft}") {
+        Screen(
+            "conversation/{threadId}?phone={phone}&name={name}&forward={forward}" +
+                "&draft={draft}&hitSource={hitSource}&hitProviderId={hitProviderId}"
+        ) {
 
         fun createRoute(
             threadId: Long,
@@ -122,6 +125,23 @@ sealed class Screen(val route: String) {
             "conversation/0" +
                 "?phone=${encode(phone)}&name=${encode(name)}" +
                 "&forward=${encode(forward)}&draft=${encode(draft)}"
+
+        /**
+         * Opens a conversation AND lands on ONE exact message (v3.4.0).
+         *
+         * Used by the Starred browsers (FEATURE 7), whose rows carry the composite
+         * identity (source, providerId) of the message the user tapped. The identity
+         * is passed as `hit` arguments rather than a raw id because SMS `_id` 100 and
+         * MMS `_id` 100 are DIFFERENT messages: a bare Long would open the wrong one
+         * half the time.
+         *
+         * `hitSource` is the MessageEntity source vocabulary ("sms" / "mms") and is
+         * empty for a normal open, which is why both args default to "".
+         */
+        fun createHitRoute(threadId: Long, source: String, providerId: Long): String =
+            "conversation/$threadId" +
+                "?phone=&name=&forward=&draft=" +
+                "&hitSource=${encode(source)}&hitProviderId=$providerId"
     }
 
     /**

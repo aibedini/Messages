@@ -5,7 +5,6 @@ import android.os.Build
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
 import java.io.File
-import java.security.MessageDigest
 import java.time.Instant
 
 /**
@@ -38,12 +37,13 @@ object DiagnosticLog {
         )
     }
 
-    fun phoneToken(phone: String): String {
-        if (phone.isBlank()) return "none"
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(phone.trim().toByteArray(Charsets.UTF_8))
-        return digest.take(5).joinToString("") { "%02x".format(it) }
-    }
+    /**
+     * Deterministic, non-reversible reference to a number.
+     *
+     * Delegates to [PhoneToken] so a diagnostic line, the undo-send ledger and
+     * the worker's recipient cross-check all derive the token identically.
+     */
+    fun phoneToken(phone: String): String = PhoneToken.of(phone)
 
     @Synchronized
     fun event(category: String, message: String, error: Throwable? = null) {

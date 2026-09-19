@@ -7,6 +7,8 @@ import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.data.LocalProviderWrites
+import com.autonomousone.messages.data.MessageEntity
+import com.autonomousone.messages.data.TrashedThreadEntity
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.data.ProviderExistence
 import com.autonomousone.messages.data.ProviderRead
@@ -1401,7 +1403,7 @@ class SmsRepository(
      *         range was proven empty. Failure otherwise — nothing may be reported
      *         as destroyed on a Failure.
      */
-    fun deleteThreadSnapshotStrict(tombstone: com.autonomousone.messages.data.TrashedThreadEntity): SourceWriteResult {
+    fun deleteThreadSnapshotStrict(tombstone: TrashedThreadEntity): SourceWriteResult {
         if (tombstone.threadId <= 0L) return SourceWriteResult.NotApplicable
         val sms = deleteSourceSnapshotStrict(MessageEntity.SOURCE_SMS, tombstone)
         if (sms is SourceWriteResult.Failure) return sms
@@ -1414,7 +1416,7 @@ class SmsRepository(
 
     private fun deleteSourceSnapshotStrict(
         source: String,
-        tombstone: com.autonomousone.messages.data.TrashedThreadEntity
+        tombstone: TrashedThreadEntity
     ): SourceWriteResult {
         val range = TrashProviderRange.selectionFor(
             source = source,

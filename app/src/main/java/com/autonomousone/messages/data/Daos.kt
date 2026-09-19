@@ -56,6 +56,24 @@ interface MessageDao {
     )
     fun observeThread(threadId: Long, limit: Int): Flow<List<MessageEntity>>
 
+    /**
+     * ACTIVE-UI twin of [observeThread] (v3.4.0 FEATURE 8, TRASH).
+     *
+     * The conversation window is part of the ACTIVE UI, so its reactive tail must
+     * not carry a row the user trashed — individually, or as part of a trashed
+     * conversation's snapshot. [observeThread] stays RAW for sync/repair callers
+     * that must keep seeing the complete mirror.
+     */
+    @Query(
+        """
+        SELECT m.* FROM messages m
+        WHERE m.threadId = :threadId AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+        ORDER BY m.date DESC, m.source DESC, m.providerId DESC
+        LIMIT :limit
+        """
+    )
+    fun observeActiveThread(threadId: Long, limit: Int): Flow<List<MessageEntity>>
+
     @Query(
         """
         SELECT * FROM messages
@@ -272,6 +290,16 @@ interface MessageDao {
      * trashed hit, so JUMP-TO-RESULT uses this variant: the same indexed
      * (source, providerId) primary-key lookup, with the individually-trashed row
      * excluded so a search result the user deleted cannot be jumped to.
+     *
+     * CONTRACT (shared with the open-conversation / trash readers):
+     *  - returns `null` for a missing row AND for an individually-trashed row —
+     *    the two are indistinguishable to an ACTIVE-UI caller on purpose;
+     *  - a row hidden by a thread TOMBSTONE is still returned: the tombstone
+     *    describes the thread's snapshot, not this row's own user state, and the
+     *    window queries below apply it. Callers that need both checks must use
+     *    [windowBefore] / [windowAfter] or the FTS search, which apply the full
+     *    [MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL];
+     *  - RAW callers keep [findByKey].
      */
     @Query(
         """
@@ -284,30 +312,36 @@ interface MessageDao {
     suspend fun findActiveByKey(source: String, providerId: Long): MessageEntity?
 
     /**
-     * IN-CONVERSATION SEARCH (v3.4.0 FEATURE 1): bounded window OLDER than the
-     * canonical window anchor `(afterDate, afterSource, afterProviderId)`.
+     * ACTIVE-UI bounded window OLDER-OR-EQUAL to the canonical anchor
+     * `(anchorDate, anchorSource, anchorProviderId)`.
+     *
+     * INCLUSIVE on purpose: the same query carries the anchor row itself, so a
+     * jump-to-message needs ONE read for the older half rather than a
+     * read + a separate anchor fetch.
      *
      * Keyset, never OFFSET: `(date, source, providerId)` is the exact canonical
      * order of this table, so the predicate seeks straight into the index on
-     * `(threadId, date, providerId)` and reads at most :limit rows. Rows are
-     * returned newest-first (the reverse of the paint order) because the loader
-     * appends them to the front of the window; callers flip, never re-sort.
+     * `(threadId, date, providerId)` and reads at most :limit rows regardless of
+     * how large the thread is. Rows come back NEWEST-FIRST
+     * (`date DESC, source DESC, providerId DESC`) because the loader prepends
+     * them; callers flip, never re-sort.
      *
-     * ACTIVE-UI filtered (individually-trashed rows and rows inside a trashed
-     * conversation's snapshot excluded) — same predicates as [MessageFtsDao].
-     * The `m` alias is a hard requirement of those shared SQL fragments.
+     * ACTIVE-UI filtered with the ONE shared predicate
+     * ([MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL] = not individually trashed AND
+     * not hidden by a thread tombstone). The `m` alias is a hard requirement of
+     * those shared SQL fragments: do not rename it.
      *
-     * The comparison tuple may be INCLUSIVE (`afterProviderId` = the target's
-     * own provider id), which lets the same query carry the anchor row itself.
+     * Read it with an anchor of `(Long.MAX_VALUE, "\uFFFF", Long.MAX_VALUE)` to
+     * ask for "the newest :limit active rows of this thread".
      */
     @Query(
         """
         SELECT * FROM messages m
         WHERE m.threadId = :threadId
-          AND (m.date < :afterDate
-               OR (m.date = :afterDate AND m.source < :afterSource)
-               OR (m.date = :afterDate AND m.source = :afterSource
-                   AND m.providerId <= :afterProviderId))
+          AND (m.date < :anchorDate
+               OR (m.date = :anchorDate AND m.source < :anchorSource)
+               OR (m.date = :anchorDate AND m.source = :anchorSource
+                   AND m.providerId <= :anchorProviderId))
           AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
         ORDER BY m.date DESC, m.source DESC, m.providerId DESC
         LIMIT :limit
@@ -315,26 +349,29 @@ interface MessageDao {
     )
     suspend fun windowBefore(
         threadId: Long,
-        afterDate: Long,
-        afterSource: String,
-        afterProviderId: Long,
+        anchorDate: Long,
+        anchorSource: String,
+        anchorProviderId: Long,
         limit: Int
     ): List<MessageEntity>
 
     /**
-     * IN-CONVERSATION SEARCH (v3.4.0 FEATURE 1): bounded window NEWER than
-     * `(afterDate, afterSource, afterProviderId)`, returned in canonical
-     * ASCENDING order (the paint order). Strictly-after on the anchor, so the
-     * two window halves never overlap and the anchor row is counted once.
+     * ACTIVE-UI bounded window STRICTLY NEWER than the canonical anchor
+     * `(anchorDate, anchorSource, anchorProviderId)`, returned in canonical
+     * ASCENDING order (the paint order the conversation LazyColumn uses).
+     *
+     * STRICTLY after, so this half and [windowBefore] never overlap and the
+     * anchor row is painted exactly once. Same keyset/index/ACTIVE-UI contract
+     * and the same `m` alias requirement as [windowBefore].
      */
     @Query(
         """
         SELECT * FROM messages m
         WHERE m.threadId = :threadId
-          AND (m.date > :afterDate
-               OR (m.date = :afterDate AND m.source > :afterSource)
-               OR (m.date = :afterDate AND m.source = :afterSource
-                   AND m.providerId > :afterProviderId))
+          AND (m.date > :anchorDate
+               OR (m.date = :anchorDate AND m.source > :anchorSource)
+               OR (m.date = :anchorDate AND m.source = :anchorSource
+                   AND m.providerId > :anchorProviderId))
           AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
         ORDER BY m.date ASC, m.source ASC, m.providerId ASC
         LIMIT :limit
@@ -342,9 +379,9 @@ interface MessageDao {
     )
     suspend fun windowAfter(
         threadId: Long,
-        afterDate: Long,
-        afterSource: String,
-        afterProviderId: Long,
+        anchorDate: Long,
+        anchorSource: String,
+        anchorProviderId: Long,
         limit: Int
     ): List<MessageEntity>
 
@@ -363,6 +400,52 @@ interface ConversationDao {
 
     @Query("SELECT * FROM conversations ORDER BY lastMessageDate DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
+
+    /**
+     * ACTIVE-UI conversation list (v3.4.0 FEATURE 8, TRASH).
+     *
+     * `conversations` is a MATERIALIZED projection, so it can hold a row that the
+     * ACTIVE-UI contract no longer exposes: a trashed conversation whose snapshot
+     * is hidden by its tombstone, or a thread whose every message is individually
+     * trashed. Home must never render such a row — not even for the instant
+     * between a process restart and the next projection rebuild — so the predicate
+     * lives in the QUERY, not only in the writer.
+     *
+     * The predicate is the ONE shared ACTIVE-UI rule ([MessageCutoff]), evaluated
+     * per conversation with an indexed `EXISTS` on `messages.threadId`: a trashed
+     * conversation with a genuinely NEWER message (or any surviving active
+     * message) still lists, and a conversation with no visible message at all
+     * cannot be listed by any reader of this query.
+     *
+     * RAW callers (sync/integrity/repair) keep using [observeAll] / [all] and
+     * `MessageDao`'s RAW queries: the mirror must still see everything.
+     */
+    @Query(
+        """
+        SELECT c.* FROM conversations c
+        WHERE EXISTS (
+            SELECT 1 FROM messages m
+            WHERE m.threadId = c.threadId
+              AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+        )
+        ORDER BY c.lastMessageDate DESC
+        """
+    )
+    fun observeAllActive(): Flow<List<ConversationEntity>>
+
+    /** One-shot twin of [observeAllActive] (cold-start paint, cache snapshot). */
+    @Query(
+        """
+        SELECT c.* FROM conversations c
+        WHERE EXISTS (
+            SELECT 1 FROM messages m
+            WHERE m.threadId = c.threadId
+              AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+        )
+        ORDER BY c.lastMessageDate DESC
+        """
+    )
+    suspend fun allActive(): List<ConversationEntity>
 
     @Query("SELECT * FROM conversations WHERE threadId = :threadId")
     suspend fun byThread(threadId: Long): ConversationEntity?

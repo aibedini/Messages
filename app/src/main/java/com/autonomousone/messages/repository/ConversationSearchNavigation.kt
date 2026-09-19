@@ -6,16 +6,19 @@ package com.autonomousone.messages.repository
  * Android-free and total: every input maps to a defined index, so the UI can
  * never render `0 of 0` or an out-of-range counter while a page is loading.
  *
- * DEFINED BEHAVIOUR (chosen, not accidental): navigation WRAPS.
- *  - ↓ from the last hit goes to the first (and scrolls the result list up);
- *  - ↑ from the first hit goes to the last.
- * Wrapping is what users expect from in-message search (the platform SMS app
- * and browsers both wrap), and it makes the disabled-arrow state impossible:
- * with a single hit both arrows stay ENABLED and simply stay put, so the
- * control never flickers between enabled/disabled as results stream in.
+ * DEFINED BEHAVIOUR (chosen, not accidental):
+ *  - navigation WRAPS: ↓ from the last hit goes to the first (the result list
+ *    scrolls back up), ↑ from the first goes to the last. Wrapping is what users
+ *    expect from in-message search, and it makes "stuck at the end of the
+ *    results" impossible.
+ *  - the SINGLE-hit case is DISABLED, not wrapped: with one result there is
+ *    nowhere to go, so both functions are no-ops and the UI renders the ↑ / ↓
+ *    buttons DISABLED (`enabled = total > 1`) instead of clickable no-ops.
  *
  * A ZERO total is the only "no position" case: [index] is -1 and the UI hides
  * the counter entirely (it renders Loading / Empty instead).
+ *
+ * Both rules are pinned by InConversationSearchLogicTest.
  */
 object ConversationSearchNavigation {
 

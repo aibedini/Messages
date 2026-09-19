@@ -5,10 +5,10 @@ import com.autonomousone.messages.data.MessageClassificationEntity
 import com.autonomousone.messages.data.MessageKey
 import com.autonomousone.messages.data.MessageUserStateEntity
 import com.autonomousone.messages.messaging.CustomRetentionRange
-import com.autonomousone.messages.messaging.MessageDirectionLookup
 import com.autonomousone.messages.messaging.OtpDetector
 import com.autonomousone.messages.messaging.OtpRetentionPolicy
-import com.autonomousone.messages.messaging.OtpRetentionSettings
+import com.autonomousone.messages.repository.OtpExistingSweepSource
+import com.autonomousone.messages.repository.OtpReschedule
 import com.autonomousone.messages.repository.OtpRetentionService
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -30,8 +30,7 @@ import org.junit.Test
  *  - history is only ever enrolled by the explicit action;
  *  - every deadline change tells the one scheduler.
  *
- * The engine is pure Kotlin over injected ports, so none of this needs Android
- * or a device.
+ * The engine is pure Kotlin over narrow ports, so none of this needs Android.
  */
 class OtpRetentionServiceTest {
 
@@ -39,51 +38,62 @@ class OtpRetentionServiceTest {
     private val day = CustomRetentionRange.DAY_MS
     private val now = 1_800_000_000_000L
 
-    private val classification = FakeClassificationDao()
-    private val userState = FakeUserStateDao()
-    private val trash = TrashRecorder()
+    private val store = FakeRetentionStore()
+    private val settings = FakeRetentionSettings()
     private val reschedules = mutableListOf<Long>()
 
-    /** Messages present in the `messages` mirror, keyed by (source, providerId). */
-    private val mirror = mutableMapOf<Pair<String, Long>, MirrorRow>()
+    /** Message bodies for the opt-in sweep, keyed by providerId. */
+    private val bodies = mutableMapOf<Long, String>()
 
-    /** Rows the opt-in sweep may see, exactly as the bounded DAO would return them. */
-    private val sweepRows = mutableListOf<ExistingOtpCleanupCandidate>()
-
-    private class TestSettings(
-        override var enabled: Boolean = false,
-        override var retentionMillis: Long = 24L * 60L * 60L * 1000L
-    ) : OtpRetentionSettings
-
-    private val settings = TestSettings()
-
-    /** A message mirror row: provider direction plus the body the sweep re-detects. */
-    private data class MirrorRow(val type: Int, val date: Long, val body: String)
+    /** Mirrors the `messages.date` anchor the sweep orders by. */
+    private val dates = mutableMapOf<Long, Long>()
 
     private val strongOtpBody = "Your verification code is 482193"
     private val weakOtpBody = "your order code 4821"
     private val ordinaryBody = "lunch tomorrow at 1"
 
     private fun service() = OtpRetentionService(
-        classification = classification,
-        userState = userState,
+        store = store,
         preferences = settings,
-        sweepCandidates = { afterDate, afterProviderId, limit ->
-            sweepRows
-                .filter { it.date < afterDate || (it.date == afterDate && it.providerId < afterProviderId) }
+        sweep = OtpExistingSweepSource { afterDate, afterProviderId, limit ->
+            candidates()
+                .filter {
+                    it.date < afterDate || (it.date == afterDate && it.providerId < afterProviderId)
+                }
                 .sortedWith(
                     compareByDescending<ExistingOtpCleanupCandidate> { it.date }
                         .thenByDescending { it.providerId }
                 )
                 .take(limit)
         },
-        trashAll = { rows, _ -> rows.forEach { trash.trashed += it.source to it.providerId } },
-        directions = MessageDirectionLookup { source, providerId ->
-            mirror[source to providerId]?.type
-        },
-        reschedule = { reschedules += now },
+        reschedule = OtpReschedule { reschedules += now },
         clock = { now }
     )
+
+    /**
+     * Rebuilds the sweep page from current state — the production query is a JOIN
+     * over `messages` + `message_user_state`, so a test that changed either must
+     * re-read it rather than reuse a stale snapshot.
+     */
+    private fun candidates(): List<ExistingOtpCleanupCandidate> =
+        store.classifications.values.mapNotNull { row ->
+            val type = store.directions[row.source to row.providerId] ?: return@mapNotNull null
+            val state = store.userStates[row.source to row.providerId]
+            if (state?.starred == true || state?.keepFromOtpCleanup == true || state?.isTrashed == true) {
+                return@mapNotNull null
+            }
+            ExistingOtpCleanupCandidate(
+                source = row.source,
+                providerId = row.providerId,
+                threadId = row.threadId,
+                body = bodies[row.providerId] ?: ordinaryBody,
+                date = dates[row.providerId] ?: now,
+                rawAddress = "1200",
+                messageType = type,
+                confidence = row.confidence,
+                eligibleAt = row.otpDeleteEligibleAt
+            )
+        }
 
     private fun message(
         providerId: Long,
@@ -91,18 +101,9 @@ class OtpRetentionServiceTest {
         date: Long = now,
         body: String = strongOtpBody
     ) {
-        mirror["sms" to providerId] = MirrorRow(type, date, body)
-        sweepRows += ExistingOtpCleanupCandidate(
-            source = "sms",
-            providerId = providerId,
-            threadId = THREAD,
-            body = body,
-            date = date,
-            rawAddress = "1200",
-            messageType = type,
-            confidence = classification.get("sms", providerId)?.confidence,
-            eligibleAt = classification.get("sms", providerId)?.otpDeleteEligibleAt
-        )
+        store.directions["sms" to providerId] = type
+        bodies[providerId] = body
+        dates[providerId] = date
     }
 
     private fun classified(
@@ -112,7 +113,7 @@ class OtpRetentionServiceTest {
         isOtp: Boolean = true,
         category: String = "OTP"
     ) {
-        classification.put(
+        store.putClassification(
             MessageClassificationEntity(
                 source = "sms",
                 providerId = providerId,
@@ -132,25 +133,21 @@ class OtpRetentionServiceTest {
         keep: Boolean = false,
         trashed: Boolean = false
     ) {
-        userState.rows["sms" to providerId] = MessageUserStateEntity(
-            source = "sms",
-            providerId = providerId,
-            threadId = THREAD,
-            starred = starred,
-            keepFromOtpCleanup = keep,
-            trashedAt = if (trashed) now - hour else 0L,
-            purgeAt = if (trashed) now + 30 * day else 0L
+        store.putUserState(
+            MessageUserStateEntity(
+                source = "sms",
+                providerId = providerId,
+                threadId = THREAD,
+                starred = starred,
+                keepFromOtpCleanup = keep,
+                trashedAt = if (trashed) now - hour else 0L,
+                purgeAt = if (trashed) now + 30 * day else 0L
+            )
         )
     }
 
-    /** The sweep candidate list is a snapshot; refresh it after classification. */
-    private fun refreshSweepEligibility() {
-        for (index in sweepRows.indices) {
-            val row = sweepRows[index]
-            val stored = classification.get(row.source, row.providerId)
-            sweepRows[index] = row.copy(eligibleAt = stored?.otpDeleteEligibleAt)
-        }
-    }
+    private fun deadlineOf(providerId: Long): Long? =
+        store.classifications["sms" to providerId]?.otpDeleteEligibleAt
 
     // ── Default OFF: nothing is ever cleaned ────────────────────────────────
 
@@ -162,11 +159,11 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(0, outcome.trashed)
         assertEquals(0, outcome.scanned)
         // The durable deadline survives: switching off must not rewrite history.
-        assertEquals(now - day, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now - day, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -179,7 +176,7 @@ class OtpRetentionServiceTest {
         val changed = service().reconcileEnrolments()
 
         assertEquals(0, changed)
-        assertEquals(now - day, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now - day, deadlineOf(OTP_ID))
     }
 
     // ── The due run moves to Trash ──────────────────────────────────────────
@@ -192,14 +189,18 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertEquals(listOf("sms:$OTP_ID"), trash.keys())
+        assertEquals(listOf("sms" to OTP_ID), store.trashed)
         assertEquals(1, outcome.trashed)
         assertEquals(1, outcome.scanned)
-        // "Moved to Trash", never "deleted": the classification row still exists
-        // and its deadline is cleared so nothing can run for it again.
-        val row = classification.get("sms", OTP_ID)
-        assertNotNull(row)
-        assertEquals(0L, row!!.otpDeleteEligibleAt)
+        // "Moved to Trash", never "deleted": the classification row still exists,
+        // the message state is a TRASH state (not a removal), and the deadline is
+        // cleared so nothing can run for it again.
+        assertNotNull(store.classifications["sms" to OTP_ID])
+        assertEquals(0L, deadlineOf(OTP_ID))
+        val state = store.userStates["sms" to OTP_ID]
+        assertNotNull(state)
+        assertEquals(now, state!!.trashedAt)
+        assertEquals(now + 30 * day, state.purgeAt)
     }
 
     @Test
@@ -212,7 +213,7 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertEquals(listOf("sms:$OTP_ID"), trash.keys())
+        assertEquals(listOf("sms" to OTP_ID), store.trashed)
         assertEquals(1, outcome.scanned)
         assertEquals(now + day, outcome.nextEligibleAt)
     }
@@ -230,7 +231,8 @@ class OtpRetentionServiceTest {
 
         assertEquals(2, outcome.scanned)
         assertEquals(2, outcome.trashed)
-        assertEquals(3, classification.countEnrolledOtpCleanup())
+        assertEquals(3, store.enrolledCount())
+        assertNotNull(service().nextEligibleAt())
     }
 
     // ── Protection rules, enforced against a STALE deadline ─────────────────
@@ -244,9 +246,9 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -258,9 +260,9 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -272,7 +274,7 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
     }
 
@@ -284,9 +286,9 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -297,7 +299,7 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
     }
 
@@ -309,7 +311,7 @@ class OtpRetentionServiceTest {
 
         val outcome = service().runDueCleanup(limit = 50)
 
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
         assertEquals(1, outcome.deferred)
     }
 
@@ -325,7 +327,7 @@ class OtpRetentionServiceTest {
         val changed = service().reconcileEnrolments()
 
         assertEquals(1, changed)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
         assertNull(service().nextEligibleAt())
     }
 
@@ -341,8 +343,8 @@ class OtpRetentionServiceTest {
         val changed = service().reconcileEnrolments()
 
         assertEquals(1, changed)
-        assertEquals(now + hour, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
-        assertEquals(now + 24 * hour, classification.get("sms", OLD_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now + hour, deadlineOf(OTP_ID))
+        assertEquals(now + 24 * hour, deadlineOf(OLD_ID))
     }
 
     // ── Explicit user actions ───────────────────────────────────────────────
@@ -358,8 +360,8 @@ class OtpRetentionServiceTest {
 
         assertFalse(plan.eligible)
         assertEquals(OtpRetentionPolicy.EligibilityReason.KEPT_BY_USER, plan.reason)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
-        assertTrue(userState.get("sms", OTP_ID)!!.keepFromOtpCleanup)
+        assertEquals(0L, deadlineOf(OTP_ID))
+        assertTrue(store.userStates["sms" to OTP_ID]!!.keepFromOtpCleanup)
         assertTrue("the keep action must reschedule the unique work", reschedules.isNotEmpty())
     }
 
@@ -375,7 +377,7 @@ class OtpRetentionServiceTest {
 
         assertTrue(plan.eligible)
         // Re-anchored to NOW, never to the original arrival date.
-        assertEquals(now + 24 * hour, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now + 24 * hour, deadlineOf(OTP_ID))
         assertTrue(reschedules.isNotEmpty())
     }
 
@@ -387,8 +389,8 @@ class OtpRetentionServiceTest {
 
         service().onStarChanged(MessageKey("sms", OTP_ID), THREAD, starred = true)
 
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
-        assertTrue(userState.get("sms", OTP_ID)!!.starred)
+        assertEquals(0L, deadlineOf(OTP_ID))
+        assertTrue(store.userStates["sms" to OTP_ID]!!.starred)
     }
 
     @Test
@@ -401,7 +403,7 @@ class OtpRetentionServiceTest {
         val plan = service().onStarChanged(MessageKey("sms", OTP_ID), THREAD, starred = false)
 
         assertTrue(plan.eligible)
-        assertEquals(now + 24 * hour, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now + 24 * hour, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -412,7 +414,7 @@ class OtpRetentionServiceTest {
 
         service().onStarChanged(MessageKey("sms", OTP_ID), THREAD, starred = false)
 
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
         assertNull(service().nextEligibleAt())
     }
 
@@ -430,7 +432,7 @@ class OtpRetentionServiceTest {
 
         assertNull(service().nextEligibleAt())
         assertEquals(0, service().enrolledCount())
-        assertTrue(trash.trashed.isEmpty())
+        assertTrue(store.trashed.isEmpty())
     }
 
     @Test
@@ -438,14 +440,13 @@ class OtpRetentionServiceTest {
         settings.enabled = true
         message(OTP_ID)
         classified(OTP_ID, eligibleAt = 0L)
-        refreshSweepEligibility()
 
         val outcome = service().applyToExistingOtpMessages(maxBatches = 2)
 
         assertTrue(outcome.enabled)
         assertEquals(1, outcome.enrolled)
         // Anchored to NOW: the user just asked for this, so it must not expire at once.
-        assertEquals(now + 24 * hour, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(now + 24 * hour, deadlineOf(OTP_ID))
     }
 
     @Test
@@ -471,12 +472,13 @@ class OtpRetentionServiceTest {
             val outcome = service().applyToExistingOtpMessages(maxBatches = 5)
 
             assertEquals(1, outcome.enrolled)
-            assertTrue(classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt > 0L)
-            assertEquals(0L, classification.get("sms", STARRED_ID)!!.otpDeleteEligibleAt)
-            assertEquals(0L, classification.get("sms", KEPT_ID)!!.otpDeleteEligibleAt)
-            assertEquals(0L, classification.get("sms", TRASHED_ID)!!.otpDeleteEligibleAt)
-            assertEquals(0L, classification.get("sms", OUTGOING_ID)!!.otpDeleteEligibleAt)
-            assertEquals(0L, classification.get("sms", WEAK_OTP_ID)!!.otpDeleteEligibleAt)
+            assertTrue(deadlineOf(OTP_ID)!! > 0L)
+            assertEquals(0L, deadlineOf(STARRED_ID))
+            assertEquals(0L, deadlineOf(KEPT_ID))
+            assertEquals(0L, deadlineOf(TRASHED_ID))
+            assertEquals(0L, deadlineOf(OUTGOING_ID))
+            // Weak "code" wording never reaches the HIGH-confidence bar.
+            assertEquals(0L, deadlineOf(WEAK_OTP_ID))
         }
 
     @Test
@@ -489,20 +491,26 @@ class OtpRetentionServiceTest {
 
         assertFalse(outcome.enabled)
         assertEquals(0, outcome.enrolled)
-        assertEquals(0L, classification.get("sms", OTP_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(OTP_ID))
     }
 
     @Test
     fun `an ordinary message in history is never enrolled by the sweep`() = runBlocking {
         settings.enabled = true
         message(ORDINARY_ID, body = ordinaryBody)
-        classified(ORDINARY_ID, eligibleAt = 0L, confidence = 0f, isOtp = false, category = "PERSONAL")
+        classified(
+            ORDINARY_ID,
+            eligibleAt = 0L,
+            confidence = 0f,
+            isOtp = false,
+            category = "PERSONAL"
+        )
 
         val outcome = service().applyToExistingOtpMessages(maxBatches = 2)
 
         assertEquals(0, outcome.enrolled)
         assertTrue(outcome.skipped >= 1)
-        assertEquals(0L, classification.get("sms", ORDINARY_ID)!!.otpDeleteEligibleAt)
+        assertEquals(0L, deadlineOf(ORDINARY_ID))
     }
 
     // ── Scheduling arithmetic ───────────────────────────────────────────────

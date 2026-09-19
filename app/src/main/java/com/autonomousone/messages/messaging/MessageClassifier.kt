@@ -216,6 +216,7 @@ class MessageClassifier(
 
     companion object {
         /** Bounded confidence bands — no band can exceed 1.0. */
+        private const val OTP_BASE = 0.75f
         private const val TX_BASE = 0.65f
         private const val TX_STRONG = 0.80f
         private const val PROMO_BASE = 0.60f

@@ -127,7 +127,7 @@ internal class RoomTrashStore(private val database: MessagesDatabase) : TrashSto
  * so the existing strict provider-write path is reused without this repository
  * growing a second provider implementation.
  */
-class TrashRepository internal constructor(
+class TrashRepository(
     private val store: TrashStore,
     private val purger: ProviderPurger
 ) {
@@ -135,9 +135,9 @@ class TrashRepository internal constructor(
     /**
      * Android wiring: Room store + the real strict provider purger.
      *
-     * A SECOND public constructor is deliberately avoided — `TrashRepository(context, purger)`
-     * stays the one Android-facing shape, and the `internal` store constructor is
-     * the test seam.
+     * The two-argument store constructor above is the JVM test seam (a fake store
+     * and a fake purger exercise the whole tombstone/purge contract without a
+     * device); this one is the single Android-facing shape.
      */
     constructor(context: Context, purger: ProviderPurger) : this(
         RoomTrashStore(MessagesDatabase.get(context)),

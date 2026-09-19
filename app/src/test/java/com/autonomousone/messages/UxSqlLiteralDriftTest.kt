@@ -62,13 +62,34 @@ class UxSqlLiteralDriftTest {
         assertTrue("no @Query above $functionName", queryAt >= 0)
 
         // The annotation body is the balanced parenthesised expression after it.
+        //
+        // The scan is STRING-AWARE on purpose: SQL contains parentheses of its own
+        // (`ON CONFLICT(source, providerId)`, `COUNT(*)`, trigger-like text), and a
+        // naive depth counter stops at the first `)` INSIDE the literal — which
+        // silently truncated the extracted SQL and made this guard report drift that
+        // did not exist. Characters inside a "..." or """...""" literal are skipped.
         val open = text.indexOf('(', queryAt)
         var depth = 0
         var close = -1
-        for (i in open until text.length) {
-            when (text[i]) {
-                '(' -> depth++
-                ')' -> {
+        var i = open
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                c == '"' && text.startsWith("\"\"\"", i) -> {
+                    val end = text.indexOf("\"\"\"", i + 3)
+                    if (end < 0) break
+                    i = end + 3
+                    continue
+                }
+                c == '"' -> {
+                    i++
+                    while (i < text.length && text[i] != '"') {
+                        if (text[i] == '\\') i++
+                        i++
+                    }
+                }
+                c == '(' -> depth++
+                c == ')' -> {
                     depth--
                     if (depth == 0) {
                         close = i
@@ -76,6 +97,7 @@ class UxSqlLiteralDriftTest {
                     }
                 }
             }
+            i++
         }
         assertTrue("unbalanced @Query for $functionName", close > open)
 

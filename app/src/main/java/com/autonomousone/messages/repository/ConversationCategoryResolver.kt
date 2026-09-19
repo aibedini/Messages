@@ -1,26 +1,26 @@
-package com.autonomousone.messages.ui.home
+package com.autonomousone.messages.repository
 
 import com.autonomousone.messages.data.MessageCategory
 import com.autonomousone.messages.data.ThreadCategoryOverride
 import com.autonomousone.messages.data.ThreadCategoryRow
 
 /**
- * FEATURE 12 — the PURE core of Home's category filtering.
+ * FEATURE 12 — the PURE core of Smart Categories filtering.
  *
- * Kept out of the ViewModel and out of Compose so the two rules that matter are
- * unit-testable on the JVM:
+ * Lives in the repository layer (not in the UI) because BOTH the repository
+ * (server-side of the app's own reads and diagnostics) and Home need the same
+ * answer to "what category does this thread effectively have?". One rule, one
+ * place.
+ *
+ * The two rules that matter, and that the JVM tests pin:
  *
  *  1. **The user override ALWAYS wins.** [effectiveCategories] resolves the
  *     override first and only falls back to the automatic classifier output.
- *  2. **A category filter is an INDEXED thread-lookup, never a message scan.**
- *     The caller (HomeViewModel) resolves the selected chip to a bounded set of
- *     thread ids from `conversation_classification` — this object only maps that
- *     set onto the already-loaded conversation rows.
- *
- * Both inputs are conversation-sized (one row per thread), so nothing here is
- * O(messages).
+ *  2. **A category filter is an INDEXED thread lookup, never a message scan.**
+ *     Both inputs are conversation-sized (one row per thread), so nothing here
+ *     is O(messages).
  */
-object HomeCategoryFilter {
+object ConversationCategoryResolver {
 
     /** One thread's effective category, already override-resolved. */
     data class EffectiveCategory(val threadId: Long, val category: MessageCategory)
@@ -32,7 +32,7 @@ object HomeCategoryFilter {
      * @param overrides the user's overrides; a NON-NULL override replaces the
      *   automatic category, a null one means "follow the classifier".
      * @param userSpamThreads threads the user explicitly reported as spam. The
-     *   report is a first-class user decision, so it reads as SPAM even when no
+     *   report is itself a manual decision, so it reads as SPAM even when no
      *   `categoryOverride` was written.
      */
     fun effectiveCategories(
@@ -55,7 +55,7 @@ object HomeCategoryFilter {
                 )
             )
         }
-        // A user override on a thread that has no automatic row must still be
+        // A user override on a thread with no automatic row must still be
         // visible: the classifier never having run is not a reason to hide a
         // category the user chose.
         for (override in overrides) {
@@ -84,36 +84,5 @@ object HomeCategoryFilter {
         isUserSpam -> MessageCategory.SPAM
         // 3. Finally the automatic classifier.
         else -> automatic?.let { MessageCategory.from(it) } ?: MessageCategory.UNKNOWN
-    }
-
-    /**
-     * How many conversations each chip would show. Only categories that actually
-     * contain data get a non-zero count, which is what lets the row hide an empty
-     * chip instead of offering a filter that renders nothing.
-     */
-    fun counts(effective: List<EffectiveCategory>): Map<CategoryFilter, Int> {
-        val result = LinkedHashMap<CategoryFilter, Int>()
-        for (filter in CategoryFilter.displayOrder) {
-            val category = filter.category ?: continue
-            val count = effective.count { it.category == category }
-            if (count > 0) result[filter] = count
-        }
-        return result
-    }
-
-    /**
-     * The thread ids the selected chip narrows to, or null for "All" (the
-     * un-narrowed list). An unknown/empty selection never filters anything out:
-     * a filter must not be able to hide the inbox by accident.
-     */
-    fun threadIdsFor(
-        selected: CategoryFilter?,
-        effective: List<EffectiveCategory>
-    ): Set<Long>? {
-        val category = selected?.category ?: return null
-        return effective.asSequence()
-            .filter { it.category == category }
-            .map { it.threadId }
-            .toHashSet()
     }
 }

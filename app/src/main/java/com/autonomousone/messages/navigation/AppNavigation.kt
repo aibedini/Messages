@@ -16,11 +16,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.autonomousone.messages.MainActivity
+import com.autonomousone.messages.ui.screens.ConversationInfoScreen
+import com.autonomousone.messages.ui.screens.ConversationMediaScreen
 import com.autonomousone.messages.ui.screens.ConversationScreen
 import com.autonomousone.messages.ui.screens.HomeScreen
 import com.autonomousone.messages.ui.screens.NewConversationScreen
+import com.autonomousone.messages.ui.screens.RecentlyDeletedScreen
 import com.autonomousone.messages.ui.screens.SettingsScreen
 import com.autonomousone.messages.ui.screens.SplashScreen
+import com.autonomousone.messages.ui.screens.StarredMessagesScreen
 
 @Composable
 fun AppNavigation(
@@ -255,6 +259,96 @@ fun AppNavigation(
             )
         }
 
+        // ── v3.4.0 destinations ────────────────────────────────────────────
+        //
+        // Conversation Info (FEATURE 5). `phone`/`name` are carried from the
+        // conversation the user came from so the header paints immediately; they
+        // are read through Screen.cleanArg so a leaked route PATTERN can never be
+        // rendered as user data.
+        composable(
+            route = Screen.ConversationInfo.route,
+            arguments = listOf(
+                navArgument("threadId") { type = NavType.LongType },
+                navArgument("phone") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("name") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            ConversationInfoScreen(
+                threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L,
+                phone = Screen.cleanArg(backStackEntry.arguments?.getString("phone")),
+                name = Screen.cleanArg(backStackEntry.arguments?.getString("name")),
+                navController = navController
+            )
+        }
+
+        // Starred inside ONE conversation (FEATURE 7). A separate route from the
+        // global list on purpose: a wired argument cannot be optional, so a lost
+        // thread id can never silently show every conversation's stars under one
+        // conversation's title.
+        composable(
+            route = Screen.ConversationStarred.route,
+            arguments = listOf(navArgument("threadId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            StarredMessagesScreen(
+                threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L,
+                navController = navController,
+                onOpenMessage = { threadId, source, providerId ->
+                    navController.navigate(
+                        Screen.Conversation.createHitRoute(threadId, source, providerId)
+                    ) {
+                        popUpTo(Screen.Home.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        // Global Starred browser (FEATURE 7). threadId = null means "every
+        // conversation", which is why the thread argument lives on its own route.
+        composable(Screen.StarredMessages.route) {
+            StarredMessagesScreen(
+                threadId = null,
+                navController = navController,
+                onOpenMessage = { threadId, source, providerId ->
+                    navController.navigate(
+                        Screen.Conversation.createHitRoute(threadId, source, providerId)
+                    ) {
+                        popUpTo(Screen.Home.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        // Media / Links / Files (FEATURE 6) for one conversation.
+        composable(
+            route = Screen.ConversationMedia.route,
+            arguments = listOf(
+                navArgument("threadId") { type = NavType.LongType },
+                navArgument("name") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            ConversationMediaScreen(
+                threadId = backStackEntry.arguments?.getLong("threadId") ?: 0L,
+                conversationName = Screen.cleanArg(backStackEntry.arguments?.getString("name")),
+                navController = navController
+            )
+        }
+
+        // Recently Deleted / Trash (FEATURE 8).
+        composable(Screen.Trash.route) {
+            RecentlyDeletedScreen(navController = navController)
+        }
+
         composable(
             route = Screen.Conversation.route,
             // v2.6.8 motion polish: Home → Conversation opens with a SHALLOW
@@ -302,6 +396,17 @@ fun AppNavigation(
                 navArgument("draft") {
                     type = NavType.StringType
                     defaultValue = ""
+                },
+                // v3.4.0: optional "land on THIS exact message" identity, set by
+                // the Starred browsers. Composite (source, providerId) on purpose —
+                // SMS 100 and MMS 100 are different messages.
+                navArgument("hitSource") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("hitProviderId") {
+                    type = NavType.LongType
+                    defaultValue = 0L
                 }
             )
         ) { backStackEntry ->
@@ -316,6 +421,8 @@ fun AppNavigation(
             val name = backStackEntry.arguments?.getString("name") ?: ""
             val forward = Screen.cleanArg(backStackEntry.arguments?.getString("forward"))
             val draft = Screen.cleanArg(backStackEntry.arguments?.getString("draft"))
+            val hitSource = Screen.cleanArg(backStackEntry.arguments?.getString("hitSource"))
+            val hitProviderId = backStackEntry.arguments?.getLong("hitProviderId") ?: 0L
 
             ConversationScreen(
                 threadId = threadId,
@@ -323,6 +430,8 @@ fun AppNavigation(
                 name = name,
                 forwardText = forward,
                 draftText = draft,
+                hitSource = hitSource,
+                hitProviderId = hitProviderId,
                 navController = navController
             )
         }

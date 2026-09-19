@@ -284,3 +284,4 @@ class StarredMessagesControllerTest {
         assertEquals("sms:7", item.listKey)
     }
 }
+

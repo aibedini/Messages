@@ -250,8 +250,9 @@ class InConversationSearchRepository(
         if (threadId <= 0L || limit <= 0) return@withContext null
         val rows = dao.windowBefore(
             threadId = threadId,
-            // Sentinel: "newer than everything", combined with the strict
-            // source/provider filter below it means strictly-older-than-anchor.
+            // Sentinel anchor = "the newest active rows of this thread"; the
+            // filter below trims them to strictly-older-than-anchor. One read,
+            // no OFFSET, no second DAO query.
             date = Long.MAX_VALUE,
             source = "\uFFFF",
             providerId = Long.MAX_VALUE,

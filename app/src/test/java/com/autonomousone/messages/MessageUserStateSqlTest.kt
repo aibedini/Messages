@@ -78,7 +78,15 @@ class MessageUserStateSqlTest {
 
     // ── Statement helpers ───────────────────────────────────────────────────
 
-    /** Replaces `:name` placeholders with `?` in first-appearance order. */
+    /**
+     * Prepares a statement whose placeholders are `:name` — the form Room itself
+     * uses, and therefore the form of every statement this file pins.
+     *
+     * The seeding helpers below MUST use `:name` too. Mixing styles is what made
+     * this harness fail with "statement needs 0 parameters ([]) but got 5": the
+     * placeholder scan finds nothing in a `?`-style statement, so the guard fires
+     * before the driver ever sees it.
+     */
     private fun bind(
         connection: Connection,
         sql: String,
@@ -86,10 +94,9 @@ class MessageUserStateSqlTest {
     ): PreparedStatement {
         val names = Regex(":(\\w+)").findAll(sql).map { it.groupValues[1] }.distinct().toList()
         check(names.size == params.size) {
-            "statement needs ${names.size} parameters ($names) but got ${params.size}"
+            "statement needs ${names.size} parameters ($names) but got ${params.size}: $sql"
         }
-        val positional = sql.replace(Regex(":(\\w+)")) { "?" }
-        val statement = connection.prepareStatement(positional)
+        val statement = connection.prepareStatement(sql.replace(Regex(":(\\w+)")) { "?" })
         params.forEachIndexed { index, value ->
             when (value) {
                 is Long -> statement.setLong(index + 1, value)
@@ -133,7 +140,8 @@ class MessageUserStateSqlTest {
             INSERT INTO `messages`
                 (`source`,`providerId`,`threadId`,`normalizedAddress`,`rawAddress`,
                  `body`,`date`,`type`,`status`,`dateSent`,`read`,`syncState`)
-            VALUES (?, ?, ?, '09120000000', '+989120000000', ?, ?, 1, -1, 0, 1, 'synced')
+            VALUES (:source, :providerId, :threadId, '09120000000', '+989120000000',
+                    :body, :date, 1, -1, 0, 1, 'synced')
             """.trimIndent(),
             source, providerId, threadId, body, date
         )
@@ -145,7 +153,7 @@ class MessageUserStateSqlTest {
             INSERT INTO `conversation_preferences`
                 (`threadId`,`manualUnread`,`mutedUntil`,`customNotificationChannel`,
                  `categoryOverride`,`spam`,`spamReportedAt`,`spamBlockedByReport`,`updatedAt`)
-            VALUES (?, 0, 0, 0, NULL, 0, 0, 0, 0)
+            VALUES (:threadId, 0, 0, 0, NULL, 0, 0, 0, 0)
             """.trimIndent(),
             threadId
         )
@@ -303,8 +311,11 @@ class MessageUserStateSqlTest {
             db.insertMessage("sms", 100L)
             db.exec(SET_STARRED_SQL, "sms", 100L, 7L, true, 1L, 1L)
 
-            // Re-upserting the SAME identity is not a proven absence.
-            db.insertMessage("sms", 100L, body = "updated")
+            // Re-upserting the SAME identity is not a proven absence. A provider
+            // upsert UPDATES the row in place (the identity is the primary key).
+            db.exec(
+                "UPDATE `messages` SET `body` = 'updated' WHERE source = 'sms' AND providerId = 100"
+            )
             assertEquals(0, db.exec(DELETE_ORPHANS_SQL))
             assertEquals(1L, db.scalar("SELECT COUNT(*) FROM message_user_state"))
         } finally {
@@ -366,13 +377,14 @@ class MessageUserStateSqlTest {
             db.exec(SET_STARRED_SQL, "sms", 2L, 7L, true, 1L, 1L)
             db.exec(SET_STARRED_SQL, "sms", 3L, 7L, true, 1L, 1L)
 
-            // The user individually trashed message 3.
+            // The user individually trashed message 3. This is the same
+            // field-scoped row the star already created, so it is an UPDATE of
+            // the trash columns — exactly the shape `markTrashed` ships.
             db.exec(
                 """
-                INSERT INTO message_user_state
-                    (source, providerId, threadId, starred, starredAt, trashedAt, purgeAt,
-                     keepFromOtpCleanup, updatedAt)
-                VALUES ('sms', 3, 7, 1, 1, 5000, 0, 0, 5000)
+                UPDATE message_user_state
+                SET trashedAt = 5000, purgeAt = 5000, updatedAt = 5000
+                WHERE source = 'sms' AND providerId = 3
                 """.trimIndent()
             )
 
@@ -433,9 +445,11 @@ class MessageUserStateSqlTest {
             db.exec(SET_STARRED_SQL, "sms", 100L, 7L, true, 1L, 1L)
 
             // The cleanup candidate query the OTP worker uses: an eligible OTP that
-            // is neither starred nor explicitly kept.
-            val candidateSql =
-                "SELECT c.source FROM message_classification c " +
+            // is neither starred nor explicitly kept. Wrapped in COUNT so the
+            // "no candidates" case is still one row (a bare SELECT would return
+            // nothing and could not be asserted).
+            val candidateCountSql =
+                "SELECT COUNT(*) FROM message_classification c " +
                     "WHERE c.otpDeleteEligibleAt > 0 AND c.otpDeleteEligibleAt <= :now " +
                     "AND NOT EXISTS (" +
                     "SELECT 1 FROM message_user_state us " +
@@ -454,12 +468,19 @@ class MessageUserStateSqlTest {
             assertEquals(
                 "a starred OTP must never be a cleanup candidate",
                 0L,
-                db.scalar(candidateSql, 1_000L)
+                db.scalar(candidateCountSql, 1_000L)
             )
 
             // Unstarring it makes it eligible again — the star IS the protection.
             db.exec(SET_STARRED_SQL, "sms", 100L, 7L, false, 0L, 2L)
-            assertEquals(1L, db.scalar(candidateSql, 1_000L))
+            assertEquals(1L, db.scalar(candidateCountSql, 1_000L))
+
+            // The explicit opt-out protects it INDEPENDENTLY of the star.
+            db.exec(SET_KEEP_FROM_OTP_CLEANUP_SQL, "sms", 100L, 7L, true, 3L)
+            assertEquals(0L, db.scalar(candidateCountSql, 1_000L))
+            // ...and clearing the opt-out makes it eligible again.
+            db.exec(SET_KEEP_FROM_OTP_CLEANUP_SQL, "sms", 100L, 7L, false, 4L)
+            assertEquals(1L, db.scalar(candidateCountSql, 1_000L))
         } finally {
             db.close()
         }
@@ -521,3 +542,4 @@ class MessageUserStateSqlTest {
         }
     }
 }
+

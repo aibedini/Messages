@@ -6,8 +6,7 @@ import com.autonomousone.messages.data.PendingDelayedSendDao
 import com.autonomousone.messages.data.PendingDelayedSendEntity
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.utils.DiagnosticLog
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import com.autonomousone.messages.utils.PhoneToken
 
 /**
  * v3.4.0 FEATURE 11 — the ONLY executor of a delayed send.
@@ -87,15 +86,19 @@ class DelayedSendExecutor(
 
         // Cross-check: the token carried by the job must be the row's token. A
         // mismatch means the job and the ledger describe different recipients,
-        // and the safe answer to that is not to send at all.
-        val actualToken = DiagnosticLog.phoneToken(phone)
-        if (row.phoneToken.isNotBlank() && row.phoneToken != actualToken) {
-            dao.failPending(intentId, CODE_RECIPIENT_MISMATCH)
+        // and the safe answer to that is never to send.
+        val actualToken = PhoneToken.of(phone)
+        val verdict = RecipientTokenPolicy.verify(phone, row.phoneToken)
+        if (!RecipientTokenPolicy.allowsSend(verdict)) {
+            dao.failPending(intentId, RecipientTokenPolicy.CODE_RECIPIENT_MISMATCH)
             DiagnosticLog.event(
                 "SEND_DELAY",
                 "recipient mismatch id=$intentId expected=${row.phoneToken} got=$actualToken"
             )
-            return DelayedSendStateMachine.Execution.Failed(intentId, CODE_RECIPIENT_MISMATCH)
+            return DelayedSendStateMachine.Execution.Failed(
+                intentId,
+                RecipientTokenPolicy.CODE_RECIPIENT_MISMATCH
+            )
         }
 
         // ── THE CLAIM. At most one winner, ever. ────────────────────────────
@@ -207,9 +210,6 @@ class DelayedSendExecutor(
         /** Terminal rows are kept briefly so the UI can settle, then pruned. */
         const val TERMINAL_RETENTION_MILLIS = 24 * 60 * 60 * 1000L
 
-        /** The job's recipient and the ledger's token disagreed. Never send. */
-        const val CODE_RECIPIENT_MISMATCH = "RECIPIENT_MISMATCH"
-
         /** The persisted vocabulary is the enum's; asserted once, not per row. */
         private var vocabularyChecked = false
 
@@ -256,7 +256,13 @@ class SmsSenderDelayedSendSink(private val context: Context) : DelayedSendSink {
 
 // ── Mapping helpers ──────────────────────────────────────────────────────────
 
-/** Domain view of a row, for the pure state machine. */
+/**
+ * Domain view of a row, for the pure state machine.
+ *
+ * The `sms` package owns the state machine, so it is also the only place that
+ * decides what a persisted state NAME means: callers outside this package can
+ * only reach a domain object through [DelayedSendState.from].
+ */
 fun PendingDelayedSendEntity.toDomain(
     state: DelayedSendState = DelayedSendState.from(this.state)
 ): PendingDelayedSend = PendingDelayedSend(
@@ -272,10 +278,6 @@ fun PendingDelayedSendEntity.toDomain(
     attempts = attempts,
     failureCode = failureCode
 )
-
-/** Live intents of one thread, as domain objects. */
-fun PendingDelayedSendDao.observeLiveDomain(threadId: Long): Flow<List<PendingDelayedSend>> =
-    observeLiveForThread(threadId).map { rows -> rows.map { it.toDomain() } }
 
 /**
  * The worker's hand-off into [DelayedSendExecutor].
