@@ -121,6 +121,10 @@ dependencies {
     // contract (immutable submittedAt, targeted callback UPDATE, convergent
     // race handling) is SQL behaviour and must be tested as SQL, not mocked.
     testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    // kotlinx-coroutines-test for JVM unit tests. It was androidTest-only, which
+    // meant any unit test using runTest/advanceTimeBy could not compile at all
+    // (the test source set is the one that actually runs in CI here).
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
