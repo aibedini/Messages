@@ -215,11 +215,19 @@ fun HomeScreen(
         derivedStateOf {
             val tabList =
                 if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
-            // The category narrows the tab list through the indexed thread-id set
-            // the ViewModel already resolved; null means "no category selected".
-            viewModel.smartCategoryThreadIds(selectedCategory)
-                ?.let { ids -> tabList.filter { it.threadId in ids } }
-                ?: tabList
+            // FEATURE 15: the SPAM chip reads the reported conversations directly.
+            // A reported sender is BLOCKED, and a blocked conversation is removed
+            // from the rendered lists by design — so the chip cannot be served from
+            // the normal lists without being permanently empty.
+            if (selectedCategory == CategoryFilter.Spam) {
+                viewModel.spamConversations()
+            } else {
+                // The category narrows the tab list through the indexed thread-id set
+                // the ViewModel already resolved; null means "no category selected".
+                viewModel.smartCategoryThreadIds(selectedCategory)
+                    ?.let { ids -> tabList.filter { it.threadId in ids } }
+                    ?: tabList
+            }
         }
     }
 
@@ -350,7 +358,14 @@ fun HomeScreen(
             CategoryFilterBar(
                 selected = selectedCategory,
                 counts = viewModel.smartCategoryCounts(),
-                onSelect = { selectedCategory = it }
+                onSelect = {
+                    selectedCategory = it
+                    // FEATURE 15: a reported-spam conversation is blocked, so it is
+                    // hidden from every normal list. The Spam chip is the one place it
+                    // stays reachable, which means the ViewModel has to re-render with
+                    // that intent before the chip's rows are read.
+                    viewModel.onCategoryChipSelected(it)
+                }
             )
 
             Spacer(modifier = Modifier.height(4.dp))

@@ -34,7 +34,7 @@ import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadSnippet
 import com.autonomousone.messages.ui.home.CategoryFilter
-import com.autonomousone.messages.ui.home.HomeCategoryFilter
+import com.autonomousone.messages.repository.ConversationCategoryResolver
 import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.diagnostics.PerfTelemetry
@@ -45,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -344,7 +345,7 @@ class HomeViewModel(
             val overrides = db.conversationPreferenceDao().observeCategoryOverrides()
             val userSpam = db.conversationPreferenceDao().observeSpamThreadIds()
             combine(automatic, overrides, userSpam) { a, o, s ->
-                HomeCategoryFilter.effectiveCategories(a, o, s.toSet())
+                ConversationCategoryResolver.effectiveCategories(a, o, s.toSet())
             }.collect { rows ->
                 // Precompute off the composition path.
                 val ids = LinkedHashMap<CategoryFilter, MutableSet<Long>>()
@@ -458,8 +459,10 @@ class HomeViewModel(
         )
         // The blocklist is applied AFTER the merge so an optimistic override can
         // never re-introduce a blocked thread.
-        applySwap(conversations, filterBlocked(rendered.main, blocked).withManualUnread())
-        applySwap(archivedConversations, filterBlocked(rendered.archived, blocked).withManualUnread())
+        val main = filterBlocked(rendered.main, blocked).withManualUnread()
+        val archived = filterBlocked(rendered.archived, blocked).withManualUnread()
+        applySwap(conversations, main.withSpamVisibility())
+        applySwap(archivedConversations, archived.withSpamVisibility())
         // FEATURE 9: the ONE explicit place a durable list change reconciles the
         // multi-selection. A refresh that still contains the selected rows leaves
         // the selection untouched — nothing here can silently reset it.
@@ -486,6 +489,46 @@ class HomeViewModel(
         conversations.forEach { ids.add(it.threadId) }
         archivedConversations.forEach { ids.add(it.threadId) }
         return ids
+    }
+
+    /**
+     * FEATURE 15 — spam visibility.
+     *
+     * A conversation the user reported as spam is hidden from the normal inbox
+     * EVERYWHERE (including the Archived tab), and is shown ONLY while the SPAM
+     * category chip is selected. Messages are never deleted by a report; the thread
+     * remains reachable, and Not-Spam brings it straight back.
+     *
+     * This runs LAST in the render pipeline on purpose: it is a visibility rule over
+     * rows that already passed the blocklist and the overlay, so no optimistic merge
+     * can re-introduce a reported thread into the inbox.
+     */
+    private fun List<Sms>.withSpamVisibility(): List<Sms> {
+        if (spamIds.isEmpty()) return this
+        // While the SPAM chip is selected the rows stay in the durable list: the
+        // chip's own thread-id set is what narrows the screen to them, and dropping
+        // them here would make the chip permanently empty. Note this list is the
+        // RAW mirror rows (`roomConversationsState`), which still contain a reported
+        // thread even though its sender is now blocked — the normal inbox excludes
+        // blocked numbers earlier, at the overlay/render merge.
+        return if (spamCategoryVisible) this
+        else filter { it.threadId !in spamIds }
+    }
+
+    /**
+     * The reported-spam conversation rows for the SPAM chip.
+     *
+     * A reported conversation is blocked, so it never reaches the normal rendered
+     * lists; the chip therefore reads the RAW mirror state directly and applies the
+     * same overlay (so a pinned/optimistic state still shows) plus the manual-unread
+     * badge. Bounded by the report set, never a scan.
+     */
+    fun spamConversations(): List<Sms> {
+        if (spamIds.isEmpty()) return emptyList()
+        return roomConversationsState
+            .filter { it.threadId in spamIds }
+            .withManualUnread()
+            .sortedByDescending { it.date }
     }
 
     /** Applies the local blocklist without ever mutating the durable rows. */
@@ -571,9 +614,20 @@ class HomeViewModel(
             val cached = withContext(Dispatchers.IO) {
                 ConversationCache.get(getApplication()).load()
             }
-            if (cached.threads.isNotEmpty()) {
+            // TRASH (FEATURE 8): the cached snapshot can predate a conversation
+            // being trashed, and it is painted BEFORE Room speaks. A thread the
+            // user deleted must never flash back on screen, so the durable
+            // tombstones filter it here too. (A trashed thread that has since
+            // received a NEW message reappears with the correct snippet the moment
+            // the ACTIVE-UI Room query answers, milliseconds later.)
+            val cachedThreads = withContext(Dispatchers.IO) {
+                val trashed = runCatching { trashRepository.trashedThreadIds() }.getOrDefault(emptyList())
+                if (trashed.isEmpty()) cached.threads
+                else cached.threads.filterNot { it.threadId in trashed }
+            }
+            if (cachedThreads.isNotEmpty()) {
                 withContext(Dispatchers.Main) {
-                    setRoomConversations(cached.threads, HomeConversationSource.CACHE)
+                    setRoomConversations(cachedThreads, HomeConversationSource.CACHE)
                     hasLoadedOnce = true
                 }
             }
@@ -709,7 +763,10 @@ class HomeViewModel(
         withContext(Dispatchers.IO) {
             MessagesDatabase.get(getApplication())
                 .conversationDao()
-                .all()
+                // ACTIVE-UI (TRASH, FEATURE 8): the one-shot twin of the Flow
+                // below, so the first paint and the authoritative list can never
+                // disagree about a trashed conversation.
+                .allActive()
                 .map { it.toHomeSms() }
         }
 
@@ -1059,7 +1116,14 @@ class HomeViewModel(
             try {
                 val db = MessagesDatabase.get(getApplication())
                 db.conversationDao()
-                    .observeAll()
+                    // ACTIVE-UI, not the RAW projection: a trashed conversation
+                    // (or one whose every message is individually trashed) is
+                    // excluded IN SQL, so Home can never render it — not even in
+                    // the window between a process restart and the next projection
+                    // rebuild. The `conversations` row itself is dropped by the
+                    // coordinator's ACTIVE-UI rebuild; this is the read-side half of
+                    // the same rule.
+                    .observeAllActive()
                     .collect { rows ->
                         if (!roomReadEnabled && !roomUnavailable) {
                             roomReadEnabled = runCatching {
@@ -1191,8 +1255,46 @@ class HomeViewModel(
     /** Threads bookmarked unread (`manualUnread`), live from Room. */
     private val manuallyUnreadIds = mutableStateSetOf<Long>()
 
+    /**
+     * Threads the user REPORTED as spam (v3.4.0 FEATURE 15).
+     *
+     * A report blocks the sender, which is what removes it from the normal inbox
+     * (the blocklist filter already does that and must keep doing it — even for an
+     * archived thread). This set is the extra information Home needs: a reported
+     * conversation is deliberately reachable under the SPAM category chip, so
+     * "hidden from the inbox" must not become "unreachable from the app".
+     */
+    private val spamIds = mutableStateSetOf<Long>()
+
+    /** True while the SPAM category chip is the selected one. */
+    private var spamCategoryVisible: Boolean = false
+
     /** Threads muted RIGHT NOW; drives the Mute/Unmute toggle. */
     private val mutedIds = mutableStateSetOf<Long>()
+
+    /**
+     * The conversation rows the SPAM chip may show.
+     *
+     * Read defensively by the screen and combined with the chip's own thread-id
+     * set; empty when the user has reported nothing.
+     */
+    fun spamThreadIds(): Set<Long> = spamIds.toSet()
+
+    /**
+     * The screen tells Home whether the SPAM chip is selected.
+     *
+     * WHY THIS LIVES HERE: a reported conversation must be hidden from the normal
+     * inbox but VISIBLE under Spam. The blocklist filter runs at render time, so
+     * the render has to know which of the two states it is rendering. The flag is a
+     * plain field (not a Compose state) because the caller re-renders explicitly,
+     * exactly like the category chip selection does.
+     */
+    fun onCategoryChipSelected(selected: CategoryFilter?) {
+        val visible = selected == CategoryFilter.Spam
+        if (visible == spamCategoryVisible) return
+        spamCategoryVisible = visible
+        renderConversations()
+    }
 
     /** Called by the screen once the snackbar for [bulkFeedback] was shown. */
     fun consumeBulkFeedback() {
@@ -1359,6 +1461,18 @@ class HomeViewModel(
                 withContext(Dispatchers.Main) {
                     mutedIds.clear()
                     mutedIds.addAll(ids)
+                }
+            }
+        }
+        // FEATURE 15: a spam report is durable user state, so Home re-renders the
+        // moment it lands (hiding the thread from the inbox, or revealing it under
+        // the Spam chip if that is the selected one). Never deletes a message.
+        viewModelScope.launch {
+            preferenceRepository.observeSpamThreadIds().collect { ids ->
+                withContext(Dispatchers.Main) {
+                    spamIds.clear()
+                    spamIds.addAll(ids)
+                    renderConversations()
                 }
             }
         }

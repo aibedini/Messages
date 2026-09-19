@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -77,6 +78,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.IconButton
@@ -135,10 +137,12 @@ import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
 import com.autonomousone.messages.ui.conversation.ConversationSearchResults
 import com.autonomousone.messages.ui.conversation.ConversationSearchTopBar
+import com.autonomousone.messages.ui.conversation.ConversationSelectionTopBar
 import com.autonomousone.messages.ui.conversation.MessageEntrance
 import com.autonomousone.messages.ui.conversation.MessageList
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
+import com.autonomousone.messages.ui.selection.formatBulkFeedback
 import com.autonomousone.messages.utils.formatDateHeader
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.viewmodel.ConversationScrollCommand
@@ -167,7 +171,15 @@ fun ConversationScreen(
     forwardText: String = "",
     /** External share text: pre-fills the composer as a DRAFT. The user
      *  presses Send — nothing is auto-sent (unlike [forwardText]). */
-    draftText: String = ""
+    draftText: String = "",
+    /**
+     * v3.4.0: optional "land on THIS exact message" identity, set by the Starred
+     * browsers. ALWAYS the composite (source, providerId) — SMS `_id` 100 and MMS
+     * `_id` 100 are different messages, so a raw id would open the wrong one.
+     * Empty source / 0 id means "normal open, newest message".
+     */
+    hitSource: String = "",
+    hitProviderId: Long = 0L
 ) {
     val context = LocalContext.current
     val scheduleSuccessToast = stringResource(R.string.sched_success_toast)
@@ -343,6 +355,16 @@ fun ConversationScreen(
         }
     }
 
+    // v3.4.0 FEATURE 7 → FEATURE 1: land on the EXACT message a Starred row
+    // carries. Runs after the conversation is open (so the jump's bounded window
+    // is appended to a loaded conversation rather than racing it) and is keyed on
+    // the identity, so re-entering the same hit twice does not re-jump.
+    LaunchedEffect(threadId, hitSource, hitProviderId) {
+        if (threadId != 0L && hitSource.isNotBlank() && hitProviderId > 0L) {
+            viewModel.jumpToMessage(hitSource, hitProviderId)
+        }
+    }
+
     // Screen lifecycle = conversation visibility. The sync core consults this
     // while it builds an incoming-message mutation, so an incoming SMS for the
     // thread on screen is written read in the same transaction (no 0→1→0
@@ -367,6 +389,55 @@ fun ConversationScreen(
 
     val messages = viewModel.messages
 
+    // ── FEATURE 9/10: message multi-select + bulk actions ───────────────────
+    // The selection is keyed by the COMPOSITE identity (source, providerId) and
+    // lives in the ViewModel, so a Room tail emission cannot drop it; the screen
+    // renders it and routes the actions. Leaving the screen clears it.
+    val selectionActive = viewModel.messageSelection.active
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearMessageSelection() }
+    }
+    // BACK exits selection mode FIRST — before navigating up out of the chat.
+    BackHandler(enabled = selectionActive) { viewModel.clearMessageSelection() }
+
+    val bulkUpdatedFmt = stringResource(R.string.bulk_updated_fmt)
+    val bulkUpdatedPartialFmt = stringResource(R.string.bulk_updated_partial_fmt)
+    val bulkFailedFmt = stringResource(R.string.bulk_failed_fmt)
+
+    // ONE snackbar per completed bulk action; a partial result ALWAYS reports how
+    // many messages could not be updated.
+    val bulkFeedback = viewModel.bulkFeedback
+    LaunchedEffect(bulkFeedback) {
+        val feedback = bulkFeedback ?: return@LaunchedEffect
+        viewModel.consumeBulkFeedback()
+        snackbarHostState.showSnackbar(
+            message = formatBulkFeedback(
+                successTemplate = bulkUpdatedFmt,
+                partialTemplate = bulkUpdatedPartialFmt,
+                failureTemplate = bulkFailedFmt,
+                succeeded = feedback.succeeded,
+                failed = feedback.failed
+            ),
+            duration = SnackbarDuration.Long
+        )
+    }
+
+    fun copySelectedText() {
+        val text = viewModel.selectedText()
+        if (text.isBlank()) return
+        val clipboard =
+            context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("messages", text))
+        android.widget.Toast.makeText(context, copiedToast, android.widget.Toast.LENGTH_SHORT).show()
+        viewModel.onSelectionCopied(1)
+    }
+
+    fun forwardSelectedText() {
+        val text = viewModel.selectedSingleText() ?: return
+        viewModel.clearMessageSelection()
+        navController.navigate(Screen.NewConversation.createForwardRoute(text))
+    }
+
     // ── v3.4.0 FEATURE 1: search inside this conversation ───────────────────
     // The conversation window (`viewModel.messages`) is owned by the ViewModel
     // and is NEVER replaced by search. While the user is parked on a search
@@ -381,6 +452,16 @@ fun ConversationScreen(
             ?.hits
             ?.getOrNull(viewModel.searchIndex)
             ?.let { MessageIdentity.Key(it.source, it.providerId) }
+    }
+
+    // FEATURE 9: the ONE explicit reconciliation of the message selection with
+    // the durable window. A refresh/merge that still contains the selected rows
+    // leaves the selection intact (the effect only re-runs when the window's
+    // CONTENT changes), so a Room emission can never silently drop it.
+    LaunchedEffect(messages.toList()) {
+        viewModel.reconcileMessageSelection(
+            messages.map { MessageIdentity.keyOf(it.id) }.toSet()
+        )
     }
 
     // Debounced query pipeline. Keyed on the search revision so a keystroke
@@ -407,16 +488,6 @@ fun ConversationScreen(
         if (phone.isNotBlank()) phone
         else if (messages.isNotEmpty()) messages.first().sender
         else ""
-    }
-
-    // Debounced query pipeline. Keyed on the search revision so a keystroke
-    // re-arms it while an unrelated recomposition does not; the coroutine is
-    // cancelled the moment the revision changes, which is what makes the 280 ms
-    // quiet period a real debounce instead of just a delay. A cancelled run
-    // publishes nothing, so a slow query can never overtake a fast one.
-    LaunchedEffect(viewModel.searchRevision, threadId) {
-        if (!viewModel.isSearchActive) return@LaunchedEffect
-        viewModel.runSearchPipeline()
     }
 
     LaunchedEffect(recipientPhone, participantRefresh) {
@@ -680,7 +751,23 @@ fun ConversationScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            if (viewModel.isSearchActive) {
+            if (selectionActive) {
+                // FEATURE 9/10: `X   3 selected   [actions]` replaces the chat
+                // bar while messages are selected. Star/Unstar is driven by the
+                // real starred state of the selection; Forward stays a
+                // single-message workflow (shown only for exactly one message).
+                ConversationSelectionTopBar(
+                    selectedCount = viewModel.messageSelection.count,
+                    busy = viewModel.bulkInProgress,
+                    allSelectedStarred = viewModel.selectionAllStarred,
+                    onClose = { viewModel.clearMessageSelection() },
+                    onStar = { viewModel.starSelection(true) },
+                    onUnstar = { viewModel.starSelection(false) },
+                    onCopyText = { copySelectedText() },
+                    onForward = { forwardSelectedText() },
+                    onTrash = { viewModel.trashSelection() }
+                )
+            } else if (viewModel.isSearchActive) {
                 // v3.4.0 FEATURE 1: [←] [Search messages…] [3 of 14] [↑] [↓] [X]
                 ConversationSearchTopBar(
                     query = viewModel.searchQuery,
@@ -792,6 +879,13 @@ fun ConversationScreen(
                     onForward = { text -> navController.navigate(Screen.NewConversation.createForwardRoute(text)) },
                     onPhoneClick = { number -> phoneActionNumber = number },
                     onResend = { body -> viewModel.sendMessage(threadId, recipientPhone, body, selectedSubId) },
+                    // FEATURE 9/10: long-press a bubble → selection mode; taps
+                    // toggle; a long-press INSIDE selection mode still opens the
+                    // legacy copy/forward/details menu.
+                    selectionActive = selectionActive,
+                    selectedKeys = viewModel.messageSelection.keys,
+                    onEnterSelection = { sms -> viewModel.enterMessageSelection(sms) },
+                    onToggleSelection = { sms -> viewModel.toggleMessageSelection(sms) },
                 )                } else if (launchSnapshot != null) {
                     LaunchPreview(snapshot = launchSnapshot)
                 } else if (viewModel.isLoading) {

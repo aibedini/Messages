@@ -17,6 +17,7 @@ import com.autonomousone.messages.data.MessageKey
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.repository.BulkActionRepository
 import com.autonomousone.messages.repository.BulkFeedback
+import com.autonomousone.messages.repository.ConversationSearchNavigation
 import com.autonomousone.messages.repository.InConversationSearchRepository
 import com.autonomousone.messages.repository.MessageUserStateRepository
 import com.autonomousone.messages.repository.SearchDebounce
@@ -24,7 +25,9 @@ import com.autonomousone.messages.repository.SearchJumpWindow
 import com.autonomousone.messages.repository.SearchOutcome
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadMerge
+import com.autonomousone.messages.repository.toMessageKey
 import com.autonomousone.messages.messaging.MessagingPreferences
+import com.autonomousone.messages.messaging.DelayedSendNotice
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -46,8 +49,10 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Which boundary of the thread the visible window is anchored to. */
 enum class ConversationWindowMode {
@@ -126,6 +131,24 @@ class ConversationViewModel(
          * provider pager's INITIAL_PER_SOURCE windows.
          */
         private const val ROOM_WINDOW = ConversationWindow.OPEN_WINDOW
+
+        /**
+         * `Sms.status` sentinel for a message held by Undo Send.
+         *
+         * Deliberately outside every `Telephony.Sms.STATUS_*` value: it is OUR
+         * UI state, and a value the provider also uses would make a delayed
+         * bubble indistinguishable from a real pending/failed provider row after
+         * a merge.
+         */
+        const val STATUS_DELAYED_PENDING = -11
+
+        /**
+         * Bound on the ONE durable decision a composer tap waits for (the ledger
+         * INSERT, or the undo compare-and-set). Generous for a single-row write
+         * and short enough that a wedged database cannot freeze the composer;
+         * both callers have a safe fallback when it expires.
+         */
+        private const val HOLD_DECISION_TIMEOUT_MILLIS = 1_500L
     }
 
     private val repository = SmsRepository(application)
@@ -426,7 +449,11 @@ class ConversationViewModel(
         roomTailJob = viewModelScope.launch(Dispatchers.IO + crashGuard("roomTail")) {
             com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
                 .messageDao()
-                .observeThread(threadId, ConversationWindow.OPEN_WINDOW)
+                // ACTIVE-UI tail (v3.4.0 FEATURE 8, TRASH): the reactive tail must
+                // not re-introduce a message the user deleted — individually, or as
+                // part of a trashed conversation's snapshot. `observeThread` remains
+                // the RAW variant for sync/repair callers.
+                .observeActiveThread(threadId, ConversationWindow.OPEN_WINDOW)
                 .collect { entities ->
                     if (gen != conversationGeneration) return@collect
                     val tail = entities.map { it.toSms() }
@@ -440,7 +467,13 @@ class ConversationViewModel(
                         )
                         messages.clear()
                         messages.addAll(merged)
-                        if (windowMode == ConversationWindowMode.LATEST) {
+                        // A search JUMP paints a bounded window that is NOT the
+                        // conversation; caching it here would reopen this chat
+                        // on 40 messages tomorrow. The window is stored only
+                        // while the normal conversation list owns the screen.
+                        if (windowMode == ConversationWindowMode.LATEST &&
+                            searchJumpWindow == null
+                        ) {
                             ThreadMessageCache.put(currentThreadId, currentPhone, merged)
                         }
                     }
@@ -1412,10 +1445,12 @@ class ConversationViewModel(
                 currentThreadId = messages.last().threadId
             }
             // Keep the instant-open cache in step with what is on screen —
-            // but ONLY in LATEST mode. The cache exists so the next open
-            // paints the newest window; storing an OLDEST-boundary history
-            // window here would reopen this chat years in the past.
-            if (windowMode == ConversationWindowMode.LATEST) {
+            // but ONLY in LATEST mode with the NORMAL conversation window. The
+            // cache exists so the next open paints the newest window; storing an
+            // OLDEST-boundary history window would reopen this chat years in the
+            // past, and storing a SEARCH-jump window would reopen it on the
+            // handful of messages around a search hit.
+            if (windowMode == ConversationWindowMode.LATEST && searchJumpWindow == null) {
                 ThreadMessageCache.put(currentThreadId, currentPhone, merged)
             }
         }
@@ -1765,26 +1800,6 @@ class ConversationViewModel(
         optimisticMessages.removeAll { it.id == id }
     }
 
-    companion object {
-        /**
-         * `Sms.status` sentinel for a message held by Undo Send.
-         *
-         * Deliberately outside every `Telephony.Sms.STATUS_*` value: it is OUR
-         * UI state, and a value the provider also uses would make a delayed
-         * bubble indistinguishable from a real pending/failed provider row after
-         * a merge.
-         */
-        const val STATUS_DELAYED_PENDING = -11
-
-        /**
-         * Bound on the ONE durable decision the composer tap waits for (the
-         * ledger INSERT, or the undo compare-and-set). Generous for a single-row
-         * write and short enough that a wedged database cannot freeze the
-         * composer; both callers have a safe fallback when it expires.
-         */
-        private const val HOLD_DECISION_TIMEOUT_MILLIS = 1_500L
-    }
-
     fun sendImageMessage(threadId: Long, phone: String, imageUri: Uri, caption: String = "") {
         val targetPhone = if (phone.isNotBlank()) phone else currentPhone
         if (targetPhone.isBlank()) return
@@ -1933,7 +1948,7 @@ class ConversationViewModel(
 
     /** Star/unstar every selected message (composite identity preserved). */
     fun starSelection(starred: Boolean) {
-        val keys = messageSelection.keys
+        val keys = messageSelection.keys.mapTo(LinkedHashSet()) { it.toMessageKey() }
         if (keys.isEmpty() || bulkInProgress) return
         viewModelScope.launch {
             bulkInProgress = true
@@ -1959,9 +1974,12 @@ class ConversationViewModel(
         viewModelScope.launch {
             bulkInProgress = true
             try {
-                val result = bulkActions.moveToTrash(keys)
-                val failed = result.failed.mapNotNull { key ->
-                    key.source?.let { source -> key.providerId?.let { id -> MessageKey(source, id) } }
+                val result = bulkActions.moveToTrash(keys.map { it.toMessageKey() })
+                // A failed key stays selected so the user can retry it.
+                val failed = result.failed.mapNotNull { failure ->
+                    failure.source?.let { source ->
+                        failure.providerId?.let { id -> MessageIdentity.Key(source, id) }
+                    }
                 }.toSet()
                 val applied = keys - failed
                 if (applied.isNotEmpty()) {
@@ -1974,7 +1992,12 @@ class ConversationViewModel(
                     }
                 }
                 bulkFeedback = BulkFeedback.from(result)
-                if (!result.isCompleteFailure) messageSelection = messageSelection.clear()
+                if (!result.isCompleteFailure) {
+                    messageSelection = messageSelection.clear()
+                } else {
+                    // Nothing applied: keep exactly the messages that failed.
+                    messageSelection = SelectionState(failed, active = failed.isNotEmpty())
+                }
             } finally {
                 bulkInProgress = false
             }

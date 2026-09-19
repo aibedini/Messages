@@ -46,6 +46,14 @@ import kotlinx.coroutines.withContext
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The UI selection identity ([MessageIdentity.Key]) bridged to the persisted
+ * message-state identity ([MessageKey]). Both are the SAME composite
+ * `(source, providerId)` pair; making the bridge explicit means a selection set
+ * can never be passed where a raw id is expected.
+ */
+fun MessageIdentity.Key.toMessageKey(): MessageKey = MessageKey(source, providerId)
+
+/**
  * One item a bulk action could not apply.
  *
  * [threadId] identifies a conversation, [source] + [providerId] the composite
