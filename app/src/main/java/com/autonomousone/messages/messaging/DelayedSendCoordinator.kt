@@ -70,7 +70,16 @@ class DelayedSendCoordinator(
         threadId: Long,
         subscriptionId: Int?,
         now: Long = System.currentTimeMillis(),
-        source: SendSource = SendSource.COMPOSER
+        source: SendSource = SendSource.COMPOSER,
+        /**
+         * P0 v3.4.3 — caller-supplied durable id.
+         *
+         * A caller that must answer "did the ledger accept this?" AFTER a
+         * bounded-wait timeout has to know the identity in advance. Letting the
+         * coordinator invent it made that question unanswerable, so a timeout
+         * that landed the row after the deadline became a second physical send.
+         */
+        intentId: String? = null
     ): SendResult {
         if (body.isBlank() || phone.isBlank()) return SendResult.Ignored
 
@@ -82,10 +91,10 @@ class DelayedSendCoordinator(
             }
 
             is DelayPlan.Delayed -> {
-                val intentId = newIntentId()
+                val durableIntentId = intentId ?: newIntentId()
                 val token = DiagnosticLog.phoneToken(phone)
                 val row = PendingDelayedSendEntity(
-                    intentId = intentId,
+                    intentId = durableIntentId,
                     body = body,
                     phoneToken = token,
                     threadId = threadId,
@@ -97,7 +106,7 @@ class DelayedSendCoordinator(
                 dao.insert(row)
                 DiagnosticLog.event(
                     "SEND_DELAY",
-                    "pending id=$intentId token=$token thread=$threadId " +
+                    "pending id=$durableIntentId token=$token thread=$threadId " +
                         "delay=${plan.delayMillis} due=${plan.dueAt} src=${source.name}"
                 )
 
@@ -109,9 +118,12 @@ class DelayedSendCoordinator(
                     body = body,
                     triggerAtMillis = plan.dueAt,
                     subscriptionId = subscriptionId,
-                    workName = ScheduledSms.delayedSendWorkName(intentId)
+                    workName = ScheduledSms.delayedSendWorkName(durableIntentId),
+                    // The ledger row above already owns the pending UI; a second
+                    // synthetic bubble here was a THIRD clock bubble on screen.
+                    emitOptimistic = false
                 )
-                DiagnosticLog.event("SEND_DELAY", "armed id=$intentId work=$workName")
+                DiagnosticLog.event("SEND_DELAY", "armed id=$durableIntentId work=$workName")
 
                 SendResult.DelayedSend(
                     row = row.domain(),
@@ -119,6 +131,48 @@ class DelayedSendCoordinator(
                 )
             }
         }
+    }
+
+    /**
+     * P0 v3.4.3 — does the durable ledger already own [intentId]?
+     *
+     * The ONE question the composer asks after a bounded-wait timeout, because
+     * it decides between "re-arm the durable timer" and "fall back to a direct
+     * send". Answering it from the ledger (not from a wall-clock guess) is what
+     * keeps a timeout from becoming a second chargeable submission.
+     */
+    suspend fun exists(intentId: String): Boolean = dao.byId(intentId) != null
+
+    /**
+     * P0 v3.4.3 — re-arm a PENDING intent whose timer enqueue was lost.
+     *
+     * A bounded-wait timeout can cancel between the durable insert and the
+     * `ScheduledSms.schedule` call, leaving a PENDING row that nothing will
+     * ever fire. Re-arming is idempotent in effect: `ScheduledSms` enqueues under
+     * the intent's own unique name with `REPLACE`, and the initial delay is
+     * recomputed as `dueAt - now`, so the deadline does not move.
+     *
+     * @return the re-armed row, or null when no PENDING row exists (in which
+     *         case the caller is free to fall back — nothing was held).
+     */
+    suspend fun rearmIfPending(
+        intentId: String,
+        phone: String,
+        subscriptionId: Int?
+    ): PendingDelayedSend? {
+        val row = dao.byId(intentId) ?: return null
+        val domain = row.domain()
+        if (domain.state != DelayedSendState.PENDING) return null
+        ScheduledSms.schedule(
+            context = appContext,
+            phone = phone,
+            body = row.body,
+            triggerAtMillis = row.dueAt,
+            subscriptionId = subscriptionId,
+            workName = ScheduledSms.delayedSendWorkName(intentId),
+            emitOptimistic = false
+        )
+        return domain
     }
 
     /**

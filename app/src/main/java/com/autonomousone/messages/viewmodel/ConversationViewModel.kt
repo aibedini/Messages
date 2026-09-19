@@ -28,6 +28,13 @@ import com.autonomousone.messages.repository.ThreadMerge
 import com.autonomousone.messages.repository.toMessageKey
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.DelayedSendNotice
+import com.autonomousone.messages.messaging.ComposerSendOrchestrator
+import com.autonomousone.messages.messaging.ComposerSendOutcome
+import com.autonomousone.messages.messaging.ComposerSendRequest
+import com.autonomousone.messages.messaging.SendResult
+import com.autonomousone.messages.sms.PendingDelayedSend
+import com.autonomousone.messages.sms.SendSource
+import java.util.UUID
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -383,6 +390,67 @@ class ConversationViewModel(
                 smsSender.sendForResult(phone, body, subscriptionId)
             }
         )
+    }
+
+    /**
+     * P0 v3.4.3 — the ONE place a composer tap may reach the radio.
+     *
+     * Encodes the exactly-once contract: an immediate [SendResult.SentNow] came
+     * from the sink above, which ALREADY submitted the SMS, so it is never
+     * followed by a second `smsSender.send`. Only a `null` route (bounded-wait
+     * timeout or throw) may fall back — and only when the durable ledger does
+     * not already own the intent, so a timeout that landed the row after the
+     * deadline cannot become a second physical submission.
+     */
+    private val composerSends by lazy {
+        ComposerSendOrchestrator(
+            routeSend = { request -> routeComposerSend(request) },
+            ledgerHolds = { intentId -> delayedSend.exists(intentId) },
+            directSend = { request ->
+                smsSender.send(request.phone, request.body, request.subscriptionId, null)
+            }
+        )
+    }
+
+    /** Non-sensitive per-tap correlation id for COMPOSER_SEND diagnostics. */
+    private fun newTapId(): String = UUID.randomUUID().toString().replace("-", "").take(8)
+
+    /** The durable id is chosen BEFORE routing, so a timeout can be disambiguated. */
+    private fun newComposerIntentId(): String =
+        "comp_" + UUID.randomUUID().toString().replace("-", "").take(16)
+
+    /** Drops the optimistic bubble created by a held or dropped send. */
+    private fun removeOwnOptimistic(optimisticId: Long) {
+        messages.removeAll { it.id == optimisticId }
+        optimisticMessages.removeAll { it.id == optimisticId }
+        pendingDelayedScanIds.remove(optimisticId)
+        // The instant-open cache still holds the synthetic row and no provider
+        // change will ever invalidate a send that was held or dropped, so the
+        // phantom would repaint on the next open.
+        ThreadMessageCache.invalidateThread(currentThreadId, currentPhone)
+    }
+
+    /**
+     * Converges the optimistic bubble created by THIS tap onto the provider
+     * identity the send produced, so the live outgoing event and the Room tail
+     * dedupe against it instead of leaving a clock "ghost" beside the real row.
+     */
+    private fun reconcileOwnOptimistic(
+        optimisticId: Long,
+        providerRowId: Long?,
+        fallbackDate: Long
+    ) {
+        val updated = ConversationWindow.reconcileOwnOptimistic(
+            messages.toList(), optimisticId, providerRowId, fallbackDate
+        )
+        if (updated != messages) {
+            messages.clear()
+            messages.addAll(updated)
+        }
+        // Provider-identified (or dropped) now: it is no longer an unconfirmed
+        // optimistic row for mergeOptimistic() to keep re-adding.
+        optimisticMessages.removeAll { it.id == optimisticId }
+        ThreadMessageCache.invalidateThread(currentThreadId, currentPhone)
     }
 
     /**
@@ -1576,44 +1644,99 @@ class ConversationViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Non-sensitive correlation id: one COMPOSER_SEND line per tap.
+                val tapId = newTapId()
                 val recipients = splitRecipients(targetPhone)
-                when {
-                    // ── v3.4.0 FEATURE 11: the delay gate ────────────────────
-                    // A plain text composer send is the ONLY thing Undo Send may
-                    // hold back. With the setting OFF (the default) this returns
-                    // null and the code below runs exactly as it did in v3.3.6.
-                    // Group sends and attachments stay immediate: a held group
-                    // would need per-recipient undo semantics, and this feature
-                    // does not have them.
-                    recipients.size == 1 && routeComposerSend(
+                if (recipients.size == 1) {
+                    // P0 v3.4.3: the orchestrator owns the decision — held,
+                    // already submitted by the routing sink, ignored, or the ONE
+                    // permitted timeout fallback. It is never inferred from a
+                    // nullable id again (that inference WAS the double send).
+                    val request = ComposerSendRequest(
                         phone = recipients.first(),
                         body = trimmedMsg,
                         threadId = currentThreadId,
-                        subscriptionId = subscriptionOverride
-                    ) != null -> {
-                        // Held: the durable ledger owns the message now, and its
-                        // worker will send it. Nothing is sent from here.
-                        com.autonomousone.messages.utils.DiagnosticLog.event(
-                            "SEND_DELAY",
-                            "composer-held thread=$currentThreadId token=" +
-                                com.autonomousone.messages.utils.DiagnosticLog
-                                    .phoneToken(recipients.first())
-                        )
+                        subscriptionId = subscriptionOverride,
+                        intentId = newComposerIntentId()
+                    )
+                    val outcome = composerSends.execute(request)
+                    val routeLabel = when (outcome) {
+                        is ComposerSendOutcome.HeldForDelay -> "DELAYED"
+                        is ComposerSendOutcome.HeldAfterTimeout -> "DELAYED"
+                        is ComposerSendOutcome.AlreadySent -> "IMMEDIATE"
+                        is ComposerSendOutcome.FallbackSent -> "FALLBACK"
+                        ComposerSendOutcome.Ignored -> "IGNORED"
                     }
+                    val providerRowId = when (outcome) {
+                        is ComposerSendOutcome.AlreadySent -> outcome.providerRowId
+                        is ComposerSendOutcome.FallbackSent -> outcome.providerRowId
+                        else -> null
+                    }
+                    DiagnosticLog.event(
+                        "COMPOSER_SEND",
+                        "tap=$tapId route=$routeLabel providerRowId=${providerRowId ?: -1}"
+                    )
+
+                    // A timeout that lost the race with the durable insert is NOT
+                    // a fallback: re-arm its timer instead (durable work, on IO).
+                    val rearmed: PendingDelayedSend? =
+                        if (outcome is ComposerSendOutcome.HeldAfterTimeout) {
+                            delayedSend.rearmIfPending(
+                                request.intentId, request.phone, request.subscriptionId
+                            )
+                        } else null
+
+                    withContext(Dispatchers.Main) {
+                        when (outcome) {
+                            is ComposerSendOutcome.HeldForDelay -> {
+                                // The durable ledger bubble is the ONLY pending row.
+                                removeOwnOptimistic(optimisticSms.id)
+                                _delayedSendStarted.tryEmit(
+                                    DelayedSendNotice(
+                                        intentId = request.intentId,
+                                        seconds = outcome.delaySeconds,
+                                        body = trimmedMsg
+                                    )
+                                )
+                            }
+                            is ComposerSendOutcome.HeldAfterTimeout -> {
+                                removeOwnOptimistic(optimisticSms.id)
+                                rearmed?.let { row ->
+                                    _delayedSendStarted.tryEmit(
+                                        DelayedSendNotice(
+                                            intentId = row.intentId,
+                                            seconds = ((row.dueAt - System.currentTimeMillis()) / 1000L)
+                                                .coerceAtLeast(0L),
+                                            body = trimmedMsg
+                                        )
+                                    )
+                                }
+                            }
+                            is ComposerSendOutcome.AlreadySent -> {
+                                // The routing sink ALREADY submitted it. Never send
+                                // again; just converge the bubble onto the provider
+                                // identity so the live event/Room tail dedupe.
+                                outcome.providerRowId?.let { persistedSentIds.add(it) }
+                                reconcileOwnOptimistic(
+                                    optimisticSms.id, outcome.providerRowId, optimisticSms.date
+                                )
+                            }
+                            is ComposerSendOutcome.FallbackSent -> {
+                                outcome.providerRowId?.let { persistedSentIds.add(it) }
+                                reconcileOwnOptimistic(
+                                    optimisticSms.id, outcome.providerRowId, optimisticSms.date
+                                )
+                            }
+                            ComposerSendOutcome.Ignored -> removeOwnOptimistic(optimisticSms.id)
+                        }
+                    }
+                } else if (MessagingPreferences(getApplication()).groupMessagingEnabled) {
                     // Google Messages-style group chat: ONE group MMS instead of N SMS.
-                    recipients.size > 1 &&
-                            MessagingPreferences(getApplication()).groupMessagingEnabled -> {
-                        mmsSender.sendGroupText(recipients, trimmedMsg)
-                    }
+                    mmsSender.sendGroupText(recipients, trimmedMsg)
+                } else {
                     // Group toggle off → classic behaviour: one SMS per recipient.
-                    recipients.size > 1 -> recipients.forEach {
+                    recipients.forEach {
                         smsSender.send(it, trimmedMsg, subscriptionOverride, null)
-                    }
-                    else -> {
-                        val persistedId = smsSender.send(
-                            recipients.first(), trimmedMsg, subscriptionOverride, null
-                        )
-                        persistedSentIds.add(persistedId)
                     }
                 }
             } catch (e: Exception) {
@@ -1627,13 +1750,15 @@ class ConversationViewModel(
                     "SMS_SEND",
                     "optimistic-send-failed code=DISPATCH_REJECTED"
                 )
-                val failed = optimisticSms.copy(
-                    status = android.provider.Telephony.Sms.STATUS_FAILED
-                )
-                val index = messages.indexOfFirst { it.id == optimisticSms.id }
-                if (index >= 0) messages[index] = failed
-                val optimisticIndex = optimisticMessages.indexOfFirst { it.id == optimisticSms.id }
-                if (optimisticIndex >= 0) optimisticMessages[optimisticIndex] = failed
+                withContext(Dispatchers.Main) {
+                    val failed = optimisticSms.copy(
+                        status = android.provider.Telephony.Sms.STATUS_FAILED
+                    )
+                    val index = messages.indexOfFirst { it.id == optimisticSms.id }
+                    if (index >= 0) messages[index] = failed
+                    val optimisticIndex = optimisticMessages.indexOfFirst { it.id == optimisticSms.id }
+                    if (optimisticIndex >= 0) optimisticMessages[optimisticIndex] = failed
+                }
             }
         }
     }
@@ -1651,64 +1776,47 @@ class ConversationViewModel(
     /**
      * Routes ONE already-composed message through the delay gate.
      *
-     * Returns the durable intent id when the message was HELD (the caller must
-     * not treat it as delivered), or null when it must go out through the
-     * unchanged direct path.
+     * Returns the coordinator's explicit [SendResult]. `null` means EXACTLY one
+     * thing: the bounded wait expired or the durable decision threw, so this
+     * process does not know whether the message was submitted.
      *
-     * ── Why this is a bounded blocking call ──────────────────────────────────
-     * This is the moment the user's tap must be answered (composer cleared,
-     * Snackbar with UNDO shown), and the answer depends on ONE durable decision:
-     * insert a single small row into a work-queue table. The call is bounded by
-     * [HOLD_DECISION_TIMEOUT_MILLIS] so a wedged database can never freeze the
-     * composer; on timeout or failure the caller falls back to the immediate
-     * send, which means a message is never lost to a ledger problem. No provider
-     * read, no scan and no Room query is performed here — only the one INSERT.
+     * ── P0 v3.4.3: why this no longer returns a nullable String ──────────────
+     * It used to fold EVERY non-delayed outcome — including the successful
+     * immediate `SentNow` whose sink had already physically submitted the SMS —
+     * into `null`, and the caller read `null` as "not sent yet" and sent again.
+     * One tap produced two chargeable submissions. The outcome vocabulary is now
+     * [SendResult], and [ComposerSendRouter] is the single mapping from it to a
+     * caller action.
+     *
+     * ── Why this suspends instead of blocking ────────────────────────────────
+     * The caller already runs on `viewModelScope.launch(Dispatchers.IO)`, so the
+     * bounded decision must not park a dispatcher thread with `runBlocking`.
+     * The decision itself is still one small INSERT, bounded by
+     * [HOLD_DECISION_TIMEOUT_MILLIS] so a wedged database cannot freeze the tap;
+     * no provider read and no scan happens here.
      */
-    private fun routeComposerSend(
-        phone: String,
-        body: String,
-        threadId: Long,
-        subscriptionId: Int?
-    ): String? = runCatching {
-        kotlinx.coroutines.runBlocking {
-            withTimeoutOrNull(HOLD_DECISION_TIMEOUT_MILLIS) {
-                delayedSend.send(
-                    phone = phone,
-                    body = body,
-                    threadId = threadId,
-                    subscriptionId = subscriptionId,
-                    source = com.autonomousone.messages.sms.SendSource.COMPOSER
-                )
-            }
-        }
-    }.fold(
-        onSuccess = { result ->
-            if (result is com.autonomousone.messages.messaging.SendResult.DelayedSend) {
-                _delayedSendStarted.tryEmit(
-                    DelayedSendNotice(
-                        intentId = result.row.intentId,
-                        seconds = result.delaySeconds,
-                        body = result.row.body
-                    )
-                )
-                result.row.intentId
-            } else {
-                // Immediate (delay OFF), ignored, or the bounded wait expired.
-                null
-            }
-        },
-        onFailure = { error ->
-            // A ledger/timer failure must never silently drop a message the user
-            // just typed: fall back to the immediate send.
-            com.autonomousone.messages.utils.DiagnosticLog.event(
-                "SEND_DELAY",
-                "hold-failed fallback=immediate token=" +
-                    com.autonomousone.messages.utils.DiagnosticLog.phoneToken(phone),
-                error
+    private suspend fun routeComposerSend(request: ComposerSendRequest): SendResult? = try {
+        withTimeoutOrNull(HOLD_DECISION_TIMEOUT_MILLIS) {
+            delayedSend.send(
+                phone = request.phone,
+                body = request.body,
+                threadId = request.threadId,
+                subscriptionId = request.subscriptionId,
+                source = SendSource.COMPOSER,
+                intentId = request.intentId
             )
-            null
         }
-    )
+    } catch (e: Exception) {
+        // A ledger/timer failure must never silently drop a message the user just
+        // typed; the orchestrator turns this null into exactly ONE fallback send
+        // (unless the ledger already owns the intent).
+        DiagnosticLog.event(
+            "SEND_DELAY",
+            "hold-failed fallback=immediate token=" + DiagnosticLog.phoneToken(request.phone),
+            e
+        )
+        null
+    }
 
     /**
      * UNDO the pending message [intentId].

@@ -93,7 +93,16 @@ object ScheduledSms {
         body: String,
         triggerAtMillis: Long,
         subscriptionId: Int?,
-        workName: String
+        workName: String,
+        /**
+         * P0 v3.4.3 — whether to publish the synthetic pending bubble.
+         *
+         * The Send-delay path keeps its own durable ledger row and renders its
+         * pending bubble from THAT (observeLiveForThread), so this second
+         * synthetic id was a third clock bubble next to the optimistic one and
+         * the ledger one. The long-press "Schedule send" flow still needs it.
+         */
+        emitOptimistic: Boolean = true
     ): String {
         val delayMs = (triggerAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
         val name = workName
@@ -115,18 +124,22 @@ object ScheduledSms {
         WorkManager.getInstance(context).enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, request)
 
         // Optimistic bubble with the SCHEDULED date so it sorts correctly.
-        SmsEventBus.emitSms(
-            Sms(
-                id = triggerAtMillis,
-                threadId = 0L,
-                sender = phone,
-                message = body,
-                date = triggerAtMillis,
-                unread = false,
-                type = 2,
-                status = 32 // pending
+        // Suppressed for the Send-delay path: its durable ledger row already
+        // renders the ONE pending bubble (see the emitOptimistic doc above).
+        if (emitOptimistic) {
+            SmsEventBus.emitSms(
+                Sms(
+                    id = triggerAtMillis,
+                    threadId = 0L,
+                    sender = phone,
+                    message = body,
+                    date = triggerAtMillis,
+                    unread = false,
+                    type = 2,
+                    status = 32 // pending
+                )
             )
-        )
+        }
         return name
     }
 

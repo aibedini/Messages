@@ -139,4 +139,49 @@ object ConversationWindow {
 
     /** Composite identity shortcut for ViewModel dedup sites. */
     fun identity(id: Long): MessageIdentity.Key = MessageIdentity.keyOf(id)
+
+    /**
+     * P0 v3.4.3 — converge ONE optimistic bubble onto the provider identity its
+     * send actually produced.
+     *
+     * ── Why the ghost existed ────────────────────────────────────────────────
+     * An optimistic row carries a synthetic timestamp id, so its
+     * (source, providerId) identity can never equal the real Telephony row's.
+     * [mergeRoomTail] keeps every visible identity Room does not mention (that
+     * is what protects older pages), so the optimistic row survived forever and
+     * painted a permanent clock bubble beside the confirmed one.
+     *
+     * Matching by body+time is deliberately NOT used: sending "ok" twice in two
+     * seconds must stay two messages. The ViewModel knows the exact optimistic
+     * id it created for this tap, so reconciliation is one-to-one and exact.
+     *
+     * @param providerRowId the Telephony row id the send persisted. `null` means
+     *   telephony refused it (the row may still exist and arrive via the outgoing
+     *   event), so the synthetic row is dropped rather than promoted.
+     * @return `visible` with the optimistic row promoted in place, or removed
+     *   when its target identity is already present (the live outgoing event won
+     *   the race) or unknown.
+     */
+    fun reconcileOwnOptimistic(
+        visible: List<Sms>,
+        optimisticId: Long,
+        providerRowId: Long?,
+        fallbackDate: Long
+    ): List<Sms> {
+        val index = visible.indexOfFirst { it.id == optimisticId }
+        if (index < 0) return visible
+        val targetId = providerRowId?.takeIf { it > 0L }
+            ?: return visible.filterNot { it.id == optimisticId }
+        val target = MessageIdentity.keyOf(targetId)
+        if (visible.any { it.id != optimisticId && MessageIdentity.keyOf(it) == target }) {
+            return visible.filterNot { it.id == optimisticId }
+        }
+        val out = visible.toMutableList()
+        out[index] = out[index].copy(id = targetId)
+        return out
+    }
+
+    /** Drops one row by raw id (a held or blank send leaves no provider row). */
+    fun removeRow(visible: List<Sms>, id: Long): List<Sms> =
+        if (visible.none { it.id == id }) visible else visible.filterNot { it.id == id }
 }
