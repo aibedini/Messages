@@ -113,7 +113,6 @@ class MessageClassifier(
 
         // ── 3. TRANSACTION ──────────────────────────────────────────────────
         val promoMarker = firstMatch(PROMO_MARKERS, lower)
-        var transactionOnly = false
         if (promoMarker == null || promoMarker !in STRONG_PROMO_MARKERS) {
             transactionConfidence(lower)?.let { confidence ->
                 return ClassificationResult(
@@ -122,7 +121,6 @@ class MessageClassifier(
                     isOtp = false
                 )
             }
-            transactionOnly = true
         }
 
         // ── 4. PROMOTION ────────────────────────────────────────────────────
@@ -135,7 +133,14 @@ class MessageClassifier(
         }
 
         // ── 5. PERSONAL — an ordinary person-like phone number ──────────────
-        if (personLike && !transactionOnly) {
+        //
+        // A plain subscriber number (10-15 digits) whose text fired neither the OTP,
+        // the transaction nor the promotion rules is PERSONAL. There is deliberately
+        // no extra "transaction-ish wording" veto here: the previous version set a
+        // `transactionOnly` flag to TRUE whenever the transaction check did NOT match,
+        // which made the flag mean the opposite of its name and left every ordinary
+        // personal conversation as UNKNOWN.
+        if (personLike) {
             val personalMarker = firstMatch(PERSONAL_MARKERS, lower)
             return ClassificationResult(
                 MessageCategory.PERSONAL,

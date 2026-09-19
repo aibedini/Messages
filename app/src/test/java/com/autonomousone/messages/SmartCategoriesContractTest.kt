@@ -266,11 +266,23 @@ class SmartCategoriesContractTest {
     fun `the cursor advances strictly backwards through the canonical order`() {
         // Mirrors the assertion the persistence test makes on real rows: each
         // batch's cursor is the last row of that batch, and a keyset predicate
-        // only accepts rows strictly after it.
+        // only accepts rows that sort STRICTLY AFTER the cursor.
+        //
+        // The sweep walks the canonical order DESCENDING (date DESC, source DESC,
+        // providerId DESC), so "after the cursor" means OLDER: the older cursor
+        // (date 500) is the one that sorts after the newer one (date 900).
         val firstBatch = BackfillCursor(date = 900L, source = "sms", providerId = 42L)
         val secondBatch = BackfillCursor(date = 500L, source = "mms", providerId = 7L)
-        assertTrue(isAfter(firstBatch, secondBatch))
+        assertTrue(isAfter(secondBatch, firstBatch))
         assertFalse("a cursor is not after itself", isAfter(firstBatch, firstBatch))
+        // Equal-date rows stay distinct and ordered by (source, providerId), so an
+        // equal timestamp can never skip rows. Descending source order means "sms"
+        // sorts BEFORE "mms" ('s' > 'm'), so the mms cursor is the one that has not
+        // been consumed yet.
+        val sameDateSms = BackfillCursor(date = 900L, source = "sms", providerId = 10L)
+        val sameDateMms = BackfillCursor(date = 900L, source = "mms", providerId = 10L)
+        assertTrue(isAfter(sameDateMms, sameDateSms))
+        assertFalse(isAfter(sameDateSms, sameDateMms))
     }
 
     @Test

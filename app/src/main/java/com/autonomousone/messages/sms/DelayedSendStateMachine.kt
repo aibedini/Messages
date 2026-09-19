@@ -82,14 +82,20 @@ object DelayedSendTransitions {
         (from to to) in LEGAL
 
     /**
-     * States the worker may hand to the radio. Derived, never hand-listed at a
-     * call site: a future state cannot silently become sendable.
+     * States the worker may CLAIM, i.e. hand to the radio.
+     *
+     * PENDING only — and deliberately NOT derived from the whole legal graph. The
+     * obvious derivation ("a state is sendable when some legal edge out of it leads
+     * to SENDING or SENT") also selects SENDING, because `SENDING -> SENT` is a legal
+     * COMPLETION edge. That made an already-claimed row look claimable again, which is
+     * exactly the double-submit the claim compare-and-set exists to prevent.
+     *
+     * The claim edge is the one that matters: PENDING -> SENDING. Any future retry
+     * path must introduce an explicit retryable state rather than reusing SENDING.
      */
     val SENDABLE: Set<DelayedSendState> =
         DelayedSendState.entries.filterTo(mutableSetOf()) { state ->
-            LEGAL.any { (from, to) ->
-                from == state && (to == DelayedSendState.SENDING || to == DelayedSendState.SENT)
-            }
+            isLegal(state, DelayedSendState.SENDING)
         }
 
     /**

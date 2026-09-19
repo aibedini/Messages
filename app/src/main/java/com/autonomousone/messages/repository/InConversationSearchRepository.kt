@@ -9,8 +9,11 @@ import com.autonomousone.messages.data.MessageFtsDao
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
@@ -46,7 +49,6 @@ import kotlinx.coroutines.withContext
  */
 class InConversationSearchRepository(
     private val dao: ConversationSearchDao,
-    private val delayMillis: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
     private val log: (String, String) -> Unit = { category, message ->
         DiagnosticLog.event(category, message)
     }
@@ -97,19 +99,20 @@ class InConversationSearchRepository(
      * unit test can drive the debounce with `delayMillis = {}` and no wall-clock
      * waiting, and so a future settings change is one constant away.
      */
+    @OptIn(FlowPreview::class)
     fun outcomes(
         threadId: Long,
         queryFlow: Flow<String>,
         debounceMillis: Long = SearchDebounce.DEBOUNCE_MS
-    ): Flow<SearchOutcome> = flow {
-        var previous = ""
-        queryFlow.collect { raw ->
-            previous = raw
-            delayMillis(debounceMillis)
-            if (raw != previous) return@collect
-            emit(search(threadId, raw))
-        }
-    }
+    ): Flow<SearchOutcome> = queryFlow
+        // A REAL debounce: every new keystroke RESTARTS the quiet period, so only the
+        // value that survives [debounceMillis] undisturbed reaches FTS. The previous
+        // implementation awaited the delay once per emission and then compared against
+        // the latest value, which let an earlier keystroke through after its own delay
+        // (three keystrokes inside one quiet period produced three queries) — the
+        // "debounce" the brief requires was not actually implemented.
+        .debounce(debounceMillis)
+        .map { raw -> search(threadId, raw) }
 
     /**
      * One settled query. Never throws for an empty/too-short query: that is a

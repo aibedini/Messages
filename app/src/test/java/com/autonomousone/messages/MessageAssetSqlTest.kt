@@ -250,9 +250,17 @@ class MessageAssetSqlTest {
             db.execute(bind(MessageAssetSql.DELETE_FOR_MESSAGE_SQL, "source" to sms, "providerId" to 100L))
 
             assertEquals("SMS 100 must not remove MMS 100", 2L, db.scalar("SELECT COUNT(*) FROM message_assets"))
+            // The deleted message's OWN asset is gone...
             assertEquals(
-                1L,
+                "the deleted message's own asset must be removed",
+                0L,
                 db.scalar("SELECT COUNT(*) FROM message_assets WHERE source = 'sms' AND providerId = 100")
+            )
+            // ...and the same numeric id under the OTHER source is untouched. The
+            // delete is keyed on (source, providerId), never on the id alone.
+            assertEquals(
+                2L,
+                db.scalar("SELECT COUNT(*) FROM message_assets WHERE source = 'mms' AND providerId = 100")
             )
         } finally {
             db.close()

@@ -183,9 +183,14 @@ class OtpRetentionPolicyTest {
 
     @Test
     fun `an overdue deadline inside the tolerance window is still eligible`() {
+        // The deadline is 11 hours old — past due, but INSIDE
+        // OtpRetentionPolicy.MAX_OVERDUE_MILLIS (24h). The test used to anchor two
+        // DAYS back with a one-hour retention, which is 47 hours overdue and therefore
+        // outside the window by construction, so it asserted the opposite of its own
+        // name. The pair with the test above now brackets the tolerance boundary.
         val decision = plan(
             retentionMillis = 1 * hour,
-            anchorMillis = now - 2 * day,
+            anchorMillis = now - 12 * hour,
             nowMillis = now
         )
 

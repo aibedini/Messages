@@ -11,7 +11,9 @@ import com.autonomousone.messages.repository.SearchDebounce
 import com.autonomousone.messages.repository.SearchJumpWindow
 import com.autonomousone.messages.repository.SearchOutcome
 import com.autonomousone.messages.repository.SearchWindowPlan
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -219,8 +222,17 @@ class InConversationSearchRepositoryTest {
      */
     private fun daoWithFixture(): FakeDao {
         val dao = FakeDao()
+        // History rows use provider ids in 1001..1500. The `(source, providerId)`
+        // key is GLOBAL (the provider `_id` is unique per source across the whole
+        // table), so seeding ids 1..500 would collide with the deliberate
+        // SMS-100/MMS-100 pair below and silently overwrite one of them.
         (1..500L).forEach { i ->
-            dao.rows += row("sms", i, "history $i", date = 1_000_000L + i * 1_000L)
+            dao.rows += row(
+                "sms",
+                HISTORY_ID_BASE + i,
+                "history $i",
+                date = 1_000_000L + i * 1_000L
+            )
         }
         dao.rows += row("sms", 501L, "the invoice is attached", date = 1_600_000L)
         dao.rows += row("sms", 502L, "another invoice copy", date = 1_700_000L)
@@ -242,8 +254,8 @@ class InConversationSearchRepositoryTest {
         return dao
     }
 
-    private fun repository(dao: FakeDao, delayMillis: suspend (Long) -> Unit = {}) =
-        InConversationSearchRepository(dao, delayMillis = delayMillis, log = { _, _ -> })
+    private fun repository(dao: FakeDao) =
+        InConversationSearchRepository(dao, log = { _, _ -> })
 
     private fun canonical() = compareBy<Sms> { it.date }
         .thenBy { MessageIdentity.sourceOf(it.id) }
@@ -508,25 +520,32 @@ class InConversationSearchRepositoryTest {
     @Test
     fun `keystrokes inside the quiet period collapse into one query`() = runTest {
         val dao = daoWithFixture()
-        val queries = MutableSharedFlow<String>(extraBufferCapacity = 16)
+        val queries = Channel<String>(Channel.UNLIMITED)
         val repo = repository(dao)
-
         val collected = mutableListOf<SearchOutcome>()
-        val job = launch { repo.outcomes(thread, queries).take(1).toList(collected) }
-        yield()
 
-        // Typed inside the 280 ms window: only the LAST value may execute.
-        queries.emit("in")
-        advanceTimeBy(100)
-        queries.emit("inv")
-        advanceTimeBy(100)
-        queries.emit("invo")
-        advanceUntilIdle()
+        val job = launch { repo.outcomes(thread, queries.receiveAsFlow()).toList(collected) }
+        // The collector must be SUBSCRIBED before the first keystroke, or the
+        // channel has no receiver yet.
+        runCurrent()
 
+        // All three keystrokes land inside ONE quiet period: "in" joins the
+        // collector, then "inv" and "invo" arrive at +100 ms and +200 ms — before
+        // the 280 ms deadline. Only the LAST value may reach FTS.
+        queries.trySend("in")
+        advanceTimeBy(100)
+        queries.trySend("inv")
+        advanceTimeBy(100)
+        queries.trySend("invo")
+        // Move past the quiet period with NO further keystrokes.
+        advanceTimeBy(SearchDebounce.DEBOUNCE_MS + 50)
+        runCurrent()
+
+        queries.close()
         job.join()
-        assertEquals(1, collected.size)
+
+        assertEquals("only the settled keystroke may execute", 1, collected.size)
         assertEquals("invo", (collected.single() as SearchOutcome.Completed).query)
-        // Exactly ONE execution reached the fake DAO.
         assertEquals(1, dao.searchCalls.size)
         assertEquals(FtsQuery.build("invo"), dao.searchCalls.single().match)
     }
@@ -547,5 +566,14 @@ class InConversationSearchRepositoryTest {
     fun `the shipped debounce policy is pinned inside the 250-300 ms band`() {
         assertTrue(SearchDebounce.DEBOUNCE_MS in 250L..300L)
         assertEquals(2, SearchDebounce.MIN_QUERY_LENGTH)
+    }
+
+    private companion object {
+        /**
+         * Provider ids for the history rows, far from the deliberate ids used by the
+         * named fixture rows (100, 501-503, 777, 900). The identity is the GLOBAL
+         * `(source, providerId)` pair, so any overlap silently replaced a row.
+         */
+        const val HISTORY_ID_BASE = 1_000L
     }
 }

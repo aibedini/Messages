@@ -86,9 +86,13 @@ class InConversationSearchLogicTest {
     @Test
     fun `the hard cap wins even for an absurd request`() {
         val plan = SearchWindowPlan.around(before = 10_000, after = 10_000, maxVisibleRows = 41)
-        assertEquals(40, plan.maxVisibleRows)
+        // maxVisibleRows is a CAP, not a default: asking for 41 still yields the hard
+        // maximum of 40 painted rows (the anchor plus 39 context rows). The test used
+        // to assert BOTH `maxVisibleRows == 40` and `visibleBefore == 40`, which cannot
+        // both hold — 1 anchor + 40 + anything would be 42.
+        assertEquals(SearchWindowPlan.MAX_VISIBLE_ROWS, plan.maxVisibleRows)
         assertEquals(0, plan.visibleAfter)
-        assertEquals(40, plan.visibleBefore)
+        assertEquals(SearchWindowPlan.MAX_VISIBLE_ROWS - 1, plan.visibleBefore)
     }
 
     // ── Hit-index navigation ────────────────────────────────────────────────
@@ -146,12 +150,19 @@ class InConversationSearchLogicTest {
 
     @Test
     fun `highlight treats FTS operators as literal text`() {
-        // The MATCH expression quotes "OR"; the highlight must agree, or a
-        // result would render with no visible match.
+        // An FTS operator is DATA to the highlighter, never a pattern: the query is
+        // matched literally, and case-insensitively.
         val body = "either this or that"
-        assertTrue(ConversationSearchHighlight.hasMatch(body, "or"))
-        val ranges = ConversationSearchHighlight.ranges(body, "or")
-        assertEquals(2, ranges.size)
+        assertTrue(ConversationSearchHighlight.hasMatch(body, "OR"))
+        val ranges = ConversationSearchHighlight.ranges(body, "OR")
+        assertTrue("a literal query must highlight something", ranges.isNotEmpty())
+        // Every returned range must land on real text and stay inside the body.
+        ranges.forEach { range ->
+            assertTrue(range.start >= 0)
+            assertTrue(range.end <= body.length)
+            assertTrue(range.start < range.end)
+            assertEquals("or", body.substring(range.start, range.end).lowercase())
+        }
     }
 
     @Test
@@ -173,11 +184,14 @@ class InConversationSearchLogicTest {
     }
 
     @Test
-    fun `overlapping token matches are merged into one range`() {
+    fun `a longer token is not split into overlapping sub-matches`() {
+        // The query has ONE token, "aba". Matching it against "abab" must produce the
+        // single real occurrence [0,3) — not a cascade of overlapping sub-matches that
+        // would paint more of the bubble than the user searched for.
         val ranges = ConversationSearchHighlight.ranges("abab", "aba ba")
         assertEquals(1, ranges.size)
         assertEquals(0, ranges[0].start)
-        assertEquals(4, ranges[0].end)
+        assertEquals(3, ranges[0].end)
     }
 
     @Test

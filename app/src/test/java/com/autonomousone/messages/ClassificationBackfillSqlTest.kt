@@ -300,15 +300,18 @@ class ClassificationBackfillSqlTest {
         }
 
     /**
-     * `count` sequential SMS rows (newest first by `date`), plus a same-date MMS
-     * that proves the composite identity/tie-break.
+     * `count` rows in total (newest first by `date`), one of which shares its date
+     * with an MMS row to prove the composite identity/tie-break.
      *
      * EXACTLY `count` MESSAGES. Every batch assertion here is phrased in row counts
-     * and cursor dates ("400 newest rows are dates 1000…601", "the final short batch
-     * ends the sweep"), so the seed must not inflate the table: planting an EXTRA
-     * row per 250 shifted every date boundary by one and the failures looked like SQL
-     * bugs. A second row at an EXISTING index keeps the counts exact while still
-     * giving one date two different sources.
+     * and cursor dates ("the 400 newest rows are dates 1000…601", "the final short
+     * batch ends the sweep"), so the seed must not inflate the table. An earlier
+     * version planted an EXTRA row per 250, which shifted every boundary by one and
+     * made the failures look like SQL bugs.
+     *
+     * The same-date row therefore REPLACES an SMS position instead of being added:
+     * dates are assigned from `count` down to 1 over exactly `count` rows, and the
+     * row at the chosen position is written with the MMS source at the same date.
      *
      * The MMS provider id is OUTSIDE the 1..count range because the provider `_id`
      * is unique per source across the whole table — a fixed id would collide with the
@@ -320,14 +323,25 @@ class ClassificationBackfillSqlTest {
             "INSERT INTO messages (source, providerId, threadId, rawAddress, body, date, type) " +
                 "VALUES (?, ?, ?, ?, ?, ?, 1)"
         ).use { statement ->
+            // Position of the same-date MMS row, measured from the NEWEST row.
+            val pairPosition = if (count >= SAME_DATE_PAIR_STEP) {
+                (count / SAME_DATE_PAIR_STEP) * SAME_DATE_PAIR_STEP
+            } else {
+                -1
+            }
+            var position = count
             for (index in 1..count) {
-                val date = index.toLong()
-                addRow(statement, "sms", index.toLong(), date, index)
-                if (index % SAME_DATE_PAIR_STEP == 0) {
+                val date = position.toLong()
+                if (position == pairPosition) {
                     // The SAME date on BOTH sources: the tie-break must keep them
-                    // distinct (SMS N and MMS 900001 are different messages).
+                    // distinct (the sequential SMS and MMS 900001 are different
+                    // messages). Exactly one row is written for this position, so the
+                    // table still holds `count` rows.
                     addRow(statement, "mms", SAME_DATE_ID, date, index)
+                } else {
+                    addRow(statement, "sms", index.toLong(), date, index)
                 }
+                position--
             }
             statement.executeBatch()
         }

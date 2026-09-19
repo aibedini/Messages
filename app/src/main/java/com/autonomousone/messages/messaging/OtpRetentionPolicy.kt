@@ -162,9 +162,15 @@ object OtpRetentionPolicy {
         if (!enabled) return Plan.refuse(EligibilityReason.RETENTION_DISABLED)
         if (!state.isOtp) return Plan.refuse(EligibilityReason.NOT_OTP)
         if (state.confidence < HIGH_CONFIDENCE) return Plan.refuse(EligibilityReason.LOW_CONFIDENCE)
-        if (!state.isIncoming) return Plan.refuse(EligibilityReason.NOT_INCOMING)
+        // USER PROTECTION OUTRANKS ORDINARY ELIGIBILITY. A starred message — or one
+        // the user explicitly kept — is protected REGARDLESS of any other rule that
+        // would also reject it, so the reported reason is STARRED / KEPT_BY_USER
+        // rather than the incidental first failure (NOT_INCOMING, ALREADY_TRASHED, …).
+        // This is a diagnostics-ordering fix on top of an unchanged safety outcome:
+        // both orders refuse the message, and neither ever auto-cleans it.
         if (state.starred) return Plan.refuse(EligibilityReason.STARRED)
         if (state.keepFromOtpCleanup) return Plan.refuse(EligibilityReason.KEPT_BY_USER)
+        if (!state.isIncoming) return Plan.refuse(EligibilityReason.NOT_INCOMING)
         if (state.trashed) return Plan.refuse(EligibilityReason.ALREADY_TRASHED)
         if (retentionMillis <= 0L) return Plan.refuse(EligibilityReason.RETENTION_DISABLED)
 

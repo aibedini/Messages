@@ -77,7 +77,11 @@ data class SearchWindowPlan(
             after: Int = DEFAULT_AROUND,
             maxVisibleRows: Int = MAX_VISIBLE_ROWS
         ): SearchWindowPlan {
-            val budget = max(0, maxVisibleRows - 1)
+            // The cap is a CAP, not a default: a caller asking for a wider window must
+            // still get the hard maximum, because the whole point of the bound is that
+            // no code path can materialise a 100K-message conversation.
+            val bounded = maxVisibleRows.coerceAtMost(MAX_VISIBLE_ROWS)
+            val budget = max(0, bounded - 1)
             var older = max(0, before)
             var newer = max(0, after)
             if (older + newer > budget) {
