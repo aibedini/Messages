@@ -2,6 +2,7 @@ package com.autonomousone.messages
 
 import com.autonomousone.messages.data.COUNT_STARRED_IN_THREAD_SQL
 import com.autonomousone.messages.data.DELETE_ORPHANS_SQL
+import com.autonomousone.messages.data.DELETE_TRASHED_SNAPSHOT_USER_STATE_SQL
 import com.autonomousone.messages.data.MessageCutoff
 import com.autonomousone.messages.data.SET_KEEP_FROM_OTP_CLEANUP_SQL
 import com.autonomousone.messages.data.SET_STARRED_SQL
@@ -311,8 +312,49 @@ class MessageUserStateSqlTest {
         }
     }
 
-    // ── 5. The starred readers ──────────────────────────────────────────────
+    @Test
+    fun `a purged trash snapshot takes its user state and only its own`() {
+        val db = database()
+        try {
+            // Two messages in the snapshot, one NEWER than the cutoff.
+            db.insertMessage("sms", 1L, threadId = 7L, date = 1_000L)
+            db.insertMessage("sms", 2L, threadId = 7L, date = 2_000L)
+            db.insertMessage("sms", 3L, threadId = 7L, date = 3_000L)
+            db.exec(SET_STARRED_SQL, "sms", 1L, 7L, true, 1L, 1L)
+            db.exec(SET_STARRED_SQL, "sms", 2L, 7L, true, 1L, 1L)
+            db.exec(SET_STARRED_SQL, "sms", 3L, 7L, true, 1L, 1L)
 
+            // Conversation trashed with the cutoff at message 2.
+            db.exec(
+                """
+                INSERT INTO trashed_threads
+                    (threadId, deletedAt, purgeAt, cutoffDate, cutoffSource, cutoffProviderId)
+                VALUES (7, 10, 20, 2000, 'sms', 2)
+                """.trimIndent()
+            )
+
+            // The purge flow runs this BEFORE the messages rows are removed.
+            val removed = db.exec(DELETE_TRASHED_SNAPSHOT_USER_STATE_SQL, 7L)
+            assertEquals(2, removed)
+            assertEquals(
+                "a message NEWER than the cutoff keeps its star",
+                1L,
+                db.scalar(
+                    "SELECT COUNT(*) FROM message_user_state WHERE providerId = 3 AND starred = 1"
+                )
+            )
+            assertEquals(1L, db.scalar("SELECT COUNT(*) FROM message_user_state"))
+
+            // The explicit orphan path remains the ONLY other cleanup, and it is
+            // not what removed the snapshot state above.
+            assertEquals(0, db.exec(DELETE_ORPHANS_SQL))
+            assertEquals(1L, db.scalar("SELECT COUNT(*) FROM message_user_state"))
+        } finally {
+            db.close()
+        }
+    }
+
+    // ── 5. The starred readers ──────────────────────────────────────────────
     @Test
     fun `starredPage is newest first and excludes a trashed row`() {
         val db = database()

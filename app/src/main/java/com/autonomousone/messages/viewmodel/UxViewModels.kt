@@ -73,9 +73,6 @@ class ConversationInfoViewModel(
             blocklist = RepositoryBlocklistPort(blocklist),
             spam = SpamRepository(preferences.spamBlockPort(blocklist)),
             channelGate = AndroidNotificationChannelGate(appContext),
-            newestMessage = NewestMessageLookup { id ->
-                withContext(Dispatchers.IO) { messageDao.newestForThread(id) }
-            },
             // Provider half of a PURGE is never used by this screen: Conversation
             // Info only creates the durable, reversible tombstone. The phase-6
             // provider path performs the actual purge from Recently Deleted.

@@ -1,5 +1,6 @@
 package com.autonomousone.messages.repository
 
+import com.autonomousone.messages.data.MessageKey
 import com.autonomousone.messages.data.StarredMessageRow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

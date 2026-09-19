@@ -298,7 +298,7 @@ fun ConversationInfoScreen(
                         icon = Icons.Default.ChevronRight,
                         iconDescription = stringResource(R.string.conv_info_category),
                         title = stringResource(R.string.conv_info_category),
-                        subtitle = categorySubtitle(sections.categoryIsAutomatic),
+                        subtitle = categorySubtitle(state, sections.categoryIsAutomatic),
                         trailingText = null,
                         onClick = { showCategoryDialog = true }
                     )
