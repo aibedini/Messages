@@ -31,8 +31,8 @@ data class MmsPartMetadata(
  * it is Android-free on purpose: the part reader hands it already-read metadata,
  * so the kind mapping and the identity rule are unit-testable without a device.
  *
- * Kind mapping (brief, verbatim): `image/*`, `video/*`, `audio/*` → [MEDIA];
- * every other attachment type → [FILE].
+ * Kind mapping (brief, verbatim): MIME types starting `image/`, `video/` or
+ * `audio/` → [MEDIA]; every other attachment type → [FILE].
  *
  * NON-ATTACHMENTS ARE SKIPPED. A `text/plain` part IS the message body (already
  * shown in the conversation) and `application/smil` is the presentation
@@ -59,7 +59,7 @@ object MmsAssetMapper {
     fun baseContentType(contentType: String): String =
         contentType.substringBefore(';').trim().lowercase()
 
-    /** `image/*`, `video/*`, `audio/*` → MEDIA; everything else → FILE. */
+    /** MIME types starting `image/`, `video/` or `audio/` → MEDIA; else FILE. */
     fun kindFor(contentType: String): MessageAssetKind {
         val base = baseContentType(contentType)
         return when {

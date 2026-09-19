@@ -107,7 +107,7 @@ object LinkExtractor {
     private const val BODY_CHARS = "[^\\s<>\"'`\\[\\]{}|\\\\^*]+"
 
     private val CANDIDATE = Regex(
-        "(?i)$GUARDhttps?://$BODY_CHARS" +
+        "(?i)${GUARD}https?://$BODY_CHARS" +
             "|$GUARD(?:www\\.)?" +
             // At most 10 labels: real hosts never need more, and an explicit bound
             // is what keeps backtracking linear on a pathological message body.
