@@ -132,6 +132,7 @@ import com.autonomousone.messages.repository.ConversationParticipantState
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.repository.ParticipantContactAction
 import com.autonomousone.messages.ui.components.ChatBubble
+import com.autonomousone.messages.ui.components.contentAwareTextStyle
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
@@ -1158,9 +1159,18 @@ fun ConversationScreen(
                         BasicTextField(
                             value = message,
                             onValueChange = { message = it },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 16.sp
+                            // The FIELD's direction follows what is being typed, so a
+                            // Persian draft starts from the right the moment it is
+                            // restored or typed and English starts from the left. Only
+                            // the paragraph is affected: the field container, the
+                            // attachment button and Send keep their order. NEUTRAL
+                            // (empty, digits, emoji) falls back to the UI layout.
+                            textStyle = contentAwareTextStyle(
+                                message,
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp
+                                )
                             ),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             modifier = Modifier.fillMaxWidth()

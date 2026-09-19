@@ -288,9 +288,14 @@ fun ChatBubble(
                             )
                             reaction.quotedText?.let { quoted ->
                                 Spacer(modifier = Modifier.height(3.dp))
+                                // The quoted text takes its direction from ITSELF, not
+                                // from the surrounding reaction emoji.
                                 Text(
                                     text = "\u201C${quoted.take(80)}\u201D",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = contentAwareTextStyle(
+                                        quoted,
+                                        MaterialTheme.typography.bodySmall
+                                    ),
                                     fontStyle = FontStyle.Italic,
                                     color = contentColor.copy(alpha = 0.85f)
                                 )
@@ -338,7 +343,14 @@ fun ChatBubble(
                             Text(
                                 text = bodyText,
                                 color = contentColor,
-                                style = MaterialTheme.typography.bodyLarge,
+                                // Direction comes from the CONTENT only. The bubble's
+                                // side, tail, metadata row and actions are untouched, so
+                                // a Persian OUTGOING message stays on the outgoing side
+                                // and simply starts from the right.
+                                style = contentAwareTextStyle(
+                                    captionText,
+                                    MaterialTheme.typography.bodyLarge
+                                ),
                                 fontSize = 15.sp,
                                 lineHeight = 21.sp
                             )
