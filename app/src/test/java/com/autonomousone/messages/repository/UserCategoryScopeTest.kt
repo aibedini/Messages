@@ -188,4 +188,68 @@ class UserCategoryScopeTest {
 
         assertEquals(assignedScope, laterThreadScope)
     }
+
+    // ── Precedence between the two address representations ──────────────────
+    // These are durable-contract tests: once memberships are persisted, changing which
+    // representation wins would silently re-key existing data.
+
+    @Test
+    fun `a usable raw phone wins over a different normalized value`() {
+        assertEquals(
+            UserCategoryScope.Address("+989121234567"),
+            ConversationCategoryScopeResolver.resolve(5L, "09121234567", "009891200000000")
+        )
+    }
+
+    @Test
+    fun `a usable raw sender id wins over a misleading numeric normalization`() {
+        // The provider stored the real sender id in `rawAddress`; `normalizedAddress`
+        // reduced it to "1". The sender id must win.
+        assertEquals(
+            UserCategoryScope.Address("sender:ir-mci1"),
+            ConversationCategoryScopeResolver.resolve(5L, "IR-MCI1", "1")
+        )
+    }
+
+    @Test
+    fun `an unusable raw address falls back to a usable normalized one`() {
+        assertEquals(
+            "a good normalized number must not be pushed onto a THREAD scope",
+            UserCategoryScope.Address("+989121234567"),
+            ConversationCategoryScopeResolver.resolve(5L, "...", "+989121234567")
+        )
+    }
+
+    @Test
+    fun `an unusable raw address falls back to a usable normalized sender id`() {
+        assertEquals(
+            UserCategoryScope.Address("sender:bank"),
+            ConversationCategoryScopeResolver.resolve(5L, "!!!", "BANK")
+        )
+    }
+
+    @Test
+    fun `when raw is usable the fallback is never consulted`() {
+        val withMisleadingFallback = ConversationCategoryScopeResolver.resolve(5L, "BANK", "112")
+        val withNoFallback = ConversationCategoryScopeResolver.resolve(5L, "BANK", null)
+
+        assertEquals(withNoFallback, withMisleadingFallback)
+        assertEquals(UserCategoryScope.Address("sender:bank"), withMisleadingFallback)
+    }
+
+    @Test
+    fun `a group signal in either representation stays thread scoped`() {
+        assertEquals(
+            UserCategoryScope.Thread(500L),
+            ConversationCategoryScopeResolver.resolve(500L, "...", "a@b, c@d")
+        )
+    }
+
+    @Test
+    fun `both representations unusable still falls back to the thread`() {
+        assertEquals(
+            UserCategoryScope.Thread(42L),
+            ConversationCategoryScopeResolver.resolve(42L, "...", "!!!")
+        )
+    }
 }

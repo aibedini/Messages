@@ -71,25 +71,48 @@ object ConversationCategoryScopeResolver {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-        // Multi-recipient (group) addresses first: they must never become an Address.
+        // Multi-recipient (group) addresses first, and from EITHER representation: a
+        // group signal is about the conversation shape, so it must not depend on which
+        // column happened to carry it.
         if (candidates.any { isMultiRecipient(it) }) {
             return if (threadId > 0L) UserCategoryScope.Thread(threadId) else null
         }
 
-        val address = candidates.firstOrNull() ?: return null
+        // PRECEDENCE IS EXPLICIT HERE, because once memberships are persisted this
+        // becomes durable contract:
+        //
+        //   1. the RAW representation wins whenever it yields any usable identity. It is
+        //      what the provider actually stored, so a sender id like `IR-MCI1` must not
+        //      be displaced by a misleading numeric normalization (`1`).
+        //   2. only when RAW yields NOTHING usable (e.g. punctuation, `...`) may the
+        //      NORMALIZED representation be used. Dropping that fallback would push a
+        //      conversation with a perfectly good normalized number onto a THREAD scope,
+        //      which is exactly the thread-keyed membership this design exists to avoid.
+        val ordered = candidates.distinct()
+        val primary = ordered.firstOrNull()
+        primary?.let { identityOf(it) }?.let { return it }
+        ordered.drop(1).forEach { fallback ->
+            identityOf(fallback)?.let { return it }
+        }
 
-        // PHONE FIRST, but only for a value that is actually phone-shaped: at least one
-        // digit and nothing but digits/punctuation once formatted. This ordering matters
-        // for `112` (a short code with a real phone identity) versus `IR-MCI1` (an
-        // alphanumeric sender that merely contains a digit, and must NOT be reduced to
-        // the number "1").
+        // No stable identity at all: only a thread can carry the membership.
+        return if (threadId > 0L) UserCategoryScope.Thread(threadId) else null
+    }
+
+    /**
+     * The identity ONE address representation can produce, or null when it produces none.
+     *
+     * PHONE FIRST, but only for a value that is actually phone-shaped: at least one digit
+     * and nothing but digits/punctuation once formatted. This ordering matters for `112`
+     * (a short code with a real phone identity) versus `IR-MCI1` (an alphanumeric sender
+     * that merely contains a digit, and must NOT be reduced to the number `1`).
+     */
+    private fun identityOf(address: String): UserCategoryScope.Address? {
         if (isPhoneShaped(address)) {
             PhoneIdentity.stableKey(address)?.let { return UserCategoryScope.Address(it) }
         }
         senderKey(address)?.let { return UserCategoryScope.Address(it) }
-
-        // No stable identity at all: only a thread can carry the membership.
-        return if (threadId > 0L) UserCategoryScope.Thread(threadId) else null
+        return null
     }
 
     /**
