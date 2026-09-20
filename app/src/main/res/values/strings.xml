@@ -137,6 +137,8 @@
     <string name="conv_go_to_first_message">Go to first message</string>
     <string name="jump_to_latest">Jump to latest</string>
     <string name="conv_load_failed">Couldn\'t load some messages. They\'ll refresh when you reopen this chat.</string>
+    <string name="conv_load_error_title">Couldn\'t load messages</string>
+    <string name="conv_load_error_body">This conversation didn\'t load. Try again — no need to restart the app.</string>
     <string name="status_sending">Sending</string>
     <string name="status_failed">Failed</string>
     <string name="status_delivered">Delivered</string>
