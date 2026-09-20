@@ -350,7 +350,15 @@ fun HomeScreen(
                 placeholderText = stringResource(R.string.home_search_hint)
             )
 
-            HomeFilterBar(selected = selectedFilter, onSelect = { selectedFilter = it })
+            HomeFilterBar(
+                selected = selectedFilter,
+                onSelect = {
+                    selectedFilter = it
+                    // v3.5.0: an unread badge describes what the CURRENT tab can show, so
+                    // the ViewModel has to re-derive the category row against this context.
+                    viewModel.onTabSelected(it)
+                }
+            )
 
             // FEATURE 12 — Smart Categories (additive): a second, independently
             // selected axis under the All/Unread/Archived tabs. Chips appear only

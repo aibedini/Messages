@@ -33,7 +33,13 @@ import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadSnippet
+import com.autonomousone.messages.repository.UserCategoryRepository
+import com.autonomousone.messages.data.UserCategoryAssignmentEntity
+import com.autonomousone.messages.data.UserCategoryEntity
 import com.autonomousone.messages.ui.home.CategoryFilter
+import com.autonomousone.messages.ui.home.ConversationFilter
+import com.autonomousone.messages.ui.home.HomeCategoryChip
+import com.autonomousone.messages.ui.home.HomeCategoryProjection
 import com.autonomousone.messages.repository.ConversationCategoryResolver
 import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -296,6 +302,7 @@ class HomeViewModel(
         observeReloadRequests()
         observeSentSegmentsToday()
         observeSmartCategories()
+        observeUserCategories()
         observeConversationUserState()
         observeTrashState()
     }
@@ -469,6 +476,114 @@ class HomeViewModel(
         return roomConversationsState.filter { it.threadId in threadIds }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // v3.5.0 — MY CATEGORIES: the category row data and its unread badges
+    //
+    // The unified chip BAR (composing the system chips and the user's categories into one
+    // scrollable row) is the next step. What lands here is the data that bar renders:
+    // every category with the number of UNREAD CONVERSATIONS waiting in it. All of the
+    // decision-making lives in the pure [HomeCategoryProjection]; this ViewModel only
+    // supplies its four inputs and republishes the result.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** The user's own categories, in their stored order, live from Room. */
+    private val userCategories = mutableStateListOf<UserCategoryEntity>()
+
+    /** Every user-category membership row, live from Room. Conversation-scale. */
+    private var userCategoryAssignments: List<UserCategoryAssignmentEntity> = emptyList()
+
+    /**
+     * The tab the badge base is taken from.
+     *
+     * A badge must describe what the CURRENT tab can show, so switching to Archived
+     * re-derives it against the archived rows. All and Unread deliberately share one base:
+     * the Unread tab's rows are exactly the unread rows of All.
+     */
+    private var activeTab: ConversationFilter = ConversationFilter.All
+
+    /** The resolved row: data-gated system chips, then the user's categories. */
+    private val homeChips = mutableStateListOf<HomeCategoryChip>()
+
+    /**
+     * The category row with live unread badges.
+     *
+     * A plain list read, so the chip row costs one map lookup per recomposition: selecting
+     * a chip triggers no query, no scan and no set rebuild.
+     */
+    fun homeCategoryChips(): List<HomeCategoryChip> = homeChips
+
+    /** The stored display name of one of the user's categories, or null once deleted. */
+    fun userCategoryName(categoryId: String): String? =
+        userCategories.firstOrNull { it.categoryId == categoryId }?.name
+
+    /** The user's own categories, in their stored order. */
+    fun userCategoryIds(): List<String> = userCategories.map { it.categoryId }
+
+    /** The screen tells Home which tab is on screen, so badges follow that context. */
+    fun onTabSelected(tab: ConversationFilter) {
+        if (tab == activeTab) return
+        activeTab = tab
+        refreshCategoryChips()
+    }
+
+    /**
+     * Live user categories + memberships.
+     *
+     * Both streams are conversation-scale (one row per category, one row per assignment),
+     * and the repository exposes the stored rows rather than a Home-specific model, so no
+     * projection work happens off the main thread: the combine is a cheap pair and the
+     * chip row is recomputed on Main with the rest of the render.
+     */
+    private fun observeUserCategories() {
+        viewModelScope.launch {
+            val repository = UserCategoryRepository.get(getApplication())
+            combine(
+                repository.observeCategories(),
+                repository.observeAssignments()
+            ) { categories, assignments -> categories to assignments }
+                .collect { (categories, assignments) ->
+                    withContext(Dispatchers.Main) {
+                        swapList(userCategories, categories)
+                        userCategoryAssignments = assignments
+                        refreshCategoryChips()
+                    }
+                }
+        }
+    }
+
+    /**
+     * Recompute the chip row.
+     *
+     * Called from every place that can change what a badge should say: a conversation-list
+     * re-render, a tab change, and either user-category stream. It is deliberately NOT
+     * called from composition.
+     */
+    private fun refreshCategoryChips() {
+        val contextRows = when (activeTab) {
+            ConversationFilter.Archived -> archivedConversations
+            ConversationFilter.All, ConversationFilter.Unread -> conversations
+        }
+        val chips = HomeCategoryProjection.chips(
+            HomeCategoryProjection.Input(
+                context = HomeCategoryProjection.conversationsOf(contextRows),
+                spam = HomeCategoryProjection.conversationsOf(spamConversations()),
+                // DB-wide on purpose: this map is also the system chips' count source, and
+                // that count is what keeps the SPAM chip reachable while a reported
+                // conversation is hidden from the inbox.
+                systemCategories = effectiveCategories.toMap(),
+                assignments = userCategoryAssignments,
+                customCategories = userCategories.map { category ->
+                    HomeCategoryProjection.CustomCategory(
+                        categoryId = category.categoryId,
+                        name = category.name,
+                        sortOrder = category.sortOrder
+                    )
+                }
+            )
+        )
+        swapList(homeChips, chips)
+    }
+
     /**
      * Room-backed today-segment count over the immutable submission ledger.
      *
@@ -550,6 +665,11 @@ class HomeViewModel(
         val archived = filterBlocked(rendered.archived, blocked).withManualUnread()
         applySwap(conversations, main.withSpamVisibility())
         applySwap(archivedConversations, archived.withSpamVisibility())
+        // v3.5.0: the badges are derived from the rows that were just published, so this
+        // runs AFTER both swaps. Anything that changes what the tabs can show — a sync, a
+        // mark-read, a trash, a report, an archive — therefore reaches the chip row through
+        // this one call, with no separate invalidation path to forget.
+        refreshCategoryChips()
         // FEATURE 9: the ONE explicit place a durable list change reconciles the
         // multi-selection. A refresh that still contains the selected rows leaves
         // the selection untouched — nothing here can silently reset it.
@@ -874,6 +994,11 @@ class HomeViewModel(
     )
 
     private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {
+        swapList(target, source)
+    }
+
+    /** Content-swap inside ONE snapshot, so a list can never be seen half-replaced. */
+    private fun <T> swapList(target: MutableList<T>, source: List<T>) {
         if (target == source) return
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             target.clear()
