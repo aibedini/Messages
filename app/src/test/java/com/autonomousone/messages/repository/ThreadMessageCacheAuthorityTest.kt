@@ -10,30 +10,33 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The CACHE-vs-AUTHORITY contract (v3.4.3, P0-B).
+ * The CACHE-vs-AUTHORITY contract (v3.4.3, P0-B; made PER-CONVERSATION in
+ * v3.4.5, P0-A).
  *
- * Production bug: Home's snippet showed the newest message, but opening that
- * conversation did not. The sequence was
+ * Production bug #1 (v3.4.3): Home's snippet showed the newest message, but
+ * opening that conversation did not. The sequence was
  *
  *   Room tail emits [A, B, C]            (authoritative, newest = C)
  *   slower cache read publishes [A, B]   (stale)
  *   messages.clear(); addAll([A, B])     (C disappears)
  *
- * and killing/restarting the app made C appear again, because the in-memory cache was
- * gone and Room painted [A, B, C].
+ * and killing/restarting the app made C appear again, because the in-memory
+ * cache was gone and Room painted [A, B, C].
  *
- * The fix has two halves, and both are pinned here at the cache level (the cache is
- * Android-free by design so this contract is testable on the JVM):
- *
- *  1. [ThreadMessageCache.authorityRevision] lets the ViewModel DISCARD a cache read
- *     that started before an authoritative paint.
- *  2. An incoming message invalidates exactly its own thread, so the next open cannot
- *     paint a window that predates it.
+ * Production bug #2 (v3.4.5): the clock that implements that guard was ONE
+ * process-wide counter. A conversation left alive in the navigation back stack
+ * that painted an authoritative window therefore made an unrelated open
+ * discard its only usable cache — and, combined with the loader's
+ * fresh-cache early return, left the screen on Home's one-bubble launch
+ * snapshot. The clock is now per conversation, and this test pins that
+ * isolation.
  */
 class ThreadMessageCacheAuthorityTest {
 
     private val thread = 10L
     private val phone = "+989121234567"
+    private val otherThread = 20L
+    private val otherPhone = "+989120000000"
 
     @Before
     fun setUp() = ThreadMessageCache.resetForTest()
@@ -56,24 +59,49 @@ class ThreadMessageCacheAuthorityTest {
     // ── The authority clock ─────────────────────────────────────────────────
 
     @Test
-    fun `an authoritative paint advances the authority revision`() {
-        val before = ThreadMessageCache.authorityRevision
+    fun `an authoritative paint advances the authority revision of its own conversation`() {
+        val before = ThreadMessageCache.authorityRevision(thread, phone)
 
-        ThreadMessageCache.markAuthoritativePaint()
+        ThreadMessageCache.markAuthoritativePaint(thread, phone)
 
-        assertEquals(before + 1, ThreadMessageCache.authorityRevision)
+        assertEquals(before + 1, ThreadMessageCache.authorityRevision(thread, phone))
     }
 
     @Test
     fun `the authority revision is monotonic`() {
-        val start = ThreadMessageCache.authorityRevision
-        repeat(3) { ThreadMessageCache.markAuthoritativePaint() }
+        val start = ThreadMessageCache.authorityRevision(thread, phone)
+        repeat(3) { ThreadMessageCache.markAuthoritativePaint(thread, phone) }
 
-        assertEquals(start + 3, ThreadMessageCache.authorityRevision)
+        assertEquals(start + 3, ThreadMessageCache.authorityRevision(thread, phone))
     }
 
     /**
-     * The exact production sequence, expressed as the decision the ViewModel makes.
+     * FIX G — `authorityFromThreadA_doesNotDiscardThreadB`.
+     *
+     * This is the v3.4.5 root cause at its narrowest: the clock is a property
+     * of ONE conversation, so a paint in A is invisible to B.
+     */
+    @Test
+    fun `authorityFromThreadA_doesNotDiscardThreadB`() {
+        ThreadMessageCache.put(otherThread, otherPhone, listOf(sms(3, 300)))
+        val capturedForB = ThreadMessageCache.authorityRevision(otherThread, otherPhone)
+
+        ThreadMessageCache.markAuthoritativePaint(thread, phone)
+        ThreadMessageCache.markAuthoritativePaint(thread, phone)
+
+        assertEquals(
+            "a paint in conversation A must not move conversation B's clock",
+            capturedForB,
+            ThreadMessageCache.authorityRevision(otherThread, otherPhone)
+        )
+        assertTrue(
+            ThreadMessageCache.authorityRevision(thread, phone) > 0L
+        )
+    }
+
+    /**
+     * The exact production sequence, expressed as the decision the ViewModel
+     * makes — now scoped to the conversation that is actually opening.
      */
     @Test
     fun `a cache read that started before an authoritative paint is discarded`() {
@@ -81,16 +109,16 @@ class ThreadMessageCacheAuthorityTest {
         ThreadMessageCache.put(thread, phone, listOf(sms(1, 100), sms(2, 200)))
 
         // 2. The ViewModel snapshots the authority clock BEFORE reading the cache.
-        val cacheReadRevision = ThreadMessageCache.authorityRevision
+        val cacheReadRevision = ThreadMessageCache.authorityRevision(thread, phone)
         val stale = ThreadMessageCache.getStale(thread, phone)
         assertNotNull(stale)
 
         // 3. Room's authoritative tail arrives with [A, B, C] while that read is
         //    still in flight — this is the emission the user can already see.
-        ThreadMessageCache.markAuthoritativePaint()
+        ThreadMessageCache.markAuthoritativePaint(thread, phone)
 
         // 4. The cache result must now be DISCARDED, so C cannot disappear.
-        val authorityMoved = ThreadMessageCache.authorityRevision != cacheReadRevision
+        val authorityMoved = ThreadMessageCache.authorityRevision(thread, phone) != cacheReadRevision
         assertTrue(
             "a cache read that raced an authoritative paint must be discarded",
             authorityMoved
@@ -101,13 +129,15 @@ class ThreadMessageCacheAuthorityTest {
     fun `a cache read with no intervening authoritative paint is published`() {
         ThreadMessageCache.put(thread, phone, listOf(sms(1, 100), sms(2, 200)))
 
-        val cacheReadRevision = ThreadMessageCache.authorityRevision
+        val cacheReadRevision = ThreadMessageCache.authorityRevision(thread, phone)
         val stale = ThreadMessageCache.getStale(thread, phone)
         assertNotNull(stale)
 
         // Nothing authoritative happened in between: the cache still paints first.
-        assertEquals(cacheReadRevision, ThreadMessageCache.authorityRevision)
-        assertFalse(ThreadMessageCache.authorityRevision != cacheReadRevision)
+        assertEquals(cacheReadRevision, ThreadMessageCache.authorityRevision(thread, phone))
+        assertFalse(
+            ThreadMessageCache.authorityRevision(thread, phone) != cacheReadRevision
+        )
     }
 
     @Test
@@ -119,7 +149,7 @@ class ThreadMessageCacheAuthorityTest {
         assertEquals(listOf(1L, 2L), messages.map { it.id })
     }
 
-    // ── Ingest invalidation (the second half of the fix) ────────────────────
+    // ── Ingest invalidation (the second half of the v3.4.3 fix) ─────────────
 
     @Test
     fun `a new message makes its own thread's cache stale`() {
@@ -137,30 +167,28 @@ class ThreadMessageCacheAuthorityTest {
 
     @Test
     fun `invalidating one thread leaves other threads fresh`() {
-        val other = 20L
         ThreadMessageCache.put(thread, phone, listOf(sms(1, 100)))
-        ThreadMessageCache.put(other, "+989120000000", listOf(sms(3, 300)))
+        ThreadMessageCache.put(otherThread, otherPhone, listOf(sms(3, 300)))
 
         ThreadMessageCache.invalidateThread(thread)
 
         assertTrue(ThreadMessageCache.getStale(thread, phone)!!.second)
         assertFalse(
             "activity in one conversation must not invalidate another",
-            ThreadMessageCache.getStale(other, "+989120000000")!!.second
+            ThreadMessageCache.getStale(otherThread, otherPhone)!!.second
         )
     }
 
     @Test
     fun `the global fallback invalidates every thread`() {
-        val other = 20L
         ThreadMessageCache.put(thread, phone, listOf(sms(1, 100)))
-        ThreadMessageCache.put(other, "+989120000000", listOf(sms(3, 300)))
+        ThreadMessageCache.put(otherThread, otherPhone, listOf(sms(3, 300)))
 
         // Used only when a message has no resolvable thread id.
         ThreadMessageCache.invalidateAll()
 
         assertTrue(ThreadMessageCache.getStale(thread, phone)!!.second)
-        assertTrue(ThreadMessageCache.getStale(other, "+989120000000")!!.second)
+        assertTrue(ThreadMessageCache.getStale(otherThread, otherPhone)!!.second)
     }
 
     @Test
@@ -177,5 +205,20 @@ class ThreadMessageCacheAuthorityTest {
             3L,
             messages.maxByOrNull { it.date }?.id
         )
+    }
+
+    /**
+     * `app/process recreation: conversation loads without relying on in-memory
+     * cache` — at the cache level: a fresh process has no entry at all, and
+     * that must read as a MISS, never as an authoritative empty window.
+     */
+    @Test
+    fun `a recreated process has no usable cache entry`() {
+        ThreadMessageCache.put(thread, phone, listOf(sms(1, 100)))
+
+        ThreadMessageCache.resetForTest()
+
+        assertEquals(null, ThreadMessageCache.getStale(thread, phone))
+        assertEquals(0L, ThreadMessageCache.authorityRevision(thread, phone))
     }
 }

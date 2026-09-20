@@ -136,6 +136,7 @@ import com.autonomousone.messages.ui.components.contentAwareTextStyle
 import com.autonomousone.messages.ui.components.ConversationTopBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.conversation.ChatListItem
+import com.autonomousone.messages.ui.conversation.ConversationEmptyContent
 import com.autonomousone.messages.ui.conversation.ConversationSearchResults
 import com.autonomousone.messages.ui.conversation.ConversationSearchTopBar
 import com.autonomousone.messages.ui.conversation.ConversationSelectionTopBar
@@ -143,6 +144,7 @@ import com.autonomousone.messages.ui.conversation.MessageEntrance
 import com.autonomousone.messages.ui.conversation.MessageList
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
+import com.autonomousone.messages.ui.conversation.resolveConversationEmptyContent
 import com.autonomousone.messages.ui.selection.formatBulkFeedback
 import com.autonomousone.messages.utils.formatDateHeader
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -846,19 +848,31 @@ fun ConversationScreen(
             // gets a quiet skeleton. When real rows arrive the two states
             // crossfade (100/70ms) — same bottom anchor, so the swap reads
             // as history quietly filling in above, not a re-mount.
+            //
+            // v3.4.5 P0-H: the launch snapshot is a first-paint BRIDGE, never a
+            // way to hide a loader that produced nothing. The body state is now
+            // resolved explicitly, and FAILED outranks the snapshot so a failed
+            // open is visible and retryable instead of looking loaded forever.
             val launchSnapshot = remember(threadId) {
                 ConversationLaunchStore.peek(threadId)
             }
+            val emptyContent = resolveConversationEmptyContent(
+                hasMessages = chatItems.isNotEmpty(),
+                hasLaunchSnapshot = launchSnapshot != null,
+                isLoading = viewModel.isLoading,
+                initialLoadFailed = viewModel.initialLoadFailed
+            )
             AnimatedContent(
-                targetState = chatItems.isNotEmpty(),
+                targetState = emptyContent,
                 transitionSpec = {
                     fadeIn(tween(100)) togetherWith fadeOut(tween(70))
                 },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-            ) { hasRealMessages ->
-                if (hasRealMessages) {
+            ) { content ->
+                when (content) {
+                    ConversationEmptyContent.MESSAGES ->
                     // Chat area + floating overlays share one Box so the
                     // Jump-to-latest button can pin itself bottom-end over
                     // the list without consuming layout space.
@@ -887,12 +901,19 @@ fun ConversationScreen(
                     selectedKeys = viewModel.messageSelection.keys,
                     onEnterSelection = { sms -> viewModel.enterMessageSelection(sms) },
                     onToggleSelection = { sms -> viewModel.toggleMessageSelection(sms) },
-                )                } else if (launchSnapshot != null) {
-                    LaunchPreview(snapshot = launchSnapshot)
-                } else if (viewModel.isLoading) {
-                    QuietConversationSkeleton()
-                } else {
-                    Box(
+                )
+
+                    ConversationEmptyContent.FAILED -> ConversationLoadFailure(
+                        onRetry = { viewModel.retryInitialLoad() },
+                        snapshot = launchSnapshot
+                    )
+
+                    ConversationEmptyContent.LAUNCH_PREVIEW ->
+                        launchSnapshot?.let { LaunchPreview(snapshot = it) }
+
+                    ConversationEmptyContent.LOADING -> QuietConversationSkeleton()
+
+                    ConversationEmptyContent.EMPTY -> Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1691,6 +1712,58 @@ private fun ScheduleSendDialog(
 }
 
 // ── v2.6.9 first-paint helpers ───────────────────────────────────────────
+
+/**
+ * v3.4.5 P0-H — the initial load produced nothing.
+ *
+ * The launch snapshot may stay visible underneath (the bottom-anchored bubble
+ * keeps the geometry stable), but the failure and its Retry are on top of it.
+ * Before this, that snapshot IS what the user saw, with no way to tell a slow
+ * load from a dead one and no way to recover without force-closing the app.
+ */
+@Composable
+private fun ConversationLoadFailure(
+    onRetry: () -> Unit,
+    snapshot: ConversationLaunchStore.Snapshot?
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (snapshot != null) {
+            LaunchPreview(snapshot = snapshot)
+        }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 3.dp,
+                modifier = Modifier.padding(horizontal = 28.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = stringResource(R.string.conv_load_error_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.conv_load_error_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TextButton(onClick = onRetry) {
+                        Text(text = stringResource(R.string.action_retry))
+                    }
+                }
+            }
+        }
+    }
+}
 
 /**
  * The handoff frame: Home's latest message, rendered as a real ChatBubble

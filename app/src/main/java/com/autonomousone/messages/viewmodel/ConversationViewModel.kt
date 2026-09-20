@@ -17,9 +17,12 @@ import com.autonomousone.messages.data.MessageKey
 import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.repository.BulkActionRepository
 import com.autonomousone.messages.repository.BulkFeedback
+import com.autonomousone.messages.repository.ConversationOpenGeneration
+import com.autonomousone.messages.repository.ConversationOpenLoad
 import com.autonomousone.messages.repository.ConversationSearchNavigation
 import com.autonomousone.messages.repository.InConversationSearchRepository
 import com.autonomousone.messages.repository.MessageUserStateRepository
+import com.autonomousone.messages.navigation.ConversationLaunchStore
 import com.autonomousone.messages.repository.SearchDebounce
 import com.autonomousone.messages.repository.SearchJumpWindow
 import com.autonomousone.messages.repository.SearchOutcome
@@ -512,7 +515,7 @@ class ConversationViewModel(
      * A Room emission updates the recent rows' read/status but NEVER deletes
      * older pages the user already scrolled to (ConversationWindow.mergeRoomTail).
      */
-    private fun startRoomTail(threadId: Long, gen: Long) {
+    private fun startRoomTail(threadId: Long, gen: Long, load: ConversationOpenLoad) {
         if (threadId <= 0L) return
         roomTailJob = viewModelScope.launch(Dispatchers.IO + crashGuard("roomTail")) {
             com.autonomousone.messages.data.MessagesDatabase.get(getApplication())
@@ -525,6 +528,24 @@ class ConversationViewModel(
                 .collect { entities ->
                     if (gen != conversationGeneration) return@collect
                     val tail = entities.map { it.toSms() }
+                    // v3.4.5 P0-B: an EMPTY emission is NOT an authoritative
+                    // window. Room emits [] while its shadow is still backfilling,
+                    // so treating it as truth used to discard the only usable
+                    // cache and leave the conversation blank behind Home's launch
+                    // snapshot. Empty deletions are unaffected: Trash, individual
+                    // delete and conversation delete write their own state and
+                    // mutate the visible window directly.
+                    if (!load.onRoomTail(tail.size)) {
+                        DiagnosticLog.event(
+                            "ROOM_TAIL",
+                            "rows=0 thread=$threadId generation=$gen markedAuthoritative=false"
+                        )
+                        return@collect
+                    }
+                    DiagnosticLog.event(
+                        "ROOM_TAIL",
+                        "rows=${tail.size} thread=$threadId generation=$gen markedAuthoritative=true"
+                    )
                     withContext(Dispatchers.Main) {
                         if (gen != conversationGeneration) return@withContext
                         val optimistic = mergeOptimistic(tail)
@@ -535,10 +556,9 @@ class ConversationViewModel(
                         )
                         messages.clear()
                         messages.addAll(merged)
-                        // AUTHORITATIVE PAINT: from here on, a slower cache read that
-                        // started before this emission must not repaint an older window
-                        // over it (the bug where the newest message vanished on open).
-                        ThreadMessageCache.markAuthoritativePaint()
+                        // A real window arrived: any previous initial-load
+                        // failure has just healed itself.
+                        initialLoadFailed = false
                         // A search JUMP paints a bounded window that is NOT the
                         // conversation; caching it here would reopen this chat
                         // on 40 messages tomorrow. The window is stored only
@@ -565,9 +585,23 @@ class ConversationViewModel(
      * (initial load, older-page, refresh, spinner) captures the generation it
      * started under and drops its result when the screen has moved on — one
      * guard for ALL paths instead of per-job checks.
+     *
+     * v3.4.5: the counter itself lives in [ConversationOpenGeneration] so the
+     * "rapidly open A → B → C" guard is verifiable without an Android
+     * ViewModel; this property is only the read side of it.
+     */
+    private val openGeneration = ConversationOpenGeneration()
+
+    private val conversationGeneration: Long get() = openGeneration.current
+
+    /**
+     * v3.4.5 P0: the open-authority state machine for the CURRENT
+     * conversation + generation. Replaced on every [loadConversation], so an
+     * authoritative paint in one conversation can never decide another
+     * conversation's cache fate.
      */
     @Volatile
-    private var conversationGeneration = 0L
+    private var openLoad: ConversationOpenLoad? = null
 
     /**
      * Conversation-screen boundary for every background job. A failing
@@ -820,7 +854,8 @@ class ConversationViewModel(
         // boundary regardless of where a previous visit ended.
         windowMode = ConversationWindowMode.LATEST
         pendingNewMessagesCount = 0
-        conversationGeneration++
+        openGeneration.next()
+        initialLoadFailed = false
         // A search result set belongs to the thread it was queried in: a switch
         // must drop it rather than let another conversation inherit the panel.
         if (isSearchActive || searchState !is ConversationSearchState.Idle) {
@@ -833,13 +868,28 @@ class ConversationViewModel(
         val myPhone = currentPhone
         val gen = conversationGeneration
 
+        // v3.4.5 P0: the open-authority state machine for THIS conversation and
+        // THIS generation. Built BEFORE the Room tail starts so the tail and the
+        // cache read share one decision object; authority is per conversation,
+        // never process-wide.
+        val load = ConversationOpenLoad(
+            threadKey = if (threadId != 0L) threadId else 0L,
+            phoneKey = phone.ifBlank { currentPhone }
+        )
+        openLoad = load
+        DiagnosticLog.event(
+            "CONVERSATION_OPEN",
+            "thread=$threadId phone=${DiagnosticLog.phoneToken(phone)} generation=$gen " +
+                "authority=${load.capturedRevision}"
+        )
+
         // Announce visibility to the sync core BEFORE any async read so an
         // incoming message for this thread is written read in the same
         // transaction that inserts it (no 0 → 1 → 0 badge flash).
         if (threadId > 0L) VisibleConversationTracker.onOpened(threadId)
 
         // ReactiveRoomTail: bounded Room window feeds the UI from here on.
-        startRoomTail(threadId, gen)
+        startRoomTail(threadId, gen, load)
 
         // v3.4.0 FEATURE 11: render the OPEN conversation's held messages from
         // the durable ledger, bounded by threadId. Unrelated threads are never
@@ -851,12 +901,19 @@ class ConversationViewModel(
             // (Google Messages-style), then refresh from the provider.
             val cache = ThreadMessageCache
             val cacheKeyThread = if (threadId != 0L) threadId else 0L
-            // Snapshot the authority clock BEFORE reading. If an authoritative Room
-            // window is published while this read is in flight, the cache below is
-            // older than what the user can already see and MUST NOT be published.
-            val cacheReadRevision = cache.authorityRevision
+            val cachePhone = phone.ifBlank { currentPhone }
+            // `load` snapshotted the authority clock of THIS conversation BEFORE
+            // this read. If an authoritative window for this same conversation is
+            // published while the read is in flight, the cache below is older than
+            // what the user can already see and MUST NOT be published.
             val stale = if (cacheKeyThread != 0L || phone.isNotBlank())
-                cache.getStale(cacheKeyThread, phone.ifBlank { currentPhone }) else null
+                cache.getStale(cacheKeyThread, cachePhone) else null
+            DiagnosticLog.event(
+                "CACHE_READ",
+                "thread=$threadId exists=${stale != null} " +
+                    "fresh=${stale?.let { !it.second } ?: false} " +
+                    "rows=${stale?.first?.size ?: 0} authorityBefore=${load.capturedRevision}"
+            )
 
             if (stale == null || stale.first.isEmpty()) {
                 // In-memory cache miss (fresh process): paint from the local
@@ -893,9 +950,11 @@ class ConversationViewModel(
                             isLoading = false
                             loadStatus = null
                             recordFirstPaintIfNeeded()
-                            // This window came from Room, so it is authoritative too.
-                            ThreadMessageCache.markAuthoritativePaint()
                         }
+                        // This window came from Room, so it is authoritative too —
+                        // for THIS conversation only. A non-empty window is what
+                        // makes it authoritative: an empty one proves nothing.
+                        load.onRoomShadow(roomRows.size)
                         markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
                     }
                 }
@@ -905,48 +964,67 @@ class ConversationViewModel(
                 // R: the cache may predate this release and hold unsorted
                 // rows — canonicalize before painting, never trust insertion.
                 val cachedList = canonicalize(stale.first.map { it.copy(unread = false) })
-                // THE AUTHORITY GUARD. A cache read that started before an
-                // authoritative Room paint may not repaint over it: doing so is how
-                // the newest message disappeared when a conversation was opened
-                // (Room emitted [A,B,C], the slower cache published [A,B], and
-                // `messages.clear()` dropped C). The cache exists to fill the gap
-                // BEFORE Room speaks, never to undo it.
-                val authorityMoved = cache.authorityRevision != cacheReadRevision
-                if (!authorityMoved) {
-                    withContext(Dispatchers.Main) {
-                        if (gen != conversationGeneration) return@withContext
+                // THE AUTHORITY GUARD (v3.4.5 P0-A/C). A cache read that started
+                // before an authoritative paint of THIS conversation may not
+                // repaint over it: doing so is how the newest message disappeared
+                // when a conversation was opened (Room emitted [A,B,C], the slower
+                // cache published [A,B], and `messages.clear()` dropped C). The
+                // cache exists to fill the gap BEFORE Room speaks, never to undo it.
+                //
+                // Both the check and the write happen on the MAIN thread, with no
+                // suspension in between, so the Room publish (also main) cannot
+                // slip between them.
+                var cachePainted = false
+                withContext(Dispatchers.Main) {
+                    if (gen != conversationGeneration) return@withContext
+                    if (load.mayPaintCache()) {
                         messages.clear()
                         messages.addAll(cachedList)
                         messages.addAll(mergeOptimistic(cachedList))
                         isLoading = false
                         loadStatus = null
                         recordFirstPaintIfNeeded()
+                        load.onCachePainted(cachedList.size)
+                        cachePainted = true
                     }
-                } else {
-                    com.autonomousone.messages.utils.DiagnosticLog.event(
-                        "CONVERSATION_LOAD",
-                        "cache_paint_discarded thread=$currentThreadId " +
-                            "reason=room-authority-arrived cached=${cachedList.size}"
-                    )
                 }
-                // Cached copy was already fresh → nothing more to do. BUT the
-                // pager must still exist, or scroll-up history and tail refresh
-                // silently degrade on every cache-hit re-open.
-                if (!stale.second) {
+                DiagnosticLog.event(
+                    "CACHE_READ",
+                    "thread=$threadId rows=${cachedList.size} " +
+                        "authorityAfter=${load.authorityRevisionNow} " +
+                        "painted=$cachePainted authorityMoved=${load.authorityMoved} " +
+                        "discarded=${!cachePainted}"
+                )
+                // The load may finish here ONLY on a cache that was ACTUALLY
+                // PAINTED and fresh, or on a non-empty authoritative Room window.
+                // A discarded cache must never be treated as "handled": that
+                // early-return is what left the screen on Home's launch snapshot
+                // with an empty loader. The pager must also exist, or scroll-up
+                // history and tail refresh silently degrade on every cache hit.
+                if (load.mayFinishInitialLoad(cacheFresh = !stale.second)) {
                     if (gen == conversationGeneration) {
                         pager = com.autonomousone.messages.repository.ThreadPager(
                             getApplication(),
                             if (cacheKeyThread != 0L) cacheKeyThread else currentThreadId,
-                            phone.ifBlank { currentPhone }
+                            cachePhone
                         )
                     }
                     markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
+                    DiagnosticLog.event(
+                        "INITIAL_LOAD",
+                        "thread=$threadId source=${load.source} rows=${load.paintedRows} " +
+                            "generation=$gen fastPath=true"
+                    )
                     return@launch
                 }
-            } else {
-                // No cache: only show a spinner if the (windowed, ≤2×12 row)
-                // read actually takes long enough for a human to notice.
-                // Below that the screen goes straight from nothing to messages.
+            }
+
+            // Nothing usable was painted for this open yet (a cache miss, or a
+            // cache read that was correctly discarded). The bounded provider page
+            // is now the last resort, so it earns the delayed spinner: only show
+            // it if the (windowed, ≤2×12 row) read is slow enough for a human to
+            // notice. Below that the screen goes straight from nothing to messages.
+            run {
                 val spinnerJob = launch {
                     delay(120)
                     withContext(Dispatchers.Main) { isLoading = true }
@@ -997,11 +1075,26 @@ class ConversationViewModel(
 
                 withContext(Dispatchers.Main) {
                     if (gen != conversationGeneration) return@withContext
+                    // v3.4.5 P0-D: never REBUILD the window over a window that
+                    // Room already owns for this open. A non-empty Room tail is
+                    // authoritative, and the provider page may legitimately be
+                    // narrower (a row Room mirrors but Telephony has not exposed
+                    // yet is exactly the newest message that used to vanish).
+                    // Checked on the main thread, immediately before the write,
+                    // so a Room paint cannot interleave.
+                    val merged = if (load.roomPainted) {
+                        ConversationWindow.mergeRoomTail(
+                            messages.toList(),
+                            readMessages,
+                            mergeOptimistic(readMessages)
+                        )
+                    } else {
+                        readMessages + mergeOptimistic(readMessages)
+                    }
                     messages.clear()
-                    messages.addAll(readMessages)
-                    // Keep unconfirmed optimistic sends visible until the provider reports them.
-                    messages.addAll(mergeOptimistic(readMessages))
+                    messages.addAll(merged)
                     if (readMessages.isNotEmpty()) {
+                        initialLoadFailed = false
                         if (currentThreadId == 0L) currentThreadId = readMessages.last().threadId
                         if (currentPhone.isBlank()) {
                             val sampleMsg = readMessages.firstOrNull { it.type == 1 }
@@ -1026,8 +1119,46 @@ class ConversationViewModel(
                     }
                     recordFirstPaintIfNeeded()
                 }
+                load.onProviderResult(readMessages.size)
                 // Store for instant re-open.
                 ThreadMessageCache.put(targetThreadId, targetPhone, loadedMessages)
+                DiagnosticLog.event(
+                    "PROVIDER_PAGE",
+                    "thread=$threadId rows=${readMessages.size} generation=$gen " +
+                        "mergedWithRoom=${load.roomPainted}"
+                )
+                // FIX H: the launch snapshot is a first-paint bridge, never a
+                // place to hide a loader that produced nothing. Home told us
+                // this conversation has a message, so an empty provider page for
+                // it is a load we can offer to retry.
+                if (!load.hasUsableSource && homePromisedContent(myThread)) {
+                    withContext(Dispatchers.Main) {
+                        if (gen == conversationGeneration) initialLoadFailed = true
+                    }
+                }
+                DiagnosticLog.event(
+                    "INITIAL_LOAD",
+                    "thread=$threadId source=${load.source} rows=${load.paintedRows} " +
+                        "generation=$gen fastPath=false"
+                )
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                // Degrade to a VISIBLE, retryable state instead of a silent
+                // preview that never resolves. The crashGuard still reports it.
+                load.onFailed()
+                withContext(Dispatchers.Main) {
+                    if (gen == conversationGeneration && !load.hasUsableSource) {
+                        initialLoadFailed = true
+                    }
+                }
+                DiagnosticLog.event(
+                    "INITIAL_LOAD",
+                    "thread=$threadId source=ERROR rows=${load.paintedRows} " +
+                        "generation=$gen fastPath=false",
+                    error
+                )
+                throw error
             } finally {
                 // Generation check: a superseded load must not cancel the
                 // spinner of the NEW conversation's load (shared guard bug).
@@ -1053,6 +1184,38 @@ class ConversationViewModel(
      */
     @Volatile
     private var roomReadEnabled = false
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v3.4.5 P0-H — a failed initial load must be VISIBLE and RETRYABLE
+    //
+    // `errorMessage` cannot carry this: it is consumed by the screen's
+    // snackbar a moment after it is set, so it can never gate a persistent
+    // affordance. This flag is the durable "the loader produced nothing"
+    // state for the CURRENT open; Home's launch snapshot may stay on screen
+    // underneath it, but it can no longer masquerade as loaded history.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /** The initial bounded load of the CURRENT open failed and nothing painted. */
+    var initialLoadFailed by mutableStateOf(false)
+        private set
+
+    /**
+     * Re-run the bounded initial load for the open conversation, in place.
+     * Never requires a force-close or a process restart.
+     */
+    fun retryInitialLoad() {
+        if (currentThreadId == 0L && currentPhone.isBlank()) return
+        initialLoadFailed = false
+        loadConversation(currentThreadId, currentPhone)
+    }
+
+    /**
+     * Whether Home handed us a launch snapshot for this thread. Home only lists
+     * conversations that have a message, so a snapshot is proof that an empty
+     * load result is a failure rather than a genuinely empty conversation.
+     */
+    private fun homePromisedContent(threadId: Long): Boolean =
+        threadId > 0L && ConversationLaunchStore.peek(threadId) != null
 
     fun setPhone(phone: String) {
         currentPhone = phone

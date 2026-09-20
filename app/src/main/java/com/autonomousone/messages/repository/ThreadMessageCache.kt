@@ -17,6 +17,10 @@ import com.autonomousone.messages.model.Sms
  * cached windows of B/C/D stale. Only an unattributable/global recovery
  * (unknown provider change) bumps [globalEpoch], which invalidates everything.
  *
+ * [authorityRevision] — the clock that stops a slow cache read from
+ * overwriting a newer authoritative window — is per-conversation for the same
+ * reason (v3.4.5).
+ *
  * Cache holds the last N threads (LRU), each capped at the most recent
  * [MAX_PER_THREAD] messages — older pages load on scroll-up later.
  *
@@ -38,29 +42,42 @@ object ThreadMessageCache {
         private set
 
     /**
-     * Monotonic counter of AUTHORITATIVE paints.
+     * Per-CONVERSATION revisions of AUTHORITATIVE paints (v3.4.5, P0-A).
      *
-     * Bumped every time the reactive Room tail (or another authoritative source)
-     * publishes a window. A caller that is about to paint a CACHE result captures
-     * this before it reads and re-checks it before it publishes: if it moved, an
-     * authoritative window arrived in the meantime and the stale cache must be
+     * Bumped every time the reactive Room tail (or another authoritative
+     * source) publishes a window FOR THAT CONVERSATION. A caller that is about
+     * to paint a CACHE result captures the revision of ITS conversation before
+     * it reads, and re-checks it ON THE PAINTING THREAD immediately before it
+     * publishes: if it moved, an authoritative window for this same
+     * conversation arrived in the meantime and the stale cache must be
      * DISCARDED rather than allowed to overwrite it.
      *
-     * This is the fix for the production bug where Home showed a newest message that
-     * was missing when the conversation was opened: the Room tail painted
+     * This is the fix for the production bug where Home showed a newest message
+     * that was missing when the conversation was opened: the Room tail painted
      * [A, B, C], then a slower cache read published [A, B] and `messages.clear()`
      * dropped C. The invariant is:
      *
      *   CACHE MAY PAINT FIRST. CACHE MAY NEVER OVERWRITE AUTHORITATIVE ROOM STATE
-     *   THAT HAS ALREADY ARRIVED.
+     *   THAT HAS ALREADY ARRIVED FOR THE SAME CONVERSATION.
+     *
+     * Scoped per conversation on purpose. v3.4.3 shipped this as ONE global
+     * counter, which violated the sibling invariant below ("activity in
+     * conversation A must not invalidate B/C/D") in the worst possible way: a
+     * conversation left alive in the navigation back stack that painted an
+     * authoritative window made an unrelated open discard its one usable source
+     * and finish early on an empty list, so the screen kept showing Home's
+     * one-bubble launch snapshot instead of history.
      */
-    @Volatile
-    var authorityRevision: Long = 0L
-        private set
+    private val authorityRevisions = HashMap<Long, Long>()
 
-    /** Records that an authoritative window was just published. */
-    fun markAuthoritativePaint() {
-        authorityRevision += 1L
+    /** The authority revision of ONE conversation (thread id wins, else phone key). */
+    fun authorityRevision(threadKey: Long, phoneKey: String): Long =
+        synchronized(lock) { authorityRevisions[revisionKey(threadKey, phoneKey)] ?: 0L }
+
+    /** Records that an authoritative window was just published for this conversation. */
+    fun markAuthoritativePaint(threadKey: Long, phoneKey: String = "") {
+        val key = revisionKey(threadKey, phoneKey)
+        synchronized(lock) { authorityRevisions[key] = (authorityRevisions[key] ?: 0L) + 1L }
     }
 
     /**
@@ -209,8 +226,8 @@ object ThreadMessageCache {
         synchronized(lock) {
             lru.clear()
             revisions.clear()
+            authorityRevisions.clear()
             globalEpoch = 0L
-            authorityRevision = 0L
         }
     }
 }
