@@ -78,9 +78,12 @@ import com.autonomousone.messages.BuildConfig
         ConversationClassificationEntity::class,
         MessageAssetEntity::class,
         // v17 — Send delay / Undo Send (ADDITIVE; see PendingDelayedSend.kt).
-        PendingDelayedSendEntity::class
+        PendingDelayedSendEntity::class,
+        // v18 — CUSTOM categories (ADDITIVE; see UserCategoryEntities.kt).
+        UserCategoryEntity::class,
+        UserCategoryAssignmentEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -111,6 +114,9 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun messageAssetDao(): MessageAssetDao
     // v17 — Send delay / Undo Send.
     abstract fun pendingDelayedSendDao(): PendingDelayedSendDao
+    // v18 — CUSTOM categories.
+    abstract fun userCategoryDao(): UserCategoryDao
+    abstract fun userCategoryAssignmentDao(): UserCategoryAssignmentDao
 
     companion object {
         @Volatile
@@ -552,10 +558,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 17
+        const val CURRENT_SCHEMA_VERSION = 18
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 16
+        const val PREVIOUS_SCHEMA_VERSION = 17
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -585,6 +591,45 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v17 → v18 — CUSTOM CATEGORIES (ADDITIVE ONLY).
+         *
+         * Two new tables and their indices; nothing is dropped, altered or rebuilt, and
+         * no message/history row is read. Both tables start EMPTY: an upgrade must never
+         * invent a category or a membership the user did not create.
+         *
+         * The SQL is copied VERBATIM from the KSP-generated `18.json` (`createSql` of
+         * each entity/index) so the migrated schema is structurally identical to a fresh
+         * v18 install. `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` on
+         * purpose — Room re-runs a migration after a partially-failed open.
+         *
+         * ORDER MATTERS: `user_categories` is created BEFORE
+         * `user_category_assignments`, because the assignment table's foreign key
+         * references it. SQLite would reject the child table otherwise.
+         *
+         * The ONLY foreign key is `assignment.categoryId → user_categories.categoryId`
+         * with ON DELETE CASCADE. There is deliberately no FK to `messages`,
+         * `conversations` or any Telephony row: an ADDRESS membership is keyed by the
+         * stable phone identity and must survive the provider recreating a thread, and a
+         * THREAD membership is valid even while no projection row exists for it.
+         */
+        internal val UPGRADE_TO_V18_SQL: List<String> = listOf(
+            // ── user_categories (must precede the assignment table) ─────────────
+            "CREATE TABLE IF NOT EXISTS `user_categories` (`categoryId` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`categoryId`))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_user_categories_normalizedName` ON `user_categories` (`normalizedName`)",
+            "CREATE INDEX IF NOT EXISTS `index_user_categories_sortOrder` ON `user_categories` (`sortOrder`)",
+            // ── user_category_assignments ───────────────────────────────────────
+            "CREATE TABLE IF NOT EXISTS `user_category_assignments` (`categoryId` TEXT NOT NULL, `scopeType` TEXT NOT NULL, `scopeKey` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`categoryId`, `scopeType`, `scopeKey`), FOREIGN KEY(`categoryId`) REFERENCES `user_categories`(`categoryId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            "CREATE INDEX IF NOT EXISTS `index_user_category_assignments_categoryId` ON `user_category_assignments` (`categoryId`)",
+            "CREATE INDEX IF NOT EXISTS `index_user_category_assignments_scopeType_scopeKey` ON `user_category_assignments` (`scopeType`, `scopeKey`)"
+        )
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V18_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -596,7 +641,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never
