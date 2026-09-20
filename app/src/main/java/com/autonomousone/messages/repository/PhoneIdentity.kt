@@ -56,6 +56,35 @@ object PhoneIdentity {
     }
 
     /**
+     * The canonical spelling of [raw], or null when there is no phone identity.
+     *
+     * THIS IS THE ASSIGNMENT KEY. User categories are attached to a NUMBER, not to a
+     * Telephony `threadId`, because the provider can delete and recreate a thread for
+     * the same correspondence: assigning `09121234567` to a category and then having
+     * the provider hand back `+989121234567` under a new thread must keep the
+     * membership.
+     *
+     * All four Iranian mobile spellings therefore collapse to ONE key:
+     *
+     *     09121234567 · +989121234567 · 989121234567 · 00989121234567
+     *                                        → "+989121234567"
+     *
+     * Anything that is not safely transformable keeps its formatting-normalized exact
+     * value: short codes (`112`, `110`), service numbers, landlines and foreign
+     * numbers are their own identity and are NEVER suffix-matched. Returns null for
+     * input with no digits at all — an alphanumeric sender id has no phone identity
+     * and is keyed by the sender-id policy instead.
+     */
+    fun stableKey(raw: String): String? {
+        val normalized = normalize(raw)
+        if (normalized.isEmpty()) return null
+        val national = iranianMobileNational(normalized.removePrefix("+"))
+            ?: return normalized
+        // Canonical Iranian mobile form: +98 followed by the 10-digit national number.
+        return "+$IRAN_CC$national"
+    }
+
+    /**
      * Every spelling of [raw] that must be considered the same number.
      *
      * Always contains the plain [normalize] result. Never empty for a non-blank
