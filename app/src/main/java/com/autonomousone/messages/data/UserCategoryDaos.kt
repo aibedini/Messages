@@ -49,6 +49,20 @@ interface UserCategoryDao {
     suspend fun byNormalizedName(normalizedName: String): UserCategoryEntity?
 
     /**
+     * BATCHED existence check (v3.5.0 Phase 4).
+     *
+     * Multi-select assigns one category to many conversations, so the "do all of these
+     * ids exist?" question must be ONE query. A `categoryIds.forEach { byId(it) }` loop
+     * is the N+1 this exists to prevent — and it is also what makes the all-or-nothing
+     * rule enforceable before any write happens.
+     *
+     * Callers must never pass an EMPTY collection: Room renders a collection bind as
+     * `IN (?)…` per element, and an empty collection produces an empty `IN ()`.
+     */
+    @Query("SELECT categoryId FROM user_categories WHERE categoryId IN (:categoryIds)")
+    suspend fun existingIds(categoryIds: Collection<String>): List<String>
+
+    /**
      * ABORT on conflict on purpose: a duplicate `normalizedName` is a case the repository
      * must translate into a typed result, never silently swallow with REPLACE (which
      * would delete the existing category row and, through the FK cascade, every
@@ -60,6 +74,17 @@ interface UserCategoryDao {
     /** Rename only: the caller preserves `categoryId`, `sortOrder` and `createdAt`. */
     @Update
     suspend fun update(row: UserCategoryEntity)
+
+    /**
+     * Rename / resequence several rows in one call (v3.5.0 Phase 4).
+     *
+     * Used only by the `sortOrder` overflow path, which rewrites the whole (tiny)
+     * category list to `0…n-1` inside the same transaction that is inserting the next
+     * category. `sortOrder` is the user's own ordering, so this preserves it exactly —
+     * it changes the numbers, never the sequence.
+     */
+    @Update
+    suspend fun updateAll(rows: List<UserCategoryEntity>)
 
     @Query("DELETE FROM user_categories WHERE categoryId = :categoryId")
     suspend fun deleteById(categoryId: String): Int
@@ -153,6 +178,30 @@ interface UserCategoryAssignmentDao {
      */
     @Query("DELETE FROM user_category_assignments WHERE categoryId = :categoryId")
     suspend fun deleteForCategory(categoryId: String): Int
+
+    /**
+     * Remove ONE category from MANY scopes of one scope type (v3.5.0 Phase 4).
+     *
+     * `applyToScopes(…, desiredAssigned = false)` is the Home multi-select "unassign":
+     * it must cost at most TWO statements (one per scope type), never one per
+     * conversation. Only the named category is affected — every other custom category
+     * on those conversations stays.
+     *
+     * Callers must never pass an EMPTY [scopeKeys] (see [UserCategoryDao.existingIds]).
+     */
+    @Query(
+        """
+        DELETE FROM user_category_assignments
+        WHERE categoryId = :categoryId
+          AND scopeType = :scopeType
+          AND scopeKey IN (:scopeKeys)
+        """
+    )
+    suspend fun deleteCategoryForScopes(
+        categoryId: String,
+        scopeType: String,
+        scopeKeys: Collection<String>
+    ): Int
 
     @Query("SELECT COUNT(*) FROM user_category_assignments")
     suspend fun count(): Int
