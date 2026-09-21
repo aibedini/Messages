@@ -57,6 +57,8 @@
     <string name="category_chip_spam">هرزنامه</string>
     <string name="category_chip_count_fmt">%1$s، %2$d مکالمه</string>
     <string name="category_chip_selected_fmt">%1$s، %2$d مکالمه، انتخاب‌شده. برای نمایش همه دسته‌ها دوباره بزنید.</string>
+    <string name="category_chip_unread_fmt">%1$s، %2$d مکالمه خوانده‌نشده</string>
+    <string name="category_chip_unread_selected_fmt">%1$s، %2$d مکالمه خوانده‌نشده، انتخاب‌شده. برای نمایش همه دسته‌ها دوباره بزنید.</string>
     <string name="home_empty_title">هنوز مکالمه‌ای ندارید</string>
     <string name="home_empty_subtitle">هنوز پیامی ندارید. برای شروع، یک گفتگوی جدید باز کنید.</string>
     <string name="home_empty_archived_title">مکالمه بایگانی‌شده‌ای نیست</string>

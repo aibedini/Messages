@@ -52,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autonomousone.messages.R
 import com.autonomousone.messages.model.Sms
+import com.autonomousone.messages.data.MessageCategory
 import com.autonomousone.messages.navigation.ConversationLaunchStore
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
@@ -59,8 +60,8 @@ import com.autonomousone.messages.repository.DraftRepository
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
-import com.autonomousone.messages.ui.home.CategoryFilter
-import com.autonomousone.messages.ui.home.CategoryFilterBar
+import com.autonomousone.messages.ui.home.HomeCategoryChipBar
+import com.autonomousone.messages.ui.home.HomeCategoryKey
 import com.autonomousone.messages.ui.home.ConversationFilter
 import com.autonomousone.messages.ui.home.ConversationList
 import com.autonomousone.messages.ui.home.ConversationListSkeleton
@@ -119,8 +120,10 @@ fun HomeScreen(
 
     var search by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(ConversationFilter.All) }
-    // FEATURE 12: null = every category (All). Owned here, filtered in the VM.
-    var selectedCategory by remember { mutableStateOf<CategoryFilter?>(null) }
+    // FEATURE 12 / v3.5.0: null = every category (All). Owned here, filtered in the VM.
+    // The selection is a KEY rather than a CategoryFilter, because the row now carries the
+    // user's own categories beside the Smart ones.
+    var selectedCategory by remember { mutableStateOf<HomeCategoryKey?>(null) }
 
     // ── FEATURE 9/10: multi-select + bulk actions ─────────────────────────────
     // The selection lives in the ViewModel, so a Room refresh cannot drop it;
@@ -219,12 +222,12 @@ fun HomeScreen(
             // A reported sender is BLOCKED, and a blocked conversation is removed
             // from the rendered lists by design — so the chip cannot be served from
             // the normal lists without being permanently empty.
-            if (selectedCategory == CategoryFilter.Spam) {
+            if (selectedCategory == HomeCategoryKey.System(MessageCategory.SPAM)) {
                 viewModel.spamConversations()
             } else {
                 // The category narrows the tab list through the indexed thread-id set
                 // the ViewModel already resolved; null means "no category selected".
-                viewModel.smartCategoryThreadIds(selectedCategory)
+                viewModel.categoryThreadIds(selectedCategory)
                     ?.let { ids -> tabList.filter { it.threadId in ids } }
                     ?: tabList
             }
@@ -360,12 +363,12 @@ fun HomeScreen(
                 }
             )
 
-            // FEATURE 12 — Smart Categories (additive): a second, independently
-            // selected axis under the All/Unread/Archived tabs. Chips appear only
-            // for categories that actually contain conversations.
-            CategoryFilterBar(
+            // FEATURE 12 + v3.5.0 — ONE category row: the Smart Categories (unchanged,
+            // still data-gated, still counted DB-wide) beside the user's own categories
+            // (always present), each with its live UNREAD-CONVERSATION badge.
+            HomeCategoryChipBar(
+                chips = viewModel.homeCategoryChips(),
                 selected = selectedCategory,
-                counts = viewModel.smartCategoryCounts(),
                 onSelect = {
                     selectedCategory = it
                     // FEATURE 15: a reported-spam conversation is blocked, so it is

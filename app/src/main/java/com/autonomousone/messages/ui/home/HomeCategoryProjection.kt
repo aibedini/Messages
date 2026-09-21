@@ -22,6 +22,9 @@ import com.autonomousone.messages.repository.UserCategoryScopeCodec
  * a decision this object owns and a JVM test pins, rather than a filter buried in a
  * composable. The ViewModel only supplies the four inputs.
  *
+ * [project] returns the chips AND the thread ids each chip narrows to, in ONE pass, so the
+ * badge a chip shows and the list it opens can never be computed from two different bases.
+ *
  * THE BADGE'S BASE, EXACTLY
  * -------------------------
  *  - A badge counts UNREAD CONVERSATIONS among the rows the CURRENT TAB can show. Switch
@@ -89,6 +92,19 @@ object HomeCategoryProjection {
         val customCategories: List<CustomCategory> = emptyList()
     )
 
+    data class Result(
+        /** System chips first (data-gated), then the user's categories (always present). */
+        val chips: List<HomeCategoryChip>,
+
+        /**
+         * The thread ids each chip narrows to, within the CURRENT context.
+         *
+         * Produced in the same pass as [chips], so "the badge counts 3" and "tapping it
+         * shows 3" are the same computation rather than two that must agree.
+         */
+        val threadIds: Map<HomeCategoryKey, Set<Long>>
+    )
+
     /**
      * Smart categories in the order the chip row renders them.
      *
@@ -121,55 +137,62 @@ object HomeCategoryProjection {
         )
     }
 
-    /**
-     * The ordered chip row: system chips first (only those with data), then the user's
-     * categories in their stored order (always present).
-     */
-    fun chips(input: Input): List<HomeCategoryChip> {
-        val systemChips = systemChips(input)
-        val customChips = customChips(input)
-        return systemChips + customChips
+    /** The ordered chip row only. */
+    fun chips(input: Input): List<HomeCategoryChip> = project(input).chips
+
+    /** The ordered chip row plus the thread-id set behind each chip. */
+    fun project(input: Input): Result {
+        val result = LinkedHashMap<HomeCategoryKey, HomeCategoryChip>()
+        val threadIds = LinkedHashMap<HomeCategoryKey, Set<Long>>()
+
+        systemChips(input, result, threadIds)
+        customChips(input, result, threadIds)
+
+        return Result(chips = result.values.toList(), threadIds = threadIds)
     }
 
     // ── System (Smart Category) chips ───────────────────────────────────────
 
-    private fun systemChips(input: Input): List<HomeCategoryChip> {
-        // DB-wide membership: the same base the existing chip COUNT uses.
+    private fun systemChips(
+        input: Input,
+        into: LinkedHashMap<HomeCategoryKey, HomeCategoryChip>,
+        threadIds: LinkedHashMap<HomeCategoryKey, Set<Long>>
+    ) {
+        // DB-wide membership: the same base the existing chip COUNT uses, and what keeps a
+        // chip visible while its conversations are hidden from the current list.
         val membership = HashMap<MessageCategory, Int>()
         input.systemCategories.values.forEach { category ->
             membership[category] = (membership[category] ?: 0) + 1
         }
 
-        // UNREAD, per context. Distinct thread ids so one conversation can never be
-        // counted twice by a duplicated row.
-        val unreadFromContext = unreadThreadIdsByCategory(input.context, input.systemCategories)
-        val unreadFromSpam = unreadThreadIdsByCategory(input.spam, input.systemCategories)
+        val inboxThreads = threadIdsByCategory(input.context, input.systemCategories)
+        val spamThreads = threadIdsByCategory(input.spam, input.systemCategories)
+        val inboxUnread = input.context.filter { it.unread }.map { it.threadId }.toHashSet()
+        val spamUnread = input.spam.filter { it.unread }.map { it.threadId }.toHashSet()
 
-        return SYSTEM_DISPLAY_ORDER.mapNotNull { category ->
-            val conversations = membership[category] ?: return@mapNotNull null
-            val unread = if (category == MessageCategory.SPAM) {
-                // A reported conversation is hidden from the inbox, so its own chip is the
-                // only place its unread state is reachable — and therefore the only place
-                // it may be counted.
-                unreadFromSpam[category]?.size ?: 0
-            } else {
-                unreadFromContext[category]?.size ?: 0
-            }
-            HomeCategoryChip(
-                key = HomeCategoryKey.System(category),
+        SYSTEM_DISPLAY_ORDER.forEach { category ->
+            val conversations = membership[category] ?: return@forEach
+            // A reported conversation is hidden from the inbox, so its own chip is the only
+            // place its read state is reachable — and therefore the only place it counts.
+            val isSpamChip = category == MessageCategory.SPAM
+            val members = (if (isSpamChip) spamThreads else inboxThreads)[category] ?: emptySet()
+            val unread = if (isSpamChip) spamUnread else inboxUnread
+            val key = HomeCategoryKey.System(category)
+            into[key] = HomeCategoryChip(
+                key = key,
                 conversations = conversations,
-                unreadConversations = unread
+                unreadConversations = members.count { it in unread }
             )
+            threadIds[key] = members
         }
     }
 
-    private fun unreadThreadIdsByCategory(
+    private fun threadIdsByCategory(
         conversations: List<Conversation>,
         systemCategories: Map<Long, MessageCategory>
     ): Map<MessageCategory, Set<Long>> {
         val out = HashMap<MessageCategory, MutableSet<Long>>()
         conversations.forEach { conversation ->
-            if (!conversation.unread) return@forEach
             val category = systemCategories[conversation.threadId] ?: return@forEach
             out.getOrPut(category) { linkedSetOf() }.add(conversation.threadId)
         }
@@ -178,8 +201,12 @@ object HomeCategoryProjection {
 
     // ── Custom (user) chips ─────────────────────────────────────────────────
 
-    private fun customChips(input: Input): List<HomeCategoryChip> {
-        if (input.customCategories.isEmpty()) return emptyList()
+    private fun customChips(
+        input: Input,
+        into: LinkedHashMap<HomeCategoryKey, HomeCategoryChip>,
+        threadIds: LinkedHashMap<HomeCategoryKey, Set<Long>>
+    ) {
+        if (input.customCategories.isEmpty()) return
 
         // Persisted scope → the categories it belongs to. Built once, so the per-conversation
         // work below is one scope resolution and one map lookup.
@@ -192,10 +219,9 @@ object HomeCategoryProjection {
                 .add(assignment.categoryId)
         }
 
-        val totals = HashMap<String, Int>()
-        val unread = HashMap<String, Int>()
+        val members = HashMap<String, MutableSet<Long>>()
+        val unread = HashMap<String, MutableSet<Long>>()
         if (categoriesByScope.isNotEmpty()) {
-            val seenPerCategory = HashMap<String, MutableSet<Long>>()
             input.context.forEach { conversation ->
                 val scope = ConversationCategoryScopeResolver.resolve(
                     threadId = conversation.threadId,
@@ -207,27 +233,25 @@ object HomeCategoryProjection {
                 val categories = categoriesByScope[UserCategoryScopeCodec.encode(scope)]
                     ?: return@forEach
                 categories.forEach { categoryId ->
-                    if (seenPerCategory.getOrPut(categoryId) { linkedSetOf() }
-                            .add(conversation.threadId)
-                    ) {
-                        totals[categoryId] = (totals[categoryId] ?: 0) + 1
-                        if (conversation.unread) {
-                            unread[categoryId] = (unread[categoryId] ?: 0) + 1
-                        }
+                    members.getOrPut(categoryId) { linkedSetOf() }.add(conversation.threadId)
+                    if (conversation.unread) {
+                        unread.getOrPut(categoryId) { linkedSetOf() }.add(conversation.threadId)
                     }
                 }
             }
         }
 
-        return input.customCategories
+        input.customCategories
             .sortedWith(compareBy({ it.sortOrder }, { it.categoryId }))
-            .map { category ->
-                HomeCategoryChip(
-                    key = HomeCategoryKey.Custom(category.categoryId),
+            .forEach { category ->
+                val key = HomeCategoryKey.Custom(category.categoryId)
+                into[key] = HomeCategoryChip(
+                    key = key,
                     label = category.name,
-                    conversations = totals[category.categoryId] ?: 0,
-                    unreadConversations = unread[category.categoryId] ?: 0
+                    conversations = members[category.categoryId]?.size ?: 0,
+                    unreadConversations = unread[category.categoryId]?.size ?: 0
                 )
+                threadIds[key] = members[category.categoryId]?.toSet() ?: emptySet()
             }
     }
 }

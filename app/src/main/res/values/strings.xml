@@ -57,6 +57,8 @@
     <string name="category_chip_spam">Spam</string>
     <string name="category_chip_count_fmt">%1$s, %2$d conversations</string>
     <string name="category_chip_selected_fmt">%1$s, %2$d conversations, selected. Tap again to show every category.</string>
+    <string name="category_chip_unread_fmt">%1$s, %2$d unread conversations</string>
+    <string name="category_chip_unread_selected_fmt">%1$s, %2$d unread conversations, selected. Tap again to show every category.</string>
     <string name="home_empty_title">No Conversations</string>
     <string name="home_empty_subtitle">You don\'t have any messages yet. Start a new conversation below.</string>
     <string name="home_empty_archived_title">No Archived Conversations</string>

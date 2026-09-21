@@ -39,7 +39,9 @@ import com.autonomousone.messages.data.UserCategoryEntity
 import com.autonomousone.messages.ui.home.CategoryFilter
 import com.autonomousone.messages.ui.home.ConversationFilter
 import com.autonomousone.messages.ui.home.HomeCategoryChip
+import com.autonomousone.messages.ui.home.HomeCategoryKey
 import com.autonomousone.messages.ui.home.HomeCategoryProjection
+import com.autonomousone.messages.ui.home.asCategoryFilter
 import com.autonomousone.messages.repository.ConversationCategoryResolver
 import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -505,12 +507,36 @@ class HomeViewModel(
     private val homeChips = mutableStateListOf<HomeCategoryChip>()
 
     /**
+     * The thread ids each chip narrows to, in the CURRENT context.
+     *
+     * Produced by the SAME projection pass as [homeChips], so a chip's badge can never
+     * disagree with the list tapping it opens.
+     */
+    private val homeChipThreadIds = mutableStateMapOf<HomeCategoryKey, Set<Long>>()
+
+    /**
      * The category row with live unread badges.
      *
      * A plain list read, so the chip row costs one map lookup per recomposition: selecting
      * a chip triggers no query, no scan and no set rebuild.
      */
     fun homeCategoryChips(): List<HomeCategoryChip> = homeChips
+
+    /**
+     * The thread ids a chip narrows the current tab to, or null for "All".
+     *
+     * A precomputed set read — selecting a chip issues NO query and NO message scan, and
+     * the filtering the UI then does is a set lookup over the already-loaded conversations.
+     *
+     * A SMART chip deliberately keeps reading the DB-wide set Home has always used for it,
+     * so the existing Smart Categories behaviour is byte-for-byte unchanged; a user
+     * category uses the context set, which is the only set it has ever had.
+     */
+    fun categoryThreadIds(key: HomeCategoryKey?): Set<Long>? = when (key) {
+        null -> null
+        is HomeCategoryKey.System -> key.asCategoryFilter()?.let { smartCategoryThreadIds(it) }
+        is HomeCategoryKey.Custom -> homeChipThreadIds[key] ?: emptySet()
+    }
 
     /** The stored display name of one of the user's categories, or null once deleted. */
     fun userCategoryName(categoryId: String): String? =
@@ -563,7 +589,7 @@ class HomeViewModel(
             ConversationFilter.Archived -> archivedConversations
             ConversationFilter.All, ConversationFilter.Unread -> conversations
         }
-        val chips = HomeCategoryProjection.chips(
+        val projection = HomeCategoryProjection.project(
             HomeCategoryProjection.Input(
                 context = HomeCategoryProjection.conversationsOf(contextRows),
                 spam = HomeCategoryProjection.conversationsOf(spamConversations()),
@@ -581,7 +607,11 @@ class HomeViewModel(
                 }
             )
         )
-        swapList(homeChips, chips)
+        swapList(homeChips, projection.chips)
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            homeChipThreadIds.clear()
+            homeChipThreadIds.putAll(projection.threadIds)
+        }
     }
 
     /**
@@ -1500,9 +1530,12 @@ class HomeViewModel(
      * the render has to know which of the two states it is rendering. The flag is a
      * plain field (not a Compose state) because the caller re-renders explicitly,
      * exactly like the category chip selection does.
+     *
+     * v3.5.0: the selection is a [HomeCategoryKey], because the row now carries the
+     * user's own categories beside the Smart ones.
      */
-    fun onCategoryChipSelected(selected: CategoryFilter?) {
-        val visible = selected == CategoryFilter.Spam
+    fun onCategoryChipSelected(selected: HomeCategoryKey?) {
+        val visible = selected == HomeCategoryKey.System(MessageCategory.SPAM)
         if (visible == spamCategoryVisible) return
         spamCategoryVisible = visible
         renderConversations()
