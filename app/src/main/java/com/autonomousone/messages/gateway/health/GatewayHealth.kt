@@ -145,7 +145,15 @@ data class PullBridgeHealth(
     val lastFailureSafeDetail: String? = null,
     /** When the in-flight long-poll started, so the card can show it is waiting. */
     val currentRequestStartedAt: Long? = null,
-    val nextRetryAt: Long? = null
+    val nextRetryAt: Long? = null,
+    /**
+     * Failed result deliveries. Separate from [lastFailure], which describes the PULL: a
+     * task can be delivered and its result still fail to reach GMweb, and those are two
+     * different problems with two different fixes.
+     */
+    val ackFailures: Int = 0,
+    val lastAckFailure: GatewayFailureKind? = null,
+    val lastAckFailureSafeDetail: String? = null
 ) {
     /** A successful poll within [windowMs], whether or not it carried a task. */
     fun freshWithin(windowMs: Long, now: Long): Boolean =
@@ -226,9 +234,12 @@ object GatewayHealthRules {
             }
         }
         if (snapshot.pullBridge.lastPollStartedAt == null &&
-            snapshot.eventUpload.lastAttemptAt == null &&
-            snapshot.authentication.lastVerifiedAt == null
+            snapshot.eventUpload.lastAttemptAt == null
         ) {
+            // "Nothing has been tried yet." Deliberately NOT gated on the auth probe or on
+            // a configured endpoint: knowing the key is good and the URL is set is not
+            // evidence that any transport worked, and treating it as evidence is how a
+            // gateway that has never moved a byte comes up green.
             return GatewayOverallHealth.STARTING
         }
 

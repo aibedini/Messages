@@ -49,6 +49,27 @@ class NetworkMonitor private constructor(context: Context) {
     }
 
     /**
+     * A human label for the transport carrying traffic right now.
+     *
+     * The status card shows it because "no network" and "network is fine, the server is
+     * not" are different problems, and on a phone the difference is often invisible: Wi-Fi
+     * can be associated and still have no validated route.
+     */
+    fun transportLabel(): String = try {
+        val network = connectivityManager.activeNetwork ?: return "None"
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return "None"
+        when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            else -> "Other"
+        }
+    } catch (_: Exception) {
+        "Other"
+    }
+
+    /**
      * Flow of online/offline transitions. Registers a NetworkCallback; the
      * callback's own event loop is what drives emissions — zero polling.
      */
