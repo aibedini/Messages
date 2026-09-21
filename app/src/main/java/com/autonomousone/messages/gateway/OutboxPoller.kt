@@ -7,6 +7,7 @@ import com.autonomousone.messages.eve.EveSmsQueue
 import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
+import com.autonomousone.messages.gateway.health.GatewayLog
 import com.autonomousone.messages.gateway.health.GatewayPullFailure
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
@@ -379,6 +380,7 @@ class OutboxPoller(
         // message string (which is what made a 401 indistinguishable from a timeout).
         val startedAt = System.currentTimeMillis()
         GatewayHealthRecorder.onPullStart(startedAt)
+        GatewayLog.pullStarted(startedAt)
         // The local send queue is part of the delivery chain the user is trying to read:
         // "GMweb queued → Android pulled → validation → local queue → SIM → ACK" stops
         // somewhere, and this is what lets the card say WHERE.
@@ -413,8 +415,10 @@ class OutboxPoller(
                 GatewayHealthRecorder.rawSnapshot(completedAt).pullBridge.lastFailure != null
             if (task == null) {
                 GatewayHealthRecorder.onPullEmpty(completedAt, status)
+                GatewayLog.pullCompletedEmpty(completedAt - startedAt, completedAt)
             } else {
                 GatewayHealthRecorder.onPullTask(completedAt, status)
+                GatewayLog.pullReceivedTask(shortToken(task.requestId), completedAt)
             }
             // ── Durable transitions only ─────────────────────────────────────
             // A successful empty long-poll happens roughly twice a minute, so logging
@@ -481,6 +485,14 @@ class OutboxPoller(
                 "consecutive=${bridge.consecutiveFailures} " +
                 "detail=${safeDetail ?: "none"}"
         )
+        GatewayLog.pullFailed(kind, httpStatus, safeDetail)
+    }
+
+    /** A short, non-reversible handle for a request id. Never the id itself. */
+    private fun shortToken(value: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+        return digest.take(4).joinToString("") { "%02x".format(it) }
     }
 
     /**
@@ -566,6 +578,7 @@ class OutboxPoller(
                     // The result reached GMweb: the last leg of the delivery chain. This
                     // single call also stamps the queue's gateway-ack time.
                     GatewayHealthRecorder.onAckSuccess(nowMs)
+                    GatewayLog.ackSucceeded(nowMs)
                 } else {
                     Log.w(TAG, "ack HTTP " + status + " for " + gatewayRequestId)
                     GatewayHealthRecorder.onAckFailure(
@@ -575,18 +588,27 @@ class OutboxPoller(
                         safeDetail = "HTTP $status",
                         at = nowMs
                     )
+                    GatewayLog.ackFailed(
+                        GatewayFailureKind.fromHttpStatus(status) ?: GatewayFailureKind.UNKNOWN,
+                        status,
+                        "HTTP $status",
+                        nowMs
+                    )
                 }
             } catch (e: Exception) {
                 // A lost ack must NOT re-send locally; the server times the task out.
                 Log.w(TAG, "ack failed for " + gatewayRequestId + ": " + e.message)
+                val kind = GatewayFailureKind.classify(
+                    error = e,
+                    networkValidated = networkMonitor.isOnline()
+                )
+                val detail = GatewayHealthText.safeDetail(e.message)
                 GatewayHealthRecorder.onAckFailure(
-                    kind = GatewayFailureKind.classify(
-                        error = e,
-                        networkValidated = networkMonitor.isOnline()
-                    ),
-                    safeDetail = GatewayHealthText.safeDetail(e.message),
+                    kind = kind,
+                    safeDetail = detail,
                     at = nowMs
                 )
+                GatewayLog.ackFailed(kind, null, detail, nowMs)
             } finally {
                 conn?.disconnect()
             }

@@ -8,6 +8,7 @@ import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
+import com.autonomousone.messages.gateway.health.GatewayLog
 import com.autonomousone.messages.repository.GatewaySyncRepository
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
@@ -336,6 +337,12 @@ class EventUploader(
                             if (failed > 0) " · $failed still pending" else ""
                     )
                 }
+                GatewayLog.syncUploaded(
+                    accepted = acked,
+                    duplicates = duplicates,
+                    failed = failed,
+                    httpStatus = result.httpStatus
+                )
                 if (acked == submitted.size) Outcome.ALL_ACKED
                 else Outcome.PARTIAL
             }
@@ -355,6 +362,12 @@ class EventUploader(
                     "failed status=${status ?: "n/a"} events=${submitted.size} " +
                         "kind=${GatewayFailureKind.classify(httpStatus = status).name} " +
                         "detail=${GatewayHealthText.safeDetail(result.error) ?: "none"}"
+                )
+                GatewayLog.syncFailed(
+                    httpStatus = status,
+                    kind = GatewayFailureKind.classify(httpStatus = status),
+                    safeDetail = result.error,
+                    count = submitted.size
                 )
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
