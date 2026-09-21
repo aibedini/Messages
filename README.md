@@ -111,26 +111,29 @@ Incoming SMS are POSTed as JSON to your configured endpoints, signed with
 HMAC-SHA256 (`X-Signature` header). Configure endpoints in
 **SMS Gateway → Incoming SMS Webhook**. Blocked numbers never trigger webhooks.
 
-## ☁️ Optional Cloud Backend (`gaitway.autonomousone.in`)
+## ☁️ Optional GMweb Server
 
-The gateway can optionally register itself with a **relay backend**
-(default `https://gaitway.autonomousone.in`, inherited from upstream) so
-external projects reach the phone through a fixed HTTPS URL instead of the
-phone's changing LAN IP:
+The gateway can optionally connect to a **GMweb server** so external projects
+reach the phone through a fixed HTTPS URL instead of the phone's changing LAN IP:
 
+- Enter your server's address once in Settings → Gateway. The **panel address you
+  already use is accepted** (e.g. `https://gmweb.example.com/app`); the server
+  origin is derived from it.
+- That ONE address carries everything: the control plane (enrollment, events,
+  heartbeat, trust) *and* the SMS pull bridge. The app deliberately has **no
+  server address built in**, so nothing is contacted until you configure one.
 - The phone registers and then sends periodic heartbeats (battery, signal,
-  queue depth) to the backend while **Gateway Service** is enabled.
-- Projects POST messages to the backend; it relays them to your device.
+  queue depth) while **Gateway Service** is enabled.
+- Projects queue messages on the server; your phone pulls and sends them.
 - **Nothing is sent unless you enable the service** in Settings → Gateway.
-- The URL is user-configurable (HTTPS enforced) — point it at your own relay
-  or leave the service off entirely for pure-LAN use.
+- HTTPS only, with certificate and hostname validation that cannot be disabled.
 - Alternatives: Cloudflare Tunnel, Tailscale, or any reverse proxy — see below.
 
 ## 🌐 Accessing the Gateway over the Internet
 
 | Option | Best for | Notes |
 |---|---|---|
-| **Cloud backend** (above) | Zero-setup public URL | Default endpoint provided |
+| **GMweb server** (above) | A fixed public URL | You supply the server |
 | **Cloudflare Tunnel** | Free stable domain | `cloudflared tunnel --url http://localhost:8080` |
 | **Tailscale** | Private devices only | No exposed ports; mesh VPN |
 | **Port forwarding + DDNS** | Fixed home WiFi | Router config required |

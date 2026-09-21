@@ -14,7 +14,9 @@ Contacts access is optional and is used on the device to display contact names a
 
 SMS Gateway is disabled by default and requires separate, versioned consent. When enabled, it may transmit the sender phone number, full SMS text, message timestamp and event identifier, device model, Android and app versions, a per-installation identifier, gateway status and heartbeat time.
 
-This information is sent over HTTPS to `https://gaitway.autonomousone.in` and, if configured by you, to your HTTPS webhook. The receiving service controls retention after receipt. Tokens and secrets are protected with Android Keystore encryption when available.
+This information is sent over HTTPS to the server **you** configure in the app (your own GMweb deployment) and, if configured by you, to your HTTPS webhook. The app ships with **no** server address built in and transmits nothing at all until you enter one. The receiving service controls retention after receipt. Tokens and secrets are protected with Android Keystore encryption when available.
+
+The connection is HTTPS-only, with certificate and hostname validation enabled and no way to disable them. All server addresses are validated when you enter them.
 
 Authenticated gateway clients can request that the phone send SMS messages. Carrier charges may apply. The local API requires its generated API key; cloud access uses an encrypted bearer token.
 
