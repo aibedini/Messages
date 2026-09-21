@@ -36,7 +36,7 @@ class GatewayHealthModelTest {
     private fun snapshot(
         desired: Boolean = true,
         network: NetworkHealth = NetworkHealth(validatedInternet = true, transport = "Wi-Fi"),
-        auth: AuthHealth = AuthHealth(enrolled = true, lastVerifiedAt = now - 1_000L),
+        auth: AuthHealth = AuthHealth(status = AuthVerification.VERIFIED, lastVerifiedAt = now - 1_000L),
         upload: EventUploadHealth = EventUploadHealth(
             running = true,
             lastAttemptAt = now - 1_000L,
@@ -108,7 +108,7 @@ class GatewayHealthModelTest {
         val result = evaluate(
             snapshot(
                 upload = EventUploadHealth(running = true),
-                auth = AuthHealth(enrolled = true),
+                auth = AuthHealth(status = AuthVerification.VERIFIED),
                 bridge = PullBridgeHealth(running = true, state = "IDLE")
             )
         )
@@ -321,12 +321,79 @@ class GatewayHealthModelTest {
         assertEquals(GatewayConclusion.TLS_PROBLEM, result.conclusion)
     }
 
+    /**
+     * ONLY an explicit rejection is a fault.
+     *
+     * This test used to pass `enrolled = false` as an auth failure and expect ERROR /
+     * AUTH_REJECTED — precisely the conflation that produced the field false alarm: "we could
+     * not check" rendered as "your key was rejected".
+     */
     @Test
     fun `theAuthenticationDimensionIsRequired`() {
-        val result = evaluate(snapshot(auth = AuthHealth(enrolled = false)))
+        val rejected = evaluate(snapshot(auth = AuthHealth(status = AuthVerification.REJECTED)))
 
-        assertEquals(GatewayOverallHealth.ERROR, result.overall)
-        assertEquals(GatewayConclusion.AUTH_REJECTED, result.conclusion)
+        assertEquals(GatewayOverallHealth.ERROR, rejected.overall)
+        assertEquals(GatewayConclusion.AUTH_REJECTED, rejected.conclusion)
+    }
+
+    /** `not verified` must never be reported as `rejected`. */
+    @Test
+    fun `anUnverifiableCredentialIsNotARejection`() {
+        listOf(AuthVerification.UNKNOWN, AuthVerification.UNVERIFIABLE).forEach { status ->
+            val result = evaluate(
+                snapshot(
+                    auth = AuthHealth(
+                        status = status,
+                        unverifiableReason = "HTTP 400 (HTTP_BAD_REQUEST)"
+                    )
+                )
+            )
+
+            assertFalse(
+                "$status must not be rendered as a rejected credential",
+                result.conclusion == GatewayConclusion.AUTH_REJECTED
+            )
+            assertFalse(result.overall == GatewayOverallHealth.ERROR)
+        }
+
+        // UNVERIFIABLE is surfaced as its own honest conclusion when nothing more urgent is
+        // wrong — not silently swallowed, and not escalated into a rejection.
+        val unverifiable = evaluate(
+            snapshot(auth = AuthHealth(status = AuthVerification.UNVERIFIABLE))
+        )
+        assertEquals(GatewayConclusion.AUTH_UNVERIFIED, unverifiable.conclusion)
+    }
+
+    /**
+     * A 400 must be reported as a REQUEST/contract problem, never as a bad credential — the
+     * exact defect the device acceptance run caught.
+     */
+    @Test
+    fun `aBadRequestIsAContractMismatchAndNeverARejectedKey`() {
+        val result = evaluate(
+            snapshot(
+                bridge = PullBridgeHealth(
+                    running = true,
+                    lastPollStartedAt = now - 1_000L,
+                    lastHttpStatus = 400,
+                    lastFailure = GatewayFailureKind.HTTP_BAD_REQUEST,
+                    lastFailureSafeDetail = "HTTP 400 · server said: unprocessable body",
+                    consecutiveFailures = 1
+                )
+            )
+        )
+
+        assertEquals(GatewayConclusion.REQUEST_CONTRACT_MISMATCH, result.conclusion)
+        assertFalse(
+            "a 400 must never be reported as a rejected key",
+            result.conclusion == GatewayConclusion.AUTH_REJECTED
+        )
+        assertTrue(GatewayFailureKind.HTTP_BAD_REQUEST.isRequestContractMismatch)
+        assertFalse(GatewayFailureKind.HTTP_BAD_REQUEST.isAuthenticationRejection)
+        assertFalse(
+            "a contract mismatch is not something the user fixes by changing settings",
+            GatewayFailureKind.HTTP_BAD_REQUEST.needsConfigurationChange
+        )
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

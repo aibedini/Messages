@@ -1,5 +1,6 @@
 package com.autonomousone.messages.gateway.health
 
+import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.utils.PhoneToken
 import java.time.Instant
 
@@ -30,6 +31,7 @@ object GatewayDiagnosticReport {
         deliveryMode: String,
         supervisorState: String,
         gatewayDesired: Boolean,
+        deadLetters: List<DeadLetterBreakdownRow> = emptyList(),
         now: Long = System.currentTimeMillis()
     ): String = buildString {
         appendLine("GMweb Gateway Diagnostic")
@@ -46,12 +48,17 @@ object GatewayDiagnosticReport {
             " · ${snapshot.network.transport}")
         appendLine("Host: ${snapshot.endpoint.host ?: "not configured"}" +
             snapshot.endpoint.port?.let { ":$it" }.orEmpty())
-        appendLine("Resolved IP: ${probe?.resolvedAddresses?.joinToString(", ")?.ifBlank { null } ?: "n/a"}")
+        // SYSTEM DNS and the ACTUAL PEER are reported separately, because they can differ: a
+        // VPN or proxy can answer DNS with a synthetic address from a reserved range while the
+        // real connection goes elsewhere. Printing one of them unlabelled as "the server's IP"
+        // states something that was never measured.
+        appendLine("Resolved by DNS: ${snapshot.endpoint.dnsDescription() ?: "not checked"}")
+        appendLine("Actual TLS peer: ${snapshot.tls.peerAddress ?: "not measured"}")
         appendLine("TCP: ${snapshot.endpoint.lastTcpConnectMs?.let { "$it ms" } ?: "n/a"}")
         appendLine("TLS: ${tlsLine(snapshot.tls, now)}")
         appendLine("Certificate host match: ${triState(snapshot.tls.hostMatched)}")
         appendLine("HTTPS /health: ${probeStepLine(probe, GatewayProbeStage.HTTPS)}")
-        appendLine("Agent auth: ${if (snapshot.authentication.enrolled) "verified" else "not verified"}" +
+        appendLine("Agent auth: ${authLine(snapshot.authentication)}" +
             snapshot.authentication.clockSkewMs?.let { " · clock skew ${it / 1000}s" }.orEmpty())
         appendLine()
 
@@ -105,13 +112,88 @@ object GatewayDiagnosticReport {
         appendLine()
 
         appendLine("Verdict: ${snapshot.overall.name}")
-        appendLine("Conclusion: ${conclusionText(snapshot.conclusion)}")
+        // WRAPPED, not one long line. The redaction sweep bounds each line to keep the report
+        // readable, and a conclusion long enough to be useful was therefore being CUT OFF before
+        // its decisive clause ("this is NOT a rejected key"). A report must never truncate its
+        // own verdict.
+        appendWrapped("Conclusion: ", conclusionText(snapshot.conclusion))
         appendLine()
+
+        // ── Dead letters, AGGREGATE ONLY ────────────────────────────────────
+        // Nothing is deleted and no row is read. The SHAPE is what distinguishes a historical
+        // cohort from an active defect: a cluster of one event type at one crypto version with
+        // a bounded attempt count, all created in a narrow window, is a rollout artefact; a
+        // spread across types with recent timestamps is a live problem.
+        if (snapshot.eventUpload.deadLetter > 0) {
+            appendLine("Dead-lettered outbox events (aggregate only — nothing deleted):")
+            if (deadLetters.isEmpty()) {
+                appendLine("  ${snapshot.eventUpload.deadLetter} row(s); breakdown unavailable")
+            } else {
+                deadLetters.forEach { row ->
+                    appendLine(
+                        "  ${row.eventType} · crypto v${row.cryptoVersion} · ${row.priority}" +
+                            " · count=${row.count}" +
+                            " · attempts ${row.minAttempts}..${row.maxAttempts}" +
+                            " · created ${Instant.ofEpochMilli(row.firstCreatedAt)}" +
+                            " .. ${Instant.ofEpochMilli(row.lastCreatedAt)}"
+                    )
+                }
+            }
+            appendLine("  NOTE: the outbox row persists no failure reason, no HTTP status and no")
+            appendLine("  update time, so those cannot be reported per event. Correlate by time")
+            appendLine("  with the GATEWAY_UPLOAD lines in the on-device diagnostics log.")
+            appendLine()
+        }
+
         appendLine("Secrets (API key, device key, registration secret, signatures), message")
         appendLine("bodies and full phone numbers are never included in this report.")
     }.let(::redact)
 
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    /** Longest line before wrapping, chosen to stay under the redaction sweep's own bound. */
+    private const val WRAP_AT = 92
+
+    /**
+     * Appends [text] under [prefix], wrapped so the redaction sweep cannot truncate it.
+     *
+     * Continuation lines are indented to the prefix width, so the block still reads as one
+     * statement.
+     */
+    private fun StringBuilder.appendWrapped(prefix: String, text: String) {
+        val indent = " ".repeat(prefix.length)
+        var remaining = text
+        var first = true
+        while (remaining.isNotEmpty()) {
+            val linePrefix = if (first) prefix else indent
+            val room = WRAP_AT - linePrefix.length
+            val slice = if (remaining.length <= room) {
+                remaining.also { remaining = "" }
+            } else {
+                // Prefer a word boundary; fall back to a hard cut for a pathological token.
+                val breakAt = remaining.lastIndexOf(' ', startIndex = room)
+                    .takeIf { it > room / 2 } ?: room
+                remaining.substring(0, breakAt).also { remaining = remaining.substring(breakAt).trimStart() }
+            }
+            appendLine(linePrefix + slice)
+            first = false
+        }
+    }
+
+    /**
+     * The auth row, with the three outcomes kept distinct.
+     *
+     * "Not verified" and "rejected" are different answers, and printing the first while the
+     * conclusion says the second was the inconsistency that made a working device look broken.
+     */
+    private fun authLine(auth: AuthHealth): String = when (auth.status) {
+        AuthVerification.VERIFIED -> "verified"
+        AuthVerification.REJECTED -> "REJECTED by the server (an authentication response)"
+        AuthVerification.UNVERIFIABLE ->
+            "could not be verified — NOT a rejection" +
+                auth.unverifiableReason?.let { " ($it)" }.orEmpty()
+        AuthVerification.UNKNOWN -> "not checked"
+    }
 
     private fun tlsLine(tls: TlsHealth, now: Long): String {
         if (tls.valid == null && tls.protocol == null) return "n/a"
@@ -173,7 +255,18 @@ object GatewayDiagnosticReport {
             "The TLS certificate was rejected. It must be issued FOR the exact host in the " +
                 "configured URL; a certificate for a different name is not accepted for an IP."
         GatewayConclusion.AUTH_REJECTED ->
-            "GMweb rejected this device's key, so it is not enrolled. Check the API key."
+            "GMweb rejected this device's key (an authentication response), so it is not " +
+                "enrolled. Check the device key."
+        GatewayConclusion.AUTH_UNVERIFIED ->
+            "The device key could NOT be confirmed, and that is NOT a rejection: the check " +
+                "itself did not produce a clear authentication answer. Look at the AUTH row " +
+                "above for what actually happened. If the pull bridge above is polling " +
+                "successfully, the credential is demonstrably accepted and only the check is at " +
+                "fault."
+        GatewayConclusion.REQUEST_CONTRACT_MISMATCH ->
+            "The SERVER refused the request itself (a 400/404/405/422-style answer): this app " +
+                "and your GMweb version disagree about the API contract — path, method or body " +
+                "shape. This is NOT a rejected key, and changing the key will not fix it."
         GatewayConclusion.WRONG_URL ->
             "GMweb answered but the gateway route is not there — the configured URL is probably wrong."
         GatewayConclusion.RATE_LIMITED -> "GMweb is rate limiting this device; retrying later will help."

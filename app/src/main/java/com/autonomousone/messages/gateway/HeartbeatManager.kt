@@ -1,13 +1,11 @@
 package com.autonomousone.messages.gateway
 
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.BatteryManager
-import android.telephony.TelephonyManager
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.gateway.health.AuthHealth
+import com.autonomousone.messages.gateway.health.AuthVerification
+import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -45,9 +43,6 @@ class HeartbeatManager(
         private const val HEARTBEAT_INTERVAL_MS = 60_000L     // 60 seconds
         private const val INITIAL_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 5 * 60_000L        // 5 minutes
-
-        /** PR-11: empty events/batch POST = liveness ping on the control plane. */
-        private const val HEARTBEAT_PATH = "/api/v1/agent/events/batch"
     }
 
     enum class ConnectionState { IDLE, CONNECTING, CONNECTED, DISCONNECTED, ERROR }
@@ -57,6 +52,9 @@ class HeartbeatManager(
 
     private var heartbeatJob: Job? = null
     private var backoffMs = INITIAL_BACKOFF_MS
+
+    /** One place for the battery/network facts a liveness request carries. */
+    private val deviceFacts = AgentDeviceFacts(context)
 
     /** Woken by retryNow() to cut short a pending backoff sleep. */
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -122,23 +120,23 @@ class HeartbeatManager(
         }
 
         val deviceId = prefs.agentDeviceId(context)
-        // v2.6.21 (PR-11): heartbeat targets the ADR-004 control plane liveness
-        // probe instead of the retired /api/gateways/heartbeat. POSTing an
-        // EMPTY batch is a pure liveness ping — eventStore.ingestBatch returns
-        // {accepted:[],duplicates:0} without touching sequences, and the
-        // request is authenticated exactly like the other agent calls
-        // (X-API-Key bootstrap, then X-Agent-Auth per-device signatures).
-        val payload = buildHeartbeatPayload().put(
-            "events",
-            org.json.JSONArray(),
-        ).put("sourceDeviceId", deviceId)
+        // v3.4.7: the body comes from the SHARED contract. The diagnostic probe used to build
+        // its own — with an extra field and two missing ones — and collected a 400 that it then
+        // reported as a rejected device key. One builder, one contract, no drift.
+        val payload = AgentLivenessRequest.body(
+            appVersion = BuildConfig.APP_VERSION,
+            batteryLevel = deviceFacts.batteryLevel(),
+            networkType = deviceFacts.networkType(),
+            timestamp = System.currentTimeMillis(),
+            sourceDeviceId = deviceId
+        )
         // GMweb requires X-Agent-Auth once the deviceId has enrolled; sign the
         // exact body about to be sent (fail closed when the Keystore is down).
         val sign: (java.net.HttpURLConnection, ByteArray) -> Boolean = { conn, bodyBytes ->
-            AgentAuth.sign(conn, deviceId, HEARTBEAT_PATH, "POST", bodyBytes)
+            AgentAuth.sign(conn, deviceId, AgentLivenessRequest.EVENTS_PATH, "POST", bodyBytes)
         }
         val result = client.post(
-            HEARTBEAT_PATH,
+            AgentLivenessRequest.EVENTS_PATH,
             payload,
             authenticated = false,
             extraHeaders = mapOf(
@@ -161,7 +159,7 @@ class HeartbeatManager(
                 // accepted — no new server endpoint required, and nothing is enqueued.
                 GatewayHealthRecorder.onAuthProbe(
                     AuthHealth(
-                        enrolled = true,
+                        status = AuthVerification.VERIFIED,
                         lastVerifiedAt = System.currentTimeMillis()
                     )
                 )
@@ -173,9 +171,10 @@ class HeartbeatManager(
                     // next successful register() restores the markers).
                     Log.w(TAG, "Heartbeat auth error — clearing credentials, will re-register")
                     onLog("🔄 Auth error — re-registering...")
+                    // ONLY a real 401/403 may claim the credential was rejected.
                     GatewayHealthRecorder.onAuthProbe(
                         AuthHealth(
-                            enrolled = false,
+                            status = AuthVerification.REJECTED,
                             lastVerifiedAt = System.currentTimeMillis()
                         )
                     )
@@ -185,12 +184,25 @@ class HeartbeatManager(
                     )
                     prefs.clearCloudCredentials()
                     registrationManager.register()
-                } else if (result.httpStatus != null) {
-                    // A non-auth failure (5xx, timeout) proves nothing about the key, so
-                    // it must NOT be reported as an authentication problem.
+                } else {
+                    // A non-auth failure (400, 5xx, timeout) proves NOTHING about the key. It
+                    // is recorded as UNVERIFIABLE — not as a rejection, and not as a silent
+                    // no-op. A 400 in particular means the request itself was refused, which is
+                    // the app's contract problem, and reporting it as a rejected credential is
+                    // the false alarm this tri-state exists to prevent.
+                    val kind = GatewayFailureKind.classify(httpStatus = result.httpStatus)
+                    GatewayHealthRecorder.onAuthProbe(
+                        AuthHealth(
+                            status = AuthVerification.UNVERIFIABLE,
+                            lastVerifiedAt = System.currentTimeMillis(),
+                            unverifiableReason = GatewayHealthText.safeDetail(
+                                result.httpStatus?.let { "HTTP $it (${kind.name})" } ?: kind.name
+                            )
+                        )
+                    )
                     DiagnosticLog.event(
                         "GATEWAY_AUTH",
-                        "unverified status=${result.httpStatus} " +
+                        "unverified status=${result.httpStatus ?: "n/a"} kind=${kind.name} " +
                             "detail=${GatewayHealthText.safeDetail(result.error) ?: "none"}"
                     )
                 }
@@ -199,39 +211,8 @@ class HeartbeatManager(
         }
     }
 
-    private fun buildHeartbeatPayload(): JSONObject {
-        return JSONObject().apply {
-            put("appVersion", BuildConfig.APP_VERSION)
-            put("batteryLevel", getBatteryLevel())
-            put("networkType", getNetworkType())
-            put("timestamp", System.currentTimeMillis())
-        }
-    }
-
-    private fun getBatteryLevel(): Int {
-        return try {
-            val intent = context.registerReceiver(
-                null,
-                IntentFilter(Intent.ACTION_BATTERY_CHANGED),
-            )
-            val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-            val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            if (level >= 0 && scale > 0) (level * 100 / scale) else -1
-        } catch (e: Exception) {
-            -1
-        }
-    }
-
-    private fun getNetworkType(): String {
-        return try {
-            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            when {
-                tm == null -> "unknown"
-                tm.dataState == TelephonyManager.DATA_CONNECTED -> "mobile"
-                else -> "unknown"  // wifi detection via ConnectivityManager would need extra permission
-            }
-        } catch (e: Exception) {
-            "unknown"
-        }
-    }
+    // NOTE: the payload builder and the battery/network lookups used to live here. They now
+    // live in [AgentLivenessRequest] and [AgentDeviceFacts] so the diagnostic probe sends the
+    // SAME request this heartbeat sends. Keeping a private copy here is what allowed the two to
+    // diverge and produced an HTTP 400 that was misreported as a rejected device key.
 }

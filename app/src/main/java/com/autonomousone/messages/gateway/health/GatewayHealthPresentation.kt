@@ -65,6 +65,12 @@ object GatewayHealthPresentation {
         GatewayConclusion.DNS_PROBLEM -> "The GMweb host name did not resolve."
         GatewayConclusion.TLS_PROBLEM -> "The server's certificate was rejected for this address."
         GatewayConclusion.AUTH_REJECTED -> "GMweb rejected this device's key."
+        GatewayConclusion.AUTH_UNVERIFIED ->
+            "Could not confirm this device's key — the check itself gave no clear answer, " +
+                "which is not the same as a rejection."
+        GatewayConclusion.REQUEST_CONTRACT_MISMATCH ->
+            "The server refused the request: this app and your GMweb version disagree about " +
+                "the API. This is not a key problem."
         GatewayConclusion.WRONG_URL -> "GMweb answered, but the gateway route is not there."
         GatewayConclusion.RATE_LIMITED -> "GMweb is rate limiting this device; it will retry."
         GatewayConclusion.SERVER_ERROR -> "GMweb returned a server error."

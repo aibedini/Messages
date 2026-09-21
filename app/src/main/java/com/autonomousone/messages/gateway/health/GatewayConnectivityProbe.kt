@@ -169,11 +169,6 @@ class GatewayConnectivityProbe(
 
         steps += pullStep()
 
-        // Publish the probe-owned dimensions so a diagnostic run also refreshes the card.
-        steps.firstOrNull { it.stage == GatewayProbeStage.TCP && it.status == GatewayProbeStatus.PASSED }
-            ?.let { GatewayHealthRecorder.onTcpProbe(it.durationMs, io.now()) }
-        GatewayHealthRecorder.onTlsProbe(tls)
-
         return finish(startedAt, steps, resolved, tls)
     }
 
@@ -353,6 +348,15 @@ class GatewayConnectivityProbe(
         }
     }
 
+    /**
+     * The authenticated check.
+     *
+     * THE RULE THIS METHOD EXISTS TO ENFORCE: only a 401/403 may be reported as "the device key
+     * was rejected". Every other outcome is [AuthVerification.UNVERIFIABLE] with its own
+     * explanation, because a 400 means the SERVER could not accept the REQUEST — an app/server
+     * contract mismatch — and dressing that up as a rejected credential produced a false alarm
+     * on a device whose gateway was demonstrably working.
+     */
     private suspend fun authStep(): GatewayProbeStep {
         val started = io.now()
         return try {
@@ -360,7 +364,7 @@ class GatewayConnectivityProbe(
             if (ping.ok) {
                 GatewayHealthRecorder.onAuthProbe(
                     AuthHealth(
-                        enrolled = true,
+                        status = AuthVerification.VERIFIED,
                         lastVerifiedAt = io.now(),
                         clockSkewMs = ping.clockSkewMs
                     )
@@ -374,24 +378,66 @@ class GatewayConnectivityProbe(
                     httpStatus = ping.httpStatus
                 )
             } else {
+                val kind = GatewayFailureKind.fromHttpStatus(ping.httpStatus ?: 0)
+                    ?: GatewayFailureKind.UNKNOWN
+                val rejected = kind.isAuthenticationRejection
                 GatewayHealthRecorder.onAuthProbe(
-                    AuthHealth(enrolled = false, lastVerifiedAt = io.now())
+                    AuthHealth(
+                        status = if (rejected) {
+                            AuthVerification.REJECTED
+                        } else {
+                            AuthVerification.UNVERIFIABLE
+                        },
+                        lastVerifiedAt = io.now(),
+                        unverifiableReason = if (rejected) {
+                            null
+                        } else {
+                            ping.detail ?: "HTTP ${ping.httpStatus ?: "n/a"} (${kind.name})"
+                        }
+                    )
                 )
                 fail(
                     GatewayProbeStage.AUTH,
-                    GatewayFailureKind.fromHttpStatus(ping.httpStatus ?: 0)
-                        ?: GatewayFailureKind.UNKNOWN,
-                    ping.detail ?: "device key not accepted by GMweb",
+                    kind,
+                    // The message is DERIVED from the classification, never hardcoded. This is
+                    // the line that used to say "device key not accepted by GMweb" for a 400.
+                    ping.detail ?: defaultAuthFailureDetail(kind, ping.httpStatus),
                     httpStatus = ping.httpStatus
                 )
             }
         } catch (error: Throwable) {
+            val kind = GatewayFailureKind.classify(error = error, phase = GatewayRequestPhase.READ)
+            GatewayHealthRecorder.onAuthProbe(
+                AuthHealth(
+                    status = AuthVerification.UNVERIFIABLE,
+                    lastVerifiedAt = io.now(),
+                    unverifiableReason = GatewayHealthText.safeDetail(error.message) ?: kind.name
+                )
+            )
             fail(
                 GatewayProbeStage.AUTH,
-                GatewayFailureKind.classify(error = error, phase = GatewayRequestPhase.READ),
-                GatewayHealthText.safeDetail(error.message) ?: "authenticated check failed"
+                kind,
+                GatewayHealthText.safeDetail(error.message) ?: "the authenticated check did not complete"
             )
         }
+    }
+
+    /** What to say when the check produced no message of its own. Never claims a rejection. */
+    private fun defaultAuthFailureDetail(
+        kind: GatewayFailureKind,
+        httpStatus: Int?
+    ): String = when {
+        kind.isAuthenticationRejection -> "GMweb rejected this device's key (HTTP $httpStatus)"
+        kind == GatewayFailureKind.HTTP_BAD_REQUEST ->
+            "GMweb could not accept the check request (HTTP 400) — the app's request does not " +
+                "match the server's contract; this is not a rejected key"
+        kind == GatewayFailureKind.HTTP_METHOD_NOT_ALLOWED ->
+            "GMweb does not allow this method on the check route (HTTP 405)"
+        kind == GatewayFailureKind.HTTP_NOT_FOUND ->
+            "the check route is not present on this server (HTTP 404)"
+        kind == GatewayFailureKind.HTTP_SERVER ->
+            "GMweb returned a server error (HTTP $httpStatus)"
+        else -> "the credential could not be verified (${kind.name})"
     }
 
     private fun pullStep(): GatewayProbeStep {
@@ -460,7 +506,16 @@ class GatewayConnectivityProbe(
         httpStatus = httpStatus
     )
 
-    /** Fills in SKIPPED for every stage after the one that failed, in chain order. */
+    /**
+     * Fills in SKIPPED for every stage after the one that failed, and PUBLISHES the probe-owned
+     * dimensions.
+     *
+     * THE PUBLISH BELONGS HERE, on every exit path, not after the last stage. It used to sit at
+     * the end of `run()`, where the early returns for a failed stage skipped it — so a probe
+     * that measured TLSv1.3 successfully and then failed at AUTH never recorded its TLS result,
+     * and the card kept saying "TLS: not checked" while the same run's report said
+     * "TLS PASSED · TLSv1.3". Two states, one run, disagreeing.
+     */
     private fun finish(
         startedAt: Long,
         steps: List<GatewayProbeStep>,
@@ -481,11 +536,52 @@ class GatewayConnectivityProbe(
                 }
             done.sortedBy { it.stage.ordinal }
         }
+        publishDimensions(completed, resolved, tls)
         return GatewayConnectivityResult(
             startedAt = startedAt,
             steps = completed,
             resolvedAddresses = resolved,
             tls = tls
         )
+    }
+
+    /**
+     * Records what the probe LEARNED, whether or not the chain completed.
+     *
+     * A stage that was not reached leaves its dimension untouched (the card's "not checked"),
+     * and a stage that ran records its result — so the card can only ever say "not checked"
+     * for something that genuinely was not checked.
+     */
+    private fun publishDimensions(
+        steps: List<GatewayProbeStep>,
+        resolved: List<String>,
+        tls: TlsHealth
+    ) {
+        val at = io.now()
+        steps.firstOrNull { it.stage == GatewayProbeStage.TCP }
+            ?.takeIf { it.status == GatewayProbeStatus.PASSED }
+            ?.let { GatewayHealthRecorder.onTcpProbe(it.durationMs, at) }
+
+        // Publish TLS whenever the stage actually RAN — passed or failed. A failed handshake is
+        // still a measured TLS fact, and dropping it is how a bad certificate stayed invisible.
+        val tlsStep = steps.firstOrNull { it.stage == GatewayProbeStage.TLS }
+        if (tlsStep != null && tlsStep.status != GatewayProbeStatus.SKIPPED) {
+            GatewayHealthRecorder.onTlsProbe(
+                tls.copy(
+                    lastCheckedAt = tls.lastCheckedAt ?: at,
+                    // A hostname mismatch surfaces as a failed stage; carry that verdict into
+                    // the dimension so the card and the report cannot disagree about it.
+                    hostMatched = if (tlsStep.status == GatewayProbeStatus.FAILED) {
+                        tls.hostMatched ?: false
+                    } else {
+                        tls.hostMatched
+                    }
+                )
+            )
+        }
+
+        if (resolved.isNotEmpty()) {
+            GatewayHealthRecorder.onDnsProbe(resolved, at)
+        }
     }
 }

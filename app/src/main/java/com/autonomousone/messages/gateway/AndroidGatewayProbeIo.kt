@@ -6,6 +6,7 @@ import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.gateway.health.AuthenticatedPingResult
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayProbeIo
+import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.gateway.health.PullBridgeHealth
 import com.autonomousone.messages.gateway.health.TlsHealth
 import kotlinx.coroutines.Dispatchers
@@ -118,7 +119,12 @@ class AndroidGatewayProbeIo(
                     issuer = peer?.issuerX500Principal?.name,
                     notAfter = peer?.notAfter?.time,
                     hostMatched = hostMatched,
-                    lastCheckedAt = System.currentTimeMillis()
+                    lastCheckedAt = System.currentTimeMillis(),
+                    // The address the socket ACTUALLY reached. Reported beside the system-DNS
+                    // answer, because a VPN or proxy can answer DNS with a synthetic address
+                    // while the real connection goes somewhere else — and the synthetic one must
+                    // not be presented as the server's IP.
+                    peerAddress = runCatching { socket.inetAddress?.hostAddress }.getOrNull()
                 )
             } finally {
                 runCatching { socket.close() }
@@ -150,7 +156,7 @@ class AndroidGatewayProbeIo(
     }
 
     /**
-     * The authenticated check, reusing the path [HeartbeatManager] already proved safe.
+     * The authenticated check, sending the SAME request the heartbeat sends.
      *
      * An EMPTY events batch is a pure liveness ping: the server ingests it as
      * `{accepted:[],duplicates:0}` and touches no sequence, so nothing is enqueued and no
@@ -159,12 +165,18 @@ class AndroidGatewayProbeIo(
      * bytes), which is why a success is real proof that the key and the enrollment are still
      * accepted — and it needs no new endpoint on GMweb.
      *
-     * If GMweb ever publishes `POST /api/v1/agent/ping`, this is the one place that has to
-     * change.
+     * v3.4.7 FIX: this used to hand-roll its own body — adding a `diagnostic` field and omitting
+     * `batteryLevel`/`networkType` — and collected an HTTP 400 that the UI then reported as
+     * "GMweb rejected this device's key" while the heartbeat was succeeding every minute. The
+     * body now comes from [AgentLivenessRequest], the same builder the heartbeat uses.
+     *
+     * The server's RESPONSE BODY is also captured now (redacted and bounded). It used to be read
+     * and thrown away, leaving only "HTTP 400" to reason about — which is why the cause of the
+     * 400 had to be guessed at rather than read.
      */
     override suspend fun authenticatedPing(timeoutMs: Int): AuthenticatedPingResult =
         withContext(Dispatchers.IO) {
-            val base = prefs.gmwebUrl.trim().trimEnd('/')
+            val base = prefs.gmwebServerOrigin.trim().trimEnd('/')
             if (!base.startsWith("https://")) {
                 return@withContext AuthenticatedPingResult(
                     ok = false,
@@ -172,14 +184,15 @@ class AndroidGatewayProbeIo(
                 )
             }
             val deviceId = prefs.agentDeviceId(appContext)
-            val body = JSONObject()
-                .put("appVersion", BuildConfig.APP_VERSION)
-                .put("timestamp", System.currentTimeMillis())
-                .put("diagnostic", true)
-                .put("events", JSONArray())
-                .put("sourceDeviceId", deviceId)
+            val body = AgentLivenessRequest.body(
+                appVersion = BuildConfig.APP_VERSION,
+                batteryLevel = AgentDeviceFacts(appContext).batteryLevel(),
+                networkType = AgentDeviceFacts(appContext).networkType(),
+                timestamp = System.currentTimeMillis(),
+                sourceDeviceId = deviceId
+            )
             val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
-            val connection = URL(base + "/api/v1/agent/events/batch")
+            val connection = URL(base + AgentLivenessRequest.EVENTS_PATH)
                 .openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
@@ -194,10 +207,17 @@ class AndroidGatewayProbeIo(
                 connection.doOutput = true
                 // Fail closed: an unsigned request must never be sent, because a 401 caused
                 // by our own missing signature would be reported as a rejected key.
-                if (!AgentAuth.sign(connection, deviceId, "/api/v1/agent/events/batch", "POST", bodyBytes)) {
+                if (!AgentAuth.sign(
+                        connection,
+                        deviceId,
+                        AgentLivenessRequest.EVENTS_PATH,
+                        "POST",
+                        bodyBytes
+                    )
+                ) {
                     return@withContext AuthenticatedPingResult(
                         ok = false,
-                        detail = "device signing unavailable (keystore)"
+                        detail = "device signing unavailable (keystore) — the check was not sent"
                     )
                 }
                 connection.outputStream.use { it.write(bodyBytes) }
@@ -215,7 +235,18 @@ class AndroidGatewayProbeIo(
                     clockSkewMs = serverTime
                         .takeIf { it > 0L }
                         ?.let { it - System.currentTimeMillis() },
-                    detail = if (status in 200..299) "device enrolled" else "HTTP $status"
+                    // The server's own words, so the NEXT run does not have to guess. Redacted
+                    // and bounded by GatewayHealthText, and never a credential.
+                    detail = if (status in 200..299) {
+                        "device enrolled"
+                    } else {
+                        buildString {
+                            append("HTTP ").append(status)
+                            GatewayHealthText.safeDetail(text)
+                                ?.takeIf { it.isNotBlank() && it != "null" }
+                                ?.let { append(" · server said: ").append(it) }
+                        }
+                    }
                 )
             } finally {
                 runCatching { connection.disconnect() }

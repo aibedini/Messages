@@ -163,6 +163,76 @@ class GatewayConnectivityProbeTest {
         assertTrue(snapshot.authentication.enrolled)
     }
 
+    /**
+     * THE FIELD INCONSISTENCY: the card said "TLS: not checked" while the same diagnostic run's
+     * report said "TLS PASSED · TLSv1.3".
+     *
+     * The publish step sat AFTER the last stage, so the early return for a failed AUTH skipped
+     * it — a probe that measured TLS successfully never recorded it. Two states, one run,
+     * disagreeing.
+     */
+    @Test
+    fun `aFailureAfterTlsStillPublishesTheTlsResult`() = kotlinx.coroutines.runBlocking {
+        val io = FakeIo(
+            tlsResult = TlsHealth(
+                valid = true,
+                protocol = "TLSv1.3",
+                issuer = "Let's Encrypt",
+                notAfter = 4_000_000_000L,
+                hostMatched = true,
+                peerAddress = "203.0.113.10"
+            ),
+            ping = AuthenticatedPingResult(ok = false, httpStatus = 400, detail = "HTTP 400")
+        )
+
+        val result = probe(io).run()
+
+        // The chain stopped at AUTH …
+        assertEquals(GatewayProbeStage.AUTH, result.firstFailure!!.stage)
+        // … and the card must nonetheless know TLS was checked and fine.
+        val snapshot = GatewayHealthRecorder.snapshot(now)
+        assertEquals("TLSv1.3", snapshot.tls.protocol)
+        assertEquals(true, snapshot.tls.valid)
+        assertEquals(42L, snapshot.endpoint.lastTcpConnectMs)
+        // The DNS answer is recorded and LABELLED, so it cannot be read as the server's own IP.
+        assertEquals(listOf("203.0.113.10"), snapshot.endpoint.dnsAddresses)
+    }
+
+    /** A stage that never ran must leave its dimension alone — the only honest "unchecked". */
+    @Test
+    fun `aStageThatNeverRanLeavesItsDimensionUntouched`() = kotlinx.coroutines.runBlocking {
+        val io = FakeIo(tcpLatencyMs = null)
+
+        probe(io).run()
+
+        val snapshot = GatewayHealthRecorder.snapshot(now)
+        assertNull("TLS was never reached, so nothing may claim it was checked", snapshot.tls.protocol)
+        assertNull(snapshot.endpoint.lastTcpConnectMs)
+    }
+
+    /** A failed TLS stage is still a MEASURED fact and must reach the card. */
+    @Test
+    fun `aFailedTlsStagePublishesTheMismatchVerdict`() = kotlinx.coroutines.runBlocking {
+        val io = FakeIo(
+            tlsResult = TlsHealth(
+                valid = true,
+                protocol = "TLSv1.3",
+                hostMatched = false,
+                peerAddress = "203.0.113.10"
+            )
+        )
+
+        probe(io, url = "https://203.0.113.10").run()
+
+        val snapshot = GatewayHealthRecorder.snapshot(now)
+        assertEquals("TLSv1.3", snapshot.tls.protocol)
+        assertEquals(
+            "the card must agree with the report that the name did not match",
+            false,
+            snapshot.tls.hostMatched
+        )
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // The chain stops at the first failure
     // ═══════════════════════════════════════════════════════════════════════════

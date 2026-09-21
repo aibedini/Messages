@@ -28,7 +28,7 @@ class GatewayHealthRecorderTest {
         GatewayHealthRecorder.resetForTest()
         GatewayHealthRecorder.setDesired(true)
         GatewayHealthRecorder.onNetwork(validated = true, transport = "Wi-Fi", at = now)
-        GatewayHealthRecorder.onAuthProbe(AuthHealth(enrolled = true, lastVerifiedAt = now))
+        GatewayHealthRecorder.onAuthProbe(AuthHealth(status = AuthVerification.VERIFIED, lastVerifiedAt = now))
         // The supervisor starts the uploader and the poller together, so every fixture
         // below describes a gateway whose components are up. A stop is asserted explicitly
         // where it matters.
@@ -199,6 +199,36 @@ class GatewayHealthRecorderTest {
         assertEquals(now, snapshot.pullBridge.lastAckAt)
         assertEquals(now, snapshot.eveQueue.lastGatewayAckAt)
         assertEquals(0, snapshot.pullBridge.ackFailures)
+    }
+
+    /**
+     * THE FIELD BUG: the card showed "Last result ACKed: 25s ago" on the pull row and
+     * "Last gateway ACK: never" on the EVE row — for the same event.
+     *
+     * `EveSmsQueue.healthSnapshot()` deliberately does not set `lastGatewayAckAt` (the ACK leg is
+     * owned by whoever performed it), but the poller calls `setEveQueue` with a whole object
+     * every ~25 seconds, and assigning it wholesale ERASED the stamp the ACK had just written.
+     */
+    @Test
+    fun `aQueueSnapshotDoesNotEraseTheGatewayAckStamp`() {
+        GatewayHealthRecorder.onAckSuccess(now)
+        assertEquals(now, GatewayHealthRecorder.snapshot(now).eveQueue.lastGatewayAckAt)
+
+        // The poller's periodic refresh, carrying the queue's own view (which has no ack stamp).
+        GatewayHealthRecorder.setEveQueue(
+            EveQueueHealth(queued = 2, active = 1, lastLocalTransitionAt = now + 1_000L)
+        )
+
+        val snapshot = GatewayHealthRecorder.snapshot(now + 1_000L)
+        assertEquals(
+            "the ACK stamp must survive the queue refresh",
+            now,
+            snapshot.eveQueue.lastGatewayAckAt
+        )
+        assertEquals("and the fresh queue counts must still land", 2, snapshot.eveQueue.queued)
+        assertEquals(1, snapshot.eveQueue.active)
+        // The two metrics describe ONE event, so they must agree.
+        assertEquals(snapshot.pullBridge.lastAckAt, snapshot.eveQueue.lastGatewayAckAt)
     }
 
     @Test

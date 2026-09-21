@@ -61,6 +61,20 @@ enum class GatewayFailureKind {
     /** HTTP 403: the device is recognised but not authorised for this route. */
     HTTP_FORBIDDEN,
 
+    /**
+     * HTTP 400: the SERVER could not parse or accept the REQUEST itself.
+     *
+     * This is emphatically NOT an authentication rejection, and conflating the two was a real
+     * defect: a perfectly working device was reported as having its key rejected because the
+     * diagnostic's own request did not match the server's contract. A 400 means the app and
+     * the server disagree about the request SHAPE — an app bug or a version mismatch — and it
+     * gets its own kind precisely so the UI can say that instead of blaming the credential.
+     */
+    HTTP_BAD_REQUEST,
+
+    /** HTTP 405: the route exists, but not for this method. Also a contract mismatch. */
+    HTTP_METHOD_NOT_ALLOWED,
+
     /** HTTP 404: the URL is wrong, or the gateway route is not mounted. */
     HTTP_NOT_FOUND,
 
@@ -96,9 +110,10 @@ enum class GatewayFailureKind {
         get() = when (this) {
             DNS, TCP_CONNECT, READ_TIMEOUT, WRITE_TIMEOUT, HTTP_SERVER,
             HTTP_RATE_LIMITED, NETWORK_OFFLINE, HTTP_CONFLICT, UNKNOWN -> true
-            // A rejected key, a wrong URL, a wrong route, a bad certificate and a
-            // malformed API do not heal by waiting.
-            NONE, TLS, HTTP_AUTH, HTTP_FORBIDDEN, HTTP_NOT_FOUND,
+            // A rejected key, a wrong URL, a wrong route, a bad certificate, a malformed API
+            // and a request the server cannot parse do not heal by waiting.
+            NONE, TLS, HTTP_AUTH, HTTP_FORBIDDEN, HTTP_BAD_REQUEST,
+            HTTP_METHOD_NOT_ALLOWED, HTTP_NOT_FOUND,
             INVALID_RESPONSE, VALIDATION_FAILED -> false
         }
 
@@ -106,10 +121,32 @@ enum class GatewayFailureKind {
      * True when this is the DEVICE's fault rather than the network's — the distinction the
      * status card needs, because these are the cases where "Reconnect" cannot help and the
      * user has to change something.
+     *
+     * [HTTP_BAD_REQUEST] and [HTTP_METHOD_NOT_ALLOWED] are deliberately EXCLUDED: they are the
+     * APP's fault (a request that does not match the server's contract), and telling the user
+     * to check their key or their address for those would send them to fix the wrong thing.
      */
     val needsConfigurationChange: Boolean
         get() = this == HTTP_AUTH || this == HTTP_FORBIDDEN ||
             this == HTTP_NOT_FOUND || this == TLS || this == INVALID_RESPONSE
+
+    /**
+     * True when this failure is evidence that a CREDENTIAL was rejected.
+     *
+     * Only 401 and 403 qualify. This is the single source for "the key was rejected", so no
+     * call site has to guess — a 400 from a malformed diagnostic request must never be
+     * reported as a rejected key, which is exactly what happened.
+     */
+    val isAuthenticationRejection: Boolean
+        get() = this == HTTP_AUTH || this == HTTP_FORBIDDEN
+
+    /**
+     * True when the server rejected the REQUEST rather than the credential: the app and the
+     * server disagree about the contract (path, method, body shape or API version).
+     */
+    val isRequestContractMismatch: Boolean
+        get() = this == HTTP_BAD_REQUEST || this == HTTP_METHOD_NOT_ALLOWED ||
+            this == HTTP_NOT_FOUND || this == INVALID_RESPONSE
 
     companion object {
 
@@ -157,15 +194,19 @@ enum class GatewayFailureKind {
         /** The failure an HTTP status alone implies, or null when the status is a success. */
         fun fromHttpStatus(status: Int): GatewayFailureKind? = when {
             status in 200..299 -> null
+            status == 400 -> HTTP_BAD_REQUEST
             status == 401 -> HTTP_AUTH
             status == 403 -> HTTP_FORBIDDEN
             status == 404 -> HTTP_NOT_FOUND
+            status == 405 -> HTTP_METHOD_NOT_ALLOWED
             status == 409 -> HTTP_CONFLICT
+            status == 422 -> VALIDATION_FAILED
             status == 429 -> HTTP_RATE_LIMITED
             status in 500..599 -> HTTP_SERVER
-            // Any other 4xx is the server rejecting the request shape; retrying unchanged
+            // Any other 4xx is the server refusing the request shape; retrying it unchanged
             // will not help, so it must NOT be reported as a transient 5xx-style failure.
-            status in 400..499 -> VALIDATION_FAILED
+            // It is a REQUEST problem, not a credential one.
+            status in 400..499 -> HTTP_BAD_REQUEST
             else -> UNKNOWN
         }
 

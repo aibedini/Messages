@@ -52,6 +52,8 @@ object GatewayHealthRecorder {
 
     private var tcpConnectMs: Long? = null
     private var probeAt: Long? = null
+    private var dnsAddresses: List<String> = emptyList()
+    private var dnsCheckedAt: Long? = null
     private var tls: TlsHealth = TlsHealth()
     private var authentication: AuthHealth = AuthHealth()
 
@@ -129,6 +131,18 @@ object GatewayHealthRecorder {
     fun onTcpProbe(latencyMs: Long?, at: Long = System.currentTimeMillis()) = mutate {
         tcpConnectMs = latencyMs
         probeAt = at
+    }
+
+    /**
+     * The system-DNS answer for the configured host.
+     *
+     * Stored as-is and LABELLED at render time, because a VPN or proxy answering DNS with a
+     * synthetic address is a legitimate configuration — it just must not be presented as the
+     * server's real origin.
+     */
+    fun onDnsProbe(addresses: List<String>, at: Long = System.currentTimeMillis()) = mutate {
+        dnsAddresses = addresses
+        dnsCheckedAt = at
     }
 
     fun onTlsProbe(result: TlsHealth) = mutate {
@@ -266,7 +280,22 @@ object GatewayHealthRecorder {
     // Local send queue
     // ════════════════════════════════════════════════════════════════════════
 
-    fun setEveQueue(health: EveQueueHealth) = mutate { eveQueue = health }
+    /**
+     * Replaces the QUEUE-OWNED fields from a fresh `EveSmsQueue.healthSnapshot()`.
+     *
+     * MERGES rather than replaces, and that is the whole point. `healthSnapshot()` deliberately
+     * does not set [EveQueueHealth.lastGatewayAckAt] — the ACK leg is owned by whoever performed
+     * it — but the poller calls this every ~25 seconds with a whole object. Assigning it
+     * wholesale therefore ERASED the ack stamp that [onAckSuccess] had just written, which is
+     * how the card came to show "Last result ACKed: 25s ago" on one row and "Last gateway ACK:
+     * never" on another for the same event.
+     *
+     * So: the snapshot owns the counts and the queue's own timestamps; this object keeps
+     * ownership of the gateway-ACK stamp.
+     */
+    fun setEveQueue(health: EveQueueHealth) = mutate {
+        eveQueue = health.copy(lastGatewayAckAt = eveQueue.lastGatewayAckAt)
+    }
 
     fun onEveLocalTransition(at: Long = System.currentTimeMillis()) = mutate {
         eveQueue = eveQueue.copy(lastLocalTransitionAt = at)
@@ -300,7 +329,9 @@ object GatewayHealthRecorder {
                     host = endpoint?.host,
                     port = endpoint?.port,
                     lastTcpConnectMs = tcpConnectMs,
-                    lastProbeAt = probeAt
+                    lastProbeAt = probeAt,
+                    dnsAddresses = dnsAddresses,
+                    dnsCheckedAt = dnsCheckedAt
                 ),
                 tls = tls,
                 authentication = authentication,

@@ -72,24 +72,39 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
         /** Loose SMSC validation: optional +, digits only. */
         private val SMSC_REGEX = Regex("^\\+?[0-9]{5,20}$")
 
+        /**
+         * The address the Local Phone API advertises AND binds to.
+         *
+         * v3.4.7: this used to return the FIRST non-loopback IPv4 address the OS happened to
+         * enumerate. On a phone with a VPN active that was a TUN address in a non-private range
+         * (`30.194.216.38` in the field report), so the UI advertised an address no LAN client
+         * could reach — and because the server binds to this same value, it may have been
+         * listening on the tunnel instead of Wi-Fi.
+         *
+         * The DECISION now lives in [LocalAddressSelector], which prefers a real private LAN
+         * address on a non-tunnel interface; this function only enumerates for it.
+         */
         fun getLocalIpAddress(): String {
-            try {
-                val interfaces = NetworkInterface.getNetworkInterfaces()
-                while (interfaces.hasMoreElements()) {
-                    val intf = interfaces.nextElement()
-                    val addrs = intf.inetAddresses
-                    while (addrs.hasMoreElements()) {
-                        val addr = addrs.nextElement()
-                        if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                            return addr.hostAddress ?: "127.0.0.1"
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            return "127.0.0.1"
+            val enumeration = runCatching { enumerateInterfaces() }.getOrDefault(emptyList())
+            return LocalAddressSelector.select(enumeration)?.address ?: "127.0.0.1"
         }
+
+        /** The selected address with its provenance, for the UI to describe honestly. */
+        fun getLocalAddress(): SelectedAddress? =
+            runCatching { LocalAddressSelector.select(enumerateInterfaces()) }.getOrNull()
+
+        private fun enumerateInterfaces(): List<InterfaceCandidate> =
+            java.util.Collections.list(NetworkInterface.getNetworkInterfaces()).map { intf ->
+                InterfaceCandidate(
+                    name = intf.name.orEmpty(),
+                    isUp = runCatching { intf.isUp }.getOrDefault(false),
+                    isLoopback = runCatching { intf.isLoopback }.getOrDefault(false),
+                    isPointToPoint = runCatching { intf.isPointToPoint }.getOrDefault(false),
+                    isVirtual = runCatching { intf.isVirtual }.getOrDefault(false),
+                    addresses = java.util.Collections.list(intf.inetAddresses)
+                        .mapNotNull { it.hostAddress }
+                )
+            }
     }
 
     @Synchronized

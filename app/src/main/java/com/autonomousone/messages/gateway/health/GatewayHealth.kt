@@ -58,7 +58,22 @@ enum class GatewayConclusion {
     SERVER_UNREACHABLE,
     DNS_PROBLEM,
     TLS_PROBLEM,
+    /** The server REJECTED the credential. Only ever produced from a 401/403. */
     AUTH_REJECTED,
+    /**
+     * We could not establish whether the credential is good — the check did not complete, the
+     * server answered in a way that says nothing about the key, or it has not been tried.
+     *
+     * Deliberately distinct from [AUTH_REJECTED]. Conflating the two produced a false alarm on
+     * a device whose gateway was demonstrably working: the card said "not verified" while the
+     * report said "rejected this device's key", and only the first was supported by evidence.
+     */
+    AUTH_UNVERIFIED,
+    /**
+     * The server could not accept the REQUEST — unparseable body, wrong route or wrong method.
+     * The app's contract does not match the server's. Never a credential problem.
+     */
+    REQUEST_CONTRACT_MISMATCH,
     WRONG_URL,
     RATE_LIMITED,
     SERVER_ERROR,
@@ -81,8 +96,30 @@ data class EndpointHealth(
     val port: Int? = null,
     /** Measured TCP connect latency. Never ICMP: mobile networks block it while HTTPS works. */
     val lastTcpConnectMs: Long? = null,
-    val lastProbeAt: Long? = null
-)
+    val lastProbeAt: Long? = null,
+    /**
+     * What SYSTEM DNS answered for the host.
+     *
+     * Kept apart from [TlsHealth.peerAddress] on purpose: a VPN or proxy can answer DNS with a
+     * synthetic address while the real connection goes somewhere else, and printing the
+     * synthetic one as "the server's IP" states something we did not measure.
+     */
+    val dnsAddresses: List<String> = emptyList(),
+    val dnsCheckedAt: Long? = null
+) {
+    /** The system-DNS answer, labelled so a synthetic range is never read as fact. */
+    fun dnsDescription(): String? {
+        if (dnsAddresses.isEmpty()) return null
+        return dnsAddresses.joinToString(", ") { address ->
+            val fact = com.autonomousone.messages.gateway.NetworkAddressFacts.classify(address)
+            if (fact.scope == com.autonomousone.messages.gateway.AddressScope.GLOBAL) {
+                address
+            } else {
+                "$address (${fact.label})"
+            }
+        }
+    }
+}
 
 data class TlsHealth(
     val valid: Boolean? = null,
@@ -91,18 +128,59 @@ data class TlsHealth(
     val notAfter: Long? = null,
     /** False when the certificate does not cover the configured host or IP. */
     val hostMatched: Boolean? = null,
-    val lastCheckedAt: Long? = null
+    val lastCheckedAt: Long? = null,
+    /**
+     * The address the TLS socket ACTUALLY connected to.
+     *
+     * Kept beside the system-DNS answer because they can legitimately differ: a VPN or a
+     * proxy can answer DNS with a synthetic address from a reserved range, and the real peer
+     * is then something else. Presenting the synthetic one as "the server's IP" is a claim the
+     * data does not support.
+     */
+    val peerAddress: String? = null
 ) {
     /** Whole days until expiry, or null when unknown. Negative once expired. */
     fun daysUntilExpiry(now: Long): Long? =
         notAfter?.let { (it - now) / 86_400_000L }
 }
 
+/**
+ * How the credential check turned out.
+ *
+ * A TRI-state on purpose. `enrolled: Boolean` used to force every outcome into "yes" or "no",
+ * so "we could not check" was rendered as "rejected" — a false accusation against a device
+ * that was working.
+ */
+enum class AuthVerification {
+    /** Not attempted in this session, or no result recorded. */
+    UNKNOWN,
+
+    /** The server accepted the device's credential. */
+    VERIFIED,
+
+    /** The server explicitly rejected it (401/403). The only case that may claim rejection. */
+    REJECTED,
+
+    /**
+     * The check ran but proves nothing about the credential: a 400/404/405, a 5xx, a timeout,
+     * or an unsigned request we refused to send.
+     */
+    UNVERIFIABLE
+}
+
 data class AuthHealth(
-    val enrolled: Boolean = false,
+    val status: AuthVerification = AuthVerification.UNKNOWN,
     val lastVerifiedAt: Long? = null,
-    val clockSkewMs: Long? = null
-)
+    val clockSkewMs: Long? = null,
+    /** Why it is unverifiable, when that is the outcome. Redacted. */
+    val unverifiableReason: String? = null
+) {
+    /** True only when the server actually confirmed the device. */
+    val enrolled: Boolean get() = status == AuthVerification.VERIFIED
+
+    /** True only when the server actually rejected the credential. */
+    val rejected: Boolean get() = status == AuthVerification.REJECTED
+}
 
 data class EventUploadHealth(
     val running: Boolean = false,
@@ -260,7 +338,11 @@ object GatewayHealthRules {
         if (snapshot.tls.valid == false || snapshot.tls.hostMatched == false) {
             return GatewayOverallHealth.ERROR
         }
-        if (!snapshot.authentication.enrolled) return GatewayOverallHealth.ERROR
+        // ONLY an explicit rejection is an error. "We could not check" must not be reported as
+        // a fault: a working pull bridge is itself proof that the credential is accepted, so an
+        // unverifiable auth row degrades the card at most — and even then it never outranks the
+        // bridge's own live evidence below.
+        if (snapshot.authentication.rejected) return GatewayOverallHealth.ERROR
 
         val bridgeFresh = snapshot.pullBridge.freshWithin(PULL_FRESH_MS, now)
         if (!bridgeFresh) {
@@ -286,15 +368,20 @@ object GatewayHealthRules {
         val failure = snapshot.pullBridge.lastFailure
         if (failure != null) {
             return when (failure) {
+                // The ONLY two statuses that mean "the credential was rejected".
                 GatewayFailureKind.HTTP_AUTH -> GatewayConclusion.AUTH_REJECTED
                 GatewayFailureKind.HTTP_FORBIDDEN -> GatewayConclusion.AUTH_REJECTED
+                // The server refused the REQUEST: the app's contract does not match the
+                // server's. Saying "your key was rejected" here would be a false accusation.
+                GatewayFailureKind.HTTP_BAD_REQUEST -> GatewayConclusion.REQUEST_CONTRACT_MISMATCH
+                GatewayFailureKind.HTTP_METHOD_NOT_ALLOWED -> GatewayConclusion.REQUEST_CONTRACT_MISMATCH
+                GatewayFailureKind.INVALID_RESPONSE -> GatewayConclusion.REQUEST_CONTRACT_MISMATCH
                 GatewayFailureKind.HTTP_NOT_FOUND -> GatewayConclusion.WRONG_URL
                 GatewayFailureKind.HTTP_RATE_LIMITED -> GatewayConclusion.RATE_LIMITED
                 GatewayFailureKind.HTTP_SERVER -> GatewayConclusion.SERVER_ERROR
                 GatewayFailureKind.DNS -> GatewayConclusion.DNS_PROBLEM
                 GatewayFailureKind.TCP_CONNECT -> GatewayConclusion.SERVER_UNREACHABLE
                 GatewayFailureKind.TLS -> GatewayConclusion.TLS_PROBLEM
-                GatewayFailureKind.INVALID_RESPONSE -> GatewayConclusion.UNKNOWN_FAILURE
                 GatewayFailureKind.VALIDATION_FAILED -> GatewayConclusion.UNKNOWN_FAILURE
                 else -> GatewayConclusion.BRIDGE_FAILING
             }
@@ -303,12 +390,19 @@ object GatewayHealthRules {
         if (snapshot.tls.hostMatched == false || snapshot.tls.valid == false) {
             return GatewayConclusion.TLS_PROBLEM
         }
-        if (!snapshot.authentication.enrolled) return GatewayConclusion.AUTH_REJECTED
+        // "Not verified" and "rejected" are different answers, and only the second may be
+        // reported as a rejection.
+        if (snapshot.authentication.rejected) return GatewayConclusion.AUTH_REJECTED
 
         if (!snapshot.pullBridge.freshWithin(PULL_FRESH_MS, now)) {
             return GatewayConclusion.BRIDGE_NOT_POLLING
         }
         if (!snapshot.eventUpload.healthy) return GatewayConclusion.UPLOAD_STALLED
+        // Everything operational is fresh; the credential check simply could not confirm
+        // itself. Report that honestly rather than as a healthy "none".
+        if (snapshot.authentication.status == AuthVerification.UNVERIFIABLE) {
+            return GatewayConclusion.AUTH_UNVERIFIED
+        }
         return GatewayConclusion.NONE
     }
 

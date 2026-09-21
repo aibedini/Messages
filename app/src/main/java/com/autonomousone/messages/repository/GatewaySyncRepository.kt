@@ -1,6 +1,7 @@
 package com.autonomousone.messages.repository
 
 import androidx.room.withTransaction
+import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.data.GatewayEventOutboxDao
 import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
@@ -138,6 +139,13 @@ class GatewaySyncRepository(
     suspend fun sendingDepth(): Int = outboxDao.sendingDepth()
 
     suspend fun deadLetterDepth(): Int = outboxDao.deadLetterDepth()
+
+    /**
+     * Aggregate-only dead-letter breakdown (v3.4.7). Never deletes anything: the SHAPE of the
+     * population is what tells a historical cohort apart from an active defect.
+     */
+    suspend fun deadLetterBreakdown(): List<DeadLetterBreakdownRow> =
+        outboxDao.deadLetterBreakdown()
 
     /** True = newly ingested; false = redelivery (exactly-once by unique index). */
     suspend fun ingestCommand(command: RemoteCommandEntity): Boolean =

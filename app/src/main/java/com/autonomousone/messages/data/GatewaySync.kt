@@ -130,6 +130,27 @@ data class GatewayEventDiagnosticCount(
     @ColumnInfo(name = "count") val count: Int
 )
 
+/**
+ * An AGGREGATE row about dead-lettered outbox events (v3.4.7).
+ *
+ * Deliberately carries no payload: the point is to answer "are these historical leftovers or an
+ * active defect?" without reading, logging or deleting a single event.
+ *
+ * WHAT IS NOT HERE, AND WHY: the outbox row persists no failure reason, no HTTP status and no
+ * `updatedAt`. Those exist only in the on-device diagnostics log, correlated by time. Reporting
+ * them per row would mean inventing data, so they are absent and the report says so.
+ */
+data class DeadLetterBreakdownRow(
+    val eventType: String,
+    val cryptoVersion: Int,
+    val priority: String,
+    @ColumnInfo(name = "count") val count: Int,
+    @ColumnInfo(name = "minAttempts") val minAttempts: Int,
+    @ColumnInfo(name = "maxAttempts") val maxAttempts: Int,
+    @ColumnInfo(name = "firstCreatedAt") val firstCreatedAt: Long,
+    @ColumnInfo(name = "lastCreatedAt") val lastCreatedAt: Long
+)
+
 @Dao
 interface GatewayEventOutboxDao {
     /** IGNORE: re-enqueueing a committed eventUuid is a no-op, not a duplicate. */
@@ -213,6 +234,35 @@ interface GatewayEventOutboxDao {
 
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
     suspend fun deadLetterDepth(): Int
+
+    /**
+     * Aggregate-only view of the dead-letter population (v3.4.7).
+     *
+     * READ-ONLY by construction: there is no delete anywhere near it. A dead-letter backlog of
+     * a few hundred says nothing on its own — it may be a historical cohort from a rollout that
+     * the server later accepted, or an active defect — and the way to tell is to look at the
+     * SHAPE (which event types, which crypto versions, how many attempts, over what window)
+     * before touching anything.
+     *
+     * No body and no ciphertext is selected, so nothing sensitive can reach a report.
+     */
+    @Query(
+        """
+        SELECT eventType AS eventType,
+               cryptoVersion AS cryptoVersion,
+               priority AS priority,
+               COUNT(*) AS count,
+               MIN(attemptCount) AS minAttempts,
+               MAX(attemptCount) AS maxAttempts,
+               MIN(createdAt) AS firstCreatedAt,
+               MAX(createdAt) AS lastCreatedAt
+        FROM gateway_event_outbox
+        WHERE state = 'DEAD_LETTER'
+        GROUP BY eventType, cryptoVersion, priority
+        ORDER BY count DESC, eventType ASC
+        """
+    )
+    suspend fun deadLetterBreakdown(): List<DeadLetterBreakdownRow>
 
     @Query(
         "SELECT eventType, state, cryptoVersion, COUNT(*) AS count FROM gateway_event_outbox " +

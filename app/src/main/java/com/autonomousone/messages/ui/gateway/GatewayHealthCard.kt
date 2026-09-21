@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autonomousone.messages.gateway.health.AuthVerification
 import com.autonomousone.messages.gateway.health.GatewayConnectivityResult
 import com.autonomousone.messages.gateway.health.GatewayHealthPresentation
 import com.autonomousone.messages.gateway.health.GatewayHealthSnapshot
@@ -167,8 +168,21 @@ fun GatewayHealthCard(
             )
             DimensionRow(
                 label = "Authentication",
-                detail = if (health.authentication.enrolled) "device enrolled" else "not verified",
-                tone = GatewayHealthPresentation.tone(health.authentication.enrolled)
+                // Three outcomes, not two. "Could not verify" and "rejected" are different
+                // answers, and collapsing them is what made a healthy device report its own key
+                // as rejected.
+                detail = when (health.authentication.status) {
+                    AuthVerification.VERIFIED -> "device enrolled"
+                    AuthVerification.REJECTED -> "key rejected (401/403)"
+                    AuthVerification.UNVERIFIABLE -> "could not verify — not a rejection"
+                    AuthVerification.UNKNOWN -> "not checked"
+                },
+                tone = when (health.authentication.status) {
+                    AuthVerification.VERIFIED -> HealthTone.GOOD
+                    AuthVerification.REJECTED -> HealthTone.BAD
+                    AuthVerification.UNVERIFIABLE -> HealthTone.WARN
+                    AuthVerification.UNKNOWN -> HealthTone.NEUTRAL
+                }
             )
             DimensionRow(
                 label = "Android → GMweb sync",

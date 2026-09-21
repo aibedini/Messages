@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.data.DeadLetterBreakdownRow
+import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.gateway.AndroidGatewayProbeIo
 import com.autonomousone.messages.gateway.BackendClient
 import com.autonomousone.messages.gateway.ConnectionSupervisor
@@ -25,6 +27,7 @@ import com.autonomousone.messages.gateway.GmwebInputError
 import com.autonomousone.messages.gateway.GmwebServerNormalization
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.RegistrationManager
+import com.autonomousone.messages.repository.GatewaySyncRepository
 import com.autonomousone.messages.gateway.health.GatewayConnectivityProbe
 import com.autonomousone.messages.gateway.health.GatewayConnectivityResult
 import com.autonomousone.messages.gateway.health.GatewayDiagnosticReport
@@ -42,6 +45,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -133,6 +137,24 @@ class GatewayViewModel(
     var diagnosticRunning by mutableStateOf(false)
         private set
 
+    /**
+     * The dead-letter aggregate, refreshed alongside diagnostics.
+     *
+     * AGGREGATE ONLY, and read-only by construction: it answers "are these historical leftovers
+     * or an active defect?" without reading a payload and without deleting anything.
+     */
+    var deadLetterBreakdown by mutableStateOf<List<DeadLetterBreakdownRow>>(emptyList())
+        private set
+
+    /** Refreshes the aggregate-only dead-letter view. Never mutates the outbox. */
+    private suspend fun refreshDeadLetterBreakdown() {
+        val rows = runCatching {
+            GatewaySyncRepository(MessagesDatabase.get(getApplication()))
+                .deadLetterBreakdown()
+        }.getOrDefault(emptyList())
+        withContext(Dispatchers.Main) { deadLetterBreakdown = rows }
+    }
+
     /** The current dimensions with the verdict derived from them. */
     fun gatewayHealth(): GatewayHealthSnapshot = GatewayHealthRecorder.snapshot()
 
@@ -162,6 +184,7 @@ class GatewayViewModel(
         diagnosticRunning = true
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔎 Running gateway diagnostics against ${endpoint.displayHost}…")
+            refreshDeadLetterBreakdown()
             val result = runCatching {
                 GatewayConnectivityProbe(
                     io = AndroidGatewayProbeIo(getApplication(), prefs),
@@ -210,7 +233,9 @@ class GatewayViewModel(
         appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
         deliveryMode = "LEGACY_PULL",
         supervisorState = GatewayService.supervisorState.name,
-        gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent
+        gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent,
+        // Aggregate only — nothing deleted, no payload read.
+        deadLetters = deadLetterBreakdown
     )
 
     /** Copies the redacted report to the clipboard. */

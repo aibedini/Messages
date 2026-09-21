@@ -32,7 +32,7 @@ class GatewayDiagnosticReportTest {
             lastEmptyPollAt = now - 20_000L,
             lastHttpStatus = 200
         ),
-        auth: AuthHealth = AuthHealth(enrolled = true, lastVerifiedAt = now - 1_000L),
+        auth: AuthHealth = AuthHealth(status = AuthVerification.VERIFIED, lastVerifiedAt = now - 1_000L),
         tls: TlsHealth = TlsHealth(
             valid = true,
             protocol = "TLSv1.3",
@@ -151,7 +151,37 @@ class GatewayDiagnosticReportTest {
 
         assertTrue(text.contains("Verdict: ERROR"))
         assertTrue(text.contains("HTTP_AUTH · HTTP 401"))
-        assertTrue(text.contains("Check the API key"))
+        // A 401 IS an authentication response, so claiming a rejection is correct here — and
+        // the wording matches the field's own label ("Device key").
+        assertTrue(text.contains("Check the device key"))
+    }
+
+    /**
+     * The flip side, and the defect the device run caught: a 400 must NOT be reported as a
+     * rejected key.
+     */
+    @Test
+    fun `aBadRequestBlamesTheRequestAndNotTheKey`() {
+        val text = render(
+            snapshot(
+                bridge = PullBridgeHealth(
+                    running = true,
+                    lastPollStartedAt = now - 500L,
+                    lastHttpStatus = 400,
+                    lastFailure = GatewayFailureKind.HTTP_BAD_REQUEST,
+                    lastFailureSafeDetail = "HTTP 400 · server said: unprocessable body",
+                    consecutiveFailures = 1
+                )
+            )
+        )
+
+        assertTrue(text.contains("HTTP_BAD_REQUEST"))
+        assertTrue(text.contains("NOT a rejected key"))
+        assertFalse(
+            "a 400 must never produce an auth-rejection verdict",
+            text.contains("Verdict: ERROR\nConclusion: GMweb rejected")
+        )
+        assertFalse(text.contains("Check the device key"))
     }
 
     @Test
