@@ -7,6 +7,10 @@ import android.os.BatteryManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.gateway.health.AuthHealth
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.health.GatewayHealthText
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -148,6 +152,19 @@ class HeartbeatManager(
             is BackendClient.Result.Success -> {
                 prefs.lastHeartbeatAt = System.currentTimeMillis()
                 onLog("💓 Heartbeat OK")
+                // ── v3.4.x P0: this IS the AUTH dimension's producer ─────────────
+                // The heartbeat is a PURE liveness ping: an empty events batch, which the
+                // server ingests as `{accepted:[],duplicates:0}` without touching
+                // sequences. It is authenticated exactly like every other agent call
+                // (X-API-Key + X-Agent-Id + a per-device X-Agent-Auth signature), so a
+                // success here is real proof that the secret and the enrollment are still
+                // accepted — no new server endpoint required, and nothing is enqueued.
+                GatewayHealthRecorder.onAuthProbe(
+                    AuthHealth(
+                        enrolled = true,
+                        lastVerifiedAt = System.currentTimeMillis()
+                    )
+                )
                 true
             }
             is BackendClient.Result.Failure -> {
@@ -156,8 +173,26 @@ class HeartbeatManager(
                     // next successful register() restores the markers).
                     Log.w(TAG, "Heartbeat auth error — clearing credentials, will re-register")
                     onLog("🔄 Auth error — re-registering...")
+                    GatewayHealthRecorder.onAuthProbe(
+                        AuthHealth(
+                            enrolled = false,
+                            lastVerifiedAt = System.currentTimeMillis()
+                        )
+                    )
+                    DiagnosticLog.event(
+                        "GATEWAY_AUTH",
+                        "rejected status=${result.httpStatus ?: "n/a"} — re-enrolling identity"
+                    )
                     prefs.clearCloudCredentials()
                     registrationManager.register()
+                } else if (result.httpStatus != null) {
+                    // A non-auth failure (5xx, timeout) proves nothing about the key, so
+                    // it must NOT be reported as an authentication problem.
+                    DiagnosticLog.event(
+                        "GATEWAY_AUTH",
+                        "unverified status=${result.httpStatus} " +
+                            "detail=${GatewayHealthText.safeDetail(result.error) ?: "none"}"
+                    )
                 }
                 false
             }
