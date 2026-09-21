@@ -45,6 +45,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import com.autonomousone.messages.gateway.HeartbeatManager
+import com.autonomousone.messages.gateway.health.GatewayLogFilter
+import com.autonomousone.messages.ui.gateway.GatewayHealthCard
+import com.autonomousone.messages.ui.gateway.GatewayLogFeedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +64,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -337,6 +341,29 @@ fun GatewayScreen(
                 }
             }
 
+            // ── 0. Gateway Health (v3.4.x P0) ────────────────────────────────
+            // The TOP card now answers "is this actually working?", from independent
+            // dimensions rather than from one state that only means "the components were
+            // started". The card below keeps every existing control.
+            item {
+                val healthRevision by viewModel.healthRevision.collectAsState()
+                // The tick keeps relative times and freshness TRUE while the screen is open;
+                // the revision makes a recorded transition land immediately. Reading both in
+                // one `remember` key is what stops the card showing a stale "3s ago" forever.
+                val health = remember(viewModel.healthTick, healthRevision) {
+                    viewModel.gatewayHealth()
+                }
+                GatewayHealthCard(
+                    health = health,
+                    now = System.currentTimeMillis(),
+                    reconnecting = viewModel.reconnecting,
+                    diagnosticRunning = viewModel.diagnosticRunning,
+                    diagnosticResult = viewModel.diagnosticResult,
+                    onRunDiagnostics = { viewModel.runDiagnostics() },
+                    onReconnect = { viewModel.reconnectNow() }
+                )
+            }
+
             // ── 1. Server Status Card ───────────────────────────────────────
             item {
                 Card(
@@ -376,7 +403,11 @@ fun GatewayScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = when (gwState) {
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> "Gateway Active"
+                                        // NOT "Active": this state means the components were
+                                        // STARTED. Whether GMweb can actually reach this phone
+                                        // is the health card's answer, and for a while the two
+                                        // disagreed while this line stayed green.
+                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> "Components running"
                                         com.autonomousone.messages.gateway.ConnectionSupervisor.State.WAITING_FOR_NETWORK -> "Waiting for network…"
                                         com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTING -> "Starting gateway…"
                                         com.autonomousone.messages.gateway.ConnectionSupervisor.State.RECONNECTING -> "Reconnecting…"
@@ -768,74 +799,45 @@ fun GatewayScreen(
 
             // ── 5. Live Logs Feed Card ───────────────────────────────────────
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Live Server Logs",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Row {
-                                IconButton(onClick = { viewModel.shareLogs() }, modifier = Modifier.size(28.dp)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Share,
-                                        contentDescription = "Share logs",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                IconButton(onClick = { viewModel.clearLogs() }, modifier = Modifier.size(28.dp)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Clear logs",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        if (viewModel.logs.isEmpty()) {
-                            Text(
-                                text = "No server activity yet.",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(140.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1E1E2E))
-                                    .padding(10.dp)
-                            ) {
-                                LazyColumn {
-                                    items(viewModel.logs) { logLine ->
-                                        Text(
-                                            text = logLine,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            color = Color(0xFFA6ADC8),
-                                            lineHeight = 15.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                var logFilter by remember { mutableStateOf(GatewayLogFilter.ALL) }
+                var includeAdvanced by remember { mutableStateOf(false) }
+                var logPaused by remember { mutableStateOf(false) }
+                // Freezing the list while Paused is what makes a moving feed readable long
+                // enough to quote from; the alternative is chasing a line that scrolls away.
+                var frozen by remember {
+                    mutableStateOf(
+                        emptyList<com.autonomousone.messages.gateway.health.GatewayLogEntry>()
+                    )
                 }
+                val liveRevision by viewModel.healthRevision.collectAsState()
+                val feed = remember(
+                    logFilter, includeAdvanced, logPaused, liveRevision, viewModel.healthTick
+                ) {
+                    if (logPaused) frozen else viewModel.gatewayLogFeed(logFilter, includeAdvanced)
+                }
+                GatewayLogFeedCard(
+                    entries = feed,
+                    filter = logFilter,
+                    onFilterChange = { logFilter = it },
+                    includeAdvanced = includeAdvanced,
+                    onToggleAdvanced = { includeAdvanced = !includeAdvanced },
+                    paused = logPaused,
+                    onTogglePause = {
+                        // Capture on the way IN, so the paused view is the feed as it was
+                        // when the user asked it to hold still.
+                        if (!logPaused) frozen = viewModel.gatewayLogFeed(logFilter, includeAdvanced)
+                        logPaused = !logPaused
+                    },
+                    onClear = {
+                        // Clears the STRUCTURED feed. The durable diagnostic-log files the
+                        // report reads are separate and are deliberately not touched.
+                        com.autonomousone.messages.gateway.health.GatewayLog.buffer.clear()
+                        frozen = emptyList()
+                        viewModel.clearLogs()
+                    },
+                    onCopy = { viewModel.copyDiagnosticReport() },
+                    onShareReport = { viewModel.shareDiagnosticReport() }
+                )
             }
         }
     }
