@@ -7,7 +7,9 @@ import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.repository.GatewaySyncRepository
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -276,6 +278,9 @@ class EventUploader(
 
         Log.i(TAG, "batch_upload_attempt events=${events.length()} sourceDeviceId=$deviceId")
         GatewayHealthRecorder.onUploadAttempt(now)
+        // Captured BEFORE the attempt so the success branch can tell a recovery from an
+        // ordinary upload without a second registry read.
+        val wasFailing = GatewayHealthRecorder.rawSnapshot(now).eventUpload.lastFailure != null
 
         return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
             is ControlPlaneClient.Result.Success -> {
@@ -311,6 +316,16 @@ class EventUploader(
                     httpStatus = result.httpStatus
                 )
                 publishQueueDepth()
+                // Durable transitions only: a successful batch happens constantly on an
+                // active device, so only a RECOVERY from a recorded failure is worth a
+                // diagnostic line. Together with the failures below and the pull bridge's
+                // own lines, that is a complete story without a redundant entry.
+                if (wasFailing) {
+                    DiagnosticLog.event(
+                        "GATEWAY_UPLOAD",
+                        "recovered status=${result.httpStatus} accepted=$acked duplicates=$duplicates"
+                    )
+                }
                 // …and the NORMAL feed says what happened in the user's terms. A raw
                 // "2/2 event(s) ACKed by GMweb" is technically correct and completely
                 // unhelpful: it reads like a delivery confirmation for a message, when it
@@ -331,6 +346,15 @@ class EventUploader(
                     kind = GatewayFailureKind.classify(httpStatus = status),
                     httpStatus = status,
                     safeDetail = result.error
+                )
+                // One durable line per upload failure: this is the OUTBOUND sync, and the
+                // whole point of the health work is that it must never be read as proof
+                // that the INBOUND delivery bridge works.
+                DiagnosticLog.event(
+                    "GATEWAY_UPLOAD",
+                    "failed status=${status ?: "n/a"} events=${submitted.size} " +
+                        "kind=${GatewayFailureKind.classify(httpStatus = status).name} " +
+                        "detail=${GatewayHealthText.safeDetail(result.error) ?: "none"}"
                 )
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +

@@ -8,6 +8,7 @@ import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.gateway.health.GatewayPullFailure
+import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -392,10 +393,29 @@ class OutboxPoller(
             val completedAt = System.currentTimeMillis()
             // HTTP 200 with {"task": null} IS a success: the phone reached GMweb,
             // authenticated, was recognised as a gateway and got a well-formed answer.
+            val wasNeverSuccessful =
+                GatewayHealthRecorder.rawSnapshot(completedAt).pullBridge.lastSuccessfulPollAt == null
+            val wasFailing =
+                GatewayHealthRecorder.rawSnapshot(completedAt).pullBridge.lastFailure != null
             if (task == null) {
                 GatewayHealthRecorder.onPullEmpty(completedAt, status)
             } else {
                 GatewayHealthRecorder.onPullTask(completedAt, status)
+            }
+            // ── Durable transitions only ─────────────────────────────────────
+            // A successful empty long-poll happens roughly twice a minute, so logging
+            // every one would bury the diagnostic export in noise. What is worth keeping
+            // is the FIRST success of this process and any RECOVERY from a failure —
+            // together with the failures themselves, that is a complete story of the
+            // bridge without a single redundant line.
+            if (wasNeverSuccessful) {
+                DiagnosticLog.event(
+                    "GATEWAY_PULL",
+                    "firstSuccess status=$status task=${task != null} " +
+                        "host=${GatewayHealthRecorder.currentEndpoint()?.displayHost ?: "none"}"
+                )
+            } else if (wasFailing) {
+                DiagnosticLog.event("GATEWAY_PULL", "recovered status=$status task=${task != null}")
             }
             return task
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -407,20 +427,46 @@ class OutboxPoller(
                 safeDetail = failure.safeDetail,
                 retryInMs = ERROR_RETRY_MS
             )
+            logPullFailure(failure.kind, failure.httpStatus, failure.safeDetail)
             throw failure
         } catch (error: Throwable) {
+            val kind = GatewayFailureKind.classify(
+                error = error,
+                networkValidated = networkMonitor.isOnline()
+            )
+            val detail = GatewayHealthText.safeDetail(error.message)
             GatewayHealthRecorder.onPullFailure(
-                kind = GatewayFailureKind.classify(
-                    error = error,
-                    networkValidated = networkMonitor.isOnline()
-                ),
-                safeDetail = GatewayHealthText.safeDetail(error.message),
+                kind = kind,
+                safeDetail = detail,
                 retryInMs = ERROR_RETRY_MS
             )
+            logPullFailure(kind, null, detail)
             throw error
         } finally {
             conn?.disconnect()
         }
+    }
+
+    /**
+     * One durable line per pull failure.
+     *
+     * Failures are rare compared with successful long-polls, so every one is kept: the
+     * consecutive-failure count is what separates a transient blip from a broken route,
+     * and the classified kind is what tells the user whether to check their key, their URL
+     * or their network. The caption is already redacted by [GatewayHealthText].
+     */
+    private fun logPullFailure(
+        kind: GatewayFailureKind,
+        httpStatus: Int?,
+        safeDetail: String?
+    ) {
+        val bridge = GatewayHealthRecorder.rawSnapshot().pullBridge
+        DiagnosticLog.event(
+            "GATEWAY_PULL",
+            "failed kind=${kind.name} status=${httpStatus ?: "n/a"} " +
+                "consecutive=${bridge.consecutiveFailures} " +
+                "detail=${safeDetail ?: "none"}"
+        )
     }
 
     /**
