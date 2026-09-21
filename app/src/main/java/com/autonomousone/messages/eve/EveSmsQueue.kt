@@ -2,6 +2,7 @@ package com.autonomousone.messages.eve
 
 import android.content.Context
 import android.util.Log
+import com.autonomousone.messages.gateway.health.EveQueueHealth
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -477,6 +478,72 @@ object EveSmsQueue {
         records.values.count {
             it.status == Status.QUEUED || it.status == Status.ACTIVE || it.status == Status.DEFERRED
         }
+    }
+
+    /**
+     * The queue as the gateway status card needs it (v3.4.x P0).
+     *
+     * Counts and timestamps only. Never a body and never a full number, so this is safe to
+     * put on screen, in a log line and in an exported diagnostic report. The single request
+     * identity that leaves here is a SHORT token of the last pulled gateway request, which is
+     * what lets the user line up an EVE send with the chain
+     * `GMweb queued → Android pulled → Validation passed → Local queue → SIM submitted → GMweb ACK`.
+     *
+     * [EveQueueHealth.lastGatewayAckAt] is deliberately NOT set here: the ACK leg is owned by
+     * whoever performs it, so the two can never disagree about when it happened.
+     */
+    fun healthSnapshot(now: Long = now()): EveQueueHealth = synchronized(records) {
+        val all = records.values
+        var queued = 0
+        var active = 0
+        var deferred = 0
+        var sent = 0
+        var failed = 0
+        var cancelled = 0
+        var lastTransition = 0L
+        var lastSubmit = 0L
+        var lastPulled: Record? = null
+        all.forEach { rec ->
+            when (rec.status) {
+                Status.QUEUED -> queued++
+                Status.ACTIVE -> active++
+                Status.DEFERRED -> deferred++
+                Status.SENT -> sent++
+                Status.FAILED -> failed++
+                Status.CANCELLED -> cancelled++
+                Status.SUPERSEDED -> cancelled++
+            }
+            // `sentAt` is the closest thing to a transition stamp the record carries; the
+            // creation time covers a row that has not moved yet.
+            val transition = maxOf(rec.sentAt, rec.createdAt, rec.pulledAt, rec.validatedAt)
+            if (transition > lastTransition) lastTransition = transition
+            if (rec.nativeSubmitStartedAt > lastSubmit) lastSubmit = rec.nativeSubmitStartedAt
+            if (rec.gatewayRequestId != null &&
+                (lastPulled == null || rec.pulledAt >= lastPulled!!.pulledAt)
+            ) {
+                lastPulled = rec
+            }
+        }
+        EveQueueHealth(
+            queued = queued,
+            active = active,
+            deferred = deferred,
+            // "Recent" means "still in the in-memory window": the queue trims terminal
+            // records, so these are the outcomes of this session, not a lifetime total.
+            sentRecent = sent,
+            failedRecent = failed,
+            cancelledRecent = cancelled,
+            lastPulledRequestToken = lastPulled?.gatewayRequestId?.let { shortToken(it) },
+            lastLocalTransitionAt = lastTransition.takeIf { it > 0L },
+            lastNativeSubmitAt = lastSubmit.takeIf { it > 0L }
+        )
+    }
+
+    /** A short, non-reversible handle for a request id. Never the id itself. */
+    private fun shortToken(value: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+        return digest.take(4).joinToString("") { "%02x".format(it) }
     }
 
     /**

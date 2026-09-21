@@ -337,6 +337,16 @@ class OutboxPoller(
 
         val outcome = drainUntilTerminal(result.record.requestId)
 
+        // The queue moved (a native submit happened, or the record became terminal), so the
+        // queue dimension is refreshed before the ACK — the card must not show "queued: 1"
+        // for a task that has already reached the radio.
+        GatewayHealthRecorder.setEveQueue(EveSmsQueue.healthSnapshot())
+        EveSmsQueue.status(result.record.requestId)?.let { rec ->
+            if (rec.nativeSubmitStartedAt > 0L) {
+                GatewayHealthRecorder.onEveNativeSubmit(rec.nativeSubmitStartedAt)
+            }
+        }
+
         if (outcome == Drain.TIMEOUT) {
             // The record never reached a terminal state inside the window.
             // Report the transport-level failure once and stop tracking it.
@@ -369,6 +379,10 @@ class OutboxPoller(
         // message string (which is what made a 401 indistinguishable from a timeout).
         val startedAt = System.currentTimeMillis()
         GatewayHealthRecorder.onPullStart(startedAt)
+        // The local send queue is part of the delivery chain the user is trying to read:
+        // "GMweb queued → Android pulled → validation → local queue → SIM → ACK" stops
+        // somewhere, and this is what lets the card say WHERE.
+        GatewayHealthRecorder.setEveQueue(EveSmsQueue.healthSnapshot(startedAt))
         var conn: HttpURLConnection? = null
         try {
             conn = open(base + "/gateway/pull?waitMs=" + LONG_POLL_MS, "GET", PULL_TIMEOUT_MS)
