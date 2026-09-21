@@ -45,7 +45,7 @@ class GatewayDiagnosticReportTest {
         network: NetworkHealth = NetworkHealth(validatedInternet = true, transport = "Wi-Fi"),
         endpoint: EndpointHealth = EndpointHealth(
             configured = true,
-            host = "gmweb.46.31.76.103.nip.io",
+            host = "gmweb.example.com",
             port = 443,
             lastTcpConnectMs = 42L,
             lastProbeAt = now
@@ -81,7 +81,7 @@ class GatewayDiagnosticReportTest {
     private fun probeResult(vararg steps: GatewayProbeStep) = GatewayConnectivityResult(
         startedAt = now - 5_000L,
         steps = steps.toList(),
-        resolvedAddresses = listOf("46.31.76.103"),
+        resolvedAddresses = listOf("203.0.113.10"),
         tls = TlsHealth(valid = true, protocol = "TLSv1.3", hostMatched = true)
     )
 
@@ -188,7 +188,7 @@ class GatewayDiagnosticReportTest {
             snapshot(),
             probeResult(
                 GatewayProbeStep(GatewayProbeStage.NETWORK, GatewayProbeStatus.PASSED, detail = "Wi-Fi"),
-                GatewayProbeStep(GatewayProbeStage.DNS, GatewayProbeStatus.PASSED, detail = "46.31.76.103"),
+                GatewayProbeStep(GatewayProbeStage.DNS, GatewayProbeStatus.PASSED, detail = "203.0.113.10"),
                 GatewayProbeStep(GatewayProbeStage.TCP, GatewayProbeStatus.PASSED, durationMs = 42L),
                 GatewayProbeStep(GatewayProbeStage.TLS, GatewayProbeStatus.PASSED, durationMs = 61L),
                 GatewayProbeStep(GatewayProbeStage.HTTPS, GatewayProbeStatus.PASSED, httpStatus = 200),
@@ -282,10 +282,19 @@ class GatewayDiagnosticReportTest {
 
     @Test
     fun `anIpAddressSurvivesRedactionBecauseItIsNotUserContent`() {
-        val text = render(snapshot())
+        // The address must come from the PROBE's resolved addresses. An earlier version of this
+        // test passed by accident: the fixture hostname happened to CONTAIN the IP as a
+        // substring, so it asserted nothing about redaction at all.
+        val text = render(
+            snapshot(),
+            probeResult(
+                GatewayProbeStep(GatewayProbeStage.NETWORK, GatewayProbeStatus.PASSED, detail = "Wi-Fi"),
+                GatewayProbeStep(GatewayProbeStage.DNS, GatewayProbeStatus.PASSED, detail = "203.0.113.10")
+            )
+        )
 
-        assertTrue(text.contains("46.31.76.103"))
-        assertTrue(text.contains("gmweb.46.31.76.103.nip.io"))
+        assertTrue("the resolved address must be reported", text.contains("203.0.113.10"))
+        assertTrue("and the configured host with it", text.contains("gmweb.example.com"))
     }
 
     @Test

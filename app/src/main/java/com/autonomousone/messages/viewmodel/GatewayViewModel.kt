@@ -21,6 +21,8 @@ import com.autonomousone.messages.gateway.ConnectionSupervisor
 import com.autonomousone.messages.gateway.GatewayPreferences
 import com.autonomousone.messages.gateway.GatewayServer
 import com.autonomousone.messages.gateway.GatewayService
+import com.autonomousone.messages.gateway.GmwebInputError
+import com.autonomousone.messages.gateway.GmwebServerNormalization
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.RegistrationManager
 import com.autonomousone.messages.gateway.health.GatewayConnectivityProbe
@@ -348,15 +350,20 @@ class GatewayViewModel(
                 title = "Reconnect requested"
             )
             GatewayService.reconnectNow(getApplication())
-            if (prefs.backendUrl.isNotBlank()) {
+            if (prefs.gmwebServerOrigin.isNotBlank()) {
                 cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
                 val success = registrationManager.register()
                 if (success) {
                     refreshStatus()
-                    addLog("✅ Reconnected to cloud backend")
                     cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTED
+                    // NOT "Reconnected": a successful identity enrollment proves the device key
+                    // and the control plane, and says NOTHING about whether /gateway/pull can
+                    // deliver a task. Claiming end-to-end reconnection from this one step is
+                    // exactly how the old screen stayed green over a dead delivery bridge —
+                    // the overall verdict belongs to the health model.
+                    addLog("✅ Device identity authenticated (control plane). Delivery status is in Gateway health.")
                 } else {
-                    addLog("❌ Cloud re-register failed — check network and backend URL")
+                    addLog("❌ Identity enrollment failed — check the server address and the device key")
                     cloudConnectionState = HeartbeatManager.ConnectionState.ERROR
                 }
             } else {
@@ -438,27 +445,100 @@ class GatewayViewModel(
         Toast.makeText(getApplication(), "Registration secret saved", Toast.LENGTH_SHORT).show()
     }
 
-    var gmwebUrl by mutableStateOf(prefs.gmwebUrl)
+    /**
+     * THE one GMweb origin (v3.4.6). Everything the screen shows about the server — the
+     * origin, the derived API base and the panel URL — comes from this one value.
+     */
+    var gmwebServerOrigin by mutableStateOf(prefs.gmwebServerOrigin)
+        private set
+
+    /** `https://host/app`, or null when no server is configured. */
+    var gmwebPanelUrl by mutableStateOf(prefs.gmwebServerProfile()?.dashboardUrl)
+        private set
+
+    /** @deprecated alias kept for the existing UI cards; always equals [gmwebServerOrigin]. */
+    var gmwebUrl by mutableStateOf(prefs.gmwebServerOrigin)
         private set
 
     /**
-     * Saves the GMweb-API base URL for the pull bridge and restarts the poller
-     * so the change takes effect without toggling the whole gateway.
+     * Saves the GMweb server and makes the change take effect EVERYWHERE, with no restart.
+     *
+     * The user may paste the panel URL they actually have (`https://host/app`); the origin is
+     * derived and stored, and the panel URL is kept only for the "Open panel" button.
+     *
+     * Reconciling every client is the point of this method. Saving used to update the pull URL
+     * alone, which left the control plane, the event uploader and enrollment pointed at the
+     * previous server — so the phone could pull from one GMweb and upload to another.
      */
-    fun saveGmwebUrl(newUrl: String) {
-        val v = newUrl.trim().trimEnd('/')
-        try {
-            prefs.gmwebUrl = v
-            gmwebUrl = prefs.gmwebUrl
-            addLog(
-                if (gmwebUrl.isBlank()) "🔌 GMweb pull bridge disabled"
-                else "🔌 GMweb pull bridge URL saved: $gmwebUrl (takes effect on gateway start/restart)"
-            )
-            Toast.makeText(getApplication(), "GMweb URL saved", Toast.LENGTH_SHORT).show()
-        } catch (e: IllegalArgumentException) {
-            Toast.makeText(getApplication(), e.message, Toast.LENGTH_LONG).show()
+    fun saveGmwebServer(input: String) {
+        when (val result = prefs.saveGmwebServer(input)) {
+            is GmwebServerNormalization.Valid -> {
+                val profile = result.profile
+                gmwebServerOrigin = profile.origin
+                gmwebUrl = profile.origin
+                gmwebPanelUrl = profile.dashboardUrl
+                // The health card's target must move with the server, or the next diagnostic
+                // run would test the address the user just replaced.
+                GatewayHealthRecorder.setEndpointUrl(profile.origin)
+                addLog("🔌 GMweb server saved: ${profile.origin}")
+                // ONE nudge reconciles every GMweb client: heartbeat, trust publisher, event
+                // uploader, and the delivery poller (restarting it if its loop had exited).
+                GatewayService.reconnectNow(getApplication())
+                Toast.makeText(
+                    getApplication(),
+                    "GMweb server saved — reconnecting all clients",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            is GmwebServerNormalization.Invalid -> {
+                if (input.isBlank()) {
+                    gmwebServerOrigin = ""
+                    gmwebUrl = ""
+                    gmwebPanelUrl = null
+                    GatewayHealthRecorder.setEndpointUrl("")
+                    addLog("🔌 GMweb server cleared — gateway delivery disabled")
+                    Toast.makeText(getApplication(), "GMweb server cleared", Toast.LENGTH_SHORT).show()
+                } else {
+                    val reason = gmwebInputMessage(result.error)
+                    addLog("⚠️ GMweb server not saved: $reason")
+                    Toast.makeText(getApplication(), reason, Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
+
+    /** Opens the GMweb panel in a browser — the address the user recognizes. */
+    fun openGmwebPanel() {
+        val url = gmwebPanelUrl ?: return
+        runCatching {
+            getApplication<Application>().startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.onFailure { addLog("⚠️ No browser available to open $url") }
+    }
+
+    /**
+     * One sentence per rejection, so the user is told what to fix instead of "invalid URL".
+     */
+    private fun gmwebInputMessage(error: GmwebInputError): String = when (error) {
+        GmwebInputError.BLANK -> "Enter your GMweb server address"
+        GmwebInputError.MALFORMED -> "That does not look like a URL"
+        GmwebInputError.MISSING_SCHEME -> "Include https:// at the start"
+        GmwebInputError.INSECURE_SCHEME -> "Only https:// is accepted"
+        GmwebInputError.MISSING_HOST -> "That URL has no server name"
+        GmwebInputError.EMBEDDED_CREDENTIALS -> "Remove the username and password from the URL"
+        GmwebInputError.HAS_QUERY -> "Remove the ?query part of the URL"
+        GmwebInputError.HAS_FRAGMENT -> "Remove the #fragment part of the URL"
+        GmwebInputError.UNSUPPORTED_PATH -> "Use the panel address, e.g. https://your-server/app"
+    }
+
+    /**
+     * @deprecated Kept so the existing screen keeps compiling. Routes into [saveGmwebServer], so
+     * the pull URL and the control-plane URL can never diverge again.
+     */
+    @Deprecated("Use saveGmwebServer", ReplaceWith("saveGmwebServer(newUrl)"))
+    fun saveGmwebUrl(newUrl: String) = saveGmwebServer(newUrl)
 
     fun saveBindAllInterfaces(bindAll: Boolean) {
         bindAllInterfaces = bindAll

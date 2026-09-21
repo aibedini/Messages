@@ -99,10 +99,11 @@ class GmwebServerMigrationTest {
     }
 
     @Test
-    fun `theHistoricalBakedDomainIsRejectedLikeAnyOtherUnusableValue`() {
-        // Even if some older build HAD persisted it, it is only adopted when it is a valid
-        // https origin — and it is never resurrected from BuildConfig by this code.
-        val decision = decide(storedBackendUrl = "gmweb.46.31.76.103.nip.io")
+    fun `aSchemeLessLegacyValueIsSkippedRatherThanGuessedAt`() {
+        // The historical baked value had no scheme either. Even if some older build HAD
+        // persisted a hostname, it is only adopted when it is a valid https origin — and it is
+        // never resurrected from BuildConfig by this code.
+        val decision = decide(storedBackendUrl = "gmweb.example.com")
 
         assertNull("a scheme-less legacy value is skipped, not guessed at", decision.origin)
     }

@@ -108,6 +108,12 @@ class ConnectionSupervisor private constructor(
          */
         val isPollerRunning: () -> Boolean = { false },
         val wakePoller: () -> Unit = {},
+        /**
+         * Nudges the OUTBOUND event uploader. Saving a new GMweb server must reach it
+         * immediately, not on its next invalidation — otherwise the phone keeps uploading to
+         * the old server for a while after the user has been told the change took effect.
+         */
+        val retryUploader: () -> Unit = {},
         val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL
     )
 
@@ -161,7 +167,7 @@ class ConnectionSupervisor private constructor(
         desiredEnabled = true
         prefs.gatewayDesiredEnabled = true
         GatewayHealthRecorder.setDesired(prefs.hasGatewayConsent)
-        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebUrl)
+        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebServerOrigin)
         ensureLoop()
         reconcileNow()
         // HOW LONG DID THE ENTRY POINT ITSELF TAKE? `start()` only flips desired state
@@ -207,11 +213,15 @@ class ConnectionSupervisor private constructor(
         // alive, which silently kept the old backoff in force.
         components.retryHeartbeat()
         components.retryTrustPublisher()
+        // The OUTBOUND leg gets the same treatment: a server change or a manual reconnect must
+        // reach the uploader now, not on its next invalidation, or the phone keeps talking to
+        // the previous server after the user was told the change took effect.
+        components.retryUploader()
         // The delivery bridge is the leg the user is almost always asking about, and a
         // retry that only reset a backoff in a component whose loop had already EXITED
         // would recolour the card without polling anything. `startPoller` is idempotent, so
         // restarting a dead loop cannot produce a second poller.
-        if (prefs.gmwebUrl.isNotBlank()) {
+        if (prefs.gmwebServerOrigin.isNotBlank()) {
             if (!components.isPollerRunning()) {
                 onLog("🔁 Delivery poller had stopped — restarting it")
                 components.startPoller()
@@ -363,7 +373,7 @@ class ConnectionSupervisor private constructor(
         when (components.deliveryIntake) {
             DeliveryIntake.LEGACY_PULL -> {
                 components.stopCommandPoller()
-                if (prefs.gmwebUrl.isNotBlank()) components.startPoller()
+                if (prefs.gmwebServerOrigin.isNotBlank()) components.startPoller()
             }
             DeliveryIntake.CONTROL_PLANE_COMMANDS -> {
                 components.stopPoller()
@@ -395,7 +405,7 @@ class ConnectionSupervisor private constructor(
      */
     private fun publishHealthContext() {
         GatewayHealthRecorder.setDesired(desiredEnabled && prefs.hasGatewayConsent)
-        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebUrl)
+        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebServerOrigin)
         GatewayHealthRecorder.onNetwork(
             validated = networkMonitor.isOnline(),
             transport = networkMonitor.transportLabel()

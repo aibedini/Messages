@@ -263,10 +263,12 @@ fun GatewayScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Step 2 · Connect GMweb server", fontWeight = FontWeight.Bold)
+                            Text("GMweb server", fontWeight = FontWeight.Bold)
                         }
                         Text(
-                            "Recommended: your phone dials OUT to the GMweb server over HTTPS — no tunnel, no static IP, survives mobile IP changes. The server queues SMS jobs; this phone pulls and sends them.",
+                            "Your phone dials OUT to GMweb over HTTPS — no tunnel, no static IP, survives " +
+                                "mobile IP changes. The same server also carries this phone's own sync, so " +
+                                "you only configure it once.",
                             style = MaterialTheme.typography.bodySmall
                         )
 
@@ -275,12 +277,24 @@ fun GatewayScreen(
                             onValueChange = { editingUrl = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("Server URL") },
-                            placeholder = { Text("https://gmweb.example.com") },
-                            isError = editingUrl.isNotBlank() && !editingUrl.startsWith("https://"),
+                            // Accepts the panel address the user actually has; the origin is
+                            // derived from it, so /app is not an error.
+                            label = { Text("Server / panel URL") },
+                            placeholder = { Text("https://gmweb.example.com/app") },
+                            isError = editingUrl.isNotBlank() &&
+                                com.autonomousone.messages.gateway.GmwebServerProfile
+                                    .normalize(editingUrl) is
+                                com.autonomousone.messages.gateway.GmwebServerNormalization.Invalid,
                             supportingText = {
-                                if (editingUrl.isNotBlank() && !editingUrl.startsWith("https://"))
-                                    Text("Must start with https://")
+                                val invalid = editingUrl.isNotBlank() &&
+                                    com.autonomousone.messages.gateway.GmwebServerProfile
+                                        .normalize(editingUrl) is
+                                    com.autonomousone.messages.gateway.GmwebServerNormalization.Invalid
+                                Text(
+                                    if (invalid) "Enter an https:// address (the /app panel URL is fine)"
+                                    else "Paste the panel address you use; the server origin is derived from it.",
+                                    fontSize = 11.sp
+                                )
                             }
                         )
 
@@ -290,7 +304,7 @@ fun GatewayScreen(
                             onValueChange = { editingKey = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("Shared API key") },
+                            label = { Text("Device key") },
                             placeholder = { Text("Paste GMWEB_ANDROID_DEVICE_KEY from the server") },
                             visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None
                                 else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -316,27 +330,74 @@ fun GatewayScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = {
-                                    viewModel.saveGmwebUrl(editingUrl)
+                                    viewModel.saveGmwebServer(editingUrl)
                                     // Only replace the key when the user typed one.
                                     if (editingKey.isNotBlank()) viewModel.updateApiKey(editingKey)
                                     editingKey = ""
                                 },
                                 enabled = editingUrl.isNotBlank()
                             ) {
-                                Text(if (viewModel.gmwebUrl.isBlank()) "Connect" else "Update")
+                                Text(if (viewModel.gmwebServerOrigin.isBlank()) "Connect" else "Save & reconnect")
                             }
-                            if (viewModel.gmwebUrl.isNotBlank()) {
-                                OutlinedButton(onClick = { editingUrl = ""; viewModel.saveGmwebUrl("") }) {
+                            if (viewModel.gmwebServerOrigin.isNotBlank()) {
+                                OutlinedButton(onClick = { editingUrl = ""; viewModel.saveGmwebServer("") }) {
                                     Text("Disconnect")
                                 }
                             }
                         }
 
-                        Text(
-                            "On the server (.env): GMWEB_ANDROID_DEVICE_KEY=<the same key> · Android device appears online within ~25s of saving.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+                        // ── What the app derived from that ONE address ──────────
+                        // Shown so the user never has to reason about origin vs /app.
+                        val origin = viewModel.gmwebServerOrigin
+                        if (origin.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            DerivedValueRow(label = "Server", value = origin)
+                            DerivedValueRow(label = "API origin", value = origin)
+                            viewModel.gmwebPanelUrl?.let { panel ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "Panel",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            panel,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    OutlinedButton(onClick = { viewModel.openGmwebPanel() }) {
+                                        Text("Open panel", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Server-side setup detail belongs in help, not in the primary UI.
+                        var showSetupHelp by remember { mutableStateOf(false) }
+                        TextButton(
+                            onClick = { showSetupHelp = !showSetupHelp },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                if (showSetupHelp) "Hide setup instructions" else "Setup help",
+                                fontSize = 11.sp
+                            )
+                        }
+                        if (showSetupHelp) {
+                            Text(
+                                "On the server (.env): GMWEB_ANDROID_DEVICE_KEY=<the same key> · the device " +
+                                    "appears online within ~25s of saving.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
                     }
                 }
             }
@@ -401,23 +462,34 @@ fun GatewayScreen(
                                         )
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = when (gwState) {
-                                        // NOT "Active": this state means the components were
-                                        // STARTED. Whether GMweb can actually reach this phone
-                                        // is the health card's answer, and for a while the two
-                                        // disagreed while this line stayed green.
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> "Components running"
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.WAITING_FOR_NETWORK -> "Waiting for network…"
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTING -> "Starting gateway…"
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.RECONNECTING -> "Reconnecting…"
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.ERROR -> "Gateway error — retrying"
-                                        com.autonomousone.messages.gateway.ConnectionSupervisor.State.DISABLED -> "Gateway Stopped"
-                                    },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Column {
+                                    Text(
+                                        // Titled for what it actually is. This card holds the
+                                        // switch, the LAN address and the bind options — the
+                                        // LOCAL API — while GMweb's status lives in the health
+                                        // card above. It used to say "Gateway Active" above a
+                                        // LAN URL, which read as the GMweb connection.
+                                        text = "Local phone API",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = when (gwState) {
+                                            // NOT "Active": the state means the components were
+                                            // STARTED, and whether GMweb can actually reach this
+                                            // phone is the health card's answer.
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTED -> "Components running"
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.WAITING_FOR_NETWORK -> "Waiting for network…"
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.CONNECTING -> "Starting gateway…"
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.RECONNECTING -> "Reconnecting…"
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.ERROR -> "Gateway error — retrying"
+                                            com.autonomousone.messages.gateway.ConnectionSupervisor.State.DISABLED -> "Gateway stopped"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
                             Switch(
@@ -617,59 +689,83 @@ fun GatewayScreen(
 
             }
 
-            // ── 3. REST API Endpoints Card ─────────────────────────────────
+            // ── 3. Local Phone API (NOT GMweb) ─────────────────────────────
+            // This card used to be titled "REST API Endpoints" and swapped its base URL
+            // between the GMweb origin and the phone's LAN address depending on a "Cloud
+            // Mode" flag — so it advertised the phone's OWN /api/v1/sms/send under the GMweb
+            // host, which is not a real endpoint anywhere. The two concepts are now separate
+            // cards: the GMweb connection is the health card above, and this is the LAN API.
             item {
-                val isConnected = viewModel.isRegistered || viewModel.gatewayId.isNotBlank() || viewModel.isServerRunning || viewModel.cloudConnectionState == HeartbeatManager.ConnectionState.CONNECTED
-                val cloudUrl = if (viewModel.backendUrl.isNotBlank()) viewModel.backendUrl else "https://gaitway.autonomousone.in"
-                val effectiveBaseUrl = if (isConnected) cloudUrl else "http://${viewModel.localIpAddress}:${viewModel.port}"
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Lan,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Local phone API",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            // The whole point of this card existing separately: these routes
+                            // are served BY THIS PHONE on the LAN. They are not GMweb, and the
+                            // GMweb origin must never appear as their base.
+                            text = "Accessible from your LAN or this device only. This is NOT the GMweb " +
+                                "server, and it is unrelated to the GMweb connection above.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val localBase = "http://${viewModel.localIpAddress}:${viewModel.port}"
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "REST API Endpoints",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Base URL",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    localBase,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (isConnected) Color(0xFF10B981).copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                                color = if (viewModel.isServerRunning) {
+                                    Color(0xFF10B981).copy(alpha = 0.15f)
+                                } else {
+                                    Color.Gray.copy(alpha = 0.15f)
+                                }
                             ) {
                                 Text(
-                                    text = if (isConnected) "Cloud Mode" else "LAN Mode",
-                                    color = if (isConnected) Color(0xFF10B981) else Color.Gray,
+                                    text = if (viewModel.isServerRunning) "Running" else "Stopped",
+                                    color = if (viewModel.isServerRunning) Color(0xFF10B981) else Color.Gray,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                        }
-
-                        Text(
-                            text = "Base API URL: $effectiveBaseUrl",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-
-                        if (isConnected && viewModel.localIpAddress.isNotBlank()) {
-                            Text(
-                                text = "LAN Fallback: http://${viewModel.localIpAddress}:${viewModel.port}",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -678,7 +774,7 @@ fun GatewayScreen(
                             method = "POST",
                             path = "/api/v1/sms/send",
                             desc = "Send SMS text message",
-                            baseUrl = effectiveBaseUrl,
+                            baseUrl = localBase,
                             onCopy = { url -> viewModel.copyToClipboard("SMS Endpoint", url) }
                         )
 
@@ -688,7 +784,7 @@ fun GatewayScreen(
                             method = "POST",
                             path = "/api/v1/mms/send",
                             desc = "Send MMS image message",
-                            baseUrl = effectiveBaseUrl,
+                            baseUrl = localBase,
                             onCopy = { url -> viewModel.copyToClipboard("MMS Endpoint", url) }
                         )
 
@@ -698,7 +794,7 @@ fun GatewayScreen(
                             method = "GET",
                             path = "/api/v1/sms/inbox",
                             desc = "Get recent inbox messages",
-                            baseUrl = effectiveBaseUrl,
+                            baseUrl = localBase,
                             onCopy = { url -> viewModel.copyToClipboard("Inbox Endpoint", url) }
                         )
 
@@ -708,7 +804,7 @@ fun GatewayScreen(
                             method = "GET",
                             path = "/api/v1/status",
                             desc = "Gateway battery & network status",
-                            baseUrl = effectiveBaseUrl,
+                            baseUrl = localBase,
                             onCopy = { url -> viewModel.copyToClipboard("Status Endpoint", url) }
                         )
                     }
@@ -840,6 +936,27 @@ fun GatewayScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DerivedValueRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(84.dp)
+        )
+        Text(
+            value,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

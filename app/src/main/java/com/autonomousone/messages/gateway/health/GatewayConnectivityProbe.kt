@@ -80,7 +80,7 @@ data class AuthenticatedPingResult(
  *  - certificate validation is NEVER bypassed: no trust-all `TrustManager`, no
  *    `HostnameVerifier { true }`, no permissive `SSLContext`;
  *  - hostname verification is ALWAYS on, so a certificate issued for
- *    `gmweb.example.com` is rejected for `46.31.76.103` and the user is told exactly that;
+ *    `gmweb.example.com` is rejected for `203.0.113.10` and the user is told exactly that;
  *  - ICMP is never the health authority. Mobile networks and servers block it while HTTPS
  *    works perfectly, so reachability is a TCP connect.
  */

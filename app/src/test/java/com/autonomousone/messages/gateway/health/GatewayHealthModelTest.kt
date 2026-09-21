@@ -459,7 +459,7 @@ class GatewayHealthModelTest {
         assertEquals(
             GatewayFailureKind.TLS,
             GatewayFailureKind.classify(
-                error = SSLPeerUnverifiedException("Hostname 46.31.76.103 not verified")
+                error = SSLPeerUnverifiedException("Hostname 203.0.113.10 not verified")
             )
         )
     }
@@ -651,7 +651,7 @@ class GatewayHealthModelTest {
             snapshot(
                 endpoint = EndpointHealth(
                     configured = true,
-                    host = "46.31.76.103",
+                    host = "203.0.113.10",
                     port = 443,
                     lastTcpConnectMs = null,
                     lastProbeAt = now

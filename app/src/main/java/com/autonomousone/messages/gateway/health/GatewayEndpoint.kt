@@ -8,9 +8,9 @@ import java.net.URI
  * server" is.
  *
  * The host matters because the TLS check is a HOSTNAME check: a certificate issued for
- * `gmweb.46.31.76.103.nip.io` is not valid for `46.31.76.103`, and the app must say so
- * rather than silently accepting it or silently failing. Everything here is
- * Android-free so the parsing rules are unit-tested.
+ * `gmweb.example.com` is not valid for `203.0.113.10`, and the app must say so rather than
+ * silently accepting it or silently failing. Everything here is Android-free so the parsing
+ * rules are unit-tested.
  */
 data class GatewayEndpoint(
     val scheme: String,

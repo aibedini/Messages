@@ -753,7 +753,17 @@ fun SettingsScreen(
             }
 
             SectionCard(title = "Gateway") {
-                InfoRow(label = "Backend URL", value = BuildConfig.GATEWAY_BACKEND_URL)
+                // v3.4.6: the server is USER CONFIGURATION, not a build constant. This used to
+                // print BuildConfig.GATEWAY_BACKEND_URL, i.e. a domain compiled into the APK —
+                // which is exactly the value that could disagree with the one in use. It now
+                // reports the single configured origin, or says it is not configured.
+                val gatewayContext = LocalContext.current
+                val origin = com.autonomousone.messages.gateway.GatewayPreferences(gatewayContext)
+                    .gmwebServerOrigin
+                InfoRow(
+                    label = "GMweb server",
+                    value = origin.ifBlank { "Not configured" }
+                )
             }
         }
     }

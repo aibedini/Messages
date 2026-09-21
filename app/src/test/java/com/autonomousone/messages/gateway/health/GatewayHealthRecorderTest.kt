@@ -297,12 +297,12 @@ class GatewayHealthRecorderTest {
 
     @Test
     fun `theConfiguredEndpointIsParsedSoTheTlsCheckHasAHost`() {
-        GatewayHealthRecorder.setEndpointUrl("https://gmweb.46.31.76.103.nip.io")
+        GatewayHealthRecorder.setEndpointUrl("https://gmweb.example.com")
 
         val snapshot = GatewayHealthRecorder.snapshot(now)
 
         assertTrue(snapshot.endpoint.configured)
-        assertEquals("gmweb.46.31.76.103.nip.io", snapshot.endpoint.host)
+        assertEquals("gmweb.example.com", snapshot.endpoint.host)
         assertEquals(443, snapshot.endpoint.port)
     }
 
@@ -471,7 +471,7 @@ class GatewayHealthRecorderTest {
     fun `theRecorderNeverStoresARawPhoneNumberFromAFailure`() {
         GatewayHealthRecorder.onPullFailure(
             kind = GatewayFailureKind.TCP_CONNECT,
-            safeDetail = "failed to connect to /46.31.76.103 (port 443) from +989121234567",
+            safeDetail = "failed to connect to /203.0.113.10 (port 443) from +989121234567",
             at = now
         )
 
@@ -480,7 +480,7 @@ class GatewayHealthRecorderTest {
         assertFalse(stored.contains("+989121234567"))
         assertTrue(
             "an IP is not user content and stays, so the report is still useful",
-            stored.contains("46.31.76.103")
+            stored.contains("203.0.113.10")
         )
     }
 }

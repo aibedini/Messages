@@ -191,6 +191,16 @@ class EventUploader(
     }
 
     /**
+     * Try again immediately: wake the idle wait so a server change (or a manual reconnect)
+     * reaches the OUTBOUND sync without waiting for the next invalidation.
+     *
+     * Does NOT start a second uploader — [start] is idempotent and this only nudges the loop.
+     */
+    fun retryNow() {
+        wake.trySend(Unit)
+    }
+
+    /**
      * Publishes the outbox depth to the health registry.
      *
      * Best-effort: a health read must never be the reason an upload loop stalls, so a

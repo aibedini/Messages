@@ -200,6 +200,7 @@ class GatewayService : Service() {
                 stopPoller = { outboxPoller.stop() },
                 isPollerRunning = { outboxPoller.isRunning },
                 wakePoller = { outboxPoller.retryNow() },
+                retryUploader = { eventUploader.retryNow() },
                 startEventUploader = { eventUploader.start() },
                 stopEventUploader = { eventUploader.stop() },
                 startTrustPublisher = { trustPublisher.start() },

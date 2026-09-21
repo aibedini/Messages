@@ -42,7 +42,7 @@ class GatewayConnectivityProbeTest {
     private class FakeIo(
         var online: Boolean = true,
         var transport: String = "Wi-Fi",
-        var addresses: List<String> = listOf("46.31.76.103"),
+        var addresses: List<String> = listOf("203.0.113.10"),
         var dnsError: Throwable? = null,
         var tcpLatencyMs: Long? = 42L,
         var tcpError: Throwable? = null,
@@ -111,7 +111,7 @@ class GatewayConnectivityProbeTest {
         override fun now(): Long = clock()
     }
 
-    private fun probe(io: FakeIo, url: String = "https://gmweb.46.31.76.103.nip.io"): GatewayConnectivityProbe {
+    private fun probe(io: FakeIo, url: String = "https://gmweb.example.com"): GatewayConnectivityProbe {
         io.clock = { now }
         return GatewayConnectivityProbe(io, GatewayEndpoint.parse(url)!!)
     }
@@ -132,7 +132,7 @@ class GatewayConnectivityProbeTest {
             result.steps.map { it.stage }
         )
         assertTrue(result.steps.all { it.status == GatewayProbeStatus.PASSED })
-        assertEquals(listOf("46.31.76.103"), result.resolvedAddresses)
+        assertEquals(listOf("203.0.113.10"), result.resolvedAddresses)
         assertEquals("TLSv1.3", result.tls.protocol)
     }
 
@@ -192,7 +192,7 @@ class GatewayConnectivityProbeTest {
 
     @Test
     fun `aDnsFailureIsTheCauseAndNothingElseIsAttempted`() = kotlinx.coroutines.runBlocking {
-        val io = FakeIo(dnsError = UnknownHostException("gmweb.46.31.76.103.nip.io"))
+        val io = FakeIo(dnsError = UnknownHostException("gmweb.example.com"))
         val result = probe(io).run()
 
         assertEquals(GatewayProbeStage.DNS, result.firstFailure!!.stage)
@@ -214,10 +214,10 @@ class GatewayConnectivityProbeTest {
 
     @Test
     fun `aLiteralAddressNeedsNoDnsSoTheStageIsNotRequired`() = kotlinx.coroutines.runBlocking {
-        // https://46.31.76.103 — a literal address cannot have a DNS problem, and saying
+        // https://203.0.113.10 — a literal address cannot have a DNS problem, and saying
         // "DNS passed" would hide that fact.
         val io = FakeIo()
-        val result = probe(io, url = "https://46.31.76.103").run()
+        val result = probe(io, url = "https://203.0.113.10").run()
 
         assertEquals(GatewayProbeStatus.NOT_REQUIRED, result.step(GatewayProbeStage.DNS)!!.status)
         assertTrue(result.passed)
@@ -258,12 +258,12 @@ class GatewayConnectivityProbeTest {
                 hostMatched = false
             )
         )
-        val result = probe(io, url = "https://46.31.76.103").run()
+        val result = probe(io, url = "https://203.0.113.10").run()
 
         val step = result.firstFailure!!
         assertEquals(GatewayProbeStage.TLS, step.stage)
         assertEquals(GatewayFailureKind.TLS, step.failure)
-        assertTrue(step.detail!!.contains("46.31.76.103"))
+        assertTrue(step.detail!!.contains("203.0.113.10"))
         assertEquals(GatewayProbeStatus.SKIPPED, result.step(GatewayProbeStage.HTTPS)!!.status)
     }
 
@@ -271,10 +271,10 @@ class GatewayConnectivityProbeTest {
     fun `aHostnameMismatchRaisedAsAnExceptionIsStillATlsFailure`() = kotlinx.coroutines.runBlocking {
         val io = FakeIo(
             tlsError = SSLPeerUnverifiedException(
-                "Hostname 46.31.76.103 not verified: certificate is for gmweb.example.com"
+                "Hostname 203.0.113.10 not verified: certificate is for gmweb.example.com"
             )
         )
-        val result = probe(io, url = "https://46.31.76.103").run()
+        val result = probe(io, url = "https://203.0.113.10").run()
 
         assertEquals(GatewayProbeStage.TLS, result.firstFailure!!.stage)
         assertEquals(GatewayFailureKind.TLS, result.firstFailure!!.failure)
@@ -293,7 +293,7 @@ class GatewayConnectivityProbeTest {
         // The app never dials a plaintext control plane, and the probe says why rather than
         // reporting a mysterious transport failure later.
         val io = FakeIo()
-        val result = probe(io, url = "http://46.31.76.103").run()
+        val result = probe(io, url = "http://203.0.113.10").run()
 
         assertEquals(GatewayProbeStage.TLS, result.firstFailure!!.stage)
         assertEquals(GatewayFailureKind.TLS, result.firstFailure!!.failure)
@@ -490,13 +490,13 @@ class GatewayConnectivityProbeTest {
     fun `failureDetailsAreRedacted`() = kotlinx.coroutines.runBlocking {
         val io = FakeIo(
             tcpError = ConnectException(
-                "failed to connect to /46.31.76.103:443 from +989121234567"
+                "failed to connect to /203.0.113.10:443 from +989121234567"
             )
         )
         val result = probe(io).run()
 
         val detail = result.firstFailure!!.detail!!
         assertFalse(detail.contains("+989121234567"))
-        assertTrue(detail.contains("46.31.76.103"))
+        assertTrue(detail.contains("203.0.113.10"))
     }
 }

@@ -157,7 +157,7 @@ class GmwebServerProfileTest {
         routes.forEach { route ->
             assertTrue("$route must be on the configured origin", route.startsWith(p.origin))
         }
-        assertFalse("nothing may escape to another host", routes.any { it.contains("46.31.76.103") })
+        assertFalse("nothing may escape to another host", routes.any { it.contains("203.0.113.10") })
 
         assertEquals("https://gmweb.okgfx.ir/health", p.healthUrl)
         assertEquals("https://gmweb.okgfx.ir/gateway/pull", p.gatewayPullUrl)

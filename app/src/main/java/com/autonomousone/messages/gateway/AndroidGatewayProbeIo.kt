@@ -32,7 +32,7 @@ import javax.net.ssl.SSLSocket
  *    do that, and would ship the bug instead of reporting it.
  *
  * 2. **Hostname verification is always on.** A certificate issued for
- *    `gmweb.example.com` is rejected for `https://46.31.76.103`, and the report says
+ *    `gmweb.example.com` is rejected for `https://203.0.113.10`, and the report says
  *    exactly that. This is a real situation for this deployment — Let's Encrypt now issues
  *    IP certificates, but such a certificate must be issued FOR the IP, not for a name that
  *    happens to resolve to it.
@@ -90,7 +90,7 @@ class AndroidGatewayProbeIo(
      *
      * That exception is caught rather than propagated because the TLS layer itself
      * SUCCEEDED — only the name did not match — and the user deserves the actual facts
-     * ("issued for gmweb.example.com, you are connecting to 46.31.76.103") rather than a
+     * ("issued for gmweb.example.com, you are connecting to 203.0.113.10") rather than a
      * generic failure. [TlsHealth.hostMatched] carries that verdict, and the probe turns a
      * false into a hard failure of the TLS stage, so no unverified connection is ever used
      * for real traffic.
