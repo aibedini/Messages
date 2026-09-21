@@ -134,6 +134,11 @@ class GatewaySyncRepository(
     suspend fun pendingBytes(): Long = outboxDao.pendingBytes()
     suspend fun pendingBackfillDepth(): Int = outboxDao.pendingBackfillDepth()
 
+    /** Rows claimed by an in-flight batch; the rest of [pendingDepth] is still waiting. */
+    suspend fun sendingDepth(): Int = outboxDao.sendingDepth()
+
+    suspend fun deadLetterDepth(): Int = outboxDao.deadLetterDepth()
+
     /** True = newly ingested; false = redelivery (exactly-once by unique index). */
     suspend fun ingestCommand(command: RemoteCommandEntity): Boolean =
         commandDao.insertOrIgnore(command) != -1L

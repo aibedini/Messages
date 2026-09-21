@@ -5,6 +5,8 @@ import android.util.Log
 import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.gateway.health.GatewayFailureKind
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.repository.GatewaySyncRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -88,6 +90,7 @@ class EventUploader(
         if (job != null) return
         database.invalidationTracker.addObserver(outboxObserver)
         _running.value = true
+        GatewayHealthRecorder.setUploaderRunning(true)
         val launched = scope.launch {
             // Process-death recovery FIRST: a crash between claim and upload
             // leaves SENDING rows behind — requeue them before claiming.
@@ -147,9 +150,11 @@ class EventUploader(
                 }
                 if (claimed.isEmpty()) {
                     attempt = 0
+                    publishQueueDepth()
                     withTimeoutOrNull(2_000) { wake.receive() }
                     continue
                 }
+                publishQueueDepth()
                 when (uploadBatch(claimed)) {
                     Outcome.ALL_ACKED -> {
                         attempt = 0
@@ -172,12 +177,36 @@ class EventUploader(
             database.invalidationTracker.removeObserver(outboxObserver)
             if (job === launched) job = null
             _running.value = false
+            GatewayHealthRecorder.setUploaderRunning(false)
         }
     }
 
     fun stop() {
         job?.cancel()
         _running.value = false
+        GatewayHealthRecorder.setUploaderRunning(false)
+    }
+
+    /**
+     * Publishes the outbox depth to the health registry.
+     *
+     * Best-effort: a health read must never be the reason an upload loop stalls, so a
+     * failure here is swallowed. `pendingDepth()` counts PENDING and SENDING together, so
+     * the two are separated here — a row claimed for minutes is a STUCK upload and the card
+     * has to be able to say so.
+     */
+    private suspend fun publishQueueDepth() {
+        try {
+            val sending = repo.sendingDepth()
+            val pending = (repo.pendingDepth() - sending).coerceAtLeast(0)
+            GatewayHealthRecorder.setUploadQueue(
+                pending = pending,
+                sending = sending,
+                deadLetter = repo.deadLetterDepth()
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "queue depth unavailable for health", e)
+        }
     }
 
     private enum class Outcome { ALL_ACKED, PARTIAL, TRANSPORT_FAILURE, FATAL }
@@ -246,6 +275,7 @@ class EventUploader(
         }
 
         Log.i(TAG, "batch_upload_attempt events=${events.length()} sourceDeviceId=$deviceId")
+        GatewayHealthRecorder.onUploadAttempt(now)
 
         return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
             is ControlPlaneClient.Result.Success -> {
@@ -271,17 +301,37 @@ class EventUploader(
                 }
                 val duplicates = responseJson?.optInt("duplicates", 0) ?: 0
                 val failed = submitted.size - acked
+                // The technical form stays in the ADVANCED log…
                 Log.i(
                     TAG,
                     "batch_upload_result events=${submitted.size} accepted=$acked duplicates=$duplicates failed=$failed"
                 )
-                if (acked > 0) onLog("📤 $acked/${submitted.size} event(s) ACKed by GMweb")
+                GatewayHealthRecorder.onUploadSuccess(
+                    at = System.currentTimeMillis(),
+                    httpStatus = result.httpStatus
+                )
+                publishQueueDepth()
+                // …and the NORMAL feed says what happened in the user's terms. A raw
+                // "2/2 event(s) ACKed by GMweb" is technically correct and completely
+                // unhelpful: it reads like a delivery confirmation for a message, when it
+                // is only the outbound sync of this device's own state.
+                if (acked > 0) {
+                    onLog(
+                        "☁️ Sync uploaded $acked event" + (if (acked == 1) "" else "s") +
+                            if (failed > 0) " · $failed still pending" else ""
+                    )
+                }
                 if (acked == submitted.size) Outcome.ALL_ACKED
                 else Outcome.PARTIAL
             }
             is ControlPlaneClient.Result.Failure -> {
                 val status = result.httpStatus
                 Log.e(TAG, "batch_upload_http_error status=${status ?: "n/a"} reason=${result.error}")
+                GatewayHealthRecorder.onUploadFailure(
+                    kind = GatewayFailureKind.classify(httpStatus = status),
+                    httpStatus = status,
+                    safeDetail = result.error
+                )
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
                     // visible health signal, never a silent drop.

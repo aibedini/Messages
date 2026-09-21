@@ -4,6 +4,10 @@ import android.content.Context
 import android.os.PowerManager
 import android.util.Log
 import com.autonomousone.messages.eve.EveSmsQueue
+import com.autonomousone.messages.gateway.health.GatewayFailureKind
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.health.GatewayHealthText
+import com.autonomousone.messages.gateway.health.GatewayPullFailure
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -195,15 +199,18 @@ class OutboxPoller(
     fun start() {
         if (running) return
         running = true
+        GatewayHealthRecorder.setPollerRunning(true)
         // Re-seed the local ACK ledger from the durable queue so a task parked
         // DEFERRED before a reboot is still retried and acked by local backoff.
         seedAckLedger()
         pollJob = scope.launch {
             _stateFlow.value = State.POLLING
+            GatewayHealthRecorder.setPollerState(State.POLLING.name)
             Log.i(TAG, "Outbox poller started")
             while (isActive) {
                 if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) {
                     _stateFlow.value = State.IDLE
+                    GatewayHealthRecorder.setPollerState(State.IDLE.name)
                     break
                 }
                 // Network gate: while there is no validated route, hang up
@@ -212,10 +219,12 @@ class OutboxPoller(
                 // event-driven via the callback flow, not a poll timer.
                 if (!networkMonitor.isOnline()) {
                     _stateFlow.value = State.IDLE
+                    GatewayHealthRecorder.setPollerState(State.IDLE.name)
                     onLog("📴 Outbox poller paused: waiting for network")
                     networkMonitor.onlineFlow().first { online -> online }
                     if (!isActive) break
                     _stateFlow.value = State.POLLING
+                    GatewayHealthRecorder.setPollerState(State.POLLING.name)
                     onLog("🌐 Network back — resuming outbox poll immediately")
                 }
                 try {
@@ -226,11 +235,13 @@ class OutboxPoller(
                         ackPending()
                         cycle()
                         _stateFlow.value = State.POLLING
+                        GatewayHealthRecorder.setPollerState(State.POLLING.name)
                     } finally {
                         releaseCycleWakeLock()
                     }
                 } catch (e: Exception) {
                     _stateFlow.value = State.ERROR
+                    GatewayHealthRecorder.setPollerState(State.ERROR.name)
                     onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (ERROR_RETRY_MS / 1000) + "s")
                     delay(ERROR_RETRY_MS)
                 }
@@ -243,6 +254,8 @@ class OutboxPoller(
         pollJob?.cancel()
         pollJob = null
         _stateFlow.value = State.IDLE
+        GatewayHealthRecorder.setPollerRunning(false)
+        GatewayHealthRecorder.setPollerState(State.IDLE.name)
     }
 
     /** One pull → deliver → ack round trip. Throws only on transport errors. */
@@ -347,13 +360,66 @@ class OutboxPoller(
     }
 
     private suspend fun pull(base: String): Task? {
-        val conn = open(base + "/gateway/pull?waitMs=" + LONG_POLL_MS, "GET", PULL_TIMEOUT_MS)
-        return try {
-            if (conn.responseCode != 200) throw IllegalStateException("pull HTTP " + conn.responseCode)
+        // ── v3.4.x P0: health instrumentation ────────────────────────────────
+        // The pull is the ONLY path that delivers an EVE request to this phone, and until
+        // now its success was invisible: nothing distinguished "never polled" from
+        // "polling fine" from "polling and being rejected". Every exit point below records
+        // what happened, with the HTTP status kept as a VALUE rather than folded into a
+        // message string (which is what made a 401 indistinguishable from a timeout).
+        val startedAt = System.currentTimeMillis()
+        GatewayHealthRecorder.onPullStart(startedAt)
+        var conn: HttpURLConnection? = null
+        try {
+            conn = open(base + "/gateway/pull?waitMs=" + LONG_POLL_MS, "GET", PULL_TIMEOUT_MS)
+            val status = conn.responseCode
+            if (status !in 200..299) {
+                val kind = GatewayFailureKind.fromHttpStatus(status)
+                    ?: GatewayFailureKind.UNKNOWN
+                throw GatewayPullFailure(kind, status, "HTTP $status")
+            }
             val body = conn.inputStream.use { it.bufferedReader().readText() }
-            parseTask(JSONObject(body))
+            val task = try {
+                parseTask(JSONObject(body))
+            } catch (malformed: Exception) {
+                // A response we cannot read is an API/protocol problem, not a network one:
+                // reporting it as a timeout would send the user to look at their radio.
+                throw GatewayPullFailure(
+                    GatewayFailureKind.INVALID_RESPONSE,
+                    status,
+                    GatewayHealthText.safeDetail(malformed.message) ?: "malformed pull response"
+                )
+            }
+            val completedAt = System.currentTimeMillis()
+            // HTTP 200 with {"task": null} IS a success: the phone reached GMweb,
+            // authenticated, was recognised as a gateway and got a well-formed answer.
+            if (task == null) {
+                GatewayHealthRecorder.onPullEmpty(completedAt, status)
+            } else {
+                GatewayHealthRecorder.onPullTask(completedAt, status)
+            }
+            return task
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: GatewayPullFailure) {
+            GatewayHealthRecorder.onPullFailure(
+                kind = failure.kind,
+                httpStatus = failure.httpStatus,
+                safeDetail = failure.safeDetail,
+                retryInMs = ERROR_RETRY_MS
+            )
+            throw failure
+        } catch (error: Throwable) {
+            GatewayHealthRecorder.onPullFailure(
+                kind = GatewayFailureKind.classify(
+                    error = error,
+                    networkValidated = networkMonitor.isOnline()
+                ),
+                safeDetail = GatewayHealthText.safeDetail(error.message),
+                retryInMs = ERROR_RETRY_MS
+            )
+            throw error
         } finally {
-            conn.disconnect()
+            conn?.disconnect()
         }
     }
 
@@ -430,18 +496,39 @@ class OutboxPoller(
         if (base.isBlank()) {
             Log.w(TAG, "ack skipped for " + gatewayRequestId + ": no GMweb URL configured")
         } else {
+            var conn: HttpURLConnection? = null
             try {
-                val conn = open(base + "/gateway/ack", "POST", ACK_TIMEOUT_MS)
-                try {
-                    conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-                    accepted = conn.responseCode in 200..299
-                    if (!accepted) Log.w(TAG, "ack HTTP " + conn.responseCode + " for " + gatewayRequestId)
-                } finally {
-                    conn.disconnect()
+                conn = open(base + "/gateway/ack", "POST", ACK_TIMEOUT_MS)
+                conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = conn.responseCode
+                accepted = status in 200..299
+                if (accepted) {
+                    // The result reached GMweb: the last leg of the delivery chain. This
+                    // single call also stamps the queue's gateway-ack time.
+                    GatewayHealthRecorder.onAckSuccess(nowMs)
+                } else {
+                    Log.w(TAG, "ack HTTP " + status + " for " + gatewayRequestId)
+                    GatewayHealthRecorder.onAckFailure(
+                        kind = GatewayFailureKind.fromHttpStatus(status)
+                            ?: GatewayFailureKind.UNKNOWN,
+                        httpStatus = status,
+                        safeDetail = "HTTP $status",
+                        at = nowMs
+                    )
                 }
             } catch (e: Exception) {
                 // A lost ack must NOT re-send locally; the server times the task out.
                 Log.w(TAG, "ack failed for " + gatewayRequestId + ": " + e.message)
+                GatewayHealthRecorder.onAckFailure(
+                    kind = GatewayFailureKind.classify(
+                        error = e,
+                        networkValidated = networkMonitor.isOnline()
+                    ),
+                    safeDetail = GatewayHealthText.safeDetail(e.message),
+                    at = nowMs
+                )
+            } finally {
+                conn?.disconnect()
             }
         }
         val fields = linkedMapOf<String, Any?>()

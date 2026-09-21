@@ -1,6 +1,7 @@
 package com.autonomousone.messages.gateway
 
 import android.content.Context
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -103,7 +104,17 @@ class ConnectionSupervisor private constructor(
         DISABLED,            // user/consent says off
         WAITING_FOR_NETWORK, // desired + consent, but no validated internet
         CONNECTING,          // bringing server/heartbeat/poller up
-        CONNECTED,           // everything desired is running
+        /**
+         * Every component the gateway WANTS is running.
+         *
+         * READ THIS BEFORE COLOURING ANYTHING GREEN: it means the components were
+         * STARTED, not that GMweb and this phone are actually exchanging anything. The
+         * two claims came apart in production — `/api/v1/agent/events/batch` was ACKing
+         * events while `/gateway/pull` never succeeded, and the screen was green through
+         * it. End-to-end truth is [com.autonomousone.messages.gateway.health.GatewayHealthRecorder],
+         * which is derived from what the components OBSERVED.
+         */
+        CONNECTED,
         RECONNECTING,        // a live component dropped (network flap, stale IP bind)
         ERROR                // bind failed with retries pending — self-healing continues
     }
@@ -138,6 +149,8 @@ class ConnectionSupervisor private constructor(
         val phaseStart = System.currentTimeMillis()
         desiredEnabled = true
         prefs.gatewayDesiredEnabled = true
+        GatewayHealthRecorder.setDesired(prefs.hasGatewayConsent)
+        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebUrl)
         ensureLoop()
         reconcileNow()
         // HOW LONG DID THE ENTRY POINT ITSELF TAKE? `start()` only flips desired state
@@ -154,6 +167,7 @@ class ConnectionSupervisor private constructor(
     fun stop() {
         desiredEnabled = false
         prefs.gatewayDesiredEnabled = false
+        GatewayHealthRecorder.setDesired(false)
         reconcileNow()
     }
 
@@ -340,5 +354,26 @@ class ConnectionSupervisor private constructor(
         prefs.isEnabled = true // runtime state — now DERIVED by the supervisor, never clobbered elsewhere
         _stateFlow.value = State.CONNECTED
         notePhase("CONNECTED")
+        // Publish the INTENT and the TARGET, never a verdict. `State.CONNECTED` above says
+        // the components were started; the health card's answer comes from what those
+        // components go on to observe (a successful poll, a rejected key, a TLS failure).
+        // Deliberately no "healthy" write here — that is exactly the lie this replaces.
+        publishHealthContext()
+    }
+
+    /**
+     * Records what the supervisor legitimately knows: whether the gateway is wanted, which
+     * endpoint is configured, and whether the OS reports a validated route.
+     *
+     * It does NOT record success. A component that has not run yet has not proven anything,
+     * and the derived overall state stays STARTING until one of them does.
+     */
+    private fun publishHealthContext() {
+        GatewayHealthRecorder.setDesired(desiredEnabled && prefs.hasGatewayConsent)
+        GatewayHealthRecorder.setEndpointUrl(prefs.gmwebUrl)
+        GatewayHealthRecorder.onNetwork(
+            validated = networkMonitor.isOnline(),
+            transport = networkMonitor.transportLabel()
+        )
     }
 }

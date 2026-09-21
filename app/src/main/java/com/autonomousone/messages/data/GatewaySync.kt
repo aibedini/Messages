@@ -194,6 +194,17 @@ interface GatewayEventOutboxDao {
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state IN ('PENDING', 'SENDING')")
     suspend fun pendingDepth(): Int
 
+    /**
+     * Rows currently claimed by an in-flight batch.
+     *
+     * `pendingDepth()` deliberately counts PENDING and SENDING together, which is the right
+     * question for "is there work left?" but the wrong one for health: a row that has been
+     * claimed for minutes is a STUCK upload, and the status card has to be able to say so.
+     * Pending-only depth is `pendingDepth() - sendingDepth()`.
+     */
+    @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'SENDING'")
+    suspend fun sendingDepth(): Int
+
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE priority = 'BACKFILL' AND state IN ('PENDING', 'SENDING')")
     suspend fun pendingBackfillDepth(): Int
 
