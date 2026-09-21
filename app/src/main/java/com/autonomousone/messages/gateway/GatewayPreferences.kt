@@ -34,6 +34,7 @@ class GatewayPreferences(context: Context) {
         private const val KEY_CONSENT_VERSION = "gateway_consent_version"
         private const val KEY_CONSENT_ACCEPTED_AT = "gateway_consent_accepted_at"
         // ── Cloud backend keys ──
+        /** @deprecated legacy, kept only for rollback; the origin key below is authoritative. */
         private const val KEY_BACKEND_URL = "cloud_backend_url"
         private const val KEY_GATEWAY_ID = "cloud_gateway_id"
         private const val KEY_IDENTITY_REGISTERED = "cloud_identity_registered"
@@ -45,7 +46,17 @@ class GatewayPreferences(context: Context) {
         // ── GMweb pull bridge (outbound-only; no tunnel needed) ──
         const val DEFAULT_CONTROL_PLANE_SENDS = true
         private const val KEY_CP_SENDS = "gateway_control_plane_sends_enabled"
+        /** @deprecated legacy, kept only for the one-way migration; see [migrateLegacyServerConfigOnce]. */
         private const val KEY_GMWEB_URL = "gmweb_url"
+
+        /**
+         * v3.4.6 SSOT: the ONE GMweb origin. Every GMweb route — control plane and pull
+         * bridge alike — is derived from it.
+         */
+        private const val KEY_SERVER_ORIGIN = "gmweb_server_origin"
+
+        /** Set once the legacy `gmweb_url`/`cloud_backend_url` pair has been folded in. */
+        private const val KEY_SERVER_MIGRATED = "gmweb_origin_migrated_v1"
         // ── Idempotency store ──
         private const val KEY_SENT_EVENT_IDS = "cloud_sent_event_ids"
         private const val MAX_EVENT_IDS = 500
@@ -172,20 +183,107 @@ class GatewayPreferences(context: Context) {
     // ── Cloud backend ──
 
     /**
-     * Production backend URL.
-     * Default from BuildConfig (set to https://gaitway.autonomousone.in at build time).
-     * HTTPS-only: insecure http:// values are rejected so the bearer token can
-     * never be sent over plaintext HTTP.
+     * THE single GMweb server origin (v3.4.6).
+     *
+     * This is the ONLY stored GMweb address. [backendUrl] and [gmwebUrl] below are deprecated
+     * aliases that read and write THIS value, so the many existing call sites
+     * (`BackendClient`, `OutboxPoller`, the enrollment path, the diagnostics probe) all speak
+     * to one server without touching ten classes — while no second authority can be created.
+     *
+     * Reading it runs the one-time legacy migration, so every entry point sees the same answer
+     * however the process was started.
      */
-    var backendUrl: String
-        get() = prefs.getString(KEY_BACKEND_URL, null)
-            ?: BuildConfig.GATEWAY_BACKEND_URL
+    var gmwebServerOrigin: String
+        get() {
+            migrateLegacyServerConfigOnce()
+            return prefs.getString(KEY_SERVER_ORIGIN, "") ?: ""
+        }
         set(value) {
-            val v = value.trim().trimEnd('/')
-            require(v.isEmpty() || v.startsWith("https://")) {
-                "Backend URL must use HTTPS"
+            // Always stored as a bare origin: a stored `/app` would produce 404s on every API
+            // route, so normalization happens on the way IN, not on the way out.
+            val normalized = GmwebServerProfile.profileOf(value)?.origin
+            require(normalized != null || value.isBlank()) {
+                "GMweb server URL must be a valid https origin"
             }
-            prefs.edit().putString(KEY_BACKEND_URL, v).apply()
+            prefs.edit().putString(KEY_SERVER_ORIGIN, normalized ?: "").apply()
+        }
+
+    /** The parsed profile, or null when no server is configured. */
+    fun gmwebServerProfile(): GmwebServerProfile? =
+        GmwebServerProfile.profileOf(gmwebServerOrigin)
+
+    /**
+     * Validates and stores a pasted address — the panel URL, its trailing-slash form, or a bare
+     * origin — as the single server origin.
+     *
+     * Returns the normalization result so the UI can explain a rejection instead of showing a
+     * generic "invalid URL".
+     */
+    fun saveGmwebServer(input: String): GmwebServerNormalization {
+        return when (val result = GmwebServerProfile.normalize(input)) {
+            is GmwebServerNormalization.Valid -> {
+                prefs.edit().putString(KEY_SERVER_ORIGIN, result.profile.origin).apply()
+                result
+            }
+            is GmwebServerNormalization.Invalid -> {
+                if (input.isBlank()) {
+                    // Clearing the field is an explicit "no server", not a validation error.
+                    prefs.edit().putString(KEY_SERVER_ORIGIN, "").apply()
+                }
+                result
+            }
+        }
+    }
+
+    /**
+     * One-time migration to the single origin. IDEMPOTENT — guarded by a marker, so a rollback
+     * to an older build (which writes the legacy keys again) does not re-trigger it and cannot
+     * resurrect a second authority.
+     *
+     * PRIORITY, and why:
+     *  1. the old `gmwebUrl` — it is what drove the pull bridge, the leg the user was actively
+     *     configuring;
+     *  2. an EXPLICITLY STORED `backendUrl` — read with `prefs.contains`, never through the
+     *     getter, because the getter used to fall back to a domain compiled into the APK. That
+     *     baked value was never a user choice and must not be adopted as one;
+     *  3. otherwise blank: the app starts with no server, and the user configures one.
+     */
+    private fun migrateLegacyServerConfigOnce() {
+        if (prefs.getBoolean(KEY_SERVER_MIGRATED, false)) return
+
+        val decision = runCatching {
+            GmwebServerMigration.decide(
+                GmwebServerMigration.StoredConfig(
+                    legacyGmwebUrl = prefs.getString(KEY_GMWEB_URL, null),
+                    // `contains` — NOT the getter, and never BuildConfig. The getter used to
+                    // fall back to the domain baked into the APK, which was never a user choice
+                    // and must disappear rather than be inherited.
+                    storedBackendUrl = if (prefs.contains(KEY_BACKEND_URL)) {
+                        prefs.getString(KEY_BACKEND_URL, null)
+                    } else {
+                        null
+                    },
+                    alreadyMigrated = false
+                )
+            )
+        }.getOrElse { GmwebServerMigration.Decision(origin = null) }
+
+        prefs.edit().apply {
+            if (decision.hasOriginToWrite) putString(KEY_SERVER_ORIGIN, decision.origin)
+            putBoolean(KEY_SERVER_MIGRATED, true)
+        }.apply()
+    }
+
+    /**
+     * @deprecated The control plane and the pull bridge are the SAME GMweb deployment, so this
+     * is an alias for [gmwebServerOrigin]. It exists so existing call sites keep working; it is
+     * no longer an independent value, and it no longer falls back to a compiled-in domain.
+     */
+    @Deprecated("Use gmwebServerOrigin / gmwebServerProfile()", ReplaceWith("gmwebServerOrigin"))
+    var backendUrl: String
+        get() = gmwebServerOrigin
+        set(value) {
+            gmwebServerOrigin = value
         }
 
     /** The public gateway ID returned by the backend on registration. */
@@ -299,16 +397,15 @@ class GatewayPreferences(context: Context) {
     }
 
     /**
-     * GMweb-API base URL for the pull bridge (e.g. https://gmweb.example.com).
-     * Outbound-only HTTPS: the phone dials the server, never the reverse, so
-     * changing mobile IPs / firewalls need no tunnel. Empty = bridge disabled.
+     * @deprecated The pull bridge and the control plane are the SAME GMweb deployment, so this
+     * is an alias for [gmwebServerOrigin]. Kept so the existing pull/validate/ack call sites and
+     * `GmwebTaskValidator` keep compiling; a setter here writes the ONE origin.
      */
+    @Deprecated("Use gmwebServerOrigin / gmwebServerProfile()", ReplaceWith("gmwebServerOrigin"))
     var gmwebUrl: String
-        get() = prefs.getString(KEY_GMWEB_URL, "") ?: ""
+        get() = gmwebServerOrigin
         set(value) {
-            val v = value.trim().trimEnd('/')
-            require(v.isEmpty() || v.startsWith("https://")) { "GMweb URL must use HTTPS" }
-            prefs.edit().putString(KEY_GMWEB_URL, v).apply()
+            gmwebServerOrigin = value
         }
 
     /**

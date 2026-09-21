@@ -40,11 +40,20 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Production backend URL — override in local.properties via gradle.properties if needed.
-        // v2.6.21 (PR-11): default now points at the deployed ADR-004 control
-        // plane (GMweb) — the /api/gateways/* v1 backend is retired.
-        val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString()
-            ?: "https://gmweb.46.31.76.103.nip.io"
+        // GMweb server address.
+        //
+        // v3.4.6 (SSOT): there is deliberately NO production default. The server origin is USER
+        // CONFIGURATION, stored in preferences (gmweb_server_origin), and every GMweb route —
+        // control plane and pull bridge alike — is derived from it. A domain or IP compiled
+        // into the APK is what let the pull bridge and the control plane point at two different
+        // servers with nothing in the UI saying so.
+        //
+        // The build property remains only as a DEV/TEST convenience (e.g. a local server in a
+        // debug build). It must be empty in a release build; an empty value means the app ships
+        // with no server configured, which is the honest default.
+        //
+        // DEPRECATED: server address is user configuration — see GmwebServerProfile.
+        val backendUrl = project.findProperty("GATEWAY_BACKEND_URL")?.toString().orEmpty()
         buildConfigField("String", "GATEWAY_BACKEND_URL", "\"$backendUrl\"")
         // Single source of truth for the app version.
         buildConfigField("String", "APP_VERSION", "\"$versionName\"")

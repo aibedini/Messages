@@ -1,15 +1,19 @@
 package com.autonomousone.messages.security
 
 import android.content.Context
-import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.gateway.GatewayPreferences
 
 /**
  * ADR-007 — single source for the GMweb server URL the app TRUSTS for
  * pairing. Pairing must never require manual Gateway configuration first:
  *
- *   GatewayPreferences.gmwebUrl (user-configured, if set)
- *   ?: BuildConfig.GATEWAY_BACKEND_URL (production fallback)
+ *   GatewayPreferences.gmwebServerOrigin (the ONE user-configured origin)
+ *
+ * v3.4.6: there is no build-time fallback any more. The old
+ * `?: BuildConfig.GATEWAY_BACKEND_URL` chain meant a phone that had never been configured
+ * still "trusted" a domain baked into the APK — which is also what allowed pairing and the
+ * pull bridge to disagree about which server this device belongs to. No server configured now
+ * means no trusted origin, and pairing says so instead of guessing.
  *
  * Also owns CANONICAL origin comparison: scheme + host + effective port,
  * HTTPS mandatory (P0-5/§3). Path, trailing slash, casing and default
@@ -18,13 +22,9 @@ import com.autonomousone.messages.gateway.GatewayPreferences
  */
 object PairingEndpointResolver {
 
-    /** The trusted server URL (user setting wins, else build default). */
-    fun trustedServerUrl(context: Context): String {
-        val prefs = GatewayPreferences(context)
-        return prefs.gmwebUrl
-            .takeIf { it.isNotBlank() }
-            ?: BuildConfig.GATEWAY_BACKEND_URL
-    }
+    /** The trusted server URL, or blank when the user has not configured one. */
+    fun trustedServerUrl(context: Context): String =
+        GatewayPreferences(context).gmwebServerOrigin
 
     /**
      * Canonical origin: lowercase scheme+host+effective port.
