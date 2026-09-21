@@ -211,6 +211,27 @@ class GatewayViewModel(
         gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent
     )
 
+    /** Copies the redacted report to the clipboard. */
+    fun copyDiagnosticReport() {
+        val clipboard = getApplication<Application>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("GMweb gateway diagnostic", buildDiagnosticReport()))
+        addLog("📋 Diagnostic report copied")
+    }
+
+    /** Shares the redacted report through the system sheet. */
+    fun shareDiagnosticReport() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "GMweb Gateway Diagnostic")
+            putExtra(Intent.EXTRA_TEXT, buildDiagnosticReport())
+        }
+        getApplication<Application>().startActivity(
+            Intent.createChooser(intent, "Share diagnostic report")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
     init {
         observeLogs()
         observeHeartbeatState()
