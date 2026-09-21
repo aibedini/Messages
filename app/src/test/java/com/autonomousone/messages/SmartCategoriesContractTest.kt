@@ -296,7 +296,7 @@ class SmartCategoriesContractTest {
     }
 
     // ── Test-local mirrors of the pure projection helpers ──────────────────
-    // Kept minimal and duplicated from `ui/home/CategoryFilterBar`'s caller on
+    // Kept minimal and duplicated from `ui/home/HomeCategoryChipBar`'s caller on
     // purpose: they pin the CONTRACT (which chips exist, what they narrow to)
     // without pulling Compose into the JVM test source set.
 

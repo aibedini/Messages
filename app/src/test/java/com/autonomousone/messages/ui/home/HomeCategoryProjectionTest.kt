@@ -636,4 +636,141 @@ class HomeCategoryProjectionTest {
     fun `anEmptyInputProducesAnEmptyRow`() {
         assertTrue(chips().isEmpty())
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // The thread ids each chip narrows to (the unified chip bar filters with these)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private fun project(
+        context: List<HomeCategoryProjection.Conversation> = emptyList(),
+        spam: List<HomeCategoryProjection.Conversation> = emptyList(),
+        systemCategories: Map<Long, MessageCategory> = emptyMap(),
+        assignments: List<UserCategoryAssignmentEntity> = emptyList(),
+        customCategories: List<HomeCategoryProjection.CustomCategory> = emptyList()
+    ) = HomeCategoryProjection.project(
+        HomeCategoryProjection.Input(
+            context = context,
+            spam = spam,
+            systemCategories = systemCategories,
+            assignments = assignments,
+            customCategories = customCategories
+        )
+    )
+
+    @Test
+    fun `everyChipHasAThreadIdSetEvenWhenItIsEmpty`() {
+        val result = project(
+            context = listOf(conversation(1L, phone, unread = true)),
+            systemCategories = mapOf(1L to MessageCategory.OTP),
+            customCategories = listOf(custom(vpn, "VPN", 0))
+        )
+
+        // A chip that narrows to nothing must be an EMPTY SET, never a missing key: the
+        // screen distinguishes "no chip selected" (null) from "nothing matches" (empty).
+        assertEquals(setOf(1L), result.threadIds[HomeCategoryKey.System(MessageCategory.OTP)])
+        assertEquals(emptySet<Long>(), result.threadIds[HomeCategoryKey.Custom(vpn)])
+        assertEquals(result.chips.map { it.key }.toSet(), result.threadIds.keys.toSet())
+    }
+
+    @Test
+    fun `aSystemChipNarrowsToEveryMemberNotOnlyTheUnreadOnes`() {
+        val result = project(
+            context = listOf(
+                conversation(1L, phone, unread = true),
+                conversation(2L, phone, unread = false)
+            ),
+            systemCategories = mapOf(1L to MessageCategory.PERSONAL, 2L to MessageCategory.PERSONAL)
+        )
+
+        assertEquals(
+            "the badge counts 1, but the chip must still list both conversations",
+            setOf(1L, 2L),
+            result.threadIds[HomeCategoryKey.System(MessageCategory.PERSONAL)]
+        )
+        assertEquals(1, result.chips.single().unreadConversations)
+    }
+
+    @Test
+    fun `theSpamChipNarrowsToTheReportedRows`() {
+        val result = project(
+            context = listOf(conversation(1L, phone, unread = true)),
+            spam = listOf(conversation(7L, phone, unread = true)),
+            systemCategories = mapOf(
+                1L to MessageCategory.OTP,
+                7L to MessageCategory.SPAM
+            )
+        )
+
+        assertEquals(setOf(1L), result.threadIds[HomeCategoryKey.System(MessageCategory.OTP)])
+        assertEquals(setOf(7L), result.threadIds[HomeCategoryKey.System(MessageCategory.SPAM)])
+    }
+
+    @Test
+    fun `aCustomChipNarrowsToItsMembersInTheCurrentContext`() {
+        val assignments = listOf(addressRow(vpn, "+989121234567"), addressRow(vpn, "+989120000000"))
+        val result = project(
+            // Only one of the two members is in this tab's context.
+            context = listOf(conversation(7L, "+989120000000", unread = false)),
+            assignments = assignments,
+            customCategories = listOf(custom(vpn, "VPN", 0))
+        )
+
+        assertEquals(
+            setOf(7L),
+            result.threadIds[HomeCategoryKey.Custom(vpn)]
+        )
+        assertEquals(1, result.chips.single().conversations)
+        assertEquals(0, result.chips.single().unreadConversations)
+    }
+
+    @Test
+    fun `aCustomChipExcludesReportedSpamFromWhatItOpens`() {
+        val result = project(
+            context = emptyList(),
+            spam = listOf(conversation(7L, phone, unread = true)),
+            assignments = listOf(addressRow(vpn, phone)),
+            customCategories = listOf(custom(vpn, "VPN", 0))
+        )
+
+        assertEquals(
+            "a chip must never open a list that hides the rows it counted",
+            emptySet<Long>(),
+            result.threadIds[HomeCategoryKey.Custom(vpn)]
+        )
+        assertEquals(0, result.chips.single().conversations)
+    }
+
+    @Test
+    fun `aChipNarrowsToDistinctThreadIdsEvenWhenARowIsDuplicated`() {
+        val result = project(
+            context = listOf(
+                conversation(7L, phone, unread = true),
+                conversation(7L, phone, unread = true)
+            ),
+            assignments = listOf(addressRow(vpn, phone)),
+            customCategories = listOf(custom(vpn, "VPN", 0))
+        )
+
+        assertEquals(setOf(7L), result.threadIds[HomeCategoryKey.Custom(vpn)])
+        assertEquals(1, result.chips.single().unreadConversations)
+    }
+
+    @Test
+    fun `projectKeepsTheChipsAndTheThreadIdsInTheSameOrder`() {
+        val result = project(
+            context = listOf(conversation(1L, phone, unread = true)),
+            systemCategories = mapOf(1L to MessageCategory.PROMOTION),
+            customCategories = listOf(custom(clients, "Clients", 1), custom(vpn, "VPN", 0))
+        )
+
+        assertEquals(
+            listOf(
+                HomeCategoryKey.System(MessageCategory.PROMOTION),
+                HomeCategoryKey.Custom(vpn),
+                HomeCategoryKey.Custom(clients)
+            ),
+            result.chips.map { it.key }
+        )
+        assertEquals(result.chips.map { it.key }, result.threadIds.keys.toList())
+    }
 }
