@@ -14,6 +14,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.gateway.AndroidGatewayProbeIo
 import com.autonomousone.messages.gateway.BackendClient
 import com.autonomousone.messages.gateway.ConnectionSupervisor
 import com.autonomousone.messages.gateway.GatewayPreferences
@@ -21,6 +23,17 @@ import com.autonomousone.messages.gateway.GatewayServer
 import com.autonomousone.messages.gateway.GatewayService
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.RegistrationManager
+import com.autonomousone.messages.gateway.health.GatewayConnectivityProbe
+import com.autonomousone.messages.gateway.health.GatewayConnectivityResult
+import com.autonomousone.messages.gateway.health.GatewayDiagnosticReport
+import com.autonomousone.messages.gateway.health.GatewayEndpoint
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.health.GatewayHealthSnapshot
+import com.autonomousone.messages.gateway.health.GatewayLog
+import com.autonomousone.messages.gateway.health.GatewayLogEntry
+import com.autonomousone.messages.gateway.health.GatewayLogFilter
+import com.autonomousone.messages.gateway.health.GatewayLogSeverity
+import com.autonomousone.messages.gateway.health.GatewayLogSubsystem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
@@ -84,11 +97,136 @@ class GatewayViewModel(
 
     val logs = mutableStateListOf<String>()
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // v3.4.x P0 — the multi-dimension health surface
+    //
+    // The screen reads a SNAPSHOT of independent dimensions plus a live log, instead of the
+    // single green/amber light that used to mean "the components were started". The
+    // derivation lives in GatewayHealthRules (pure, tested); this only republishes it.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** True from the moment Reconnect is tapped until the request has been dispatched. */
+    var reconnecting by mutableStateOf(false)
+        private set
+
+    /**
+     * A 1-second tick, so the card's RELATIVE times ("last poll 4m ago") and its FRESHNESS
+     * transitions stay true while the screen is open.
+     *
+     * Without it the card would only refresh when a component recorded something, so a
+     * bridge that went silent would keep showing "3s ago" indefinitely — the exact class of
+     * stale-green the whole P0 is about. It costs a counter increment, matching the 1-second
+     * supervisor tick this ViewModel already runs.
+     */
+    var healthTick by mutableIntStateOf(0)
+        private set
+
+    /** The registry's change counter, so a recorded transition recomposes immediately. */
+    val healthRevision: kotlinx.coroutines.flow.StateFlow<Long> = GatewayHealthRecorder.revision
+
+    /** The latest explicit diagnostic run, or null when it has not been run. */
+    var diagnosticResult by mutableStateOf<GatewayConnectivityResult?>(null)
+        private set
+
+    var diagnosticRunning by mutableStateOf(false)
+        private set
+
+    /** The current dimensions with the verdict derived from them. */
+    fun gatewayHealth(): GatewayHealthSnapshot = GatewayHealthRecorder.snapshot()
+
+    /** The live feed for one filter chip. Advanced rows are opt-in. */
+    fun gatewayLogFeed(
+        filter: GatewayLogFilter,
+        includeAdvanced: Boolean = false
+    ): List<GatewayLogEntry> = GatewayLog.buffer.visible(filter, includeAdvanced)
+
+    /**
+     * Runs the full staged connectivity check.
+     *
+     * EXPLICIT USER ACTION ONLY. This resolves DNS, opens a socket, performs a TLS handshake
+     * and makes two HTTPS requests, so it must never be put on a timer — the continuous half
+     * of the health system is [gatewayHealth], which the live components feed for free.
+     *
+     * A reconnect is deliberately NOT implied: the probe reports, the user decides.
+     */
+    fun runDiagnostics() {
+        if (diagnosticRunning) return
+        val endpoint = GatewayEndpoint.parse(prefs.gmwebUrl)
+        if (endpoint == null) {
+            diagnosticResult = null
+            addLog("⚠️ No usable GMweb URL configured — nothing to diagnose")
+            return
+        }
+        diagnosticRunning = true
+        viewModelScope.launch(Dispatchers.IO) {
+            addLog("🔎 Running gateway diagnostics against ${endpoint.displayHost}…")
+            val result = runCatching {
+                GatewayConnectivityProbe(
+                    io = AndroidGatewayProbeIo(getApplication(), prefs),
+                    endpoint = endpoint
+                ).run()
+            }
+            diagnosticRunning = false
+            result.fold(
+                onSuccess = { outcome ->
+                    diagnosticResult = outcome
+                    GatewayLog.record(
+                        severity = if (outcome.passed) {
+                            GatewayLogSeverity.SUCCESS
+                        } else {
+                            GatewayLogSeverity.ERROR
+                        },
+                        subsystem = GatewayLogSubsystem.SUPERVISOR,
+                        code = "DIAGNOSTICS_DONE",
+                        title = if (outcome.passed) {
+                            "Diagnostics passed"
+                        } else {
+                            "Diagnostics stopped at ${outcome.firstFailure?.stage?.name}"
+                        },
+                        detail = outcome.firstFailure?.detail
+                    )
+                    addLog(
+                        if (outcome.passed) "✅ Diagnostics passed"
+                        else "❌ Diagnostics: ${outcome.firstFailure?.stage} — ${outcome.firstFailure?.detail ?: ""}"
+                    )
+                },
+                onFailure = { error ->
+                    GatewayLog.resumeFailed("Diagnostics failed to run", error.message)
+                    addLog("❌ Diagnostics failed to run: ${error.message ?: "unknown error"}")
+                }
+            )
+        }
+    }
+
+    /**
+     * The shareable report: the live dimensions, the last probe run (if any), and the version
+     * and mode context, redacted by [GatewayDiagnosticReport].
+     */
+    fun buildDiagnosticReport(): String = GatewayDiagnosticReport.render(
+        snapshot = GatewayHealthRecorder.snapshot(),
+        probe = diagnosticResult,
+        appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+        deliveryMode = "LEGACY_PULL",
+        supervisorState = GatewayService.supervisorState.name,
+        gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent
+    )
+
     init {
         observeLogs()
         observeHeartbeatState()
         observeSupervisorState()
+        observeHealthTick()
         refreshStatus()
+    }
+
+    /** Drives the card's relative times and freshness while this screen is alive. */
+    private fun observeHealthTick() {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(1_000)
+                healthTick++
+            }
+        }
     }
 
     /** Poll the live supervisor state (the service may start/stop while this
@@ -176,8 +314,18 @@ class GatewayViewModel(
             showConsentDialog = true
             return
         }
+        // v3.4.x P0: the card must say RECONNECTING immediately. A reconnect is a request
+        // to try again — it is not evidence that anything worked, so this never sets a
+        // healthy state; only a real poll result may do that.
+        reconnecting = true
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔄 Manual reconnect triggered...")
+            GatewayLog.record(
+                severity = GatewayLogSeverity.INFO,
+                subsystem = GatewayLogSubsystem.SUPERVISOR,
+                code = "RECONNECT_REQUESTED",
+                title = "Reconnect requested"
+            )
             GatewayService.reconnectNow(getApplication())
             if (prefs.backendUrl.isNotBlank()) {
                 cloudConnectionState = HeartbeatManager.ConnectionState.CONNECTING
@@ -193,6 +341,7 @@ class GatewayViewModel(
             } else {
                 addLog("✅ Reconnect requested — supervisor reconciling")
             }
+            reconnecting = false
         }
     }
 

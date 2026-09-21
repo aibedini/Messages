@@ -198,6 +198,8 @@ class GatewayService : Service() {
                 retryHeartbeat = { heartbeatManager.retryNow() },
                 startPoller = { outboxPoller.start() },
                 stopPoller = { outboxPoller.stop() },
+                isPollerRunning = { outboxPoller.isRunning },
+                wakePoller = { outboxPoller.retryNow() },
                 startEventUploader = { eventUploader.start() },
                 stopEventUploader = { eventUploader.stop() },
                 startTrustPublisher = { trustPublisher.start() },

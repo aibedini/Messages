@@ -12,6 +12,7 @@ import com.autonomousone.messages.gateway.health.GatewayPullFailure
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -183,6 +185,33 @@ class OutboxPoller(
     private var pollJob: Job? = null
     @Volatile private var running = false
 
+    /**
+     * Interrupts the failure backoff so a manual reconnect polls NOW instead of waiting out
+     * the 5-second ladder. Conflated: ten impatient taps are one wake-up.
+     */
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * True while the poll loop is alive.
+     *
+     * A reconnect needs this: "the poller was started once" and "the poll loop is running
+     * now" are different facts, and a job that exited (gate disabled, consent revoked,
+     * cancellation) leaves [running] false with nothing polling. Restarting on that basis is
+     * what makes Reconnect do something rather than merely recolour the card.
+     */
+    val isRunning: Boolean get() = running && pollJob?.isActive == true
+
+    /**
+     * Try again immediately: cancel any pending backoff and poll now.
+     *
+     * Does NOT start a second poller — [start] is idempotent and this only nudges the
+     * existing loop.
+     */
+    fun retryNow() {
+        wake.trySend(Unit)
+        GatewayHealthRecorder.setPollerState(_stateFlow.value.name)
+    }
+
     private fun acquireCycleWakeLock() {
         try {
             // 90s > longest legal cycle (40s pull timeout + 120s drain is the
@@ -245,7 +274,8 @@ class OutboxPoller(
                     _stateFlow.value = State.ERROR
                     GatewayHealthRecorder.setPollerState(State.ERROR.name)
                     onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (ERROR_RETRY_MS / 1000) + "s")
-                    delay(ERROR_RETRY_MS)
+                    // Interruptible: a manual reconnect must not wait out the backoff.
+                    withTimeoutOrNull(ERROR_RETRY_MS) { wake.receive() }
                 }
             }
         }

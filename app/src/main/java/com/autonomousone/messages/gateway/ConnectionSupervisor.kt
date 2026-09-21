@@ -97,6 +97,17 @@ class ConnectionSupervisor private constructor(
         /** PR-10: the strategic SecureCommandPoller (/api/v1 agent bridge). */
         val startCommandPoller: () -> Unit = {},
         val stopCommandPoller: () -> Unit = {},
+        /**
+         * Reports whether the delivery poller's LOOP is alive, and wakes it.
+         *
+         * "Start was called once" and "the loop is running now" are different facts: a job
+         * that exited (gate disabled, consent revoked, cancellation) leaves nothing polling
+         * while the supervisor still believes the gateway is up. A reconnect has to be able
+         * to tell the two apart, and to poke the loop it already has rather than build a
+         * second one.
+         */
+        val isPollerRunning: () -> Boolean = { false },
+        val wakePoller: () -> Unit = {},
         val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL
     )
 
@@ -196,6 +207,20 @@ class ConnectionSupervisor private constructor(
         // alive, which silently kept the old backoff in force.
         components.retryHeartbeat()
         components.retryTrustPublisher()
+        // The delivery bridge is the leg the user is almost always asking about, and a
+        // retry that only reset a backoff in a component whose loop had already EXITED
+        // would recolour the card without polling anything. `startPoller` is idempotent, so
+        // restarting a dead loop cannot produce a second poller.
+        if (prefs.gmwebUrl.isNotBlank()) {
+            if (!components.isPollerRunning()) {
+                onLog("🔁 Delivery poller had stopped — restarting it")
+                components.startPoller()
+            }
+            components.wakePoller()
+        }
+        // The reconnect is a REQUEST, not a result: clearing the recorded error lets the
+        // card say "reconnecting", and it deliberately does not claim success.
+        GatewayHealthRecorder.onReconnectRequested()
         reconcileNow()
     }
 
