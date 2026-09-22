@@ -68,6 +68,8 @@ object GatewayHealthRecorder {
     private var uploadLastHttpStatus: Int? = null
     private var uploadLastFailure: GatewayFailureKind? = null
     private var uploadLastFailureDetail: String? = null
+    private var uploadConsecutiveFailures: Int = 0
+    private var uploadLastFailureAt: Long? = null
 
     // ── Inbound delivery bridge ─────────────────────────────────────────────
 
@@ -85,6 +87,8 @@ object GatewayHealthRecorder {
     private var pullCurrentRequestStartedAt: Long? = null
     private var pullNextRetryAt: Long? = null
     private var ackFailureCount: Int = 0
+    private var ackConsecutiveFailures: Int = 0
+    private var lastAckFailureAt: Long? = null
     private var lastAckFailure: GatewayFailureKind? = null
     private var lastAckFailureDetail: String? = null
 
@@ -182,6 +186,8 @@ object GatewayHealthRecorder {
         uploadLastHttpStatus = httpStatus
         uploadLastFailure = null
         uploadLastFailureDetail = null
+        uploadConsecutiveFailures = 0
+        uploadLastFailureAt = null
     }
 
     fun onUploadFailure(
@@ -194,6 +200,8 @@ object GatewayHealthRecorder {
         uploadLastHttpStatus = httpStatus
         uploadLastFailure = kind
         uploadLastFailureDetail = GatewayHealthText.safeDetail(safeDetail)
+        uploadConsecutiveFailures += 1
+        uploadLastFailureAt = at
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -262,6 +270,9 @@ object GatewayHealthRecorder {
      */
     fun onAckSuccess(at: Long = System.currentTimeMillis()) = mutate {
         pullLastAckAt = at
+        ackConsecutiveFailures = 0
+        lastAckFailure = null
+        lastAckFailureDetail = null
         eveQueue = eveQueue.copy(lastGatewayAckAt = at)
     }
 
@@ -272,6 +283,8 @@ object GatewayHealthRecorder {
         at: Long = System.currentTimeMillis()
     ) = mutate {
         ackFailureCount += 1
+        ackConsecutiveFailures += 1
+        lastAckFailureAt = at
         lastAckFailure = kind
         lastAckFailureDetail = GatewayHealthText.safeDetail(safeDetail)
     }
@@ -344,7 +357,9 @@ object GatewayHealthRecorder {
                     lastSuccessAt = uploadLastSuccessAt,
                     lastHttpStatus = uploadLastHttpStatus,
                     lastFailure = uploadLastFailure,
-                    lastFailureSafeDetail = uploadLastFailureDetail
+                    lastFailureSafeDetail = uploadLastFailureDetail,
+                    consecutiveFailures = uploadConsecutiveFailures,
+                    lastFailureAt = uploadLastFailureAt
                 ),
                 pullBridge = PullBridgeHealth(
                     running = pollerRunning,
@@ -361,6 +376,8 @@ object GatewayHealthRecorder {
                     currentRequestStartedAt = pullCurrentRequestStartedAt,
                     nextRetryAt = pullNextRetryAt,
                     ackFailures = ackFailureCount,
+                    ackConsecutiveFailures = ackConsecutiveFailures,
+                    lastAckFailureAt = lastAckFailureAt,
                     lastAckFailure = lastAckFailure,
                     lastAckFailureSafeDetail = lastAckFailureDetail
                 ),
@@ -388,6 +405,7 @@ object GatewayHealthRecorder {
         pullCurrentRequestStartedAt = null
         uploadLastFailure = null
         uploadLastFailureDetail = null
+        uploadConsecutiveFailures = 0
     }
 
     /** Test seam. Never call from production code. */
@@ -411,6 +429,8 @@ object GatewayHealthRecorder {
             uploadLastHttpStatus = null
             uploadLastFailure = null
             uploadLastFailureDetail = null
+            uploadConsecutiveFailures = 0
+            uploadLastFailureAt = null
             pollerRunning = false
             pollerState = "IDLE"
             pullLastPollStartedAt = null
@@ -425,6 +445,8 @@ object GatewayHealthRecorder {
             pullCurrentRequestStartedAt = null
             pullNextRetryAt = null
             ackFailureCount = 0
+            ackConsecutiveFailures = 0
+            lastAckFailureAt = null
             lastAckFailure = null
             lastAckFailureDetail = null
             eveQueue = EveQueueHealth()

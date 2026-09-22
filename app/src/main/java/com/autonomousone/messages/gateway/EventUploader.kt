@@ -2,6 +2,7 @@ package com.autonomousone.messages.gateway
 
 import android.content.Context
 import android.util.Log
+import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
@@ -246,7 +247,13 @@ class EventUploader(
                 GatewayEventFactory.validateForTransport(event)
             } catch (e: Exception) {
                 Log.e(TAG, "SECURITY_EVENT_REJECTED eventId=${event.eventUuid} type=${event.eventType}")
-                repo.onDeadLetter(event.eventUuid)
+                repo.onDeadLetter(
+                    eventUuid = event.eventUuid,
+                    failureCategory = GatewayFailureKind.VALIDATION_FAILED.name,
+                    httpStatus = null,
+                    at = now,
+                    appVersion = BuildConfig.APP_VERSION
+                )
                 continue
             }
             submitted += event
@@ -382,7 +389,16 @@ class EventUploader(
                 if (status != null && status in 400..499 && status != 429) {
                     // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
                     // visible health signal, never a silent drop.
-                    submitted.forEach { repo.onDeadLetter(it.eventUuid) }
+                    val failure = GatewayFailureKind.classify(httpStatus = status)
+                    submitted.forEach {
+                        repo.onDeadLetter(
+                            eventUuid = it.eventUuid,
+                            failureCategory = failure.name,
+                            httpStatus = status,
+                            at = System.currentTimeMillis(),
+                            appVersion = BuildConfig.APP_VERSION
+                        )
+                    }
                     onLog("⛔ ${submitted.size} event(s) dead-lettered: HTTP $status")
                     Outcome.FATAL
                 } else {

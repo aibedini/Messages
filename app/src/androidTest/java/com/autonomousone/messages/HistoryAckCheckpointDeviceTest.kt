@@ -58,7 +58,7 @@ class HistoryAckCheckpointDeviceTest {
                 historyOrdinal = 5, historyDate = 995, historyProviderId = 5,
                 encoding = "envelope.v3", schemaVersion = 1, cryptoVersion = 3, createdAt = 1,
             ))
-            dao.markDead("history-5")
+            dao.markDead("history-5", "TEST", null, 1_000L, "test")
             val checkpoint = db.cloudHistoryCheckpointDao().get("sms")!!
             db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(nextOrdinal = 6))
             assertFalse(repository.isHistoryDeliveryComplete("sms"))

@@ -16,6 +16,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
+import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.gateway.AndroidGatewayProbeIo
 import com.autonomousone.messages.gateway.BackendClient
@@ -146,13 +147,18 @@ class GatewayViewModel(
     var deadLetterBreakdown by mutableStateOf<List<DeadLetterBreakdownRow>>(emptyList())
         private set
 
+    var deadLetterSummary by mutableStateOf(DeadLetterSummary())
+        private set
+
     /** Refreshes the aggregate-only dead-letter view. Never mutates the outbox. */
     private suspend fun refreshDeadLetterBreakdown() {
-        val rows = runCatching {
-            GatewaySyncRepository(MessagesDatabase.get(getApplication()))
-                .deadLetterBreakdown()
-        }.getOrDefault(emptyList())
-        withContext(Dispatchers.Main) { deadLetterBreakdown = rows }
+        val repository = GatewaySyncRepository(MessagesDatabase.get(getApplication()))
+        val rows = runCatching { repository.deadLetterBreakdown() }.getOrDefault(emptyList())
+        val summary = runCatching { repository.deadLetterSummary() }.getOrDefault(DeadLetterSummary())
+        withContext(Dispatchers.Main) {
+            deadLetterBreakdown = rows
+            deadLetterSummary = summary
+        }
     }
 
     /** The current dimensions with the verdict derived from them. */
@@ -235,7 +241,8 @@ class GatewayViewModel(
         supervisorState = GatewayService.supervisorState.name,
         gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent,
         // Aggregate only — nothing deleted, no payload read.
-        deadLetters = deadLetterBreakdown
+        deadLetters = deadLetterBreakdown,
+        deadLetterSummary = deadLetterSummary
     )
 
     /** Copies the redacted report to the clipboard. */

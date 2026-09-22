@@ -80,7 +80,7 @@ import com.autonomousone.messages.BuildConfig
         // v17 — Send delay / Undo Send (ADDITIVE; see PendingDelayedSend.kt).
         PendingDelayedSendEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -552,10 +552,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 17
+        const val CURRENT_SCHEMA_VERSION = 18
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 16
+        const val PREVIOUS_SCHEMA_VERSION = 17
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -585,6 +585,21 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /** v17 -> v18: safe operational metadata for future dead-letter rows. */
+        internal val UPGRADE_TO_V18_SQL: List<String> = listOf(
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `failureCategory` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `failureHttpStatus` INTEGER",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `lastAttemptAt` INTEGER",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `deadLetteredAt` INTEGER",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `failureAppVersion` TEXT"
+        )
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V18_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -596,7 +611,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

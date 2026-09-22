@@ -107,7 +107,13 @@ data class GatewayEventOutboxEntity(
     val nextAttemptAt: Long = 0,
     val state: String = STATE_PENDING,
     val serverSequence: Long = 0,
-    val ackedAt: Long = 0
+    val ackedAt: Long = 0,
+    /** Safe failure metadata. Existing rows migrate with null = unavailable. */
+    val failureCategory: String? = null,
+    val failureHttpStatus: Int? = null,
+    val lastAttemptAt: Long? = null,
+    val deadLetteredAt: Long? = null,
+    val failureAppVersion: String? = null
 ) {
     companion object {
         const val PRIORITY_REALTIME = "REALTIME"
@@ -136,9 +142,9 @@ data class GatewayEventDiagnosticCount(
  * Deliberately carries no payload: the point is to answer "are these historical leftovers or an
  * active defect?" without reading, logging or deleting a single event.
  *
- * WHAT IS NOT HERE, AND WHY: the outbox row persists no failure reason, no HTTP status and no
- * `updatedAt`. Those exist only in the on-device diagnostics log, correlated by time. Reporting
- * them per row would mean inventing data, so they are absent and the report says so.
+ * Rows created before schema v18 have no failure metadata. New rows retain a safe category,
+ * optional HTTP status and attempt timestamps; aggregate readers report older values as
+ * unavailable rather than inventing them.
  */
 data class DeadLetterBreakdownRow(
     val eventType: String,
@@ -148,7 +154,17 @@ data class DeadLetterBreakdownRow(
     @ColumnInfo(name = "minAttempts") val minAttempts: Int,
     @ColumnInfo(name = "maxAttempts") val maxAttempts: Int,
     @ColumnInfo(name = "firstCreatedAt") val firstCreatedAt: Long,
-    @ColumnInfo(name = "lastCreatedAt") val lastCreatedAt: Long
+    @ColumnInfo(name = "lastCreatedAt") val lastCreatedAt: Long,
+    @ColumnInfo(name = "metadataCount") val metadataCount: Int = 0,
+    @ColumnInfo(name = "lastDeadLetteredAt") val lastDeadLetteredAt: Long? = null
+)
+
+data class DeadLetterSummary(
+    val count: Int = 0,
+    val metadataCount: Int = 0,
+    val lastDeadLetteredAt: Long? = null,
+    val newLastHour: Int = 0,
+    val newLast24Hours: Int = 0
 )
 
 @Dao
@@ -168,10 +184,10 @@ interface GatewayEventOutboxDao {
     suspend fun claimable(now: Long, limit: Int): List<GatewayEventOutboxEntity>
 
     @Query(
-        "UPDATE gateway_event_outbox SET state = 'SENDING' " +
+        "UPDATE gateway_event_outbox SET state = 'SENDING', lastAttemptAt = :at " +
             "WHERE id IN (:ids) AND state = 'PENDING'"
     )
-    suspend fun markSending(ids: List<Long>): Int
+    suspend fun markSending(ids: List<Long>, at: Long): Int
 
     /** Partial ACK (LOCK 13): only the reported eventUuid moves to ACKED. */
     @Query(
@@ -183,13 +199,25 @@ interface GatewayEventOutboxDao {
     /** Transport failure → back to PENDING with attemptCount+1 and a due time. */
     @Query(
         "UPDATE gateway_event_outbox SET state = 'PENDING', attemptCount = attemptCount + 1, " +
-            "nextAttemptAt = :nextAttemptAt WHERE eventUuid = :eventUuid AND state = 'SENDING'"
+            "nextAttemptAt = :nextAttemptAt, lastAttemptAt = :lastAttemptAt " +
+            "WHERE eventUuid = :eventUuid AND state = 'SENDING'"
     )
-    suspend fun markRetry(eventUuid: String, nextAttemptAt: Long): Int
+    suspend fun markRetry(eventUuid: String, nextAttemptAt: Long, lastAttemptAt: Long): Int
 
     /** Permanent schema/auth reject — never silently dropped (health alert reads this state). */
-    @Query("UPDATE gateway_event_outbox SET state = 'DEAD_LETTER' WHERE eventUuid = :eventUuid")
-    suspend fun markDead(eventUuid: String): Int
+    @Query(
+        "UPDATE gateway_event_outbox SET state = 'DEAD_LETTER', " +
+            "attemptCount = attemptCount + 1, failureCategory = :failureCategory, " +
+            "failureHttpStatus = :httpStatus, lastAttemptAt = :at, deadLetteredAt = :at, " +
+            "failureAppVersion = :appVersion WHERE eventUuid = :eventUuid AND state = 'SENDING'"
+    )
+    suspend fun markDead(
+        eventUuid: String,
+        failureCategory: String,
+        httpStatus: Int?,
+        at: Long,
+        appVersion: String
+    ): Int
 
     /** Process-death recovery: crash between claim and upload/ACK leaves SENDING rows. */
     @Query("UPDATE gateway_event_outbox SET state = 'PENDING' WHERE state = 'SENDING'")
@@ -202,12 +230,18 @@ interface GatewayEventOutboxDao {
      * Resets only the current dead-letter cohort back to PENDING with
      * attemptCount untouched; called once right after a successful enroll.
      */
-    @Query("UPDATE gateway_event_outbox SET state = 'PENDING' WHERE state = 'DEAD_LETTER'")
+    @Query(
+        "UPDATE gateway_event_outbox SET state = 'PENDING', failureCategory = NULL, " +
+            "failureHttpStatus = NULL, deadLetteredAt = NULL, failureAppVersion = NULL " +
+            "WHERE state = 'DEAD_LETTER'"
+    )
     suspend fun resetDeadLetterToPending(): Int
 
     /** One-time v3 rollout recovery; retry only events emitted by the new protocol. */
     @Query(
-        "UPDATE gateway_event_outbox SET state = 'PENDING', nextAttemptAt = 0 " +
+        "UPDATE gateway_event_outbox SET state = 'PENDING', nextAttemptAt = 0, " +
+            "failureCategory = NULL, failureHttpStatus = NULL, deadLetteredAt = NULL, " +
+            "failureAppVersion = NULL " +
             "WHERE state = 'DEAD_LETTER' AND cryptoVersion >= :minCryptoVersion"
     )
     suspend fun resetCryptoDeadLetterToPending(minCryptoVersion: Int): Int
@@ -255,7 +289,9 @@ interface GatewayEventOutboxDao {
                MIN(attemptCount) AS minAttempts,
                MAX(attemptCount) AS maxAttempts,
                MIN(createdAt) AS firstCreatedAt,
-               MAX(createdAt) AS lastCreatedAt
+               MAX(createdAt) AS lastCreatedAt,
+               SUM(CASE WHEN deadLetteredAt IS NOT NULL THEN 1 ELSE 0 END) AS metadataCount,
+               MAX(deadLetteredAt) AS lastDeadLetteredAt
         FROM gateway_event_outbox
         WHERE state = 'DEAD_LETTER'
         GROUP BY eventType, cryptoVersion, priority
@@ -263,6 +299,16 @@ interface GatewayEventOutboxDao {
         """
     )
     suspend fun deadLetterBreakdown(): List<DeadLetterBreakdownRow>
+
+    @Query(
+        "SELECT COUNT(*) AS count, " +
+            "SUM(CASE WHEN deadLetteredAt IS NOT NULL THEN 1 ELSE 0 END) AS metadataCount, " +
+            "MAX(deadLetteredAt) AS lastDeadLetteredAt, " +
+            "SUM(CASE WHEN deadLetteredAt >= :lastHour THEN 1 ELSE 0 END) AS newLastHour, " +
+            "SUM(CASE WHEN deadLetteredAt >= :last24Hours THEN 1 ELSE 0 END) AS newLast24Hours " +
+            "FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'"
+    )
+    suspend fun deadLetterSummary(lastHour: Long, last24Hours: Long): DeadLetterSummary
 
     @Query(
         "SELECT eventType, state, cryptoVersion, COUNT(*) AS count FROM gateway_event_outbox " +

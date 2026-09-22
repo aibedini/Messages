@@ -420,15 +420,80 @@ class GatewayHealthModelTest {
     }
 
     @Test
-    fun `aDeadLetterMakesTheUploaderUnhealthyButNotTheBridge`() {
-        val upload = EventUploadHealth(running = true, deadLetter = 3, lastAttemptAt = now)
+    fun `historicalDeadLettersDoNotMakeCurrentUploadFail`() {
+        val upload = EventUploadHealth(
+            running = true,
+            deadLetter = 309,
+            pending = 0,
+            sending = 0,
+            lastAttemptAt = now - 60_000L,
+            lastSuccessAt = now - 60_000L,
+            lastHttpStatus = 200
+        )
         val result = evaluate(snapshot(upload = upload))
 
-        assertFalse(upload.healthy)
-        assertEquals(GatewayOverallHealth.DEGRADED, result.overall)
-        assertEquals(GatewayConclusion.UPLOAD_STALLED, result.conclusion)
+        assertTrue(upload.healthy)
+        assertEquals(GatewayOverallHealth.HEALTHY, result.overall)
+        assertEquals(GatewayConclusion.HISTORICAL_FAILURES, result.conclusion)
         // The bridge is proven fresh by its own polling, and the uploader's rows say so.
         assertTrue(result.pullBridge.freshWithin(GatewayHealthRules.PULL_FRESH_MS, now))
+    }
+
+    /** Excluding dead letters must not blind the rule to work that is genuinely stuck. */
+    @Test
+    fun `aStaleQueuedUploadDegradesEvenWithNoRecordedFailureKind`() {
+        val upload = EventUploadHealth(
+            running = true,
+            pending = 4,
+            sending = 1,
+            lastAttemptAt = now - GatewayHealthRules.UPLOAD_FRESH_MS - 1,
+            lastSuccessAt = now - 60_000L,
+            lastHttpStatus = 200
+        )
+        val result = evaluate(snapshot(upload = upload))
+
+        assertTrue(upload.hasActiveFailure(now))
+        assertEquals(GatewayOverallHealth.DEGRADED, result.overall)
+        assertEquals(GatewayConclusion.UPLOAD_STALLED, result.conclusion)
+    }
+
+    @Test
+    fun `aQueuedUploadExactlyAtTheFreshnessBoundaryIsNotStale`() {
+        val upload = EventUploadHealth(
+            running = true,
+            pending = 4,
+            lastAttemptAt = now - GatewayHealthRules.UPLOAD_FRESH_MS
+        )
+
+        assertFalse(upload.hasActiveFailure(now))
+        assertEquals(GatewayOverallHealth.HEALTHY, evaluate(snapshot(upload = upload)).overall)
+    }
+
+    /** A queue that has never been attempted is stuck, not quiet. */
+    @Test
+    fun `queuedWorkThatWasNeverAttemptedIsAFailureRatherThanAHealthClaim`() {
+        val upload = EventUploadHealth(running = true, pending = 4, lastAttemptAt = null)
+
+        assertTrue(upload.hasActiveFailure(now))
+        assertEquals(GatewayConclusion.UPLOAD_STALLED, evaluate(snapshot(upload = upload)).conclusion)
+    }
+
+    /**
+     * The uploader's own consecutive-failure count degrades on its own, exactly as the ACK
+     * leg does, and must not require a second signal to be believed.
+     */
+    @Test
+    fun `consecutiveUploadFailuresDegradeWithAnEmptyQueue`() {
+        val upload = EventUploadHealth(
+            running = true,
+            pending = 0,
+            sending = 0,
+            lastAttemptAt = now - 1_000L,
+            consecutiveFailures = 2
+        )
+
+        assertTrue(upload.hasActiveFailure(now))
+        assertEquals(GatewayOverallHealth.DEGRADED, evaluate(snapshot(upload = upload)).overall)
     }
 
     @Test

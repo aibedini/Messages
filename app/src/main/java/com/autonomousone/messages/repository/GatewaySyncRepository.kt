@@ -2,6 +2,7 @@ package com.autonomousone.messages.repository
 
 import androidx.room.withTransaction
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
+import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.data.GatewayEventOutboxDao
 import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
@@ -69,7 +70,7 @@ class GatewaySyncRepository(
         db.withTransaction {
             val selected = Policy.selectBatch(outboxDao.claimable(now, Policy.MAX_BATCH_EVENTS * 2)).events
             if (selected.isNotEmpty()) {
-                outboxDao.markSending(selected.map { it.id })
+                outboxDao.markSending(selected.map { it.id }, now)
             }
             selected
         }
@@ -114,12 +115,18 @@ class GatewaySyncRepository(
     }
 
     suspend fun onRetry(eventUuid: String, attempt: Int, random: Random, now: Long) {
-        outboxDao.markRetry(eventUuid, now + Policy.backoffDelayMs(attempt, random))
+        outboxDao.markRetry(eventUuid, now + Policy.backoffDelayMs(attempt, random), now)
     }
 
     /** Permanent reject (schema/auth) — visible as DEAD_LETTER, never silently dropped. */
-    suspend fun onDeadLetter(eventUuid: String) {
-        outboxDao.markDead(eventUuid)
+    suspend fun onDeadLetter(
+        eventUuid: String,
+        failureCategory: String,
+        httpStatus: Int?,
+        at: Long,
+        appVersion: String
+    ) {
+        outboxDao.markDead(eventUuid, failureCategory, httpStatus, at, appVersion)
     }
 
     /** Startup recovery for the crash window between claim and ACK. */
@@ -146,6 +153,9 @@ class GatewaySyncRepository(
      */
     suspend fun deadLetterBreakdown(): List<DeadLetterBreakdownRow> =
         outboxDao.deadLetterBreakdown()
+
+    suspend fun deadLetterSummary(now: Long = System.currentTimeMillis()): DeadLetterSummary =
+        outboxDao.deadLetterSummary(now - 60 * 60_000L, now - 24 * 60 * 60_000L)
 
     /** True = newly ingested; false = redelivery (exactly-once by unique index). */
     suspend fun ingestCommand(command: RemoteCommandEntity): Boolean =

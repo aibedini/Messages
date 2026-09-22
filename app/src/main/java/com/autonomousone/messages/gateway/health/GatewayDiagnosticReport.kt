@@ -1,6 +1,9 @@
 package com.autonomousone.messages.gateway.health
 
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
+import com.autonomousone.messages.data.DeadLetterSummary
+import com.autonomousone.messages.gateway.AddressScope
+import com.autonomousone.messages.gateway.NetworkAddressFacts
 import com.autonomousone.messages.utils.PhoneToken
 import java.time.Instant
 
@@ -32,6 +35,7 @@ object GatewayDiagnosticReport {
         supervisorState: String,
         gatewayDesired: Boolean,
         deadLetters: List<DeadLetterBreakdownRow> = emptyList(),
+        deadLetterSummary: DeadLetterSummary = DeadLetterSummary(),
         now: Long = System.currentTimeMillis()
     ): String = buildString {
         appendLine("GMweb Gateway Diagnostic")
@@ -54,7 +58,13 @@ object GatewayDiagnosticReport {
         // states something that was never measured.
         appendLine("Resolved by DNS: ${snapshot.endpoint.dnsDescription() ?: "not checked"}")
         appendLine("Actual TLS peer: ${snapshot.tls.peerAddress ?: "not measured"}")
-        appendLine("TCP: ${snapshot.endpoint.lastTcpConnectMs?.let { "$it ms" } ?: "n/a"}")
+        appendLine("TCP connect: ${snapshot.endpoint.lastTcpConnectMs?.let { "$it ms" } ?: "n/a"}")
+        if (snapshot.endpoint.dnsAddresses.any {
+                NetworkAddressFacts.classify(it).scope == AddressScope.SYNTHETIC_RANGE
+            }) {
+            appendLine("Network note: DNS is intercepted by a VPN/proxy; TCP timing may reflect")
+            appendLine("  the local proxy path rather than the GMweb origin.")
+        }
         appendLine("TLS: ${tlsLine(snapshot.tls, now)}")
         appendLine("Certificate host match: ${triState(snapshot.tls.hostMatched)}")
         appendLine("HTTPS /health: ${probeStepLine(probe, GatewayProbeStage.HTTPS)}")
@@ -84,7 +94,9 @@ object GatewayDiagnosticReport {
         appendLine("  Last HTTP: ${snapshot.pullBridge.lastHttpStatus ?: "n/a"}")
         appendLine("  Last error: ${failureLine(snapshot.pullBridge.lastFailure, snapshot.pullBridge.lastFailureSafeDetail)}")
         appendLine("  Consecutive failures: ${snapshot.pullBridge.consecutiveFailures}")
-        appendLine("  ACK failures: ${snapshot.pullBridge.ackFailures}")
+        appendLine("  ACK failures this session: ${snapshot.pullBridge.ackFailures}")
+        appendLine("  ACK consecutive failures: ${snapshot.pullBridge.ackConsecutiveFailures}")
+        appendLine("  ACK last failure: ${ago(snapshot.pullBridge.lastAckFailureAt, now)}")
         appendLine()
 
         appendLine("EVE queue:")
@@ -125,23 +137,32 @@ object GatewayDiagnosticReport {
         // a bounded attempt count, all created in a narrow window, is a rollout artefact; a
         // spread across types with recent timestamps is a live problem.
         if (snapshot.eventUpload.deadLetter > 0) {
-            appendLine("Dead-lettered outbox events (aggregate only — nothing deleted):")
+            appendLine("Dead-lettered outbox events (aggregate only; nothing deleted):")
+            appendLine("  Historical items: ${deadLetterSummary.count.takeIf { it > 0 } ?: snapshot.eventUpload.deadLetter}")
+            appendLine("  Last new dead-letter: ${ago(deadLetterSummary.lastDeadLetteredAt, now)}")
+            appendLine("  New in last 1h / 24h: ${deadLetterSummary.newLastHour} / ${deadLetterSummary.newLast24Hours}")
             if (deadLetters.isEmpty()) {
                 appendLine("  ${snapshot.eventUpload.deadLetter} row(s); breakdown unavailable")
             } else {
                 deadLetters.forEach { row ->
+                    val metadata = if (row.metadataCount == 0) {
+                        " | failure metadata unavailable"
+                    } else {
+                        " | metadata ${row.metadataCount}/${row.count}"
+                    }
                     appendLine(
-                        "  ${row.eventType} · crypto v${row.cryptoVersion} · ${row.priority}" +
-                            " · count=${row.count}" +
-                            " · attempts ${row.minAttempts}..${row.maxAttempts}" +
-                            " · created ${Instant.ofEpochMilli(row.firstCreatedAt)}" +
-                            " .. ${Instant.ofEpochMilli(row.lastCreatedAt)}"
+                        "  ${row.eventType} | crypto v${row.cryptoVersion} | ${row.priority}" +
+                            " | count=${row.count}" +
+                            " | attempts ${row.minAttempts}..${row.maxAttempts}" +
+                            " | created ${Instant.ofEpochMilli(row.firstCreatedAt)}" +
+                            " .. ${Instant.ofEpochMilli(row.lastCreatedAt)}" + metadata
                     )
                 }
             }
-            appendLine("  NOTE: the outbox row persists no failure reason, no HTTP status and no")
-            appendLine("  update time, so those cannot be reported per event. Correlate by time")
-            appendLine("  with the GATEWAY_UPLOAD lines in the on-device diagnostics log.")
+            if (deadLetterSummary.metadataCount < snapshot.eventUpload.deadLetter) {
+                appendLine("  NOTE: older rows predate safe failure metadata; missing values are")
+                appendLine("  reported as unavailable and are never inferred.")
+            }
             appendLine()
         }
 
@@ -277,6 +298,10 @@ object GatewayDiagnosticReport {
         GatewayConclusion.BRIDGE_FAILING -> "The delivery poll is failing; see the last error above."
         GatewayConclusion.UPLOAD_STALLED ->
             "Inbound delivery is fine, but the OUTBOUND event sync is failing."
+        GatewayConclusion.ACK_FAILING ->
+            "The pull bridge is working, but the latest result ACK failed and has not recovered."
+        GatewayConclusion.HISTORICAL_FAILURES ->
+            "Live traffic is working. Historical dead-letter events remain for review."
         GatewayConclusion.UNKNOWN_FAILURE -> "A failure was recorded that does not match a known cause."
     }
 

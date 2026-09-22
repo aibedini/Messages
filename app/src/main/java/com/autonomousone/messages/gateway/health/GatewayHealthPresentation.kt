@@ -79,6 +79,10 @@ object GatewayHealthPresentation {
         GatewayConclusion.BRIDGE_FAILING -> "The delivery poll is failing; see the last error below."
         GatewayConclusion.UPLOAD_STALLED ->
             "Delivery is fine, but this phone's own sync to GMweb is failing."
+        GatewayConclusion.ACK_FAILING ->
+            "Tasks are arriving, but the latest result could not be acknowledged."
+        GatewayConclusion.HISTORICAL_FAILURES ->
+            "Gateway is connected. Historical sync failures need review."
         GatewayConclusion.UNKNOWN_FAILURE -> "A failure was recorded that does not match a known cause."
     }
 
@@ -106,8 +110,8 @@ object GatewayHealthPresentation {
      */
     fun uploadTone(upload: EventUploadHealth, now: Long): HealthTone = when {
         upload.lastFailure != null -> HealthTone.BAD
-        upload.deadLetter > 0 -> HealthTone.WARN
         !upload.running -> HealthTone.NEUTRAL
+        upload.hasActiveFailure(now) -> HealthTone.WARN
         else -> HealthTone.GOOD
     }
 

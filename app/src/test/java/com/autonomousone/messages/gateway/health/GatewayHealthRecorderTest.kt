@@ -244,10 +244,57 @@ class GatewayHealthRecorderTest {
         val snapshot = GatewayHealthRecorder.snapshot(now)
 
         assertEquals(1, snapshot.pullBridge.ackFailures)
+        assertEquals(1, snapshot.pullBridge.ackConsecutiveFailures)
         assertEquals(GatewayFailureKind.HTTP_SERVER, snapshot.pullBridge.lastAckFailure)
         assertEquals("HTTP 503", snapshot.pullBridge.lastAckFailureSafeDetail)
         // A failed ACK is not a failed PULL: the bridge is still proven fresh.
         assertNull(snapshot.pullBridge.lastFailure)
+        assertEquals(GatewayOverallHealth.DEGRADED, snapshot.overall)
+        assertEquals(GatewayConclusion.ACK_FAILING, snapshot.conclusion)
+    }
+
+    @Test
+    fun `aSuccessfulAckClearsCurrentFailuresButKeepsSessionHistory`() {
+        GatewayHealthRecorder.onPullEmpty(now - 2_000L)
+        repeat(2) {
+            GatewayHealthRecorder.onAckFailure(GatewayFailureKind.HTTP_SERVER, 503, at = now - 1_000L)
+        }
+        GatewayHealthRecorder.onAckSuccess(now)
+
+        val snapshot = GatewayHealthRecorder.snapshot(now)
+        assertEquals(2, snapshot.pullBridge.ackFailures)
+        assertEquals(0, snapshot.pullBridge.ackConsecutiveFailures)
+        assertNull(snapshot.pullBridge.lastAckFailure)
+        assertEquals(GatewayOverallHealth.HEALTHY, snapshot.overall)
+    }
+
+    /**
+     * The uploader's consecutive-failure counter is a CURRENT-state signal, so a later
+     * success must clear it — and clear the sticky failure kind with it. Otherwise one
+     * transient 503 would keep the card degraded forever after the uploader recovered.
+     */
+    @Test
+    fun `aSuccessfulUploadClearsTheCurrentUploadFailure`() {
+        // The bridge must be fresh first, or `overall` degrades on BRIDGE_NOT_POLLING and the
+        // upload rule is never reached — which would make this test pass for the wrong reason.
+        GatewayHealthRecorder.onPullEmpty(now - 2_000L)
+        repeat(2) {
+            GatewayHealthRecorder.onUploadFailure(
+                kind = GatewayFailureKind.HTTP_SERVER,
+                httpStatus = 503,
+                at = now - 1_000L
+            )
+        }
+        assertEquals(2, GatewayHealthRecorder.snapshot(now).eventUpload.consecutiveFailures)
+        assertEquals(GatewayOverallHealth.DEGRADED, GatewayHealthRecorder.snapshot(now).overall)
+
+        GatewayHealthRecorder.onUploadSuccess(at = now, httpStatus = 200)
+
+        val snapshot = GatewayHealthRecorder.snapshot(now)
+        assertEquals(0, snapshot.eventUpload.consecutiveFailures)
+        assertNull(snapshot.eventUpload.lastFailure)
+        assertNull(snapshot.eventUpload.lastFailureAt)
+        assertEquals(200, snapshot.eventUpload.lastHttpStatus)
         assertEquals(GatewayOverallHealth.HEALTHY, snapshot.overall)
     }
 
@@ -306,7 +353,7 @@ class GatewayHealthRecorderTest {
         assertEquals(4, upload.pending)
         assertEquals(2, upload.sending)
         assertEquals(1, upload.deadLetter)
-        assertFalse("a dead letter must make the uploader unhealthy", upload.healthy)
+        assertTrue("historical dead letters do not redefine live uploader health", upload.healthy)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

@@ -80,6 +80,9 @@ enum class GatewayConclusion {
     BRIDGE_NOT_POLLING,
     BRIDGE_FAILING,
     UPLOAD_STALLED,
+    ACK_FAILING,
+    /** Live traffic is healthy, but retained failures still need review. */
+    HISTORICAL_FAILURES,
     UNKNOWN_FAILURE
 }
 
@@ -191,7 +194,9 @@ data class EventUploadHealth(
     val lastSuccessAt: Long? = null,
     val lastHttpStatus: Int? = null,
     val lastFailure: GatewayFailureKind? = null,
-    val lastFailureSafeDetail: String? = null
+    val lastFailureSafeDetail: String? = null,
+    val consecutiveFailures: Int = 0,
+    val lastFailureAt: Long? = null
 ) {
     /**
      * Healthy does NOT mean "recently uploaded something".
@@ -201,7 +206,15 @@ data class EventUploadHealth(
      * look alarmed.
      */
     val healthy: Boolean
-        get() = running && lastFailure == null && deadLetter == 0
+        get() = running && lastFailure == null
+
+    /** Historical dead letters are excluded; only fresh runtime evidence can fail sync. */
+    fun hasActiveFailure(now: Long): Boolean {
+        if (!running || lastFailure != null || consecutiveFailures > 0) return true
+        if (pending == 0 && sending == 0) return false
+        val attempt = lastAttemptAt ?: return true
+        return now - attempt > GatewayHealthRules.UPLOAD_FRESH_MS
+    }
 
     /** True only when an upload actually succeeded recently. Used for the "last sync" row. */
     fun uploadedWithin(windowMs: Long, now: Long): Boolean =
@@ -230,6 +243,9 @@ data class PullBridgeHealth(
      * different problems with two different fixes.
      */
     val ackFailures: Int = 0,
+    /** Failures since the latest successful ACK. */
+    val ackConsecutiveFailures: Int = 0,
+    val lastAckFailureAt: Long? = null,
     val lastAckFailure: GatewayFailureKind? = null,
     val lastAckFailureSafeDetail: String? = null
 ) {
@@ -239,6 +255,10 @@ data class PullBridgeHealth(
 
     /** How long since the last successful poll, or null when there has never been one. */
     fun stalenessMs(now: Long): Long? = lastSuccessfulPollAt?.let { now - it }
+
+    val ackCurrentlyFailing: Boolean
+        get() = ackConsecutiveFailures > 0 &&
+            (lastAckAt == null || (lastAckFailureAt ?: Long.MIN_VALUE) > lastAckAt)
 }
 
 data class EveQueueHealth(
@@ -352,13 +372,9 @@ object GatewayHealthRules {
             return GatewayOverallHealth.DEGRADED
         }
 
-        return if (snapshot.eventUpload.healthy) {
-            GatewayOverallHealth.HEALTHY
-        } else {
-            // The bridge is fine but the uploader is broken: still degraded, and the
-            // conclusion says which half.
-            GatewayOverallHealth.DEGRADED
-        }
+        if (snapshot.eventUpload.hasActiveFailure(now)) return GatewayOverallHealth.DEGRADED
+        if (snapshot.pullBridge.ackCurrentlyFailing) return GatewayOverallHealth.DEGRADED
+        return GatewayOverallHealth.HEALTHY
     }
 
     fun conclusion(snapshot: GatewayHealthSnapshot, now: Long): GatewayConclusion {
@@ -397,7 +413,9 @@ object GatewayHealthRules {
         if (!snapshot.pullBridge.freshWithin(PULL_FRESH_MS, now)) {
             return GatewayConclusion.BRIDGE_NOT_POLLING
         }
-        if (!snapshot.eventUpload.healthy) return GatewayConclusion.UPLOAD_STALLED
+        if (snapshot.eventUpload.hasActiveFailure(now)) return GatewayConclusion.UPLOAD_STALLED
+        if (snapshot.pullBridge.ackCurrentlyFailing) return GatewayConclusion.ACK_FAILING
+        if (snapshot.eventUpload.deadLetter > 0) return GatewayConclusion.HISTORICAL_FAILURES
         // Everything operational is fresh; the credential check simply could not confirm
         // itself. Report that honestly rather than as a healthy "none".
         if (snapshot.authentication.status == AuthVerification.UNVERIFIABLE) {

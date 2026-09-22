@@ -165,9 +165,9 @@ class GatewayHealthPresentationTest {
     }
 
     @Test
-    fun `aDeadLetterOrAFailureColoursTheUploader`() {
+    fun `historicalDeadLettersDoNotColourCurrentUploadAsFailed`() {
         assertEquals(
-            HealthTone.WARN,
+            HealthTone.GOOD,
             GatewayHealthPresentation.uploadTone(
                 EventUploadHealth(running = true, deadLetter = 2), now
             )
