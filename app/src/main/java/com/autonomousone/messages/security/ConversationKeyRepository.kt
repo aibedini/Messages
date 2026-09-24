@@ -2,11 +2,12 @@ package com.autonomousone.messages.security
 
 import androidx.room.withTransaction
 import com.autonomousone.messages.data.ConversationKeyEpochEntity
+import com.autonomousone.messages.sync.EventKeyRef
+import com.autonomousone.messages.sync.TrustedDevicePolicy
 import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.GatewayEventOutboxEntity
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustedDeviceEntity
-import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
@@ -35,16 +36,26 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
             "READ_FINANCIAL_NOTIFICATIONS"
         )
 
-        private fun capabilities(device: TrustedDeviceEntity): Set<String> {
-            val values = JSONArray(device.capabilitiesJson)
-            return (0 until values.length()).mapTo(mutableSetOf()) { values.getString(it) }
-        }
+        /**
+         * The device's declared capabilities, failing closed.
+         *
+         * Delegates to [TrustedDevicePolicy] rather than parsing the JSON here. This used to be a local
+         * copy with no guard around `JSONArray(...)`, so a single malformed `capabilitiesJson` threw
+         * `JSONException` **out of `encrypt`** — aborting the encryption of a message that then could not
+         * be replicated at all, because one linked device's row was unparseable. The shared version
+         * returns the empty set, which fails closed and lets every other device be served.
+         */
+        private fun capabilities(device: TrustedDeviceEntity): Set<String> =
+            TrustedDevicePolicy.capabilities(device)
 
+        /**
+         * Delegates to the one trust predicate (mission §73).
+         *
+         * This was the second copy of the same expression; see [TrustedDevicePolicy] for why the pair
+         * existed and what made unifying them safe.
+         */
         private fun trusted(device: TrustedDeviceEntity, now: Long): Boolean =
-            device.status in setOf(
-                TrustedDeviceEntity.STATUS_ACTIVE,
-                TrustedDeviceEntity.STATUS_PENDING_PUBLICATION
-            ) && device.certificateJson.isNotBlank() && device.expiresAt > now && device.revokedAt == null
+            TrustedDevicePolicy.isTrusted(device, now)
 
         fun domainFor(category: String): String = category.ifBlank { MESSAGE_DOMAIN }
 
@@ -56,13 +67,18 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
             if (!trusted(device, now)) return false
             val caps = capabilities(device)
             if (MESSAGE_DOMAIN !in caps || epoch.category !in caps) return false
-            if (epoch.category == MESSAGE_DOMAIN && device.historyGrant == "FULL_HISTORY") return false
-            return device.historyGrant == "FULL_HISTORY" || epoch.createdAt >= device.approvedAt
+            if (epoch.category == MESSAGE_DOMAIN &&
+                device.historyGrant == TrustedDevicePolicy.GRANT_FULL_HISTORY
+            ) {
+                return false
+            }
+            return device.historyGrant == TrustedDevicePolicy.GRANT_FULL_HISTORY ||
+                epoch.createdAt >= device.approvedAt
         }
 
+        /** Delegates, so the history-eligibility rule has exactly one definition. */
         private fun eligibleForHistoryKey(device: TrustedDeviceEntity, now: Long): Boolean =
-            trusted(device, now) && device.historyGrant == "FULL_HISTORY" &&
-                MESSAGE_DOMAIN in capabilities(device)
+            TrustedDevicePolicy.isEligibleForHistory(device, now)
     }
 
     suspend fun encrypt(
@@ -88,7 +104,8 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
                     for (device in devices) {
                         if (eligibleForHistoryKey(device, now)) publishHistoryGrant(history, device, historyKey)
                     }
-                    return row.copy(
+                    return encrypted(
+                        row,
                         encoding = "envelope.v3",
                         cryptoVersion = 3,
                         ciphertext = MessageCrypto.encryptMessageV3(
@@ -100,13 +117,16 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
                             row.eventType,
                             row.aggregateId,
                             payload
-                        )
+                        ),
+                        liveKeyId = epoch.epochId,
+                        historyKeyId = history.epochId
                     )
                 } finally {
                     historyKey.fill(0)
                 }
             }
-            return row.copy(
+            return encrypted(
+                row,
                 encoding = "envelope.v2",
                 cryptoVersion = 2,
                 ciphertext = MessageCrypto.encryptMessageV2(
@@ -117,19 +137,48 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
                     row.eventType,
                     row.aggregateId,
                     payload
-                )
+                ),
+                liveKeyId = epoch.epochId,
+                historyKeyId = null
             )
         } finally {
             accountKey.fill(0)
         }
     }
 
+    /**
+     * Attach the encrypted bytes AND the key reference that describes them (mission §42).
+     *
+     * One helper for every encrypted row, so the key reference is recorded by the code that KNOWS the
+     * key ids rather than by a caller that would have to re-parse the envelope — and so a future
+     * encryption path cannot produce a row whose `keyRef` silently stays null.
+     *
+     * `keyRef` is derived here from the same `liveKeyId`/`historyKeyId` arguments that were handed to
+     * `MessageCrypto`, which means the column and the envelope agree by construction. A test asserts
+     * the stronger version of that: the stored value equals what parsing the ciphertext back yields.
+     */
+    private fun encrypted(
+        row: GatewayEventOutboxEntity,
+        encoding: String,
+        cryptoVersion: Int,
+        ciphertext: ByteArray,
+        liveKeyId: String,
+        historyKeyId: String?
+    ): GatewayEventOutboxEntity = row.copy(
+        encoding = encoding,
+        cryptoVersion = cryptoVersion,
+        ciphertext = ciphertext,
+        keyRef = EventKeyRef(liveKeyId = liveKeyId, historyKeyId = historyKeyId).encode()
+    )
+
     suspend fun hasAuthorizedHistoryReader(domain: String): Boolean {
         if (domain !in KEYRING_DOMAINS || domain == MESSAGE_DOMAIN) return false
         val now = System.currentTimeMillis()
         return db.trustedDeviceDao().all().any { device ->
-            trusted(device, now) && device.historyGrant == "FULL_HISTORY" &&
-                MESSAGE_DOMAIN in capabilities(device) && domain in capabilities(device)
+            // The shared history rule, plus this domain's own capability. Written out, this was a THIRD
+            // copy of the trust expression — with its own `"FULL_HISTORY"` literal — and a guard found it
+            // only because it looks for the re-typed grant name rather than for one spelling of the code.
+            TrustedDevicePolicy.isEligibleForHistory(device, now) && domain in capabilities(device)
         }
     }
 
@@ -308,7 +357,9 @@ class ConversationKeyRepository(private val db: MessagesDatabase) {
 
                 val generation = db.trustStatementOutboxDao().maxTrustSequence()
                 capabilities(device).filterTo(mutableSetOf()) {
-                    it in KEYRING_DOMAINS && !(it == MESSAGE_DOMAIN && device.historyGrant == "FULL_HISTORY")
+                    it in KEYRING_DOMAINS &&
+                        !(it == MESSAGE_DOMAIN &&
+                            device.historyGrant == TrustedDevicePolicy.GRANT_FULL_HISTORY)
                 }
                     .forEach { accountEpoch(generation, it, now) }
                 if (eligibleForHistoryKey(device, now)) {

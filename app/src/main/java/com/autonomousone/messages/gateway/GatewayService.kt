@@ -38,6 +38,16 @@ class GatewayService : Service() {
     private lateinit var contactsSyncPublisher: ContactsSyncPublisher
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var supervisor: ConnectionSupervisor
+
+    /**
+     * Makes provider→cloud replication independent of the UI (audit Blocker 1).
+     *
+     * Owned by the service, so its lifetime is exactly "the gateway is running" — which is what
+     * replication being on means. Registered even while offline, on purpose: an event must become
+     * durable locally whether or not it can be uploaded yet, so an outage loses nothing.
+     */
+    private lateinit var changeRelay: com.autonomousone.messages.observer.GatewayChangeRelay
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -127,6 +137,10 @@ class GatewayService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = GatewayPreferences(this)
+        // Registered for the service's whole life: replication must not depend on a screen being
+        // open, and a change that arrives while offline still has to become durable locally.
+        changeRelay = com.autonomousone.messages.observer.GatewayChangeRelay(this)
+        changeRelay.start()
         backendClient = BackendClient(prefs)
         registrationManager = RegistrationManager(this, prefs, backendClient) { msg ->
             _logFlow.tryEmit(msg)
@@ -211,6 +225,41 @@ class GatewayService : Service() {
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
                         .get(this).startGatewaySync()
+                },
+                // Mission §34: after a reconnect, reconcile the mirror against the outbox. Runs off
+                // the supervisor's tick, so it must never block or throw into it.
+                reconcileMissedEvents = {
+                    serviceScope.launch {
+                        runCatching {
+                            com.autonomousone.messages.data.TelephonySyncCoordinator
+                                .get(this@GatewayService)
+                                .reconcileMissingEvents()
+                        }.onSuccess { result ->
+                            if (result.foundGap) {
+                                _logFlow.tryEmit(
+                                    "♻️ Recovered ${result.recovered} message(s) that had not " +
+                                        "reached the outbox"
+                                )
+                            }
+                        }.onFailure {
+                            android.util.Log.w("SYNC_RECONCILE", "post-reconnect reconcile failed", it)
+                        }
+                    }
+                },
+                // Mission §35: one bounded page of the full-mirror verification per tick. The window
+                // check above cannot see a gap older than its own window, and once the history scan
+                // has finished nothing else revisits those rows — so without this the app's answer to
+                // "is the whole mirror replicated?" would rest on two passes that both decline to ask.
+                verifyMirror = {
+                    serviceScope.launch {
+                        runCatching {
+                            com.autonomousone.messages.data.TelephonySyncCoordinator
+                                .get(this@GatewayService)
+                                .verifyMirrorPage()
+                        }.onFailure {
+                            android.util.Log.w("SYNC_VERIFY", "mirror verification page failed", it)
+                        }
+                    }
                 }
             ),
             onLog = { msg -> _logFlow.tryEmit(msg) }
@@ -395,6 +444,7 @@ class GatewayService : Service() {
         // cleared the desired state), arm the alarm watchdog so the pull
         // bridge comes back even under Doze — this is the 503-killer.
         scheduleRestartWatchdog()
+        changeRelay.stop()
         deviceTelemetry.stop()
         contactsSyncPublisher.stop()
         shutdownComponents()

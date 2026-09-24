@@ -182,44 +182,17 @@ class SmsStatusPolicyTest {
         assertEquals("DISPATCH_REJECTED", SmsSendFailure.DispatchRejected(null).code)
     }
 
-    // ---- durable state machine ---------------------------------------------
-
-    private fun state(
-        confirmed: Int = 0,
-        unconfirmed: Int = 0,
-        failed: Int = 0,
-        dlv: Int = 0,
-        parts: Int = 1,
-        dispatched: Boolean = true
-    ) = SmsStatusPolicy.aggregateSendState(
-        sentConfirmedParts = confirmed,
-        sentUnconfirmedParts = unconfirmed,
-        sentFailedParts = failed,
-        dlvPartsDone = dlv,
-        partCount = parts,
-        dispatched = dispatched
-    )
-
-    @Test fun durableStateFollowsTheSameEvidence() {
-        assertEquals(SendState.QUEUED, state(dispatched = false))
-        assertEquals(SendState.DISPATCHED, state())
-        assertEquals(SendState.SENT_CONFIRMED, state(confirmed = 2, parts = 2))
-        assertEquals(SendState.SEND_UNCONFIRMED, state(unconfirmed = 1))
-        assertEquals(SendState.FAILED, state(failed = 1))
-        assertEquals(SendState.DELIVERED, state(confirmed = 2, dlv = 2, parts = 2))
-    }
-
-    @Test fun stateNeverDowngradesAStrongerVerdict() {
-        assertEquals(SendState.DELIVERED, SendState.advance(SendState.DELIVERED, SendState.DISPATCHED))
-        assertEquals(SendState.DELIVERED, SendState.advance(SendState.SENT_CONFIRMED, SendState.DELIVERED))
-        assertEquals(SendState.DELIVERED, SendState.advance(SendState.SEND_UNCONFIRMED, SendState.DELIVERED))
-        assertEquals(
-            SendState.SENT_CONFIRMED,
-            SendState.advance(SendState.SENT_CONFIRMED, SendState.SEND_UNCONFIRMED)
-        )
-        assertEquals(SendState.FAILED, SendState.advance(SendState.FAILED, SendState.SENT_CONFIRMED))
-        assertEquals(SendState.DISPATCHED, SendState.advance(SendState.DISPATCHING, SendState.DISPATCHED))
-    }
+    // ---- the durable state machine is gone, deliberately --------------------
+    //
+    // This file used to cover `SmsStatusPolicy.aggregateSendState` and `SendState.advance`. Both
+    // were removed: `aggregateSendState` had no production caller and no consumer anywhere — no UI
+    // reads SEND_UNCONFIRMED / SENT_CONFIRMED / DISPATCHED, and nothing persisted a `SendState` —
+    // while its KDoc claimed a durable state machine and a UI overlay that did not exist. The
+    // durable evidence it claimed to add already exists as `send_segments.callbackState`, read by
+    // `SmsStatusReceiver`, and `nextStatus` above is the single derivation from it.
+    //
+    // The rule is now pinned by `theCallbackEvidenceToStatusDerivationHasExactlyOneDefinition`,
+    // which fails if a second derivation from the same evidence is ever added.
 
     private companion object {
         /** Activity.RESULT_OK, spelled out so this file needs no Android import. */

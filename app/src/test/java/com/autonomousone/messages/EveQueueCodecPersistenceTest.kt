@@ -127,7 +127,8 @@ class EveQueueCodecPersistenceTest {
             validationAttempts = 2,
             deferredUntil = 1700000000003,
             supersededReason = "renewed",
-            nativeSubmitStartedAt = 0
+            nativeSubmitStartedAt = 0,
+            gatewayAckedAt = 1700000000004
         )
 
         val restored = EveQueueCodec.decode(EveQueueCodec.encode(original))
@@ -146,9 +147,23 @@ class EveQueueCodecPersistenceTest {
         assertEquals(original.deferredUntil, restored.deferredUntil)
         assertEquals(original.supersededReason, restored.supersededReason)
         assertEquals(original.nativeSubmitStartedAt, restored.nativeSubmitStartedAt)
+        assertEquals(
+            "the report marker must survive a restart, or a terminal task's outcome is lost with the process",
+            original.gatewayAckedAt,
+            restored.gatewayAckedAt
+        )
         assertEquals(EveSmsQueue.Status.SUPERSEDED, restored.status)
         assertTrue(restored.terminal)
         assertFalse(restored.successful)
+    }
+
+    @Test
+    fun aRecordFromABuildWithoutTheReportMarkerReadsAsUnreported() {
+        // `legacyRecordJson` predates the field. The honest reading is "nobody ever confirmed this
+        // report", which is what makes such a record eligible for re-reporting rather than assumed done.
+        val restored = EveQueueCodec.decode(JSONObject(legacyRecordJson))
+
+        assertEquals(0L, restored.gatewayAckedAt)
     }
 
     @Test

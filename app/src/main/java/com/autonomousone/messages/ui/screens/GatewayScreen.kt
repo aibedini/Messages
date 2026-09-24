@@ -932,7 +932,8 @@ fun GatewayScreen(
                         viewModel.clearLogs()
                     },
                     onCopy = { viewModel.copyDiagnosticReport() },
-                    onShareReport = { viewModel.shareDiagnosticReport() }
+                    onShareReport = { viewModel.shareDiagnosticReport() },
+                    onCopyJson = { viewModel.copySyncDiagnosticsJson() }
                 )
             }
         }

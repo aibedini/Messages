@@ -10,6 +10,7 @@ import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.gateway.health.GatewayLog
 import com.autonomousone.messages.gateway.health.GatewayPullFailure
 import com.autonomousone.messages.utils.DiagnosticLog
+import com.autonomousone.messages.utils.PhoneToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -167,7 +168,6 @@ class OutboxPoller(
         statusOf = { localRequestId -> EveSmsQueue.status(localRequestId) },
         sendAck = { rec, outcome, reason -> ackRecord(rec, outcome, reason) }
     )
-
     /**
      * v2.6.11 Doze resilience: a partial wake lock held ONLY while a pull
      * cycle is actually in flight (the 25s long-poll + delivery + ack). In
@@ -304,7 +304,9 @@ class OutboxPoller(
         _stateFlow.value = State.DELIVERING
         val requiresValidation = task.meta?.requiresValidation == true
         trace("PULL_RECEIVED", task, mapOf("pullAt" to System.currentTimeMillis()))
-        onLog("📨 Pulled " + task.requestId + " → " + task.to)
+        // The recipient is reported as a TOKEN, never the dialable number (mission §43): an in-app
+        // log line is a durable copy, and this one is captured for every pulled task.
+        onLog("📨 Pulled " + task.requestId + " → " + PhoneToken.of(task.to))
 
         // ── Phase 1: pull-time validation (optimisation only) ────────────────
         // Cheap rejection of a task GMweb already knows is stale. It does NOT
@@ -574,15 +576,37 @@ class OutboxPoller(
         EveSmsQueue.outstandingGatewayRecords().forEach { rec ->
             rec.gatewayRequestId?.let { ackTracker.track(it, rec.requestId) }
         }
+        // And the ones that already FINISHED but whose report GMweb never accepted — a task can send
+        // and then lose the connection before telling the server. Without this the report died with the
+        // process: the ledger is in memory, and the outstanding list above deliberately excludes
+        // terminal records. Re-reporting is idempotent, so this cannot cause a second SMS.
+        EveSmsQueue.unreportedGatewayRecords().forEach { rec ->
+            rec.gatewayRequestId?.let { ackTracker.track(it, rec.requestId) }
+        }
     }
 
+    /**
+     * Reports an outcome for a task that has no durable record to fall back on.
+     *
+     * The return value is deliberately IGNORED here, unlike [ackRecord]. Both callers are covered by
+     * something better: a task superseded at pull time was never queued, and a drain timeout leaves a
+     * NON-terminal record that the next cycle re-seeds and eventually reports the real outcome for. In
+     * neither case is a retry of this particular report the right action.
+     */
     private fun ackForTask(task: Task, outcome: String, reason: String?) {
         ackInternal(task.requestId, outcome, reason, traceFields(task))
     }
 
-    private fun ackRecord(rec: EveSmsQueue.Record, outcome: String, reason: String?) {
-        val gatewayRequestId = rec.gatewayRequestId ?: return
-        ackInternal(gatewayRequestId, outcome, reason, traceFields(rec))
+    /** Reports one record's outcome and says whether GMweb accepted it. */
+    private fun ackRecord(rec: EveSmsQueue.Record, outcome: String, reason: String?): Boolean {
+        val gatewayRequestId = rec.gatewayRequestId ?: return false
+        val accepted = ackInternal(gatewayRequestId, outcome, reason, traceFields(rec))
+        if (accepted) {
+            // Durable "GMweb has this outcome", so the report survives a restart even though the ACK
+            // ledger does not. Written only after a 2xx.
+            EveSmsQueue.markGatewayReported(rec.requestId, System.currentTimeMillis())
+        }
+        return accepted
     }
 
     private fun ackInternal(
@@ -590,7 +614,7 @@ class OutboxPoller(
         outcome: String,
         reason: String?,
         extra: Map<String, Any?>
-    ) {
+    ): Boolean {
         val nowMs = System.currentTimeMillis()
         val payload = ackPayload(gatewayRequestId, outcome, reason, nowMs)
         val base = prefs.gmwebUrl.trim().trimEnd('/')
@@ -650,6 +674,9 @@ class OutboxPoller(
         fields["accepted"] = accepted
         fields["ackAt"] = nowMs
         EveSmsQueue.trace("ACK_SENT", fields)
+        // The caller uses this to decide whether the report still needs sending. An unaccepted report
+        // stays queued for the next cycle instead of being recorded as delivered.
+        return accepted
     }
 
     /** Structured lifecycle event for a pull-time task (never the message body). */

@@ -17,8 +17,12 @@ import java.util.concurrent.atomic.AtomicLong
  *   METHOD\n<path-without-query>\n<sha256hex(body)>\nX-AGENT-TS:<ts>\n
  *
  * The GMweb side (src/agentAuth.js) verifies against the public key stored
- * at registration (publicKeys.signing). Both sides must stay byte-identical —
- * pinned by DeviceIdentityFormatTest here and agentAuth.test.js on GMweb.
+ * at registration (publicKeys.signing). Both sides must stay byte-identical, and **nothing pinned that
+ * here**: the KDoc used to claim `DeviceIdentityFormatTest` did, and that test pins the public-point
+ * encoding and an ES256 round-trip — not this string. `AgentAuthTest` now pins the canonical form
+ * literally, because a silent change to it would make every agent request 401, and a 401 makes this
+ * device wipe its credentials and re-enroll (see `ControlPlaneAuthPolicy`) against a server that
+ * revoked nothing.
  *
  * Fail-closed (§83): if the Keystore cannot sign, the request is aborted —
  * the server would reject anything unsigned anyway.
@@ -38,6 +42,29 @@ object AgentAuth {
     }
 
     /**
+     * The exact bytes that are signed, and the whole cross-repo contract.
+     *
+     * Split out of [sign] so it can be pinned by a test without an Android `HttpURLConnection`: this
+     * string has a counterpart in GMweb's `agentAuth.js`, and the two must agree byte for byte.
+     *
+     * Properties that a refactor could break silently:
+     *
+     *  - the field order is method, path, body hash, timestamp;
+     *  - the separator is a single `\n` and the string ENDS with one;
+     *  - the body is covered by its lowercase-hex SHA-256, so any body change invalidates the
+     *    signature without the whole body being in the canonical string;
+     *  - the timestamp is INSIDE the signed material, which is what makes the replay window meaningful
+     *    — a timestamp that travelled outside the signature could be rewritten by anyone;
+     *  - the timestamp header name is spelled `X-AGENT-TS` exactly.
+     */
+    internal fun canonicalString(
+        method: String,
+        path: String,
+        bodyBytes: ByteArray?,
+        timestamp: Long,
+    ): String = "$method\n$path\n${sha256Hex(bodyBytes ?: ByteArray(0))}\nX-AGENT-TS:$timestamp\n"
+
+    /**
      * Adds X-Agent-Auth + X-Agent-TS headers to [conn]. Returns false (and
      * leaves the request unsigned) when the Keystore is unavailable — the
      * caller must then abort the request instead of sending it in the clear.
@@ -50,8 +77,7 @@ object AgentAuth {
         bodyBytes: ByteArray?
     ): Boolean {
         val ts = freshTimestamp()
-        val bodyHash = sha256Hex(bodyBytes ?: ByteArray(0))
-        val canonical = "$method\n$path\n$bodyHash\nX-AGENT-TS:$ts\n"
+        val canonical = canonicalString(method, path, bodyBytes, ts)
         val signature = try {
             DeviceIdentity.signWithOperationalKey(canonical.toByteArray(Charsets.UTF_8))
         } catch (e: Exception) {

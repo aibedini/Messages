@@ -4,40 +4,18 @@ Scope: how an outgoing SMS becomes a visible, durable state, and which blocking
 patterns are forbidden. Incoming/live-UI ingestion is described only as far as it
 exists in source today; see **Known gaps** at the end for what is *not* implemented.
 
-## 1. Outgoing SMS state machine
+## 1. Outgoing SMS status: what actually exists
 
-Implemented in `sms/SendState.kt` (pure, JVM-testable) and driven by
-`sms/SmsStatusReceiver.kt` + `sms/SmsSender.kt`.
+There is **no app-side send-state enum**. Two things carry the state, and they are the only two:
 
-```
-QUEUED          persisted locally, no telephony call yet
-  |
-DISPATCHING     the send call is in flight on this device
-  |
-DISPATCHED      telephony ACCEPTED THE API CALL for every part
-  |- RESULT_OK                    -> SENT_CONFIRMED
-  |- definite transport failure    -> FAILED
-  |- ambiguous / vendor result     -> SEND_UNCONFIRMED
+* **Provider status** — the `status` column of the row in the Telephony provider, written by
+  `sms/SmsStatusReceiver.kt`. This is what the message bubble renders, and it survives restart
+  because the platform persists it.
+* **Per-part modem evidence** — `send_segments.callbackState` (`sms/SendSegment.kt`), persisted BY
+  NAME so it survives process death, reboot and locale changes.
 
-SENT_CONFIRMED   -+-> valid positive delivery report -> DELIVERED
-SEND_UNCONFIRMED-+
-```
-
-`SendState.advance(current, next)` is monotonic: `DELIVERED` is never downgraded,
-`FAILED` is sticky, and a stale/duplicate callback can never weaken a stronger
-verdict.
-
-## 2. SENT vs DELIVERED semantics
-
-**`SmsManager.sendTextMessage()` returning without throwing means only
-`DISPATCHED`.** It means Android telephony accepted the API call. It is NOT
-carrier success and it must never be rendered as one.
-
-* `SENT_CONFIRMED` — the radio reported `RESULT_OK` for every part.
-* `DELIVERED` — a parsed positive SMS-STATUS-REPORT for every part.
-
-Provider status mapping (`SmsStatusPolicy.nextStatus`), which is what the message
-bubble renders:
+`SmsStatusPolicy.nextStatus` is the **single** derivation from that evidence to a provider status,
+which is what the message bubble renders:
 
 | evidence | provider status | bubble |
 |---|---|---|
@@ -46,6 +24,36 @@ bubble renders:
 | some parts still outstanding | `STATUS_PENDING` | sending |
 | all parts reported, at least one ambiguous | `STATUS_PENDING` | **sending, never a success tick** |
 | all parts confirmed | `STATUS_NONE` | single tick |
+
+Monotonicity lives in the **evidence**, not in a state enum: per-part delivery evidence can only be
+upgraded (`DELIVERED` is never downgraded by a stale or duplicate report, `TEMPORARY` may advance to
+`DELIVERED` or `FAILED`, `UNKNOWN` leaves prior evidence untouched), and `nextStatus` ranks network
+delivery evidence above SENT evidence. `theCallbackEvidenceToStatusDerivationHasExactlyOneDefinition`
+fails if a second derivation from the same evidence is ever added.
+
+> **Removed, deliberately:** an enum `SendState` (QUEUED / DISPATCHING / DISPATCHED /
+> SEND_UNCONFIRMED / SENT_CONFIRMED / DELIVERED / FAILED) with a monotonic `advance`, together with
+> `SmsStatusPolicy.aggregateSendState` — its only producer. Nothing consumed them: no UI read those
+> states, nothing persisted one, and `aggregateSendState` had no production caller, while its KDoc
+> claimed a durable state machine and a UI overlay that did not exist. They were a second derivation
+> from the same evidence as `nextStatus`, and only `nextStatus` is on the real path.
+
+## 2. SENT vs DELIVERED semantics
+
+**`SmsManager.sendTextMessage()` returning without throwing is not carrier success** and must never
+be rendered as one. Android telephony accepted the API call; the radio has confirmed nothing.
+
+Two facts are distinguishable, and only two:
+
+* **the radio confirmed the submit** — `RESULT_OK` for every part, which is provider `STATUS_NONE`
+  (a single tick). Provider status deliberately cannot distinguish this from "the send call was
+  accepted and no callback has arrived yet": both are non-failed and non-delivered.
+* **delivery was reported** — a parsed positive SMS-STATUS-REPORT for every part →
+  `STATUS_COMPLETE`.
+
+Because the provider `status` column cannot express the intermediate distinctions, the durable
+per-part ledger is the record of *how* a send resolved, and the provider row is the record of *what
+the user sees*.
 
 ## 3. Hard vs ambiguous failure
 
@@ -138,8 +146,11 @@ These are real and must not be assumed done:
 4. **No optimistic-row `clientMessageId`.** Optimistic outgoing rows are still
    matched to provider rows by body + timestamp window.
 5. **The generic transport result is not exposed in the GMweb ACK contract**;
-   `sent | failed | superseded` is unchanged and `SEND_UNCONFIRMED` currently
-   maps to "not failed" (no ACK is emitted while a task is not terminal).
+   `sent | failed | superseded` is unchanged and an ambiguous part verdict
+   (`send_segments.callbackState = 'AMBIGUOUS'`, i.e. a vendor result the SMSC may
+   have accepted) currently maps to "not failed" — no ACK is emitted while a task
+   is not terminal. Distinguishing it in the ACK contract would be a protocol
+   change agreed with GMweb, not an Android-only edit.
 6. **No in-bubble reason text / Retry button change.** The existing failure
    affordance (red error icon + "Resend" + "Not delivered" detail) is what
    surfaces the failure; the typed code is persisted but not yet localised into

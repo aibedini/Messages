@@ -21,7 +21,16 @@ import com.autonomousone.messages.eve.EveSmsQueue
  */
 internal class GatewayAckTracker(
     private val statusOf: (localRequestId: String) -> EveSmsQueue.Record?,
-    private val sendAck: (record: EveSmsQueue.Record, outcome: String, reason: String?) -> Unit
+    /**
+     * Sends the report and says whether GMweb ACCEPTED it.
+     *
+     * It used to return nothing, and the tracker marked the task acknowledged before calling it — so a
+     * transport failure was indistinguishable from a delivered report, and the outcome was never sent
+     * again. The bridge's whole purpose is to tell GMweb what happened to a task; losing that report to
+     * one dropped connection and calling it "the server will time out" makes the server show a
+     * delivered message as unresolved for ever.
+     */
+    private val sendAck: (record: EveSmsQueue.Record, outcome: String, reason: String?) -> Boolean
 ) {
 
     companion object {
@@ -73,30 +82,34 @@ internal class GatewayAckTracker(
     }
 
     /**
-     * Emits the ACK for every tracked task that has reached a terminal outcome,
-     * exactly once each. Non-terminal tasks (QUEUED, ACTIVE, DEFERRED) are left
-     * untouched and are never acknowledged early.
+     * Emits the ACK for every tracked task that has reached a terminal outcome, exactly once each.
      *
-     * @return how many ACKs were emitted.
+     * **"Once" means once ACCEPTED.** A report GMweb refused, or one lost in transit, stays tracked and
+     * is retried on the next cycle. That is safe precisely because this is a REPORT and not a send: a
+     * duplicate ACK for the same `requestId` is idempotent at the server and cannot cause a second SMS.
+     * The previous behaviour — marking the task acknowledged before the transmission was attempted —
+     * made a failed report permanent, which is the one outcome a status bridge must not have.
+     *
+     * Non-terminal tasks (QUEUED, ACTIVE, DEFERRED) are left untouched and are never acknowledged early.
+     *
+     * @return how many ACKs GMweb accepted.
      */
     fun drain(): Int {
         if (awaiting.isEmpty()) return 0
         var emitted = 0
-        val iterator = awaiting.entries.iterator()
-        while (iterator.hasNext()) {
-            val entry = iterator.next()
-            val rec = statusOf(entry.value)
+        for ((gatewayRequestId, localRequestId) in awaiting.entries.toList()) {
+            val rec = statusOf(localRequestId)
             if (rec == null) {
                 // The queue evicted the record (bounded persistence); there is
                 // nothing left to acknowledge.
-                iterator.remove()
-                markAcked(entry.key)
+                awaiting.remove(gatewayRequestId)
+                markAcked(gatewayRequestId)
                 continue
             }
             if (!rec.terminal) continue
-            iterator.remove()
-            markAcked(entry.key)
-            sendAck(rec, rec.outcome, reasonFor(rec))
+            if (!sendAck(rec, rec.outcome, reasonFor(rec))) continue
+            awaiting.remove(gatewayRequestId)
+            markAcked(gatewayRequestId)
             emitted++
         }
         return emitted

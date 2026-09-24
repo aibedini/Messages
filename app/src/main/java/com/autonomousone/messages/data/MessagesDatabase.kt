@@ -78,9 +78,17 @@ import com.autonomousone.messages.BuildConfig
         ConversationClassificationEntity::class,
         MessageAssetEntity::class,
         // v17 — Send delay / Undo Send (ADDITIVE; see PendingDelayedSend.kt).
-        PendingDelayedSendEntity::class
+        PendingDelayedSendEntity::class,
+        // v21 — History-sync sessions (ADDITIVE; see HistorySyncSession.kt).
+        HistorySyncSessionEntity::class,
+        // v22 — Control-plane auth verdict (ADDITIVE; see ControlPlaneAuthState.kt).
+        ControlPlaneAuthStateEntity::class,
+        // v23 — Full-mirror verification progress (ADDITIVE; see MirrorVerifyState.kt).
+        MirrorVerifyStateEntity::class,
+        // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
+        PendingInboundSmsEntity::class
     ],
-    version = 18,
+    version = 24,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -95,6 +103,7 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun remoteCommandDao(): RemoteCommandDao
     abstract fun remoteCommandExecutionDao(): RemoteCommandExecutionDao
     abstract fun syncCursorDao(): SyncCursorDao
+    abstract fun mirrorReconcileDao(): com.autonomousone.messages.data.MirrorReconcileDao
     abstract fun trustedDeviceDao(): TrustedDeviceDao
     abstract fun trustStatementOutboxDao(): TrustStatementOutboxDao
     abstract fun deviceTelemetryDao(): DeviceTelemetryDao
@@ -111,6 +120,14 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun messageAssetDao(): MessageAssetDao
     // v17 — Send delay / Undo Send.
     abstract fun pendingDelayedSendDao(): PendingDelayedSendDao
+    // v21 — History-sync sessions (mission §25/§70).
+    abstract fun historySyncSessionDao(): HistorySyncSessionDao
+    // v22 — The control plane's standing verdict on this device (mission §44/§56).
+    abstract fun controlPlaneAuthStateDao(): ControlPlaneAuthStateDao
+    // v23 — Full-mirror verification progress (mission §35).
+    abstract fun mirrorVerifyStateDao(): MirrorVerifyStateDao
+    // v24 — Inbound messages held until they can be written to the provider (mission §16).
+    abstract fun pendingInboundSmsDao(): PendingInboundSmsDao
 
     companion object {
         @Volatile
@@ -552,10 +569,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 18
+        const val CURRENT_SCHEMA_VERSION = 24
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 17
+        const val PREVIOUS_SCHEMA_VERSION = 23
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -600,6 +617,197 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v18 -> v19: Outbox V2 (mission §9/§10/§12/§42).
+         *
+         * Additive and nullable throughout, so existing rows migrate with "unknown" rather than
+         * an invented value — the same contract as v18. Nothing is dropped, renamed or rewritten,
+         * and no row is deleted: an outbox row is the only record that an event exists.
+         *
+         * `leaseId`/`inFlightSince` are what make a SENDING row recoverable by AGE rather than
+         * being unconditionally requeued.
+         */
+        internal val UPGRADE_TO_V19_SQL: List<String> = listOf(
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `source` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `leaseId` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `inFlightSince` INTEGER",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `batchId` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `lastHttpStatus` INTEGER",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `lastErrorCode` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `lastErrorMessageSafe` TEXT",
+            "ALTER TABLE `gateway_event_outbox` ADD COLUMN `keyRef` TEXT"
+        )
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V19_SQL.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * v19 -> v20: Command V2 (mission §45/§46/§48/§49).
+         *
+         * Additive. `attemptCount` is NOT NULL DEFAULT 0 because "never attempted" is a real value
+         * for existing rows rather than missing information; every other column is nullable, so
+         * existing commands migrate as "no lease / no result / no error" instead of a guessed one.
+         *
+         * Nothing is dropped, renamed, rewritten or deleted — a command row is the only record that
+         * a remote instruction existed, and losing one could mean a send that never happens.
+         */
+        internal val UPGRADE_TO_V20_SQL: List<String> = listOf(
+            "ALTER TABLE `remote_commands` ADD COLUMN `attemptCount` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `remote_commands` ADD COLUMN `leaseId` TEXT",
+            "ALTER TABLE `remote_commands` ADD COLUMN `leaseExpiresAt` INTEGER",
+            "ALTER TABLE `remote_commands` ADD COLUMN `claimedAt` INTEGER",
+            "ALTER TABLE `remote_commands` ADD COLUMN `executedAt` INTEGER",
+            "ALTER TABLE `remote_commands` ADD COLUMN `completedAt` INTEGER",
+            "ALTER TABLE `remote_commands` ADD COLUMN `resultEventId` TEXT",
+            "ALTER TABLE `remote_commands` ADD COLUMN `lastErrorCode` TEXT",
+            "ALTER TABLE `remote_commands` ADD COLUMN `clientMessageId` TEXT"
+        )
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V20_SQL.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * v20 -> v21: history-sync sessions (mission §25/§70).
+         *
+         * Purely additive — a NEW table plus two indexes, and no existing table is touched. That is
+         * the only shape a migration may take here: the mission forbids a destructive migration, and
+         * this database holds the only local record of messages the user may have deleted from the
+         * Provider.
+         *
+         * Existing installs get ZERO session rows, which is the honest starting state: no scan has
+         * been accounted for yet. Backfilling a synthetic "everything was fine" row would be a
+         * fabricated measurement, which is the exact failure §70 exists to prevent.
+         *
+         * `finishedAt = 0` marks an open session, matching the `expiresAt = 0` convention the
+         * command table already uses rather than introducing a second way to mean "not set".
+         */
+        internal val UPGRADE_TO_V21_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `history_sync_sessions` (" +
+                "`sessionId` TEXT NOT NULL, `source` TEXT NOT NULL, `generation` INTEGER NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "`finishedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "`eligible` INTEGER NOT NULL DEFAULT 0, `enqueued` INTEGER NOT NULL DEFAULT 0, " +
+                "`failed` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedLocalOnly` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedAskPending` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedNoDirection` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedSyncOff` INTEGER NOT NULL DEFAULT 0, " +
+                "`scanExhausted` INTEGER NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY(`sessionId`))",
+            "CREATE INDEX IF NOT EXISTS `index_history_sync_sessions_source_startedAt` " +
+                "ON `history_sync_sessions` (`source`, `startedAt`)",
+            "CREATE INDEX IF NOT EXISTS `index_history_sync_sessions_finishedAt` " +
+                "ON `history_sync_sessions` (`finishedAt`)"
+        )
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V21_SQL.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * v21 -> v22: the control plane's standing verdict on this device (mission §44/§56).
+         *
+         * Purely additive: one fresh `CREATE TABLE`, no index (the table has exactly one row and is
+         * only ever read by primary key), and no existing table touched.
+         *
+         * An upgrading install gets ZERO rows, which is the correct starting state: the app has not
+         * yet made an authenticated call in this build, so it has no evidence either way. Seeding a
+         * row would mean inventing a verdict — and a seeded "not revoked" would be indistinguishable
+         * from a verified one, which is the confusion this table exists to remove.
+         */
+        internal val UPGRADE_TO_V22_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `control_plane_auth_state` (" +
+                "`id` INTEGER NOT NULL, `revokedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "`consecutiveRejections` INTEGER NOT NULL DEFAULT 0, " +
+                "`lastRejectionStatus` INTEGER, " +
+                "`lastAcceptedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "`clearedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "`updatedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY(`id`))"
+        )
+
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V22_SQL.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * v22 -> v23: full-mirror verification progress (mission §35).
+         *
+         * Additive: one fresh `CREATE TABLE` and one fresh `CREATE INDEX`. Nothing is dropped,
+         * rebuilt or rewritten — the mission forbids a destructive migration and this database holds
+         * the only local record of messages the user may have deleted from the Provider.
+         *
+         * The index is on `messages`, which on a large install holds hundreds of thousands of rows,
+         * so the `CREATE INDEX` is the one part of this migration with a real time cost. It is a
+         * read-path index for the per-source keyset walk (the history producer's page query and this
+         * sweep); WITHOUT it each page range-scans `date` and filters `source` out of every row read.
+         *
+         * Existing installs get ZERO progress rows: no sweep has run, and a seeded row would claim a
+         * verification that never happened.
+         */
+        internal val UPGRADE_TO_V23_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `mirror_verify_state` (" +
+                "`source` TEXT NOT NULL, " +
+                "`cursorDate` INTEGER NOT NULL DEFAULT 9223372036854775807, " +
+                "`cursorProviderId` INTEGER NOT NULL DEFAULT 9223372036854775807, " +
+                "`startedAt` INTEGER NOT NULL DEFAULT 0, `updatedAt` INTEGER NOT NULL DEFAULT 0, " +
+                "`completedAt` INTEGER NOT NULL DEFAULT 0, `examined` INTEGER NOT NULL DEFAULT 0, " +
+                "`alreadyReplicated` INTEGER NOT NULL DEFAULT 0, " +
+                "`recovered` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedNoDirection` INTEGER NOT NULL DEFAULT 0, " +
+                "`skippedNoProviderId` INTEGER NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY(`source`))",
+            "CREATE INDEX IF NOT EXISTS `index_messages_source_date_providerId` " +
+                "ON `messages` (`source`, `date`, `providerId`)"
+        )
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V23_SQL.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * v23 -> v24: inbound messages held until they can be written to the provider (mission §16).
+         *
+         * Purely additive: one fresh `CREATE TABLE` plus its two indices. No existing table is touched.
+         *
+         * The unique index on `pduFingerprint` is the load-bearing part and belongs in the migration as
+         * well as the entity: it is what makes a redelivered broadcast idempotent, and a lost index would
+         * turn a retry into a second message.
+         *
+         * An upgrading install gets ZERO rows, which is the correct starting state — no message has been
+         * held yet.
+         */
+        internal val UPGRADE_TO_V24_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `pending_inbound_sms` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`pduFingerprint` TEXT NOT NULL, `address` TEXT NOT NULL, `body` TEXT NOT NULL, " +
+                "`dateMs` INTEGER NOT NULL, `threadId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`attempts` INTEGER NOT NULL DEFAULT 0, `lastError` TEXT, " +
+                "`state` TEXT NOT NULL DEFAULT 'PENDING')",
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_pending_inbound_sms_pduFingerprint` " +
+                "ON `pending_inbound_sms` (`pduFingerprint`)",
+            "CREATE INDEX IF NOT EXISTS `index_pending_inbound_sms_state_createdAt` " +
+                "ON `pending_inbound_sms` (`state`, `createdAt`)"
+        )
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V24_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -611,7 +819,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

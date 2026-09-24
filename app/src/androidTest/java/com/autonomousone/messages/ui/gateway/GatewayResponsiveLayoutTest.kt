@@ -114,7 +114,8 @@ class GatewayResponsiveLayoutTest {
                             onTogglePause = {},
                             onClear = {},
                             onCopy = {},
-                            onShareReport = {}
+                            onShareReport = {},
+                            onCopyJson = {}
                         )
                     }
                 }

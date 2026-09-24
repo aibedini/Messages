@@ -3,11 +3,14 @@ package com.autonomousone.messages.gateway
 import android.content.Context
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.gateway.health.AuthHealth
 import com.autonomousone.messages.gateway.health.AuthVerification
 import com.autonomousone.messages.gateway.health.GatewayFailureKind
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
+import com.autonomousone.messages.sync.ControlPlaneAuthSignal
+import com.autonomousone.messages.sync.ControlPlaneAuthStateStore
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -26,7 +29,8 @@ import org.json.JSONObject
  *
  * - Sends heartbeat every [HEARTBEAT_INTERVAL_MS] when healthy.
  * - Uses exponential backoff (1s → 2s → 4s … max 5 min) on failure.
- * - Detects 401/403 → triggers re-registration automatically.
+ * - **401 re-enrolls; 403 does NOT.** A refused device keeps its enrollment and is reported as
+ *   revoked. Treating both as "rejected credential" deleted a device's own credentials on a 403.
  * - State exposed via [stateFlow] for UI binding.
  */
 class HeartbeatManager(
@@ -55,6 +59,18 @@ class HeartbeatManager(
 
     /** One place for the battery/network facts a liveness request carries. */
     private val deviceFacts = AgentDeviceFacts(context)
+
+    /**
+     * The durable home of "has the control plane refused this device?" (mission §44/§56).
+     *
+     * The heartbeat is already the AUTH dimension's producer — it is an authenticated, side-effect-free
+     * liveness ping — so the standing verdict on this device is recorded here and nowhere else. Reads
+     * and writes are guarded inside the store, so a storage failure yields "no change, take no action"
+     * rather than a fabricated revocation or a fabricated re-enrollment.
+     */
+    private val authStateStore = ControlPlaneAuthStateStore(
+        MessagesDatabase.get(context.applicationContext).controlPlaneAuthStateDao()
+    )
 
     /** Woken by retryNow() to cut short a pending backoff sleep. */
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -166,43 +182,83 @@ class HeartbeatManager(
                 true
             }
             is BackendClient.Result.Failure -> {
-                if (result.isAuthError) {
-                    // Token rejected → re-enroll identity (fail-visible, the
-                    // next successful register() restores the markers).
-                    Log.w(TAG, "Heartbeat auth error — clearing credentials, will re-register")
-                    onLog("🔄 Auth error — re-registering...")
-                    // ONLY a real 401/403 may claim the credential was rejected.
-                    GatewayHealthRecorder.onAuthProbe(
-                        AuthHealth(
-                            status = AuthVerification.REJECTED,
-                            lastVerifiedAt = System.currentTimeMillis()
-                        )
-                    )
-                    DiagnosticLog.event(
-                        "GATEWAY_AUTH",
-                        "rejected status=${result.httpStatus ?: "n/a"} — re-enrolling identity"
-                    )
-                    prefs.clearCloudCredentials()
-                    registrationManager.register()
-                } else {
-                    // A non-auth failure (400, 5xx, timeout) proves NOTHING about the key. It
-                    // is recorded as UNVERIFIABLE — not as a rejection, and not as a silent
-                    // no-op. A 400 in particular means the request itself was refused, which is
-                    // the app's contract problem, and reporting it as a rejected credential is
-                    // the false alarm this tri-state exists to prevent.
-                    val kind = GatewayFailureKind.classify(httpStatus = result.httpStatus)
-                    GatewayHealthRecorder.onAuthProbe(
-                        AuthHealth(
-                            status = AuthVerification.UNVERIFIABLE,
-                            lastVerifiedAt = System.currentTimeMillis(),
-                            unverifiableReason = GatewayHealthText.safeDetail(
+                // ── 401 and 403 are different facts, and only 401 licenses a re-enrollment ──────
+                //
+                // This used to branch on `result.isAuthError`, which is `401 || 403`, and then
+                // ALWAYS `clearCloudCredentials()` + `register()`. A 403 means the server recognised
+                // this device and refused it, so clearing the credentials and re-enrolling is both
+                // the wrong diagnosis and a destructive act: it deletes the device id, the gateway
+                // token and the registered marker — the enrollment, not the credential, which is what
+                // actually needs to survive until a human un-revokes the device.
+                //
+                // The distinction was never missing from the codebase (SyncErrorCode maps
+                // 401→AUTH_REQUIRED and 403→DEVICE_REVOKED; GatewayFailureKind separates HTTP_AUTH
+                // from HTTP_FORBIDDEN). It was collapsed here, at the only place that acts on it.
+                val signal = ControlPlaneAuthSignal.fromHttpStatus(result.httpStatus)
+                val decision = authStateStore.observe(signal, result.httpStatus)
+
+                // Determine the health verdict from the SIGNAL, so a 403 is reported as revoked
+                // rather than as a rejected key — the two need different human responses.
+                GatewayHealthRecorder.onAuthProbe(
+                    AuthHealth(
+                        status = when (signal) {
+                            ControlPlaneAuthSignal.UNAUTHORIZED,
+                            ControlPlaneAuthSignal.FORBIDDEN -> AuthVerification.REJECTED
+                            // A non-auth failure (400, 5xx, timeout) proves NOTHING about the key. It
+                            // is recorded as UNVERIFIABLE — not as a rejection, and not as a silent
+                            // no-op. A 400 in particular means the request itself was refused, which
+                            // is the app's contract problem, and reporting it as a rejected credential
+                            // is the false alarm this tri-state exists to prevent.
+                            ControlPlaneAuthSignal.ACCEPTED,
+                            ControlPlaneAuthSignal.INCONCLUSIVE -> AuthVerification.UNVERIFIABLE
+                        },
+                        lastVerifiedAt = System.currentTimeMillis(),
+                        unverifiableReason = if (signal == ControlPlaneAuthSignal.INCONCLUSIVE) {
+                            val kind = GatewayFailureKind.classify(httpStatus = result.httpStatus)
+                            GatewayHealthText.safeDetail(
                                 result.httpStatus?.let { "HTTP $it (${kind.name})" } ?: kind.name
                             )
-                        )
+                        } else {
+                            null
+                        }
                     )
-                    DiagnosticLog.event(
+                )
+
+                when {
+                    decision.revoked -> {
+                        // Reported, never repaired locally: only the server's owner can lift this, and
+                        // the next successful heartbeat clears it automatically. Nothing is retried in
+                        // a loop and nothing is destroyed.
+                        Log.w(TAG, "Control plane refused this device (403) — reporting revoked")
+                        onLog("⛔ Device revoked by GMweb — replication held until it is re-authorized")
+                        DiagnosticLog.event(
+                            "GATEWAY_AUTH",
+                            "forbidden status=${result.httpStatus ?: "n/a"} " +
+                                "consecutive=${decision.state.consecutiveRejections} — device revoked"
+                        )
+                    }
+                    signal == ControlPlaneAuthSignal.FORBIDDEN -> {
+                        DiagnosticLog.event(
+                            "GATEWAY_AUTH",
+                            "forbidden status=${result.httpStatus ?: "n/a"} " +
+                                "consecutive=${decision.state.consecutiveRejections} — not yet revoked"
+                        )
+                    }
+                    decision.replaceCredentialAndReEnroll -> {
+                        // Token rejected → re-enroll identity (fail-visible, the
+                        // next successful register() restores the markers).
+                        Log.w(TAG, "Heartbeat auth error — clearing credentials, will re-register")
+                        onLog("🔄 Auth error — re-registering...")
+                        DiagnosticLog.event(
+                            "GATEWAY_AUTH",
+                            "rejected status=${result.httpStatus ?: "n/a"} — re-enrolling identity"
+                        )
+                        prefs.clearCloudCredentials()
+                        registrationManager.register()
+                    }
+                    else -> DiagnosticLog.event(
                         "GATEWAY_AUTH",
-                        "unverified status=${result.httpStatus ?: "n/a"} kind=${kind.name} " +
+                        "unverified status=${result.httpStatus ?: "n/a"} " +
                             "detail=${GatewayHealthText.safeDetail(result.error) ?: "none"}"
                     )
                 }

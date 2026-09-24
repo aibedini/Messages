@@ -97,25 +97,4 @@ object SmsStatusPolicy {
             else -> Telephony.Sms.STATUS_NONE
         }
     }
-
-    /**
-     * The durable [SendState] for the same evidence. Kept next to [nextStatus]
-     * so the provider status, the durable state machine and the UI overlay can
-     * never disagree about what the device actually knows.
-     */
-    fun aggregateSendState(
-        sentConfirmedParts: Int,
-        sentUnconfirmedParts: Int,
-        sentFailedParts: Int,
-        dlvPartsDone: Int,
-        partCount: Int,
-        dispatched: Boolean
-    ): SendState = when {
-        partCount > 0 && dlvPartsDone >= partCount -> SendState.DELIVERED
-        sentFailedParts > 0 -> SendState.FAILED
-        sentUnconfirmedParts > 0 -> SendState.SEND_UNCONFIRMED
-        partCount > 0 && sentConfirmedParts >= partCount -> SendState.SENT_CONFIRMED
-        dispatched -> SendState.DISPATCHED
-        else -> SendState.QUEUED
-    }
 }

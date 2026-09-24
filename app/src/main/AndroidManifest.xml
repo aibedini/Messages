@@ -157,6 +157,14 @@
             android:name=".sms.SmsStatusReceiver"
             android:exported="false" />
 
+        <!-- Explicit SmsManager MMS send-result callback. Manifest lifetime for the same reason as
+             the SMS status receiver above: the platform's answer to sendMultimediaMessage must still
+             arrive after the sending process is gone. Without a receiver here the result had nowhere
+             to go, so a failed MMS stayed in the OUTBOX for ever looking like it was still sending. -->
+        <receiver
+            android:name=".mms.MmsStatusReceiver"
+            android:exported="false" />
+
         <!-- ADR-006 §11: SensitiveMessageFirewall per-message ASK actions
              (Sync once / Keep private). Non-exported: only our own
              notifications target it explicitly. -->

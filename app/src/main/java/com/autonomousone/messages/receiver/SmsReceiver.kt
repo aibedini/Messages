@@ -105,9 +105,43 @@ class SmsReceiver : BroadcastReceiver() {
         var persistedId = -1L
         var threadId = IncomingMessageDispatcher.resolveThreadId(context, sender)
         if (intent.action == Telephony.Sms.Intents.SMS_DELIVER_ACTION) {
-            val inserted = insertIntoInbox(context, sender, body, timestamp, threadId)
-            persistedId = inserted.first
-            inserted.second?.let { threadId = it }
+            // A bounded retry: the likely cause of a failed insert is a provider that is momentarily
+            // unavailable, and this receiver already holds a broadcast window to spend on it.
+            // Named argument, not a trailing lambda: the trailing position is `maxAttempts`, and a
+            // trailing lambda would bind there.
+            val outcome = InboxWriteRetryPolicy.persist(
+                write = { insertIntoInbox(context, sender, body, timestamp, threadId) }
+            )
+            when (outcome) {
+                is InboxPersistOutcome.Persisted -> persistedId = outcome.rowId
+                is InboxPersistOutcome.Failed -> {
+                    // NOT the same fact as "written but not visible yet".
+                    //
+                    // This app is the default SMS app, so nothing else wrote the row: as far as anyone
+                    // can tell, the message exists nowhere. Reporting that as
+                    // `defer-to-provider-observer` — which is what the collapsed `-1` used to produce —
+                    // told a reader that a ContentObserver would pick it up from a provider that has no
+                    // such row, so an inbound message could be lost with no record that it arrived.
+                    Log.e(
+                        TAG,
+                        "incoming sms could not be persisted after ${outcome.attempts} attempt(s) " +
+                            "from=${DiagnosticLog.phoneToken(sender)} reason=${outcome.reason ?: "unknown"}"
+                    )
+                    DiagnosticLog.event(
+                        "INCOMING_PERSIST_FAILED",
+                        "pdu=$pduFingerprint attempts=${outcome.attempts} " +
+                            "reason=${outcome.reason ?: "unknown"} " +
+                            "phone=${DiagnosticLog.phoneToken(sender)} length=${body.length} " +
+                            "decision=message-not-persisted"
+                    )
+                    // HELD, not dropped. This app is the default SMS app, so nothing else will ever write
+                    // this message: without a durable copy it is gone, and a log line is not a record that
+                    // a message arrived. The row is idempotent on the PDU fingerprint, so a redelivered
+                    // broadcast cannot hold it twice.
+                    holdForLaterDelivery(context, pduFingerprint, sender, body, timestamp, threadId, outcome.reason)
+                    return
+                }
+            }
         }
 
         // ── 2. Read back what the provider actually holds (SSOT), falling back
@@ -121,7 +155,6 @@ class SmsReceiver : BroadcastReceiver() {
             )
             return
         }
-
         DiagnosticLog.event(
             "INCOMING_DEDUP",
             "pdu=$pduFingerprint providerId=${sms.id} threadId=${sms.threadId} " +
@@ -132,14 +165,76 @@ class SmsReceiver : BroadcastReceiver() {
         IncomingMessageDispatcher.dispatch(context, sms)
     }
 
-    /** Inserts the inbox row with THREAD_ID set so Threads stays consistent. */
+    /**
+     * Holds an inbound message that could not be written, so a retry pass can try again.
+     *
+     * The write is synchronous and bounded on purpose: the receiver is inside a broadcast, and a message
+     * that could not be stored must not also be lost because the broadcast window closed while a
+     * coroutine was being scheduled. `runBlocking` runs on the receiver's own background thread
+     * (`goAsync`), never the main thread.
+     *
+     * If even holding it fails, that is reported separately and loudly: at that point the message is
+     * genuinely gone, and the one thing that must not happen is for that to look like the ordinary path.
+     */
+    private fun holdForLaterDelivery(
+        context: Context,
+        pduFingerprint: String,
+        sender: String,
+        body: String,
+        timestamp: Long,
+        threadId: Long,
+        reason: String?
+    ) {
+        val row = com.autonomousone.messages.data.PendingInboundSmsEntity(
+            pduFingerprint = pduFingerprint,
+            address = sender,
+            body = body,
+            dateMs = timestamp,
+            threadId = threadId,
+            createdAt = System.currentTimeMillis(),
+            lastError = reason
+        )
+        val held = runCatching {
+            kotlinx.coroutines.runBlocking {
+                com.autonomousone.messages.data.MessagesDatabase.get(context.applicationContext)
+                    .pendingInboundSmsDao()
+                    .insertOrIgnore(row)
+            }
+        }
+        held.onSuccess { rowId ->
+            DiagnosticLog.event(
+                "INCOMING_PERSIST_HELD",
+                "pdu=$pduFingerprint held=$rowId phone=${DiagnosticLog.phoneToken(sender)} " +
+                    "decision=retry-later"
+            )
+            // Ask for the recovery pass now rather than waiting for the periodic sweep: a provider that
+            // was momentarily unavailable is very likely to answer a minute from now.
+            PendingInboundWorker.scheduleRetry(context)
+        }.onFailure { error ->
+            Log.e(TAG, "incoming sms could not be held for retry either", error)
+            DiagnosticLog.event(
+                "INCOMING_PERSIST_LOST",
+                "pdu=$pduFingerprint reason=${error.message ?: "unknown"} " +
+                    "phone=${DiagnosticLog.phoneToken(sender)} length=${body.length} " +
+                    "decision=message-lost",
+                error
+            )
+        }
+    }
+
+    /**
+     * One attempt to insert the inbox row with THREAD_ID set so Threads stays consistent.
+     *
+     * Returns [InboxWriteAttempt] rather than a bare id, so the caller can tell a write that FAILED
+     * from one that succeeded — the two used to collapse into `-1` and be reported identically.
+     */
     private fun insertIntoInbox(
         context: Context,
         sender: String,
         body: String,
         timestamp: Long,
         threadId: Long
-    ): Pair<Long, Long?> {
+    ): InboxWriteAttempt {
         return try {
             val values = ContentValues().apply {
                 put(Telephony.Sms.ADDRESS, sender)
@@ -153,11 +248,19 @@ class SmsReceiver : BroadcastReceiver() {
             }
             val uri = context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
             val id = uri?.lastPathSegment?.toLongOrNull() ?: -1L
-            Log.d(TAG, "Persisted SMS to Inbox id=$id threadId=$threadId")
-            Pair(id, null) // provider fills/normalizes THREAD_ID on insert
+            if (id <= 0L) {
+                // The provider answered but gave no row id. Treated as a failure rather than a success
+                // with an unknown id: there is nothing to read back, so the caller must not proceed as
+                // though a row exists.
+                Log.e(TAG, "Persist SMS to Inbox returned no row id")
+                InboxWriteAttempt.Threw("no-row-id")
+            } else {
+                Log.d(TAG, "Persisted SMS to Inbox id=$id threadId=$threadId")
+                InboxWriteAttempt.Wrote(id)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error writing SMS to Inbox", e)
-            Pair(-1L, null)
+            InboxWriteAttempt.Threw(e.message)
         }
     }
 

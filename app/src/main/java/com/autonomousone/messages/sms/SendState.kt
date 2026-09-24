@@ -4,72 +4,17 @@ import android.app.Activity
 import android.telephony.SmsManager
 
 /**
- * Explicit, durable lifecycle of an OUTGOING message.
- *
- * The whole point of this type is that
- *
- *     SmsManager.sendTextMessage() returned without throwing
- *
- * means only [DISPATCHED] — Android telephony accepted the API call. It is NOT
- * carrier success, and it must never be rendered as one. Carrier success is
- * [SENT_CONFIRMED] (the radio reported RESULT_OK for every part) and delivery is
- * [DELIVERED] (a parsed positive SMS-STATUS-REPORT).
- *
- *   QUEUED -> DISPATCHING -> DISPATCHED
- *                              |- RESULT_OK .................. -> SENT_CONFIRMED
- *                              |- definite transport failure .. -> FAILED
- *                              '- ambiguous/vendor result ..... -> SEND_UNCONFIRMED
- *
- *   SENT_CONFIRMED  -+-> valid positive delivery report -> DELIVERED
- *   SEND_UNCONFIRMED-+
- *
- * [rank] encodes evidence strength so a stale or duplicate callback can never
- * downgrade a stronger verdict (a DELIVERED message is never pushed back to
- * "sent" or "unconfirmed" by a late report).
+ * NOTE ON THIS FILE'S NAME: a `SendState` enum used to live here (QUEUED / DISPATCHING /
+ * DISPATCHED / SEND_UNCONFIRMED / SENT_CONFIRMED / DELIVERED / FAILED, with a monotonic `rank` and
+ * `advance`). It was removed rather than wired, because nothing could consume it: no UI reads those
+ * states, nothing persisted one, and `SmsStatusPolicy.aggregateSendState` — its only producer — had
+ * no production caller, while its KDoc claimed a durable state machine and a UI overlay that did
+ * not exist. The durable per-part evidence it claimed to add already exists as
+ * `send_segments.callbackState`, and `SmsStatusPolicy.nextStatus` is the single derivation from it.
+ * `theCallbackEvidenceToStatusDerivationHasExactlyOneDefinition` fails if a second derivation
+ * reappears. What remains below is live: `SentPartVerdict` and `SmsSendPolicy` classify per-part
+ * callbacks for `SmsStatusReceiver`, and `SmsSendFailure` codes are persisted to the segment ledger.
  */
-enum class SendState(val rank: Int) {
-    /** Persisted locally, no telephony call yet. */
-    QUEUED(0),
-
-    /** The send call is in flight on this device. */
-    DISPATCHING(1),
-
-    /** Telephony accepted the API call for every part. Nothing is confirmed. */
-    DISPATCHED(2),
-
-    /** Ambiguous modem/vendor verdict: neither confirmed nor provably failed. */
-    SEND_UNCONFIRMED(3),
-
-    /** RESULT_OK for every part: the radio accepted the submit. */
-    SENT_CONFIRMED(4),
-
-    /** A parsed positive delivery report for every part. */
-    DELIVERED(5),
-
-    /** A definite, actionable refusal (no service, radio off, invalid SIM/SMSC, ...). */
-    FAILED(-1);
-
-    val isTerminal: Boolean get() = this == DELIVERED || this == FAILED
-
-    companion object {
-        /**
-         * Monotonic advance. FAILED is not a "stronger" state than DELIVERED —
-         * real delivery evidence always wins — but nothing else may ever
-         * downgrade a stronger verdict.
-         */
-        fun advance(current: SendState, next: SendState): SendState = when {
-            next == DELIVERED -> DELIVERED
-            current == DELIVERED -> DELIVERED
-            current == FAILED -> FAILED
-            next == FAILED -> FAILED
-            next.rank >= current.rank -> next
-            else -> current
-        }
-
-        fun fromName(raw: String?): SendState? =
-            values().firstOrNull { it.name == raw }
-    }
-}
 
 /**
  * Typed, PERSISTABLE send-failure reason.

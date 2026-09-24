@@ -72,6 +72,16 @@ object EveSmsQueue {
     const val REASON_CANCELLED_LOCALLY = "cancelled_locally"
     const val REASON_VALIDATION_UNAVAILABLE = "validation_unavailable"
 
+    /**
+     * The process died after the native submit was started, so whether the SMS actually left the
+     * device is unknown.
+     *
+     * Deliberately NOT retried (mission §47/§78: a duplicate SMS is irreversible) and deliberately
+     * named, so the state is unmistakable in diagnostics and in a support conversation rather than
+     * looking like an ordinary send failure.
+     */
+    const val REASON_INTERRUPTED_AFTER_SUBMIT = "interrupted_after_submit"
+
     val PRIORITY_LEVELS: Map<String, Int> = mapOf(
         "critical" to 1,
         "expired" to 3,
@@ -148,7 +158,20 @@ object EveSmsQueue {
         val deferredUntil: Long = 0L,
         val supersededReason: String? = null,
         /** Set immediately before the native sender is invoked (race diagnostics). */
-        val nativeSubmitStartedAt: Long = 0L
+        val nativeSubmitStartedAt: Long = 0L,
+        /**
+         * When GMweb ACCEPTED this task's outcome report, or 0 while it has not.
+         *
+         * The report is the bridge's product, and it used to be lost for good if its single HTTP
+         * attempt failed: the ACK ledger is in memory and `outstandingGatewayRecords` excludes terminal
+         * records, so a process death between "the send finished" and "GMweb heard about it" left the
+         * server showing a delivered message as unresolved for ever. This field is what makes the
+         * report as durable as the outcome it describes.
+         *
+         * 0 and "never reported" are the same thing here, deliberately: a task reported at the epoch is
+         * not a case worth modelling, and a nullable timestamp would add a second way to mean "not yet".
+         */
+        val gatewayAckedAt: Long = 0L
     ) {
         val terminal: Boolean
             get() = status == Status.SENT || status == Status.FAILED ||
@@ -268,9 +291,15 @@ object EveSmsQueue {
     private var seq = 0L
 
     private lateinit var store: Store
-    @Volatile private var senderFn: ((String, String) -> Boolean)? = null
+    @Volatile private var senderFn: ((Record) -> Boolean)? = null
     @Volatile private var validatorFn: FinalValidator? = null
     @Volatile private var running = false
+
+    /**
+     * True once [bootstrap] has read the durable state — which is what makes an empty in-memory map
+     * mean "nothing to report" rather than "nothing read yet".
+     */
+    @Volatile private var durableStateLoaded = false
     private var worker: Thread? = null
     private val persistExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "eve-persist").apply { isDaemon = true }
@@ -291,10 +320,22 @@ object EveSmsQueue {
      * [validator] is the mandatory final pre-send gate for metadata-aware
      * (requiresValidation=true) records. When null, such records fail closed.
      */
+    /**
+     * Starts the queue against device persistence. No-op when already running.
+     *
+     * [validator] is the mandatory final pre-send gate for metadata-aware
+     * (requiresValidation=true) records. When null, such records fail closed.
+     *
+     * [sender] receives the whole [Record] rather than `(to, text)`. It used to take exactly those
+     * two strings, which is why the web's own correlation key — parsed off the pulled task, stored on
+     * the record, and echoed back on the ACK — could never reach the send: there was no parameter for
+     * it. Every field a send needs (the recipient, the body, and now the correlation key) travels on
+     * the record, so adding the next one is not another signature change at six call sites.
+     */
     @Synchronized
     fun start(
         context: Context,
-        sender: (String, String) -> Boolean,
+        sender: (Record) -> Boolean,
         validator: FinalValidator? = null
     ) {
         if (running) return
@@ -304,13 +345,15 @@ object EveSmsQueue {
     /** Shared setup used by both production start and tests. */
     internal fun bootstrap(
         storeImpl: Store,
-        sender: (String, String) -> Boolean,
+        sender: (Record) -> Boolean,
         validator: FinalValidator? = null
     ) {
         store = storeImpl
         senderFn = sender
         validatorFn = validator
         val nowMs = now()
+        // Declared outside the lock because the durable write happens after it is released.
+        var interruptedSubmitSeen = false
         synchronized(records) {
             records.clear()
             idempotency.clear()
@@ -320,7 +363,34 @@ object EveSmsQueue {
             for (r in loaded.sortedBy { it.createdAt }) {
                 var rec = r
                 if (!rec.terminal && rec.status == Status.ACTIVE) {
-                    rec = rec.copy(status = Status.QUEUED) // interrupted mid-send -> requeue
+                    rec = if (rec.submittedOnce) {
+                        interruptedSubmitSeen = true
+                        // AT-MOST-ONCE (mission §47/§78). `submittedOnce` is persisted BEFORE the
+                        // native submit is invoked, so an ACTIVE record carrying it means the phone
+                        // was about to send — or already had. The two are indistinguishable from
+                        // here, and re-queueing was a real defect: a process death in that window
+                        // sent the SMS a second time (docs/gateway-replication-audit.md, Blocker 14).
+                        //
+                        // A duplicate SMS is an irreversible real-world action, so the tie is broken
+                        // toward NOT sending. The record is marked terminal with an honest reason
+                        // and `manual_review_required`, so the send is visibly unresolved rather
+                        // than silently repeated or silently dropped — and the failure surfaces to
+                        // GMweb through the normal ACK path.
+                        Log.w(
+                            TAG,
+                            "interrupted after submit — NOT resending " + rec.requestId +
+                                " (at-most-once; manual review)"
+                        )
+                        rec.copy(
+                            status = Status.FAILED,
+                            failedReason = REASON_INTERRUPTED_AFTER_SUBMIT,
+                            verificationStatus = "manual_review_required"
+                        )
+                    } else {
+                        // Interrupted BEFORE any submit was attempted: nothing left the device, so
+                        // retrying is free.
+                        rec.copy(status = Status.QUEUED)
+                    }
                 }
                 records[rec.requestId] = rec
                 if (!rec.terminal) {
@@ -332,7 +402,16 @@ object EveSmsQueue {
             }
             idempotency.putAll(loadedIdem)
         }
+        if (interruptedSubmitSeen) {
+            // Make the at-most-once verdict durable NOW rather than waiting for an unrelated
+            // mutation to trigger a write: until it lands, the stored record still says ACTIVE, and
+            // a reader of the store (or a future bootstrap) would be looking at a state this run
+            // has already decided against. Re-deriving it is harmless — the decision is idempotent
+            // — but writing it means the manual-review state is visible immediately.
+            persistAsync()
+        }
         running = true
+        durableStateLoaded = true
         worker = Thread {
             while (running) {
                 try {
@@ -447,6 +526,49 @@ object EveSmsQueue {
      */
     fun outstandingGatewayRecords(): List<Record> = synchronized(records) {
         records.values.filter { it.gatewayRequestId != null && !it.terminal }
+    }
+
+    /**
+     * Terminal gateway tasks whose outcome GMweb has NOT accepted yet.
+     *
+     * The complement of [outstandingGatewayRecords], and the reason the report survives a restart: a
+     * task can finish sending and then lose the connection before telling GMweb. Re-reporting is safe
+     * because it is a report rather than a send — the same `requestId` twice is idempotent at the
+     * server and cannot produce a second SMS — so this list may be walked on every start without any
+     * risk to the at-most-once guarantee on the send itself.
+     */
+    fun unreportedGatewayRecords(): List<Record> = synchronized(records) {
+        records.values.filter {
+            it.gatewayRequestId != null && it.terminal && it.gatewayAckedAt == 0L
+        }
+    }
+
+    /**
+     * How many finished tasks are still waiting for GMweb to accept their outcome, or **null when the
+     * durable state has not been loaded**.
+     *
+     * Null rather than 0, deliberately, and this is the whole reason the method exists rather than a
+     * caller reading [unreportedGatewayRecords]`.size`: before [bootstrap] the in-memory map is empty
+     * because nothing has been read yet, not because there is nothing to report. Reporting that as zero
+     * would turn "we have not looked" into "everything is reported" — the same false reassurance as
+     * rendering an unmeasured reconciliation as a clean one.
+     *
+     * The count stays valid after [stop], because stopping the worker does not unload the records.
+     */
+    fun unreportedGatewayBacklog(): Int? =
+        if (!durableStateLoaded) null else synchronized(records) { unreportedGatewayRecords().size }
+
+    /**
+     * Records that GMweb accepted this task's outcome report.
+     *
+     * Written only after the server answered 2xx. Recording the ATTEMPT instead is exactly the defect
+     * this replaced: a refused or lost report then looked delivered, and was never retried.
+     */
+    fun markGatewayReported(requestId: String, at: Long): Boolean = synchronized(records) {
+        val rec = records[requestId] ?: return false
+        records[requestId] = rec.copy(gatewayAckedAt = at)
+        persistAsync()
+        true
     }
 
     /** Cancels a QUEUED or DEFERRED (never-submitted) message. */
@@ -579,7 +701,10 @@ object EveSmsQueue {
 
         val fn = senderFn
         val ok = try {
-            fn?.invoke(active.to, active.text) ?: false
+            // The whole record, so the sender can pass on the web's correlation key. It receives
+            // `active`, which is the ACTIVE state carrying `correlationId` — not a stripped-down pair
+            // of strings, which is what made the key unreachable before.
+            fn?.invoke(active) ?: false
         } catch (e: Exception) {
             Log.e(TAG, "Send failed for request " + job.requestId, e)
             false
@@ -794,7 +919,7 @@ object EveSmsQueue {
     /** Test hook: clears all state and installs the given store/sender/validator. */
     fun resetForTest(
         storeImpl: Store = MemoryStore(),
-        sender: (String, String) -> Boolean = { _, _ -> true },
+        sender: (Record) -> Boolean = { true },
         validator: FinalValidator? = null
     ) {
         stop()
@@ -806,6 +931,8 @@ object EveSmsQueue {
         validatorFn = validator
         observer = null
         clock = { System.currentTimeMillis() }
+        // Nothing has been read from a durable store, so an empty map means "not looked at" again.
+        durableStateLoaded = false
     }
 }
 
@@ -847,7 +974,10 @@ internal object EveQueueCodec {
         validationAttempts = o.optInt("validationAttempts", 0),
         deferredUntil = o.optLong("deferredUntil", 0L),
         supersededReason = o.optString("supersededReason", "").ifBlank { null },
-        nativeSubmitStartedAt = o.optLong("nativeSubmitStartedAt", 0L)
+        nativeSubmitStartedAt = o.optLong("nativeSubmitStartedAt", 0L),
+        // Absent on records persisted by a build that predates it: 0 means "not reported yet", which
+        // for an old terminal record is the honest reading — nothing ever confirmed the report.
+        gatewayAckedAt = o.optLong("gatewayAckedAt", 0L)
     )
 
     fun encode(r: EveSmsQueue.Record): JSONObject = JSONObject()
@@ -880,6 +1010,7 @@ internal object EveQueueCodec {
         .put("deferredUntil", r.deferredUntil)
         .put("supersededReason", r.supersededReason ?: "")
         .put("nativeSubmitStartedAt", r.nativeSubmitStartedAt)
+        .put("gatewayAckedAt", r.gatewayAckedAt)
 
     private fun parseStatus(raw: String): EveSmsQueue.Status = try {
         if (raw.isBlank()) EveSmsQueue.Status.FAILED else EveSmsQueue.Status.valueOf(raw)

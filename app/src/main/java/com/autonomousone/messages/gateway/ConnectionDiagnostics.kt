@@ -170,7 +170,16 @@ object ConnectionDiagnostics {
 
     private fun mirrorCheck(name: String, state: SyncStateEntity?, initial: Boolean): Check {
         val ready = if (initial) state?.initialWindowReady == true else state?.historyBackfillComplete == true
-        return Check(name, ready, if (ready) if (initial) "ready" else "complete" else "not ready")
+        // "complete" here means the PROVIDER has been scanned, NOT that GMweb has the data. Saying
+        // a bare "complete" was the conflation the audit found (Blocker 9): a device could read as
+        // complete while nothing had arrived. Delivery is verified in the shareable diagnostic
+        // report, which reports scan and delivery as separate facts.
+        val label = when {
+            !ready -> "not ready"
+            initial -> "ready"
+            else -> "scan complete (delivery not checked here)"
+        }
+        return Check(name, ready, label)
     }
 
     private fun watermarkCheck(name: String, state: SyncStateEntity?): Check = Check(

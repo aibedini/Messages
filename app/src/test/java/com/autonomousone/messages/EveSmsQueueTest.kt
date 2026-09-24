@@ -20,7 +20,7 @@ class EveSmsQueueTest {
         EveSmsQueue.resetForTest(store)
     }
 
-    private fun bootstrap(sender: (String, String) -> Boolean = { _, _ -> true }) {
+    private fun bootstrap(sender: (EveSmsQueue.Record) -> Boolean = { true }) {
         EveSmsQueue.bootstrap(store, sender)
         // Stop the worker so tests drive drainOne() deterministically.
         EveSmsQueue.stop()
@@ -37,7 +37,7 @@ class EveSmsQueueTest {
     @Test
     fun `idempotency key returns the same request without a new sms`() {
         val sent = mutableListOf<String>()
-        bootstrap { to, _ -> synchronized(sent) { sent.add(to) }; true }
+        bootstrap { record -> synchronized(sent) { sent.add(record.to) }; true }
 
         val first = EveSmsQueue.enqueue("09123456789", "hi", "critical", "eve-key-1")
         val second = EveSmsQueue.enqueue("09123456789", "hi", "critical", "eve-key-1")
@@ -54,7 +54,7 @@ class EveSmsQueueTest {
     @Test
     fun `higher priority is sent first`() {
         val order = mutableListOf<String>()
-        bootstrap { _, text -> synchronized(order) { order.add(text) }; true }
+        bootstrap { record -> synchronized(order) { order.add(record.text) }; true }
 
         EveSmsQueue.enqueue("09120000001", "announcement", "announcement", null)
         EveSmsQueue.enqueue("09120000002", "expiring", "expiring", null)
@@ -81,7 +81,7 @@ class EveSmsQueueTest {
 
     @Test
     fun `failing sender marks failed with reason`() {
-        bootstrap { _, _ -> false }
+        bootstrap { false }
         val rec = EveSmsQueue.enqueue("09123456789", "hello", "critical", null).record
         EveSmsQueue.drainOne()
 
@@ -100,7 +100,7 @@ class EveSmsQueueTest {
         val sent = EveSmsQueue.status(okRec.requestId)!!
         assertEquals("confirmed", sent.verificationStatus)
 
-        bootstrap { _, _ -> false }
+        bootstrap { false }
         val badRec = EveSmsQueue.enqueue("09120000002", "bad", "critical", null).record
         EveSmsQueue.drainOne()
         val failed = EveSmsQueue.status(badRec.requestId)!!
@@ -122,7 +122,7 @@ class EveSmsQueueTest {
     @Test
     fun `queued message can be cancelled and then never sends`() {
         val sent = mutableListOf<String>()
-        bootstrap { _, text -> synchronized(sent) { sent.add(text) }; true }
+        bootstrap { record -> synchronized(sent) { sent.add(record.text) }; true }
 
         val rec = EveSmsQueue.enqueue("09123456789", "cancel me", "announcement", null).record
         val result = EveSmsQueue.cancel(rec.requestId)!!
@@ -151,6 +151,76 @@ class EveSmsQueueTest {
         bootstrap()
         assertNull(EveSmsQueue.status("sms_nope"))
         assertNull(EveSmsQueue.cancel("sms_nope"))
+    }
+
+    // ── §49 on the LEGACY pull path ──────────────────────────────────────────
+    //
+    // The pull bridge is the default-active transport, so this is where the web's correlation key
+    // actually has to survive. It used to stop at `Record.correlationId`: the queue's sender seam
+    // took `(to, text)` and there was no parameter for it, so a web-requested send reached GMweb as
+    // an uncorrelated message whose later DELIVERED/FAILED could not be matched to its bubble.
+
+    @Test
+    fun `theWebsCorrelationKeyIsHandedToTheSender`() {
+        val seen = mutableListOf<String?>()
+        bootstrap { record -> synchronized(seen) { seen.add(record.correlationId) }; true }
+
+        EveSmsQueue.enqueue(
+            "09123456789", "hello", "critical", null,
+            meta = EveSmsQueue.GatewayMeta(gatewayRequestId = "gw-1", correlationId = "corr-7")
+        )
+        EveSmsQueue.drainOne()
+
+        assertEquals(listOf("corr-7"), seen)
+    }
+
+    @Test
+    fun `aTaskWithNoCorrelationSendsNullRatherThanAnEmptyKey`() {
+        // An empty string is a key that matches nothing but looks present; absence must travel as
+        // absence, or GMweb would be told to look up a bubble called "".
+        val seen = mutableListOf<String?>()
+        bootstrap { record -> synchronized(seen) { seen.add(record.correlationId) }; true }
+
+        EveSmsQueue.enqueue("09123456789", "hello", "critical", null)
+        EveSmsQueue.drainOne()
+
+        assertEquals(listOf<String?>(null), seen)
+    }
+
+    @Test
+    fun `theCorrelationKeySurvivesAPersistenceRoundTripBeforeTheSend`() {
+        // The key is only useful if it is still there when the send eventually happens — which may be
+        // after a reboot, since the queue is durable. `MemoryStore.load()` returns nothing, so this
+        // needs a store that actually round-trips.
+        val store = RecordingStore()
+        EveSmsQueue.resetForTest(store)
+        EveSmsQueue.enqueue(
+            "09123456789", "hello", "critical", null,
+            meta = EveSmsQueue.GatewayMeta(gatewayRequestId = "gw-9", correlationId = "corr-persist")
+        )
+        EveSmsQueue.awaitPersistence()
+        EveSmsQueue.stop()
+
+        // A fresh process: reload from disk, then send.
+        val seen = mutableListOf<String?>()
+        EveSmsQueue.bootstrap(store, sender = { record ->
+            synchronized(seen) { seen.add(record.correlationId) }
+            true
+        })
+        EveSmsQueue.stop()
+        EveSmsQueue.drainOne()
+
+        assertEquals(listOf("corr-persist"), seen)
+    }
+
+    private class RecordingStore : EveSmsQueue.Store {
+        private var records: List<EveSmsQueue.Record> = emptyList()
+        private var idem: Map<String, String> = emptyMap()
+        override fun load(): Pair<List<EveSmsQueue.Record>, Map<String, String>> = records to idem
+        override fun save(records: List<EveSmsQueue.Record>, idempotency: Map<String, String>) {
+            this.records = records.toList()
+            this.idem = idempotency.toMap()
+        }
     }
 
     @Test

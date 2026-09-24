@@ -5,6 +5,8 @@ import com.autonomousone.messages.gateway.GatewayAckTracker
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,12 +44,16 @@ class GatewayDeferredAckTest {
     private var nowMs = 1_700_000_000_000L
     private var pulls = 0
 
+    /** What the fake ACK transport answers. A refused report must not be recorded as delivered. */
+    private var ackAccepted = true
+
     @Before
     fun setUp() {
         store = RoundTripStore()
         sends.clear()
         acks.clear()
         pulls = 0
+        ackAccepted = true
         nowMs = 1_700_000_000_000L
         EveSmsQueue.resetForTest(store)
         // Drain any persist queued by a previous test before this store is used.
@@ -64,14 +70,18 @@ class GatewayDeferredAckTest {
 
     private fun newTracker(): GatewayAckTracker = GatewayAckTracker(
         statusOf = { localRequestId -> EveSmsQueue.status(localRequestId) },
+        // Explicit, because the lambda's last expression used to BE `acks.add(...)` — which returns
+        // Boolean true. That accidental truthy return is exactly what would have hidden the defect this
+        // suite now covers: a tracker that treats every report as accepted.
         sendAck = { rec, outcome, reason ->
             acks.add(Ack(rec.gatewayRequestId ?: "?", outcome, reason))
+            ackAccepted
         }
     )
 
     private fun bootAndStop(
         validator: EveSmsQueue.FinalValidator,
-        sender: (String, String) -> Boolean = { _, text -> sends.add(text); true }
+        sender: (EveSmsQueue.Record) -> Boolean = { record -> sends.add(record.text); true }
     ) {
         EveSmsQueue.bootstrap(store, sender, validator)
         // Stop the worker so the test drives drainOne()/sweepDeferred() the way
@@ -263,7 +273,7 @@ class GatewayDeferredAckTest {
     fun providerFailureIsAckedOnceAsCanonicalFailed() {
         bootAndStop(
             EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid },
-            sender = { _, _ -> false }
+            sender = { false }
         )
         val rec = initialPull("A")
         EveSmsQueue.drainOne()
@@ -312,5 +322,118 @@ class GatewayDeferredAckTest {
         EveSmsQueue.drainOne()
         assertEquals(EveSmsQueue.Status.SENT, statusOf(rec).status)
         assertEquals(0, EveSmsQueue.outstandingGatewayRecords().size)
+    }
+
+    // ── A report GMweb did not accept is not a delivered report ──────────────
+    //
+    // The defect this covers: the tracker marked a task acknowledged BEFORE attempting the
+    // transmission, so a refused or lost report looked delivered and was never sent again. The report
+    // is the bridge's product — losing it left GMweb showing a delivered message as unresolved.
+
+    @Test
+    fun aRefusedReportStaysQueuedAndIsRetried() {
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        val rec = initialPull("A")
+        EveSmsQueue.drainOne()
+        assertEquals(EveSmsQueue.Status.SENT, statusOf(rec).status)
+
+        ackAccepted = false
+        assertEquals("a refused report reports nothing as acked", 0, tracker.drain())
+        assertEquals("but it was attempted", 1, acks.size)
+        assertTrue("and it is still tracked", tracker.isTracked("A"))
+        assertFalse("and not recorded as acknowledged", tracker.wasAcked("A"))
+
+        // The next cycle tries again, and this time GMweb accepts it.
+        ackAccepted = true
+        assertEquals(1, tracker.drain())
+        assertEquals(2, acks.size)
+        assertEquals("both attempts report the same outcome", acks[0].outcome, acks[1].outcome)
+        assertTrue(tracker.wasAcked("A"))
+
+        // And once accepted, it is never sent a third time.
+        assertEquals(0, tracker.drain())
+        assertEquals(2, acks.size)
+    }
+
+    @Test
+    fun anAcceptedReportIsNeverSentTwice() {
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        val rec = initialPull("A")
+        EveSmsQueue.drainOne()
+
+        assertEquals("the first drain reports it", 1, tracker.drain())
+        assertEquals("and then there is nothing left to report", 0, tracker.drain())
+        assertEquals(0, tracker.drain())
+        assertEquals("exactly one ACK on the wire", 1, acks.size)
+    }
+
+    @Test
+    fun aFailedReportIsStillPendingAfterAProcessDeath() {
+        // The in-memory ledger does not survive a restart, so the DURABLE marker is what keeps the
+        // report alive. A terminal record with no accepted report must be re-seeded.
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        val rec = initialPull("A")
+        EveSmsQueue.drainOne()
+        assertEquals(EveSmsQueue.Status.SENT, statusOf(rec).status)
+
+        ackAccepted = false
+        tracker.drain()
+        EveSmsQueue.awaitPersistence()
+
+        assertEquals("the record is terminal and reported by nobody", 1, EveSmsQueue.unreportedGatewayRecords().size)
+        assertEquals("and it is no longer outstanding", 0, EveSmsQueue.outstandingGatewayRecords().size)
+
+        // Reboot: a fresh tracker, seeded from the durable record.
+        tracker = newTracker()
+        EveSmsQueue.unreportedGatewayRecords().forEach { r ->
+            r.gatewayRequestId?.let { tracker.track(it, r.requestId) }
+        }
+        ackAccepted = true
+        assertEquals(1, tracker.drain())
+        assertTrue(EveSmsQueue.markGatewayReported(rec.requestId, nowMs))
+        assertEquals("once reported it leaves the unreported list", 0, EveSmsQueue.unreportedGatewayRecords().size)
+    }
+
+    @Test
+    fun markingAReportedTaskAcknowledgesItOnTheNextStart() {
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        val rec = initialPull("A")
+        EveSmsQueue.drainOne()
+
+        assertTrue(EveSmsQueue.markGatewayReported(rec.requestId, nowMs))
+        // The queue keeps the record (it is the audit trail), but its report is done.
+        assertNotNull(statusOf(rec))
+        assertTrue(EveSmsQueue.unreportedGatewayRecords().isEmpty())
+    }
+
+    @Test
+    fun markingAnUnknownRecordReportsFailureRatherThanInventingOne() {
+        assertFalse(EveSmsQueue.markGatewayReported("does-not-exist", nowMs))
+    }
+
+    @Test
+    fun anUnloadedQueueReportsNoMeasurementRatherThanZero() {
+        // Before the durable state is read, the in-memory map is empty because nothing has been loaded
+        // — not because everything is reported. A support report must not turn "we have not looked" into
+        // a clean bill of health, which is the mistake the reconciliation and verification sections
+        // already had to be corrected for.
+        EveSmsQueue.resetForTest(EveSmsQueue.MemoryStore())
+        assertNull("nothing has been read yet", EveSmsQueue.unreportedGatewayBacklog())
+
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        assertEquals("and once read, an empty queue is a real zero", 0, EveSmsQueue.unreportedGatewayBacklog())
+    }
+
+    @Test
+    fun theBacklogCountsOnlyTerminalUnreportedGatewayTasks() {
+        bootAndStop(EveSmsQueue.FinalValidator { EveSmsQueue.ValidationDecision.Valid })
+        val rec = initialPull("A")
+        assertEquals("still outstanding, not a finished-but-unreported task", 0, EveSmsQueue.unreportedGatewayBacklog())
+
+        EveSmsQueue.drainOne()
+        assertEquals("finished, and nobody has reported it", 1, EveSmsQueue.unreportedGatewayBacklog())
+
+        assertTrue(EveSmsQueue.markGatewayReported(rec.requestId, nowMs))
+        assertEquals("reported, so it leaves the backlog", 0, EveSmsQueue.unreportedGatewayBacklog())
     }
 }

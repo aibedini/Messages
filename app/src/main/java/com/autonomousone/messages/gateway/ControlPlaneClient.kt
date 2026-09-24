@@ -21,6 +21,26 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
         private const val TAG = "CONTROL_PLANE_CLIENT"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 30_000
+
+        /** An hour. Long enough to respect a real rate limit, bounded enough to stay sane. */
+        internal const val MAX_RETRY_AFTER_MS = 60 * 60_000L
+
+        /**
+         * `Retry-After` in milliseconds, or null when absent or unusable.
+         *
+         * The header is either delta-seconds (`Retry-After: 120`) or an HTTP date. Only the
+         * delta-seconds form is honoured: the date form would need the device clock to agree with
+         * the server's, and a wrong clock turning a short wait into a negative or enormous one is
+         * worse than ignoring the hint. An absurd delay is capped so a hostile or broken value
+         * cannot park the outbox for a day.
+         *
+         * Stateless, so it lives here and can be tested directly without Android or a network.
+         */
+        internal fun parseRetryAfter(header: String?): Long? {
+            val seconds = header?.trim()?.toLongOrNull() ?: return null
+            if (seconds <= 0) return null
+            return (seconds * 1000L).coerceAtMost(MAX_RETRY_AFTER_MS)
+        }
     }
 
     sealed class Result<out T> {
@@ -29,6 +49,13 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
             val error: String,
             val httpStatus: Int? = null,
             val isAuthError: Boolean = false,
+            /**
+             * `Retry-After` from the response, in milliseconds (mission §17).
+             *
+             * Null when the server did not send one. The header is deliberately NOT read for
+             * 2xx: it only means anything alongside a refusal.
+             */
+            val retryAfterMs: Long? = null,
         ) : Result<Nothing>()
     }
 
@@ -61,11 +88,13 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
                 Result.Success(conn.inputStream.use { it.bufferedReader().readText() }, code)
             } else {
                 val err = conn.errorStream?.use { it.bufferedReader().readText() } ?: ""
-                Log.w(TAG, "POST $path → HTTP $code")
+                val retryAfter = parseRetryAfter(conn.getHeaderField("Retry-After"))
+                Log.w(TAG, "POST $path → HTTP $code" + (retryAfter?.let { " retry-after=${it}ms" } ?: ""))
                 Result.Failure(
                     "HTTP $code ${err.take(200)}",
                     httpStatus = code,
                     isAuthError = code == 401 || code == 403,
+                    retryAfterMs = retryAfter,
                 )
             }
         } catch (e: Exception) {

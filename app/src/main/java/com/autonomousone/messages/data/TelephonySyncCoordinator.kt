@@ -13,6 +13,16 @@ import com.autonomousone.messages.media.MessageAssetIndexer
 import com.autonomousone.messages.messaging.VisibleConversationTracker
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.sync.EnqueueAttempt
+import com.autonomousone.messages.sync.HistoryRowObservation
+import com.autonomousone.messages.sync.HistoryRowOutcome
+import com.autonomousone.messages.sync.HistoryScanAccounting
+import com.autonomousone.messages.sync.HistoryScanDelta
+import com.autonomousone.messages.sync.HistorySyncSession
+import com.autonomousone.messages.sync.MirrorVerifyPolicy
+import com.autonomousone.messages.sync.MirrorReconcilePolicy
+import com.autonomousone.messages.sync.MirrorReconcileStatus
+import com.autonomousone.messages.sync.ReconcileResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -177,6 +187,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         const val BACKFILL_BATCH = 500
 
         /**
+         * The history generation every history event is stamped with.
+         *
+         * Named rather than left as a `4L` literal in three places: a history session records the
+         * generation it scanned, and a session row whose generation disagrees with its events would
+         * describe a scan that never happened.
+         */
+        const val HISTORY_GENERATION = 4L
+
+        /**
          * Bounded provider window for a single-thread repair.
          *
          * A repair must never materialize a 100k-message thread, and it must
@@ -186,6 +205,23 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
         /** Conversations written per transaction by a full projection rebuild. */
         const val REBUILD_CHUNK = 500
+
+        /**
+         * How far back reconciliation looks (mission §35).
+         *
+         * 48 hours: long enough to catch a message that arrived while the process was dead, short
+         * enough that a run is bounded work. A deeper sweep is the integrity audit's job — this is
+         * the safety net for the dangerous case, which is always recent.
+         */
+        const val RECONCILE_WINDOW_MS = 48 * 60 * 60_000L
+
+        /**
+         * Rows examined per reconciliation run.
+         *
+         * Each row costs one indexed lookup on the outbox's unique `eventUuid` index, so a run is
+         * bounded work rather than proportional to a 360k history.
+         */
+        const val RECONCILE_LIMIT = 500
 
         /**
          * Marker for "one provider source of this thread could not be read".
@@ -986,7 +1022,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                     body = entity.body,
                                     address = entity.normalizedAddress,
                                     contactName = contactNameFor(entity.normalizedAddress),
-                                    read = entity.read
+                                    read = entity.read,
+                                    // The same two values the NEW branch above passes. They were
+                                    // in scope here all along and simply were not forwarded, which
+                                    // is why a web send's DELIVERED transition could not be matched
+                                    // to its optimistic bubble (§49).
+                                    originCommandId = originCommandId,
+                                    clientMessageId = clientMessageId
                                 ).copy(
                                     eventUuid = java.util.UUID.nameUUIDFromBytes(
                                         "message-state:$source:${entity.providerId}:${entity.date}:${entity.status}:${entity.dateSent}:${entity.read}"
@@ -1132,14 +1174,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
 
+    /**
+     * The single choke point for cloud-event creation, which now REPORTS what it did (mission §70).
+     *
+     * It used to return Unit, so a caller could not tell "the event was written" from "the firewall
+     * refused" — which is precisely how the scan came to count every row it offered as queued and
+     * report `eligible == queued`. Reporting the attempt is the minimum needed for the arithmetic to
+     * mean anything.
+     */
     private suspend fun enqueueCloudEvent(
         source: String,
         providerId: Long,
         sender: String,
         body: String,
         build: suspend () -> GatewayEventOutboxEntity
-    ) {
-        if (!syncAllowed) return
+    ): EnqueueAttempt {
+        if (!syncAllowed) return EnqueueAttempt.SKIPPED_SYNC_OFF
         // ADR-006: SensitiveMessageFirewall — the SINGLE choke point for cloud
         // event creation, and the ONLY classifier. A LOCAL_ONLY decision means
         // the event row is never built/inserted (not "inserted then deleted").
@@ -1191,7 +1241,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +
                             "policy=ASK_PENDING rule=${verdict.rule}"
                     )
-                    return
+                    return EnqueueAttempt.SKIPPED_ASK_PENDING
                 }
             }
             android.util.Log.w(
@@ -1204,11 +1254,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 "SYNC_FIREWALL: $source/$providerId category=${verdict.category} " +
                     "policy=LOCAL_ONLY rule=${verdict.rule}"
             )
-            return
+            return EnqueueAttempt.SKIPPED_LOCAL_ONLY
         }
-        run {
+        return run {
             val row = build()
-            if (db.gatewayEventOutboxDao().idOf(row.eventUuid) != null) return
+            if (db.gatewayEventOutboxDao().idOf(row.eventUuid) != null) {
+                return@run EnqueueAttempt.ALREADY_PRESENT
+            }
             val payload = org.json.JSONObject(GatewayEventFactory.decodePayloadEnvelope(row.ciphertext))
             val at = payload.optLong("dateMs", db.messageDao().findByKey(source, providerId)?.date ?: 0L)
             val encrypted = com.autonomousone.messages.security.ConversationKeyRepository(db).encrypt(row, category)
@@ -1216,12 +1268,14 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             val inserted = db.gatewayEventOutboxDao().insertOrIgnore(encrypted)
             if (inserted == -1L) {
                 Log.d(TAG, "cloud event ${row.eventType}/${row.eventUuid} already queued/ACKed — deduped")
+                EnqueueAttempt.ALREADY_PRESENT
             } else {
                 Log.i(
                     TAG,
                     "cloud_event_queued eventId=${row.eventUuid} type=${row.eventType} direction=$direction " +
                         "conversationId=${row.aggregateId} source=$source providerId=$providerId"
                 )
+                EnqueueAttempt.INSERTED
             }
         }
     }
@@ -1361,28 +1415,111 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
     }
 
-    internal suspend fun enqueueHistorical(entity: MessageEntity) {
-        val direction = cloudMessageDirection(entity.type) ?: return
-        val generation = 4L
-        val eventId = java.util.UUID.nameUUIDFromBytes(
-            "evt:replica-v4:${entity.source}:${entity.providerId}:${entity.date}".toByteArray()
-        ).toString()
-        if (db.gatewayEventOutboxDao().idOf(eventId) != null) return
-        val checkpoint = db.cloudHistoryCheckpointDao().get(entity.source)
-            ?: CloudHistoryCheckpointEntity(
+    /**
+     * Produce the history event for one mirrored row and ACCOUNT for it (mission §33/§70).
+     *
+     * A thin wrapper on purpose: the accounting is applied on the single exit path, so no branch
+     * inside the resolution can return an outcome the arithmetic never sees. Every way of losing a
+     * clause here would show up as a scan that reports a smaller number than it read, which is the
+     * failure mode §70 exists to make impossible.
+     */
+    internal suspend fun enqueueHistorical(entity: MessageEntity): HistoryRowOutcome {
+        val outcome = resolveHistoryOutcome(entity)
+        accountHistoryRow(entity.source, outcome)
+        return outcome
+    }
+
+    /**
+     * Fold one history row's outcome into its source's session (mission §25/§70).
+     *
+     * Called from [enqueueHistorical] because that is the ONE function both history producers go
+     * through — the provider crawl and the mirror sweep — so a row is counted exactly once whichever
+     * of them attributes it first, and neither producer can forget to count.
+     *
+     * The session is opened lazily and REUSED while it is open, across process restarts: an
+     * unfinished scan of a source is the same session, whether the app died in the middle of it or
+     * is simply still working. It is closed when the source's mirror sweep reaches exhaustion, and
+     * the next history row after that opens a new one.
+     */
+    private suspend fun accountHistoryRow(source: String, outcome: HistoryRowOutcome) {
+        if (!outcome.isAccounted) return
+        val dao = db.historySyncSessionDao()
+        val now = System.currentTimeMillis()
+        val session = dao.openFor(source) ?: HistorySyncSessionEntity(
+            sessionId = java.util.UUID.randomUUID().toString(),
+            source = source,
+            generation = HISTORY_GENERATION,
+            startedAt = now,
+            updatedAt = now,
+        ).also { dao.upsert(it) }
+        val delta = HistoryScanDelta.of(listOf(outcome))
+        dao.accumulate(
+            sessionId = session.sessionId,
+            eligible = delta.eligible,
+            enqueued = delta.enqueued,
+            failed = delta.failed,
+            skippedLocalOnly = delta.skippedLocalOnly,
+            skippedAskPending = delta.skippedAskPending,
+            skippedNoDirection = delta.skippedNoDirection,
+            skippedSyncOff = delta.skippedSyncOff,
+            updatedAt = now,
+        )
+    }
+
+    /**
+     * The history event for one mirrored row, and what became of it (mission §33).
+     */
+    private suspend fun resolveHistoryOutcome(entity: MessageEntity): HistoryRowOutcome {
+        val direction = cloudMessageDirection(entity.type) ?: return HistoryScanAccounting.classify(
+            HistoryRowObservation.NoDirection
+        )
+        val generation = HISTORY_GENERATION
+        // The SAME identity realtime computes for this provider row (mission §33), so the two
+        // paths converge on one outbox row instead of racing to create two.
+        val eventId = GatewayEventFactory.eventUuidFor(
+            GatewayEventFactory.Types.MESSAGE_CREATED, entity.source, entity.providerId, entity.date
+        )
+        val outbox = db.gatewayEventOutboxDao()
+
+        // Realtime won the race: the row exists but carries no history metadata (it was created by
+        // the realtime path, which knows nothing about ordinals). Stamp it rather than skipping —
+        // an unstamped row is a permanent gap in the ack watermark walk.
+        val existing = outbox.idOf(eventId)
+        if (existing != null) {
+            val checkpoint = db.cloudHistoryCheckpointDao().get(entity.source) ?: newCheckpoint(entity.source, generation)
+            val ordinal = checkpoint.nextOrdinal
+            val stamped = outbox.stampHistoryMetadata(
+                eventUuid = eventId,
                 source = entity.source,
                 generation = generation,
-                producerCursorDate = Long.MAX_VALUE,
-                producerCursorProviderId = Long.MAX_VALUE,
-                nextOrdinal = 1,
-                ackedContiguousOrdinal = 0,
-                ackedCursorDate = Long.MAX_VALUE,
-                ackedCursorProviderId = Long.MAX_VALUE,
-                sourceExhausted = false,
-                updatedAt = System.currentTimeMillis(),
+                ordinal = ordinal,
+                date = entity.date,
+                providerId = entity.providerId
             )
+            // stamped == 0 means the row already had history metadata (already swept, or a replay).
+            // Its ordinal is deliberately left alone: rewriting it would remove the old ordinal
+            // from the sequence and stall the watermark walk.
+            if (stamped > 0) {
+                db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
+                    producerCursorDate = entity.date,
+                    producerCursorProviderId = entity.providerId,
+                    nextOrdinal = ordinal + 1,
+                    sourceExhausted = false,
+                    updatedAt = System.currentTimeMillis(),
+                ))
+                // First attribution of a row realtime had already replicated: a success, and counted
+                // as one — but not as a NEW event, and the checkpoint has already moved.
+                return HistoryScanAccounting.classify(HistoryRowObservation.AdoptedExistingEvent)
+            }
+            // Already attributed by an earlier pass of this session (or a cursor rewind re-reading
+            // ground it covered). Counting it again would inflate `eligible` beyond the number of
+            // messages the phone actually holds.
+            return HistoryScanAccounting.classify(HistoryRowObservation.AlreadyAccounted)
+        }
+
+        val checkpoint = db.cloudHistoryCheckpointDao().get(entity.source) ?: newCheckpoint(entity.source, generation)
         val ordinal = checkpoint.nextOrdinal
-        enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
+        val attempt = enqueueCloudEvent(entity.source, entity.providerId, entity.normalizedAddress, entity.body) {
             GatewayEventFactory.messageCreated(
                 source = entity.source,
                 providerId = entity.providerId,
@@ -1404,7 +1541,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 historyProviderId = entity.providerId,
             )
         }
-        if (db.gatewayEventOutboxDao().idOf(eventId) != null) {
+        if (outbox.idOf(eventId) != null) {
             db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(
                 producerCursorDate = entity.date,
                 producerCursorProviderId = entity.providerId,
@@ -1412,7 +1549,205 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 sourceExhausted = false,
                 updatedAt = System.currentTimeMillis(),
             ))
+            return HistoryScanAccounting.classify(HistoryRowObservation.Attempted(attempt))
         }
+        // The pipeline said it wrote something, or was not asked to, and there is no event. When it
+        // was a deliberate skip that is the explained outcome; when it was not, this is the row that
+        // §70 exists to count.
+        return if (attempt == EnqueueAttempt.SKIPPED_LOCAL_ONLY ||
+            attempt == EnqueueAttempt.SKIPPED_ASK_PENDING ||
+            attempt == EnqueueAttempt.SKIPPED_SYNC_OFF
+        ) {
+            HistoryScanAccounting.classify(HistoryRowObservation.Attempted(attempt))
+        } else {
+            HistoryScanAccounting.classify(HistoryRowObservation.EventMissingAfterInsert)
+        }
+    }
+
+    private fun newCheckpoint(source: String, generation: Long) = CloudHistoryCheckpointEntity(
+        source = source,
+        generation = generation,
+        producerCursorDate = Long.MAX_VALUE,
+        producerCursorProviderId = Long.MAX_VALUE,
+        nextOrdinal = 1,
+        ackedContiguousOrdinal = 0,
+        ackedCursorDate = Long.MAX_VALUE,
+        ackedCursorProviderId = Long.MAX_VALUE,
+        sourceExhausted = false,
+        updatedAt = System.currentTimeMillis(),
+    )
+
+    /**
+     * Enqueue the event a missed provider notification should have produced (mission §34).
+     *
+     * Deliberately NOT the history path: this carries no history ordinal and consumes no history
+     * sequence number, so it cannot disturb the ack watermark. It is RECONCILIATION-priority and
+     * RECONCILIATION-sourced, which keeps "where did this come from?" answerable.
+     *
+     * It still goes through [enqueueCloudEvent], so the ADR-006 firewall and encryption apply
+     * exactly as they do for every other event — reconciliation cannot become a way around a
+     * LOCAL_ONLY decision.
+     *
+     * @return true when an event row exists afterwards (newly inserted, or already present).
+     */
+    internal suspend fun enqueueReconciled(row: MirrorReconcileRow): Boolean {
+        val direction = cloudMessageDirection(row.type) ?: return false
+        enqueueCloudEvent(row.source, row.providerId, row.normalizedAddress, row.body) {
+            GatewayEventFactory.messageCreated(
+                source = row.source,
+                providerId = row.providerId,
+                conversationId = conversationIdFor(row.threadId),
+                direction = direction,
+                body = row.body,
+                dateMs = row.date,
+                status = row.status,
+                address = row.normalizedAddress,
+                read = row.read,
+                revision = 1,
+                priority = GatewayEventOutboxEntity.PRIORITY_RECONCILIATION,
+            )
+        }
+        val eventId = GatewayEventFactory.eventUuidFor(
+            GatewayEventFactory.Types.MESSAGE_CREATED, row.source, row.providerId, row.date
+        )
+        return db.gatewayEventOutboxDao().idOf(eventId) != null
+    }
+
+    /**
+     * Reconcile the recent mirror window against the outbox (mission §34/§35).
+     *
+     * Bounded and idempotent: it examines at most [limit] recent rows and enqueues only those with
+     * no durable event. Running it twice changes nothing the second time.
+     */
+    suspend fun reconcileMissingEvents(
+        now: Long = System.currentTimeMillis(),
+        windowMs: Long = RECONCILE_WINDOW_MS,
+        limit: Int = RECONCILE_LIMIT
+    ): ReconcileResult = withContext(Dispatchers.IO) {
+        val since = now - windowMs
+        val rows = runCatching { db.mirrorReconcileDao().recentWindow(since, limit) }
+            .getOrDefault(emptyList())
+        val outbox = db.gatewayEventOutboxDao()
+        // Look the candidates up in ONE query, then let the pure policy decide. The canonical id is
+        // computed rather than stored, so the ids have to be built here — but they are looked up as a
+        // set, because a point query per row is the difference between a background pass and a
+        // battery complaint once the same shape is reused by the full-mirror sweep (§35).
+        val candidates = MirrorReconcilePolicy.candidates(rows)
+        val existingIds = if (candidates.isEmpty()) {
+            emptySet()
+        } else {
+            outbox.existingEventIds(candidates.map { MirrorReconcilePolicy.canonicalId(it) }).toHashSet()
+        }
+        val missing = MirrorReconcilePolicy.missing(rows, existingIds)
+        var recovered = 0
+        var skipped = 0
+        for (row in missing) {
+            // A row whose type maps to no cloud direction is intentionally not replicated.
+            if (cloudMessageDirection(row.type) == null) {
+                skipped++
+                continue
+            }
+            if (enqueueReconciled(row)) recovered++
+        }
+        ReconcileResult(
+            examined = rows.size,
+            recovered = recovered,
+            skippedNoDirection = skipped,
+            windowSize = rows.size
+        ).also { result ->
+            // Publish the finding so diagnostics can report it (mission §70). A repair that only
+            // reached a log line left "are any messages unexplained?" unanswerable.
+            MirrorReconcileStatus.record(result, now)
+        }
+    }
+
+    /**
+     * Walk one bounded page of the full-mirror verification, per source (mission §35).
+     *
+     * The recent-window check above can only see the last 48 hours, so a message whose event was lost
+     * three weeks ago is inside no window it examines — and once the history scan has finished, that
+     * scan never revisits those rows either. This is the pass that asks the question over the whole
+     * mirror, resumably: the cursor is durable, so a device that restarts repeatedly still advances.
+     *
+     * **Gated on the history scan being finished.** Verifying a mirror that is still being filled
+     * would walk rows the producer is about to produce, and every one of them would look like a
+     * recovered gap — noise that would also *hide* a real one.
+     *
+     * @return how many rows this call examined, or 0 when it did nothing (gate closed, or the sweep
+     *   for that source is already complete).
+     */
+    suspend fun verifyMirrorPage(
+        now: Long = System.currentTimeMillis(),
+        limit: Int = MirrorVerifyPolicy.PAGE_LIMIT
+    ): Int = withContext(Dispatchers.IO) {
+        var examined = 0
+        for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
+            examined += runCatching { verifyMirrorPageFor(source, now, limit) }.getOrDefault(0)
+        }
+        examined
+    }
+
+    private suspend fun verifyMirrorPageFor(source: String, now: Long, limit: Int): Int {
+        // The producer has not finished, so the mirror is still growing from the past. Verifying now
+        // would manufacture findings.
+        if (db.syncStateDao().forSource(source)?.historyBackfillComplete != true) return 0
+
+        val dao = db.mirrorVerifyStateDao()
+        val stored = dao.get(source)
+        if (stored != null && stored.progress().complete) return 0
+        val progress = stored?.progress() ?: MirrorVerifyPolicy.start(source, now)
+
+        val page = db.mirrorReconcileDao().pageBefore(
+            source = source,
+            beforeDate = progress.cursor.date,
+            beforeId = progress.cursor.providerId,
+            limit = limit
+        )
+
+        // One batched existence query for the whole page rather than one per row: the single-row
+        // lookup is correct and would make a 360k-row sweep 360k queries.
+        val candidates = MirrorReconcilePolicy.candidates(page)
+        val existingIds = if (candidates.isEmpty()) {
+            emptySet()
+        } else {
+            db.gatewayEventOutboxDao()
+                .existingEventIds(candidates.map { MirrorReconcilePolicy.canonicalId(it) })
+                .toHashSet()
+        }
+
+        val missing = MirrorReconcilePolicy.missing(page, existingIds)
+        var skipped = 0
+        var recovered = 0
+        for (row in missing) {
+            if (cloudMessageDirection(row.type) == null) {
+                skipped++
+                continue
+            }
+            if (enqueueReconciled(row)) recovered++
+        }
+        val next = MirrorVerifyPolicy.nextCursor(page)
+        val tally = MirrorVerifyPolicy.page(
+            examined = page.size,
+            eligible = candidates.size,
+            missing = missing.size,
+            skippedNoDirection = skipped,
+            next = next,
+            limit = limit
+        )
+        // A tally that does not balance is a bug in this accounting, not a lost message; assert it in
+        // debug so it cannot silently become a reassuring number in a diagnostic.
+        if (!tally.balances) {
+            Log.e(TAG, "MIRROR_VERIFY tally does not balance source=$source page=${page.size}")
+        }
+        dao.upsert(MirrorVerifyStateEntity.of(MirrorVerifyPolicy.apply(progress, tally, now), now))
+        if (recovered > 0) {
+            Log.w(
+                TAG,
+                "MIRROR_VERIFY source=$source recovered=$recovered " +
+                    "examinedSoFar=${progress.examined + page.size}"
+            )
+        }
+        return page.size
     }
 
     private suspend fun publishHistoricalConversationSnapshots() {
@@ -1446,8 +1781,6 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     private suspend fun backfillCloudHistory() {
         val maxPendingBackfill = 2_000
-        var eligible = 0
-        var queued = 0
         for (source in listOf(MessageEntity.SOURCE_SMS, MessageEntity.SOURCE_MMS)) {
             // v3 intentionally starts a fresh cursor. v1 advanced its cursor
             // even when the old privacy-strict default rejected every normal
@@ -1478,16 +1811,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 val count = db.withTransaction {
                     val cursor = db.cloudHistoryCheckpointDao().get(source)
                         ?: CloudHistoryCheckpointEntity(
-                            source, 4L, Long.MAX_VALUE, Long.MAX_VALUE, 1,
+                            source, HISTORY_GENERATION, Long.MAX_VALUE, Long.MAX_VALUE, 1,
                             0, Long.MAX_VALUE, Long.MAX_VALUE, false, System.currentTimeMillis()
                         ).also { db.cloudHistoryCheckpointDao().upsert(it) }
                     val beforeDate = cursor.producerCursorDate
                     val beforeId = cursor.producerCursorProviderId
                     val pageLimit = minOf(100, available)
                     val page = db.messageDao().cloudHistoryPage(source, beforeDate, beforeId, pageLimit)
-                    eligible += page.size
+                    // No local counters: each row is accounted for inside enqueueHistorical, because
+                    // the provider crawl attributes some of these rows first and counting here as
+                    // well would count those twice.
                     page.forEach { enqueueHistorical(it) }
-                    queued += page.size
                     val latest = db.cloudHistoryCheckpointDao().get(source)
                     if (page.isNotEmpty() && latest != null) {
                         db.cloudHistoryCheckpointDao().upsert(latest.copy(
@@ -1507,8 +1841,33 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 if (count < minOf(100, available)) break
                 yield()
             }
+            // The source's mirror sweep has reached the end of what the mirror holds. Close the
+            // session so its numbers describe a finished scan, and print the arithmetic instead of a
+            // number that was structurally incapable of differing from `eligible`.
+            //
+            // `SYNC_REPORT` used to log `eligible=N queued=N` — the same value twice, because
+            // `queued` counted every row OFFERED to the enqueue path including rows the firewall
+            // refused. It is a log line, so nothing ever failed; it just quietly asserted that
+            // nothing had been dropped (mission §70).
+            val open = db.historySyncSessionDao().openFor(source)
+            if (open != null) {
+                val exhausted = db.cloudHistoryCheckpointDao().get(source)?.sourceExhausted == true
+                if (exhausted) {
+                    db.historySyncSessionDao().close(open.sessionId, System.currentTimeMillis(), true)
+                }
+                val session = db.historySyncSessionDao().get(open.sessionId)?.counters()
+                if (session != null) {
+                    Log.i(
+                        TAG,
+                        "SYNC_REPORT source=$source eligible=${session.eligible} " +
+                            "enqueued=${session.enqueued} skipped=${session.skipped} " +
+                            "failed=${session.failed} balanced=${session.balances} " +
+                            "scanExhausted=${session.scanExhausted}"
+                    )
+                    HistoryScanAccounting.alarm(session)?.let { Log.w(TAG, "SYNC_GAP source=$source $it") }
+                }
+            }
         }
-        Log.i(TAG, "SYNC_REPORT eligible=$eligible queued=$queued directions=in,out sources=sms,mms")
     }
 
     /** What a per-source sync pass achieved this reconcile. */

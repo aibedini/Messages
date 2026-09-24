@@ -94,9 +94,15 @@ class GatewayDurabilityDeviceTest {
         MessagesDatabase.get(context).gatewayEventOutboxDao().insertOrIgnore(factory)
         val claimed = repo.claimBatch(System.currentTimeMillis())
         assertTrue(claimed.isNotEmpty())
-        // recovery must move SENDING rows back to PENDING (recoverSending is
-        // the first act of EventUploader.start())
-        val recovered = repo.recoverSending()
+        // Recovery must move EXPIRED SENDING rows back to PENDING (recoverStaleLeases is the
+        // first act of EventUploader.start()).
+        //
+        // Recovery is age-bounded now, so a row claimed a moment ago is deliberately NOT
+        // recoverable — reclaiming it would steal it from a live uploader, which is the
+        // interleaving that produces a duplicate upload. The crash window is simulated by
+        // treating any lease as expired.
+        repo.leaseTimeoutMs = 0
+        val recovered = repo.recoverStaleLeases(System.currentTimeMillis())
         assertTrue(recovered >= claimed.size)
         assertTrue(repo.pendingDepth() >= before)
     }

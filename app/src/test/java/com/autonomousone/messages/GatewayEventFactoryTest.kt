@@ -15,6 +15,90 @@ import kotlin.random.Random
  * the batch policy boundary values (LOCK 13).
  */
 class GatewayEventFactoryTest {
+
+    // ── Event source (mission §10) ───────────────────────────────────────────
+
+    @Test
+    fun `aRealtimeMessageIsSourcedFromRealtime`() {
+        val row = GatewayEventFactory.messageCreated(
+            source = "sms", providerId = 1, conversationId = "c",
+            direction = "in", body = "b", dateMs = 1, status = 0
+        )
+
+        assertEquals(GatewayEventOutboxEntity.SOURCE_REALTIME, row.source)
+    }
+
+    @Test
+    fun `aHistorySweepIsSourcedFromHistoryWhateverItsUrgency`() {
+        val row = GatewayEventFactory.messageCreated(
+            source = "sms", providerId = 1, conversationId = "c",
+            direction = "in", body = "b", dateMs = 1, status = 0,
+            priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL
+        )
+
+        assertEquals(GatewayEventOutboxEntity.SOURCE_HISTORY, row.source)
+    }
+
+    @Test
+    fun `aSendOriginatingFromAWebCommandIsSourcedAsACommandResult`() {
+        // Even though it also looks like ordinary realtime activity: when a web send misbehaves,
+        // "this came from a command" is the fact an operator is looking for.
+        val row = GatewayEventFactory.messageCreated(
+            source = "sms", providerId = 1, conversationId = "c",
+            direction = "out", body = "b", dateMs = 1, status = 0,
+            originCommandId = "cmd-1"
+        )
+
+        assertEquals(GatewayEventOutboxEntity.SOURCE_COMMAND_RESULT, row.source)
+    }
+
+    @Test
+    fun `aStatusChangeIsSourcedFromStatusUpdate`() {
+        val row = GatewayEventFactory.messageStatusChanged(
+            source = "sms", providerId = 1, conversationId = "c", status = 0, dateMs = 1
+        )
+
+        assertEquals(GatewayEventOutboxEntity.SOURCE_STATUS_UPDATE, row.source)
+    }
+
+    @Test
+    fun `aBackfillConversationSnapshotIsSourcedFromHistory`() {
+        val row = GatewayEventFactory.conversationUpserted(
+            conversationId = "c", displayName = null, address = "+1", lastMessagePreview = "p",
+            lastMessageDirection = "in", lastMessageAt = 1, unreadCount = 0,
+            pinned = false, archived = false,
+            priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL
+        )
+
+        assertEquals(GatewayEventOutboxEntity.SOURCE_HISTORY, row.source)
+    }
+
+    @Test
+    fun `everyEventCarriesAKnownSource`() {
+        // A null source is "unknown" and must not be the default for newly built events: the
+        // whole point of the column is that the origin is recorded, not inferred later.
+        val rows = listOf(
+            GatewayEventFactory.messageCreated(
+                source = "sms", providerId = 1, conversationId = "c",
+                direction = "in", body = "b", dateMs = 1, status = 0
+            ),
+            GatewayEventFactory.messageStatusChanged(
+                source = "sms", providerId = 1, conversationId = "c", status = 0, dateMs = 1
+            ),
+            GatewayEventFactory.messageDeleted(source = "sms", providerId = 1, conversationId = "c", dateMs = 1),
+            GatewayEventFactory.threadRead("c"),
+            GatewayEventFactory.conversationDeleted("c", revision = 1)
+        )
+
+        rows.forEach { row ->
+            assertTrue(
+                "unnamed source on ${row.eventType}",
+                row.source in GatewayEventOutboxEntity.EVENT_SOURCES
+            )
+        }
+        assertEquals(5, GatewayEventOutboxEntity.EVENT_SOURCES.size)
+    }
+
     @Test
     fun `history event exposes only opaque state metadata and stays low priority`() {
         val row = GatewayEventFactory.messageCreated(

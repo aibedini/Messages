@@ -18,6 +18,7 @@ import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.gateway.AndroidGatewayProbeIo
 import com.autonomousone.messages.gateway.BackendClient
 import com.autonomousone.messages.gateway.ConnectionSupervisor
@@ -29,6 +30,8 @@ import com.autonomousone.messages.gateway.GmwebServerNormalization
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.RegistrationManager
 import com.autonomousone.messages.repository.GatewaySyncRepository
+import com.autonomousone.messages.sync.diagnostics.SyncDiagnostics
+import com.autonomousone.messages.sync.diagnostics.SyncDiagnosticsCollector
 import com.autonomousone.messages.gateway.health.GatewayConnectivityProbe
 import com.autonomousone.messages.gateway.health.GatewayConnectivityResult
 import com.autonomousone.messages.gateway.health.GatewayDiagnosticReport
@@ -150,6 +153,27 @@ class GatewayViewModel(
     var deadLetterSummary by mutableStateOf(DeadLetterSummary())
         private set
 
+    /**
+     * Diagnostics V2, or null before it has been collected.
+     *
+     * Nullable rather than defaulting to a placeholder: "we have not looked yet" is not the same
+     * as "blocked", and a placeholder would print a cause that was never observed.
+     */
+    var syncDiagnostics by mutableStateOf<SyncDiagnostics?>(null)
+        private set
+
+    /**
+     * Collects the sync diagnostics.
+     *
+     * Runs on the caller's IO dispatcher: the collector touches Room and the Keystore.
+     */
+    private suspend fun refreshSyncDiagnostics() {
+        val collected = runCatching {
+            SyncDiagnosticsCollector(getApplication()).collect()
+        }.getOrNull()
+        withContext(Dispatchers.Main) { syncDiagnostics = collected }
+    }
+
     /** Refreshes the aggregate-only dead-letter view. Never mutates the outbox. */
     private suspend fun refreshDeadLetterBreakdown() {
         val repository = GatewaySyncRepository(MessagesDatabase.get(getApplication()))
@@ -163,6 +187,26 @@ class GatewayViewModel(
 
     /** The current dimensions with the verdict derived from them. */
     fun gatewayHealth(): GatewayHealthSnapshot = GatewayHealthRecorder.snapshot()
+
+    /**
+     * Reconcile the mirror against the outbox (mission §34, "manual Re-check").
+     *
+     * Bounded (48 h window, 500 rows) and idempotent. Reports the outcome in both directions,
+     * because "nothing was missing" is the reassuring answer and "recovered N" means the safety net
+     * caught something real.
+     */
+    private suspend fun recheckMissedMessages() {
+        val result = runCatching {
+            TelephonySyncCoordinator.get(getApplication()).reconcileMissingEvents()
+        }.getOrNull()
+        when {
+            result == null -> addLog("⚠️ Re-check could not complete")
+            result.foundGap -> addLog(
+                "♻️ Re-check recovered ${result.recovered} message(s) that had not reached the outbox"
+            )
+            else -> addLog("✅ Re-check: no missed messages in ${result.examined} recent message(s)")
+        }
+    }
 
     /** The live feed for one filter chip. Advanced rows are opt-in. */
     fun gatewayLogFeed(
@@ -191,6 +235,12 @@ class GatewayViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             addLog("🔎 Running gateway diagnostics against ${endpoint.displayHost}…")
             refreshDeadLetterBreakdown()
+            refreshSyncDiagnostics()
+            // Mission §34: "manual Re-check". Running diagnostics is already the user saying
+            // "something looks wrong" — reconciling the mirror against the outbox here is what can
+            // actually recover a message whose notification was missed, rather than only describing
+            // the problem. Bounded, idempotent, and reported either way.
+            recheckMissedMessages()
             val result = runCatching {
                 GatewayConnectivityProbe(
                     io = AndroidGatewayProbeIo(getApplication(), prefs),
@@ -242,7 +292,9 @@ class GatewayViewModel(
         gatewayDesired = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent,
         // Aggregate only — nothing deleted, no payload read.
         deadLetters = deadLetterBreakdown,
-        deadLetterSummary = deadLetterSummary
+        deadLetterSummary = deadLetterSummary,
+        // The one actionable blocker, when it has been read (mission §57).
+        diagnostics = syncDiagnostics
     )
 
     /** Copies the redacted report to the clipboard. */
@@ -264,6 +316,28 @@ class GatewayViewModel(
             Intent.createChooser(intent, "Share diagnostic report")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
+    }
+
+    /**
+     * The sanitized JSON export (mission §58).
+     *
+     * Sanitization is structural, not a redaction pass: [SyncDiagnostics] has no field that can
+     * hold a message body, an address, a token or key material, so this cannot leak by
+     * construction. The "not collected yet" case says so rather than emitting a plausible-looking
+     * empty document.
+     */
+    fun buildSyncDiagnosticsJson(): String =
+        syncDiagnostics?.toSanitizedJson()
+            ?: """{"error":"sync diagnostics not collected yet - run diagnostics first"}"""
+
+    /** Copies the sanitized JSON export. */
+    fun copySyncDiagnosticsJson() {
+        val clipboard = getApplication<Application>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("GMweb sync diagnostics", buildSyncDiagnosticsJson())
+        )
+        addLog("📋 Sync diagnostics JSON copied")
     }
 
     init {
@@ -429,8 +503,10 @@ class GatewayViewModel(
     fun generateNewApiKey() {
         val newKey = prefs.generateNewApiKey()
         apiKey = newKey
-        // Never log the full key value.
-        addLog("🔑 Generated new API Key (${newKey.take(7)}…${newKey.takeLast(4)})")
+        // NO part of the key is logged (mission §43). A prefix and suffix is not "safe": it is
+        // enough to confirm a guessed key or to correlate one across logs. The value is in the
+        // field on screen, which is where a user needs it.
+        addLog("🔑 Generated a new API key")
     }
 
     /**
@@ -446,7 +522,8 @@ class GatewayViewModel(
         }
         prefs.apiKey = v
         apiKey = v
-        addLog("🔑 API key set manually (${v.take(7)}…${v.takeLast(4)})")
+        // No part of the key is logged (mission §43).
+        addLog("🔑 API key updated")
         Toast.makeText(getApplication(), "API key updated", Toast.LENGTH_SHORT).show()
     }
 

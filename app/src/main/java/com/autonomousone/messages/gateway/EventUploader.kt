@@ -11,6 +11,13 @@ import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
 import com.autonomousone.messages.gateway.health.GatewayHealthText
 import com.autonomousone.messages.gateway.health.GatewayLog
 import com.autonomousone.messages.repository.GatewaySyncRepository
+import com.autonomousone.messages.sync.BatchAckParser
+import com.autonomousone.messages.sync.OutboxRetryPolicy
+import com.autonomousone.messages.sync.ReplicationBlocker
+import com.autonomousone.messages.sync.ReplicationUploadGate
+import com.autonomousone.messages.sync.SyncErrorCode
+import com.autonomousone.messages.sync.UploadGateInputs
+import com.autonomousone.messages.sync.diagnostics.SyncDiagnosticsText
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -27,27 +34,6 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * Why the outbox worker is holding still instead of uploading (Issue 2).
- * Pure decision so it can be unit-tested on the JVM without Android.
- */
-internal enum class UploadGate(val tag: String) {
-    ENABLED("enabled"),
-    GATEWAY_DISABLED("gateway_disabled"),
-    URL_NOT_CONFIGURED("gmweb_url_not_configured"),
-    DEVICE_NOT_ENROLLED("device_not_enrolled");
-
-    companion object {
-        internal fun reason(enabled: Boolean, urlBlank: Boolean, registered: Boolean): UploadGate =
-            when {
-                !enabled -> GATEWAY_DISABLED
-                urlBlank -> URL_NOT_CONFIGURED
-                !registered -> DEVICE_NOT_ENROLLED
-                else -> ENABLED
-            }
-    }
-}
-
-/**
  * PR-02: the durable outbox worker (TechSpec §11/§55, LOCK 13).
  *
  * Replaces the WebhookEngine cloud path (deleted): cloud events are COMMITTED
@@ -62,6 +48,11 @@ internal enum class UploadGate(val tag: String) {
  *
  * Process death between claim and ACK leaves rows SENDING; the first act of
  * [start] is recoverSending() → PENDING (PR-01 contract). No RAM-only state.
+ *
+ * The hold decision is NOT made here: it comes from
+ * [com.autonomousone.messages.sync.ReplicationUploadGate], which derives it from the single
+ * readiness evaluator, so the reason is a named blocker instead of a private enum, and it is
+ * written to the durable diagnostic log rather than only to a RAM field.
  */
 class EventUploader(
     context: Context,
@@ -75,6 +66,9 @@ class EventUploader(
     companion object {
         private const val TAG = "EVENT_UPLOADER"
         private const val EVENTS_PATH = "/api/v1/agent/events/batch"
+
+        /** How often the loop sweeps for expired leases. */
+        private const val LEASE_SWEEP_INTERVAL_MS = 60_000L
         private val _running = MutableStateFlow(false)
         val running = _running.asStateFlow()
     }
@@ -87,8 +81,12 @@ class EventUploader(
         override fun onInvalidated(tables: Set<String>) { wake.trySend(Unit) }
     }
     private var job: Job? = null
-    /** Last blocked-gate state so the worker logs only on change. */
-    private var lastGate: UploadGate? = null
+    /**
+     * The blocker currently holding the loop, so the pause is logged once per state change
+     * instead of every 30 seconds. The REASON is also written to the durable diagnostic log, so
+     * it survives process death — the previous RAM-only `lastGate` field did not.
+     */
+    private var lastHold: ReplicationBlocker? = null
 
     fun start() {
         if (job != null) return
@@ -96,10 +94,11 @@ class EventUploader(
         _running.value = true
         GatewayHealthRecorder.setUploaderRunning(true)
         val launched = scope.launch {
-            // Process-death recovery FIRST: a crash between claim and upload
-            // leaves SENDING rows behind — requeue them before claiming.
-            val recovered = repo.recoverSending()
-            if (recovered > 0) onLog("📤 Outbox recovery: $recovered in-flight event(s) requeued")
+            // Process-death recovery FIRST: a crash between claim and upload leaves leased rows
+            // behind. AGE-BOUNDED (mission §12): only leases older than the timeout are returned,
+            // so a row another claimant is actively uploading is never stolen.
+            val recovered = repo.recoverStaleLeases(System.currentTimeMillis())
+            if (recovered > 0) onLog("📤 Outbox recovery: $recovered stale in-flight event(s) requeued")
 
             // v3 was briefly emitted before the matching server contract was
             // live. Requeue that rollout cohort once; normal retries take over.
@@ -113,28 +112,53 @@ class EventUploader(
             }
 
             var attempt = 0
+            var lastLeaseSweepAt = 0L
             while (isActive) {
-                val gate = UploadGate.reason(
-                    enabled = prefs.isEnabled,
-                    urlBlank = prefs.gmwebUrl.isBlank(),
-                    registered = prefs.identityRegistered
+                // Periodic lease recovery (mission §12). Startup-only recovery would leave a row
+                // stranded for the whole life of a long-running process, which is the stall the
+                // audit found. Throttled so it is not a database write on every iteration.
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastLeaseSweepAt >= LEASE_SWEEP_INTERVAL_MS) {
+                    lastLeaseSweepAt = nowMs
+                    runCatching { repo.recoverStaleLeases(nowMs) }
+                        .onSuccess { if (it > 0) onLog("📤 Outbox recovery: $it stale lease(s) requeued") }
+                        .onFailure { Log.w(TAG, "lease sweep failed", it) }
+                }
+                val hold = ReplicationUploadGate.hold(
+                    UploadGateInputs(
+                        // USER intent, never the supervisor's derived transmission gate: passing
+                        // that would report an offline device as "the gateway is switched off".
+                        gatewayDesired = prefs.gatewayDesiredEnabled,
+                        consentGranted = prefs.hasGatewayConsent,
+                        serverOriginConfigured = prefs.gmwebServerOrigin.isNotBlank(),
+                        identityRegistered = prefs.identityRegistered,
+                        supervisorOffline = GatewayService.supervisorState ==
+                            ConnectionSupervisor.State.WAITING_FOR_NETWORK,
+                        authenticationRejected =
+                            GatewayHealthRecorder.rawSnapshot().authentication.rejected
+                    )
                 )
-                if (gate != UploadGate.ENABLED) {
-                    // Log loudly on every state CHANGE, then wait in the
-                    // background — never spam at 5 s cadence.
-                    if (lastGate != gate) {
-                        lastGate = gate
-                        Log.w(TAG, "UPLOAD_BLOCKED_GATE: ${gate.tag}")
-                        onLog("⛔ Event upload paused: ${gate.tag}")
+                if (hold != null) {
+                    // Log loudly on every state CHANGE, then wait in the background — never spam
+                    // at 30 s cadence.
+                    if (lastHold != hold) {
+                        lastHold = hold
+                        val code = SyncDiagnosticsText.codeName(hold)
+                        Log.w(TAG, "UPLOAD_BLOCKED: $code")
+                        onLog("⛔ Event upload paused: $code")
+                        // Durable, so the cause outlives the process that observed it.
+                        DiagnosticLog.event("SYNC_BLOCKED", "scope=upload code=$code")
                     }
                     delay(30_000)
                     continue
                 }
-                val previouslyBlocked = lastGate
-                if (previouslyBlocked != null) {
-                    Log.i(TAG, "upload gate cleared: ${previouslyBlocked.tag} → ENABLED")
+                val previouslyHeld = lastHold
+                if (previouslyHeld != null) {
+                    val code = SyncDiagnosticsText.codeName(previouslyHeld)
+                    Log.i(TAG, "upload gate cleared: $code → ENABLED")
                     onLog("📤 Event upload resumed")
-                    lastGate = null
+                    DiagnosticLog.event("SYNC_UNBLOCKED", "scope=upload was=$code")
+                    lastHold = null
                 }
                 // Key-grant drain is best-effort and MUST NOT block the event
                 // upload: a failure here (DB lock/corruption) would otherwise
@@ -252,7 +276,9 @@ class EventUploader(
                     failureCategory = GatewayFailureKind.VALIDATION_FAILED.name,
                     httpStatus = null,
                     at = now,
-                    appVersion = BuildConfig.APP_VERSION
+                    appVersion = BuildConfig.APP_VERSION,
+                    errorCode = SyncErrorCode.INVALID_EVENT_SCHEMA.name,
+                    errorMessage = GatewayHealthText.safeDetail(e.message)
                 )
                 continue
             }
@@ -282,10 +308,6 @@ class EventUploader(
         }
         if (submitted.isEmpty()) return Outcome.ALL_ACKED
 
-        val requeue: suspend (List<GatewayEventOutboxEntity>) -> Unit = { rows ->
-            rows.forEach { repo.onRetry(it.eventUuid, it.attemptCount, Random.Default, now) }
-        }
-
         // PR-11: per-device X-Agent-Auth signature (GMweb requires it once the
         // deviceId has enrolled). The deviceId bound in the signature MUST be
         // the same one identity enrollment keyed on (SSOT stableDeviceId).
@@ -302,27 +324,53 @@ class EventUploader(
 
         return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
             is ControlPlaneClient.Result.Success -> {
-                val responseJson = runCatching { JSONObject(result.data) }.getOrNull()
-                val accepted = runCatching {
-                    responseJson?.optJSONArray("accepted") ?: JSONArray()
-                }.getOrDefault(JSONArray())
-                val ackedUuids = HashMap<String, Long>(accepted.length())
-                for (i in 0 until accepted.length()) {
-                    val a = accepted.optJSONObject(i) ?: continue
-                    val eventId = a.optString("eventId")
-                    val sequence = a.optLong("serverSequence", 0L)
-                    if (eventId.isNotEmpty() && sequence > 0) ackedUuids[eventId] = sequence
-                }
+                val parsed = BatchAckParser.parse(result.data)
+                val acknowledged = parsed.acknowledged
                 var acked = 0
                 for (event in submitted) {
-                    if (event.eventUuid in ackedUuids) {
-                        val rows = repo.onAcked(event.eventUuid, ackedUuids.getValue(event.eventUuid), now)
+                    val sequence = acknowledged[event.eventUuid]
+                    if (sequence != null) {
+                        // ACCEPTED and DUPLICATE both mean the server durably has the event
+                        // (mission §16). A missing serverSequence is no longer a reason to
+                        // withhold the ACK — that was the loop that never converged.
+                        val rows = repo.onAcked(
+                            eventUuid = event.eventUuid,
+                            serverSequence = sequence,
+                            ackedAt = now,
+                            httpStatus = result.httpStatus
+                        )
                         if (rows > 0) acked++
-                    } else {
-                        repo.onRetry(event.eventUuid, event.attemptCount, Random.Default, now)
+                        continue
                     }
+                    val rejected = parsed.rejected[event.eventUuid]
+                    if (rejected != null) {
+                        // The server named this event as permanently unacceptable, so only THIS
+                        // row dies — the rest of the batch is untouched (mission §17/§18).
+                        repo.onDeadLetter(
+                            eventUuid = event.eventUuid,
+                            failureCategory = GatewayFailureKind.VALIDATION_FAILED.name,
+                            httpStatus = result.httpStatus,
+                            at = now,
+                            appVersion = BuildConfig.APP_VERSION,
+                            errorCode = rejected.errorCode
+                                ?: SyncErrorCode.INVALID_EVENT_SCHEMA.name,
+                            errorMessage = rejected.errorCode
+                        )
+                        continue
+                    }
+                    // Unreported, or explicitly retryable: keep it, with the reason.
+                    val item = parsed.retryable[event.eventUuid]
+                    repo.onRetry(
+                        eventUuid = event.eventUuid,
+                        attempt = event.attemptCount,
+                        random = Random.Default,
+                        now = now,
+                        httpStatus = result.httpStatus,
+                        errorCode = SyncErrorCode.UNKNOWN.name,
+                        errorMessage = item?.errorCode
+                    )
                 }
-                val duplicates = responseJson?.optInt("duplicates", 0) ?: 0
+                val duplicates = parsed.duplicates
                 val failed = submitted.size - acked
                 // The technical form stays in the ADVANCED log…
                 Log.i(
@@ -386,23 +434,67 @@ class EventUploader(
                     safeDetail = result.error,
                     count = submitted.size
                 )
-                if (status != null && status in 400..499 && status != 429) {
-                    // Permanent schema/auth reject: LOCK 13 — DEAD_LETTER +
-                    // visible health signal, never a silent drop.
-                    val failure = GatewayFailureKind.classify(httpStatus = status)
+                val kind = GatewayFailureKind.classify(httpStatus = status)
+                val code = OutboxRetryPolicy.codeFor(status, kind)
+                val safeDetail = GatewayHealthText.safeDetail(result.error)
+
+                // Which failures may kill a row at all (mission §17). The rule lives in
+                // OutboxRetryPolicy so every status the mission names is asserted by a test
+                // rather than read out of a boolean here.
+                val action = OutboxRetryPolicy.actionFor(status, kind)
+
+                if (action == OutboxRetryPolicy.Action.DEAD_LETTER) {
+                    // A contract failure the server will repeat: this batch cannot succeed as
+                    // sent. Every row is retained and visible as DEAD_LETTER with the server's
+                    // own status and code, never silently dropped.
                     submitted.forEach {
                         repo.onDeadLetter(
                             eventUuid = it.eventUuid,
-                            failureCategory = failure.name,
+                            failureCategory = kind.name,
                             httpStatus = status,
                             at = System.currentTimeMillis(),
-                            appVersion = BuildConfig.APP_VERSION
+                            appVersion = BuildConfig.APP_VERSION,
+                            errorCode = code.name,
+                            errorMessage = safeDetail
                         )
                     }
                     onLog("⛔ ${submitted.size} event(s) dead-lettered: HTTP $status")
                     Outcome.FATAL
                 } else {
-                    requeue(submitted)
+                    // Retryable — including auth, payload-too-large, conflict and rate limiting.
+                    // Keep the rows and record why on each one.
+                    val nowMs = System.currentTimeMillis()
+                    // A server-supplied Retry-After is honoured verbatim when present (mission
+                    // §17): second-guessing a rate limit with our own backoff is how a device
+                    // gets throttled harder.
+                    val retryAfterMs = result.retryAfterMs
+                    submitted.forEach {
+                        if (OutboxRetryPolicy.exhausted(it.attemptCount)) {
+                            // Bounded retries: a row that has tried long enough becomes visible
+                            // instead of looping for the life of the install. Nothing is lost —
+                            // a dead-lettered row is retained and rescuable.
+                            repo.onDeadLetter(
+                                eventUuid = it.eventUuid,
+                                failureCategory = kind.name,
+                                httpStatus = status,
+                                at = nowMs,
+                                appVersion = BuildConfig.APP_VERSION,
+                                errorCode = code.name,
+                                errorMessage = safeDetail
+                            )
+                        } else {
+                            repo.onRetry(
+                                eventUuid = it.eventUuid,
+                                attempt = it.attemptCount,
+                                random = Random.Default,
+                                now = nowMs,
+                                httpStatus = status,
+                                errorCode = code.name,
+                                errorMessage = safeDetail,
+                                retryAfterMs = retryAfterMs
+                            )
+                        }
+                    }
                     Outcome.TRANSPORT_FAILURE
                 }
             }

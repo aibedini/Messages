@@ -1,8 +1,10 @@
 package com.autonomousone.messages.mms
 
+import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -10,6 +12,7 @@ import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
+import com.autonomousone.messages.utils.DiagnosticLog
 import java.io.ByteArrayOutputStream
 
 /**
@@ -30,42 +33,77 @@ class MmsSender(private val context: Context) {
 
     /**
      * Send an image URI as an MMS to the given phone number.
-     * @return true if dispatch succeeded, false on error.
+     *
+     * @return [MmsSendResult.Queued] when the request row was created and handed to the platform — NOT
+     *   that it was sent; the outcome arrives at [MmsStatusReceiver]. [MmsSendResult.Rejected] when it
+     *   provably will not be sent, with a reason. The two used to be a bare Boolean, and every caller
+     *   discarded it.
      */
-    fun sendImage(phone: String, imageUri: Uri): Boolean {
+    fun sendImage(phone: String, imageUri: Uri): MmsSendResult {
         return try {
-            val mmsId = insertImageMms(phone, imageUri)
+            // Build and validate the payload BEFORE creating any provider row.
+            //
+            // Order matters twice over. A rejected send leaves no half-built MMS in the provider for
+            // the mirror to replicate as a message that never existed, and the check cannot be
+            // forgotten at the end of a long insert sequence.
+            //
+            // The image is still COMPRESSED first — that capability is unchanged — and only the result
+            // is judged. A photo that compresses under the cap is sent as before; one that cannot
+            // (or that will not decode at all) is refused with a reason instead of being written as an
+            // oversize or empty part for the network to fail later.
+            val mimeType = context.contentResolver.getType(imageUri) ?: "image/jpeg"
+            val bytes = compressImage(imageUri, mimeType)
+            val verdict = MmsPayloadPolicy.classify(bytes)
+            if (verdict !is MmsPayloadVerdict.Usable) {
+                return MmsSendResult.Rejected(
+                    code = MmsPayloadPolicy.code(verdict)!!,
+                    reason = MmsPayloadPolicy.reason(verdict)
+                )
+            }
+            val mmsId = insertImageMms(phone, imageUri, bytes!!)
             if (mmsId > 0L) {
                 triggerSend(mmsId)
-                Log.d(TAG, "MMS image queued, id=$mmsId")
-                true
+                Log.d(TAG, "MMS image queued, id=$mmsId bytes=${bytes.size}")
+                MmsSendResult.Queued(mmsId)
             } else {
                 Log.e(TAG, "Failed to insert MMS into content provider")
-                false
+                MmsSendResult.Rejected("mms_insert_failed", "the message could not be created")
             }
         } catch (e: Exception) {
             Log.e(TAG, "sendImage error", e)
-            false
+            MmsSendResult.Rejected("mms_insert_failed", e.message ?: "insert failed")
         }
     }
 
     /**
      * Send an audio file URI as an MMS to the given phone number.
+     *
+     * @return as [sendImage]: queued is not sent, and a rejection carries a reason.
      */
-    fun sendAudio(phone: String, audioUri: Uri): Boolean {
+    fun sendAudio(phone: String, audioUri: Uri): MmsSendResult {
         return try {
-            val mmsId = insertAudioMms(phone, audioUri)
+            // Read the source before inserting, so an unreadable or oversize recording is refused
+            // instead of producing a part with no bytes in it.
+            val bytes = loadBounded(audioUri)
+            val verdict = MmsPayloadPolicy.classify(bytes)
+            if (verdict !is MmsPayloadVerdict.Usable) {
+                return MmsSendResult.Rejected(
+                    code = MmsPayloadPolicy.code(verdict)!!,
+                    reason = MmsPayloadPolicy.reason(verdict)
+                )
+            }
+            val mmsId = insertAudioMms(phone, audioUri, bytes!!)
             if (mmsId > 0L) {
                 triggerSend(mmsId)
-                Log.d(TAG, "MMS audio queued, id=$mmsId")
-                true
+                Log.d(TAG, "MMS audio queued, id=$mmsId bytes=${bytes.size}")
+                MmsSendResult.Queued(mmsId)
             } else {
                 Log.e(TAG, "Failed to insert audio MMS")
-                false
+                MmsSendResult.Rejected("mms_insert_failed", "the message could not be created")
             }
         } catch (e: Exception) {
             Log.e(TAG, "sendAudio error", e)
-            false
+            MmsSendResult.Rejected("mms_insert_failed", e.message ?: "insert failed")
         }
     }
 
@@ -76,31 +114,41 @@ class MmsSender(private val context: Context) {
      * Creates a proper group thread via Telephony.Threads so the conversation
      * shows up as one thread with every recipient attached.
      *
-     * @return true if dispatch succeeded, false on error.
+     * @return as [sendImage]: queued is not sent, and a rejection carries a reason.
      */
-    fun sendGroupText(recipients: List<String>, text: String): Boolean {
+    fun sendGroupText(recipients: List<String>, text: String): MmsSendResult {
         val cleaned = recipients.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        if (cleaned.isEmpty() || text.isBlank()) return false
+        if (cleaned.isEmpty() || text.isBlank()) {
+            return MmsSendResult.Rejected("mms_empty_payload", "no recipient or no text to send")
+        }
         return try {
-            val mmsId = insertTextMms(cleaned, text)
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            val verdict = MmsPayloadPolicy.classify(bytes)
+            if (verdict !is MmsPayloadVerdict.Usable) {
+                return MmsSendResult.Rejected(
+                    code = MmsPayloadPolicy.code(verdict)!!,
+                    reason = MmsPayloadPolicy.reason(verdict)
+                )
+            }
+            val mmsId = insertTextMms(cleaned, text, bytes)
             if (mmsId > 0L) {
                 triggerSend(mmsId)
                 Log.d(TAG, "Group MMS queued to ${cleaned.size} recipients, id=$mmsId")
-                true
+                MmsSendResult.Queued(mmsId)
             } else {
                 Log.e(TAG, "Failed to insert group text MMS")
-                false
+                MmsSendResult.Rejected("mms_insert_failed", "the message could not be created")
             }
         } catch (e: Exception) {
             Log.e(TAG, "sendGroupText error", e)
-            false
+            MmsSendResult.Rejected("mms_insert_failed", e.message ?: "insert failed")
         }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
     /** Text-only group MMS row + one TO address per recipient + a text part. */
-    private fun insertTextMms(recipients: List<String>, text: String): Long {
+    private fun insertTextMms(recipients: List<String>, text: String, bytes: ByteArray): Long {
         val cr = context.contentResolver
         // Set overload builds the GROUP thread id (same for all recipients).
         val threadId = Telephony.Threads.getOrCreateThreadId(context, recipients.toSet())
@@ -121,13 +169,12 @@ class MmsSender(private val context: Context) {
             put(Telephony.Mms.Part.CHARSET, 106) // UTF-8
             put(Telephony.Mms.Part.NAME, "text_0.txt")
         }
-        val partUri = cr.insert(Uri.parse("content://mms/$mmsId/part"), partValues) ?: return -1
-        cr.openOutputStream(partUri)?.use { out -> out.write(text.toByteArray(Charsets.UTF_8)) }
+        if (!writePart(mmsId, partValues, bytes)) return rollback(cr, mmsId)
 
         return mmsId
     }
 
-    private fun insertImageMms(phone: String, imageUri: Uri): Long {
+    private fun insertImageMms(phone: String, imageUri: Uri, imageBytes: ByteArray): Long {
         val cr = context.contentResolver
         val threadId = Telephony.Threads.getOrCreateThreadId(context, phone)
 
@@ -139,23 +186,19 @@ class MmsSender(private val context: Context) {
         insertAddr(mmsId, "insert-address-token", ADDR_FROM)
         insertAddr(mmsId, phone, ADDR_TO)
 
-        // 3. Image part — compress to fit carrier limits
-        val mimeType = cr.getType(imageUri) ?: "image/jpeg"
-        val imageBytes = compressImage(imageUri, mimeType)
-
+        // 3. Image part — the bytes are already validated, so a failure here is a provider fault
         val partValues = ContentValues().apply {
             put(Telephony.Mms.Part.MSG_ID, mmsId)
             put(Telephony.Mms.Part.CONTENT_TYPE, "image/jpeg")
             put(Telephony.Mms.Part.FILENAME, "image.jpg")
             put(Telephony.Mms.Part.NAME, "image.jpg")
         }
-        val partUri = cr.insert(Uri.parse("content://mms/$mmsId/part"), partValues) ?: return -1
-        cr.openOutputStream(partUri)?.use { out -> out.write(imageBytes) }
+        if (!writePart(mmsId, partValues, imageBytes)) return rollback(cr, mmsId)
 
         return mmsId
     }
 
-    private fun insertAudioMms(phone: String, audioUri: Uri): Long {
+    private fun insertAudioMms(phone: String, audioUri: Uri, audioBytes: ByteArray): Long {
         val cr = context.contentResolver
         val threadId = Telephony.Threads.getOrCreateThreadId(context, phone)
 
@@ -174,12 +217,76 @@ class MmsSender(private val context: Context) {
             put(Telephony.Mms.Part.FILENAME, fileName)
             put(Telephony.Mms.Part.NAME, fileName)
         }
-        val partUri = cr.insert(Uri.parse("content://mms/$mmsId/part"), partValues) ?: return -1
-        cr.openOutputStream(partUri)?.use { out ->
-            cr.openInputStream(audioUri)?.use { inp -> inp.copyTo(out) }
-        }
+        if (!writePart(mmsId, partValues, audioBytes)) return rollback(cr, mmsId)
 
         return mmsId
+    }
+
+    /**
+     * Create a part and write its payload, reporting whether it actually landed.
+     *
+     * This replaces `cr.openOutputStream(partUri)?.use { out -> out.write(bytes) }`, whose `?.` made a
+     * null stream indistinguishable from a successful write: the part stayed empty, the function
+     * returned a valid MMS id, and the caller reported success for a message with no content.
+     */
+    private fun writePart(mmsId: Long, partValues: ContentValues, bytes: ByteArray): Boolean {
+        val cr = context.contentResolver
+        val partUri = cr.insert(Uri.parse("content://mms/$mmsId/part"), partValues) ?: run {
+            Log.e(TAG, "MMS $mmsId: the part row could not be created")
+            return false
+        }
+        val stream = cr.openOutputStream(partUri) ?: run {
+            Log.e(TAG, "MMS $mmsId: the part stream could not be opened")
+            return false
+        }
+        return try {
+            stream.use { it.write(bytes) }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "MMS $mmsId: writing the part failed", e)
+            false
+        }
+    }
+
+    /**
+     * Remove an MMS row THIS APP just created and could not finish.
+     *
+     * A rollback of our own incomplete insert, not a delete of anything the user owns: the row was
+     * created moments ago in this call, has no payload, and was never handed to the platform. Leaving
+     * it would be worse than removing it — an empty OUTBOX row is a real message in the provider, so
+     * the mirror would replicate it and GMweb would show a message that never existed.
+     *
+     * @return -1, so the caller's `mmsId > 0` contract is unchanged.
+     */
+    private fun rollback(cr: android.content.ContentResolver, mmsId: Long): Long {
+        val removed = runCatching {
+            cr.delete(ContentUris.withAppendedId(Telephony.Mms.CONTENT_URI, mmsId), null, null)
+        }.getOrDefault(0)
+        Log.e(TAG, "MMS $mmsId rolled back after a failed part write (rows removed=$removed)")
+        DiagnosticLog.event("MMS_SEND", "insert-rolled-back mms=$mmsId")
+        return -1
+    }
+
+    /**
+     * Read a source, refusing anything larger than a part may be.
+     *
+     * Reads at most [MmsPayloadPolicy.READ_LIMIT_BYTES] — enough to tell "too large" from "fine" —
+     * so a tens-of-megabytes recording is never buffered just to be rejected.
+     *
+     * @return null when the source cannot be opened at all.
+     */
+    private fun loadBounded(uri: Uri): ByteArray? {
+        val stream = context.contentResolver.openInputStream(uri) ?: return null
+        return stream.use { input ->
+            val buffer = ByteArray(MmsPayloadPolicy.READ_LIMIT_BYTES)
+            var total = 0
+            while (total < buffer.size) {
+                val read = input.read(buffer, total, buffer.size - total)
+                if (read <= 0) break
+                total += read
+            }
+            buffer.copyOf(total)
+        }
     }
 
     private fun mmsBaseValues(threadId: Long) = ContentValues().apply {
@@ -204,6 +311,18 @@ class MmsSender(private val context: Context) {
         context.contentResolver.insert(Uri.parse("content://mms/$mmsId/addr"), values)
     }
 
+    /**
+     * Hand the request to the platform's MMS stack, and collect the RESULT.
+     *
+     * The `PendingIntent` used to be `null`, which is not "no callback needed" — it is silence. The
+     * platform had nowhere to deliver the outcome, so a failed MMS stayed in the OUTBOX looking like a
+     * message that was still being sent, and nothing in the app or the gateway could tell a picture
+     * that left the device from one that never did.
+     *
+     * The intent is explicit (this receiver, by component) so the result still arrives after the
+     * sending process is gone, and `FLAG_IMMUTABLE` because nothing needs to fill it in — the same
+     * shape the SMS status intents already use.
+     */
     private fun triggerSend(mmsId: Long) {
         val mmsUri = ContentUris.withAppendedId(Telephony.Mms.CONTENT_URI, mmsId)
         val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -211,8 +330,18 @@ class MmsSender(private val context: Context) {
         } else {
             @Suppress("DEPRECATION") SmsManager.getDefault()
         }
+        val resultIntent = PendingIntent.getBroadcast(
+            context,
+            // Unique per MMS row: two sends must not share a PendingIntent, or the second replaces
+            // the first's result and one outcome is lost.
+            (mmsId and 0x7FFFFFFF).toInt(),
+            Intent(context, MmsStatusReceiver::class.java)
+                .setAction(MmsStatusReceiver.ACTION_MMS_SENT)
+                .putExtra(MmsStatusReceiver.EXTRA_MMS_ID, mmsId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         // null locationUrl → system uses carrier MMSC settings automatically
-        smsManager.sendMultimediaMessage(context, mmsUri, null, null, null)
+        smsManager.sendMultimediaMessage(context, mmsUri, null, null, resultIntent)
     }
 
     /**

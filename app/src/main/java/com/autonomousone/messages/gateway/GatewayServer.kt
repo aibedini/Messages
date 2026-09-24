@@ -8,9 +8,11 @@ import android.provider.Telephony
 import android.util.Log
 import com.autonomousone.messages.eve.EveSmsQueue
 import com.autonomousone.messages.eve.eveIsoTimestamp
+import com.autonomousone.messages.mms.MmsSendResult
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sms.SmsSender
+import com.autonomousone.messages.utils.PhoneToken
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -127,9 +129,20 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             // The validator is the mandatory FINAL pre-send gate for GMweb
             // metadata-aware tasks (requiresValidation=true). It is invoked from
             // EveSmsQueue.drainOne immediately before this native sender lambda.
+            //
+            // §49: the record's correlationId is GMweb's own key for the message it asked to send. It
+            // used to stop here — the lambda only had `to` and `text` — so the message reached GMweb
+            // with no way to tie it back to the request, and neither could its later status change.
             EveSmsQueue.start(
                 context,
-                { to, text -> smsSender.sendForResult(to, text) != null },
+                { record ->
+                    smsSender.sendForResult(
+                        record.to,
+                        record.text,
+                        subscriptionIdOverride = null,
+                        clientMessageId = record.correlationId
+                    ) != null
+                },
                 GmwebTaskValidator.from(GatewayPreferences(context), NetworkMonitor.get(context))
             )
 
@@ -344,6 +357,12 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                     val phone = com.autonomousone.messages.utils.DigitNormalizer
                         .toAsciiDigits(json.optString("phone", "").trim())
                     val message = json.optString("message", "").trim()
+                    // mission §78: the same convention the EVE endpoint already accepts. The body field
+                    // is allowed too, so a caller that cannot set headers still has a way to be safe.
+                    val idempotencyKey = headers["idempotency-key"]
+                        ?.trim()?.takeIf { it.isNotBlank() }
+                        ?: json.optString("idempotencyKey", "").trim().takeIf { it.isNotBlank() }
+                    val threadId = json.optLong("threadId", 0L)
 
                     // Optional per-call overrides (absent → user's Messaging prefs).
                     val hasSubId = json.has("subscription_id")
@@ -363,19 +382,79 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                         sendResponse(output, 400, JSONObject().put(
                             "error", "subscription_id must be a valid subscription id (-1 = default)"
                         ))
+                    } else if (!idempotencyKey.isNullOrBlank()) {
+                        // mission §78: with a key, a retry can never send twice. This is the only
+                        // idempotent way to send over this endpoint, and it is what a caller should use
+                        // whenever it might retry.
+                        when (
+                            val result = smsSender.sendIdempotentBlocking(
+                                phone = phone,
+                                text = message,
+                                subscriptionIdOverride = subscriptionId,
+                                smscOverride = smsc,
+                                threadId = threadId,
+                                idempotencyKey = idempotencyKey,
+                                clientMessageId = idempotencyKey
+                            )
+                        ) {
+                            is com.autonomousone.messages.sms.SmsSender.IdempotentSendOutcome.Sent -> {
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send accepted -> ***${phone.takeLast(4)}")
+                                sendResponse(output, 202, JSONObject().apply {
+                                    put("status", "accepted")
+                                    put("id", result.rowId)
+                                    put("phone", phone)
+                                    put("message", message)
+                                    put("idempotent", true)
+                                    if (hasSubId) put("subscription_id", subscriptionId ?: -1)
+                                    if (smsc.isNotBlank()) put("smsc", smsc)
+                                })
+                            }
+                            is com.autonomousone.messages.sms.SmsSender.IdempotentSendOutcome.AlreadySent -> {
+                                // The message WAS accepted — by the earlier call with this key. A
+                                // duplicate is not a failure, so it keeps the 202 the first call got and
+                                // says plainly that nothing was sent this time.
+                                onRequestLog?.invoke(
+                                    "↺ POST /api/v1/sms/send duplicate key -> ***${phone.takeLast(4)} " +
+                                        "(nothing sent)"
+                                )
+                                sendResponse(output, 202, JSONObject().apply {
+                                    put("status", "accepted")
+                                    put("duplicate", true)
+                                    put("phone", phone)
+                                    put("idempotent", true)
+                                })
+                            }
+                            is com.autonomousone.messages.sms.SmsSender.IdempotentSendOutcome.Rejected -> {
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send REJECTED (${result.reason})")
+                                sendResponse(output, 503, JSONObject().apply {
+                                    put("status", "failed")
+                                    put("error", result.reason)
+                                    put("phone", phone)
+                                    put("idempotent", true)
+                                })
+                            }
+                        }
                     } else {
                         // v2.6.10: explicit outcome. A modem rejection is now
                         // 503, never a lying 200 "success". 202 Accepted means
                         // "handed to telephony"; SENT/DELIVERED arrive later
                         // via the status callbacks.
+                        //
+                        // No idempotency key was supplied, so this call CANNOT be deduped — there is
+                        // nothing to identify a retry by. The response says so rather than letting a
+                        // caller assume a retry is safe: a guessed key would have to come from the
+                        // phone and message, which would suppress a legitimately repeated message.
                         when (val outcome = smsSender.sendWithOutcome(phone, message, subscriptionId, smsc)) {
                             is com.autonomousone.messages.sms.SmsSender.SendOutcome.Accepted -> {
-                                onRequestLog?.invoke("📩 POST /api/v1/sms/send accepted -> ${phone.takeLast(4)}")
+                                // mission §43's sanctioned form for a recipient in a log: `***1234`.
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send accepted -> ***${phone.takeLast(4)}")
                                 sendResponse(output, 202, JSONObject().apply {
                                     put("status", "accepted")
                                     put("id", outcome.rowId)
                                     put("phone", phone)
                                     put("message", message)
+                                    put("idempotent", false)
+                                    put("retrySafe", false)
                                     if (hasSubId) put("subscription_id", subscriptionId ?: -1)
                                     if (smsc.isNotBlank()) put("smsc", smsc)
                                 })
@@ -387,6 +466,7 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                                     put("error", outcome.reason)
                                     if (outcome.rowId != null) put("id", outcome.rowId)
                                     put("phone", phone)
+                                    put("idempotent", false)
                                 })
                             }
                         }
@@ -406,11 +486,24 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                             sendResponse(output, 400, JSONObject().put(
                                 "error", "imageUrl must be an https:// URL on a public host"
                             ))                        } else {
-                            val success = mmsSender.sendImage(phone, imageUri)
-                            onRequestLog?.invoke("🖼 POST /api/v1/mms/send -> $phone (success=$success)")
-                            sendResponse(output, if (success) 200 else 500, JSONObject().apply {
-                                put("status", if (success) "success" else "failed")
+                            // The response SHAPE is unchanged (`status` + HTTP code), because GMweb
+                            // reads it: a refusal still reports "failed" with a 500. What is new is
+                            // `reason` — the caller used to get a bare failure with no way to tell an
+                            // oversize photo from an unreadable one.
+                            val result = mmsSender.sendImage(phone, imageUri)
+                            // §43: the recipient is logged as a token, never raw. This line escaped the
+                            // existing guard because that guard pinned one exact string, not the rule.
+                            onRequestLog?.invoke(
+                                "🖼 POST /api/v1/mms/send -> ${PhoneToken.of(phone)} " +
+                                    "(queued=${result.queued})"
+                            )
+                            sendResponse(output, if (result is MmsSendResult.Queued) 200 else 500, JSONObject().apply {
+                                put("status", if (result is MmsSendResult.Queued) "success" else "failed")
                                 put("phone", phone)
+                                if (result is MmsSendResult.Rejected) {
+                                    put("reason", result.reason)
+                                    put("code", result.code)
+                                }
                             })
                         }
                     }
@@ -576,7 +669,13 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                 else -> {
                     val effectivePriority = priority.ifBlank { "announcement" }
                     val result = EveSmsQueue.enqueue(to, text, effectivePriority, idempotencyKey)
-                    onRequestLog?.invoke("📨 POST /send -> $to (${result.record.priority}, ${result.record.status})")
+                    // mission §43: the recipient is a token here, exactly as it is on the other send
+                    // endpoints. This line logged the raw number, and the guard against that pinned the
+                    // variable name `$phone` in the neighbouring handler — so `$to` slipped past it.
+                    onRequestLog?.invoke(
+                        "📨 POST /send -> ${PhoneToken.of(to)} " +
+                            "(${result.record.priority}, ${result.record.status})"
+                    )
                     sendResponse(
                         output, if (result.created) 202 else 200,
                         eveAcceptedJson(result.record).put("queuePosition", queuePosition(result.record))
@@ -624,7 +723,10 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                     sendResponse(output, 400, JSONObject().put("error", "sendAt must be in the future"))
                 else -> {
                     val (entry, created) = GatewayScheduler.schedule(context, phone, message, sendAt)
-                    onRequestLog?.invoke("⏰ POST /api/v1/sms/schedule -> $phone @ $sendAt (${entry.status})")
+                    // mission §43: the recipient is reported as a token, never dialable digits.
+                    onRequestLog?.invoke(
+                        "⏰ POST /api/v1/sms/schedule -> ${PhoneToken.of(phone)} @ $sendAt (${entry.status})"
+                    )
                     sendResponse(
                         output, if (created) 202 else 200,
                         JSONObject()

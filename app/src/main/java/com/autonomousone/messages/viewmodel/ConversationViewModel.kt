@@ -38,6 +38,7 @@ import com.autonomousone.messages.messaging.SendResult
 import com.autonomousone.messages.sms.PendingDelayedSend
 import com.autonomousone.messages.sms.SendSource
 import java.util.UUID
+import com.autonomousone.messages.mms.MmsSendResult
 import com.autonomousone.messages.mms.MmsSender
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.observer.SmsContentObserver
@@ -1895,7 +1896,20 @@ class ConversationViewModel(
                     }
                 } else if (MessagingPreferences(getApplication()).groupMessagingEnabled) {
                     // Google Messages-style group chat: ONE group MMS instead of N SMS.
-                    mmsSender.sendGroupText(recipients, trimmedMsg)
+                    //
+                    // The result is HONOURED, not discarded. It used to be a bare Boolean that nobody
+                    // read, so a refused group MMS left the optimistic bubble on screen looking sent
+                    // and emitted an "outgoing sent" event for a message that was never created.
+                    when (val result = mmsSender.sendGroupText(recipients, trimmedMsg)) {
+                        is MmsSendResult.Queued -> Unit
+                        is MmsSendResult.Rejected -> {
+                            removeOwnOptimistic(optimisticSms.id)
+                            DiagnosticLog.event(
+                                "MMS_SEND",
+                                "group-mms-rejected code=${result.code} reason=${result.reason}"
+                            )
+                        }
+                    }
                 } else {
                     // Group toggle off → classic behaviour: one SMS per recipient.
                     recipients.forEach {
@@ -2123,14 +2137,27 @@ class ConversationViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                mmsSender.sendImage(targetPhone, imageUri)
-                // Home list: show the image thread on top instantly.
-                com.autonomousone.messages.event.SmsEventBus.emitOutgoingSent(
-                    threadId = currentThreadId,
-                    phone = targetPhone,
-                    message = if (trimmedCaption.isNotBlank()) "🖼 $trimmedCaption" else "🖼",
-                    date = now
-                )
+                // Same rule as the group-text path: a refusal must not leave an optimistic bubble
+                // claiming the photo was sent, and must not emit an "outgoing sent" event for a
+                // message that was never created.
+                when (val result = mmsSender.sendImage(targetPhone, imageUri)) {
+                    is MmsSendResult.Queued -> {
+                        // Home list: show the image thread on top instantly.
+                        com.autonomousone.messages.event.SmsEventBus.emitOutgoingSent(
+                            threadId = currentThreadId,
+                            phone = targetPhone,
+                            message = if (trimmedCaption.isNotBlank()) "🖼 $trimmedCaption" else "🖼",
+                            date = now
+                        )
+                    }
+                    is MmsSendResult.Rejected -> {
+                        removeOwnOptimistic(optimisticSms.id)
+                        DiagnosticLog.event(
+                            "MMS_SEND",
+                            "image-mms-rejected code=${result.code} reason=${result.reason}"
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -2164,7 +2191,17 @@ class ConversationViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                mmsSender.sendAudio(targetPhone, audioUri)
+                // A refused recording is removed from the list rather than left looking sent.
+                when (val result = mmsSender.sendAudio(targetPhone, audioUri)) {
+                    is MmsSendResult.Queued -> Unit
+                    is MmsSendResult.Rejected -> {
+                        removeOwnOptimistic(optimisticSms.id)
+                        DiagnosticLog.event(
+                            "MMS_SEND",
+                            "audio-mms-rejected code=${result.code} reason=${result.reason}"
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

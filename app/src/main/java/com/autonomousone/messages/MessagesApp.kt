@@ -24,6 +24,7 @@ import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * App-owned process hooks.
@@ -61,6 +62,9 @@ class MessagesApp : Application() {
         // the outbox when the user finally links a browser.
         maybeTriggerStartupCloudBackfill()
         scheduleSmartCategoryBackfill()
+        scheduleOutboxCleanup()
+        scheduleInboundPersistRetry()
+        reconcileMissedMessages()
         installDiagnostics()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
@@ -117,6 +121,90 @@ class MessagesApp : Application() {
      * history synchronously, and an interrupted sweep resumes exactly where it
      * stopped.
      */
+    /**
+     * ACKED retention (mission §19/§36) — the `gmweb-outbox-cleanup` worker.
+     *
+     * IDEMPOTENT and non-blocking, like the backfill above: unique PERIODIC work with a KEEP
+     * policy, so every app start and every boot collapses into the one already-scheduled job
+     * rather than restarting its interval. WorkManager persists it, so a reboot does not lose it.
+     *
+     * Best-effort: a scheduling failure must never stop the app starting. Failing to schedule
+     * cleanup only means the outbox keeps its acknowledged rows, which is the safe direction.
+     */
+    private fun scheduleOutboxCleanup() {
+        try {
+            com.autonomousone.messages.sync.OutboxCleanupScheduler.ensureScheduled(this)
+            Log.i(
+                "OUTBOX_CLEANUP",
+                "outbox retention scheduled (acknowledged rows, 48h window)"
+            )
+        } catch (e: Throwable) {
+            Log.w("OUTBOX_CLEANUP", "outbox cleanup could not be scheduled", e)
+        }
+    }
+
+    /**
+     * Inbound messages held because they could not be written (mission §16).
+     *
+     * The receiver asks for a pass as soon as it holds one; this sweep is the insurance. An enqueue can
+     * fail, and a message held by a receiver is exactly the case where relying on a single opportunistic
+     * call would be worst — so the same work is also guaranteed to run periodically.
+     *
+     * IDEMPOTENT and non-blocking, in the same shape as the outbox cleanup above: unique PERIODIC work
+     * with KEEP, so every app start and every boot collapses into the one scheduled job.
+     */
+    private fun scheduleInboundPersistRetry() {
+        try {
+            com.autonomousone.messages.receiver.PendingInboundWorker.ensureScheduled(this)
+        } catch (e: Throwable) {
+            Log.w("INBOUND_RETRY", "inbound persist retry could not be scheduled", e)
+        }
+    }
+
+    /**
+     * Mirror → outbox reconciliation (mission §34).
+     *
+     * THE SAFETY NET for Blocker 1's silent sibling: realtime callbacks are not sufficient for
+     * correctness. A message that arrived while the process was dead left no trace at all — no
+     * outbox row, nothing logged. This compares the recent mirror window against the outbox and
+     * enqueues anything with no durable event, so a missed notification becomes a recoverable
+     * event instead of a message that silently never reaches GMweb.
+     *
+     * Bounded (48 h window, 500 rows) and idempotent: a second run finds nothing. Off the main
+     * thread, and best-effort — reconciliation failing must never stop the app starting.
+     */
+    private fun reconcileMissedMessages() {
+        diagnosticsScope.launch {
+            try {
+                val result = com.autonomousone.messages.data.TelephonySyncCoordinator
+                    .get(this@MessagesApp)
+                    .reconcileMissingEvents()
+                if (result.foundGap) {
+                    Log.w(
+                        "SYNC_RECONCILE",
+                        "recovered ${result.recovered} event(s) that had no durable record " +
+                            "(examined ${result.examined})"
+                    )
+                    com.autonomousone.messages.gateway.health.GatewayLog.record(
+                        severity = com.autonomousone.messages.gateway.health.GatewayLogSeverity.WARNING,
+                        subsystem = com.autonomousone.messages.gateway.health.GatewayLogSubsystem.SYNC_UPLOAD,
+                        code = "RECONCILE_RECOVERED",
+                        title = "Recovered missed messages",
+                        detail = "${result.recovered} of ${result.examined} recent message(s) " +
+                            "had no durable event"
+                    )
+                } else {
+                    Log.i(
+                        "SYNC_RECONCILE",
+                        "no gaps in ${result.examined} recent message(s)"
+                    )
+                }
+            } catch (e: Throwable) {
+                Log.w("SYNC_RECONCILE", "mirror → outbox reconciliation failed", e)
+            }
+        }
+    }
+
     private fun scheduleSmartCategoryBackfill() {
         try {
             com.autonomousone.messages.classification.ClassificationBackfillWorker

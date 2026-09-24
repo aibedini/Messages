@@ -402,6 +402,7 @@ fun GatewayLogFeedCard(
     onClear: () -> Unit,
     onCopy: () -> Unit,
     onShareReport: () -> Unit,
+    onCopyJson: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -427,6 +428,7 @@ fun GatewayLogFeedCard(
                 TextButtonCompat(text = "Clear", onClick = onClear)
                 TextButtonCompat(text = "Copy", onClick = onCopy)
                 TextButtonCompat(text = "Report", onClick = onShareReport)
+                TextButtonCompat(text = "JSON", onClick = onCopyJson)
             }
 
             Spacer(modifier = Modifier.height(8.dp))

@@ -59,9 +59,9 @@ class EveSmsQueuePreSendValidationTest {
 
     private fun boot(
         validator: EveSmsQueue.FinalValidator? = null,
-        sender: (String, String) -> Boolean = { _, text ->
+        sender: (EveSmsQueue.Record) -> Boolean = { record ->
             order.add("send")
-            sent.add(text)
+            sent.add(record.text)
             true
         }
     ) {

@@ -68,7 +68,8 @@ object GatewayEventFactory {
         eventType: String,
         conversationId: String,
         payloadJson: String,
-        createdAt: Long = System.currentTimeMillis()
+        createdAt: Long = System.currentTimeMillis(),
+        source: String = GatewayEventOutboxEntity.SOURCE_REALTIME
     ): GatewayEventOutboxEntity {
         val inner = payloadJson.toByteArray(Charsets.UTF_8)
         val envelope = JSONObject()
@@ -84,8 +85,25 @@ object GatewayEventFactory {
             encoding = Encoding.ENVELOPE_V1,
             schemaVersion = 1,
             cryptoVersion = 0,
-            createdAt = createdAt
+            createdAt = createdAt,
+            source = source
         )
+    }
+
+    /**
+     * Which flow produced an event (mission §10), derived rather than passed by every caller.
+     *
+     * The ordering is deliberate: a send that originated from a web command is a COMMAND_RESULT
+     * even though it also looks like ordinary realtime activity, because that is the fact an
+     * operator is looking for when a web send misbehaves. A history sweep is HISTORY regardless of
+     * how urgent it feels.
+     */
+    private fun sourceFor(priority: String, originCommandId: String?): String = when {
+        originCommandId != null -> GatewayEventOutboxEntity.SOURCE_COMMAND_RESULT
+        priority == GatewayEventOutboxEntity.PRIORITY_BACKFILL -> GatewayEventOutboxEntity.SOURCE_HISTORY
+        priority == GatewayEventOutboxEntity.PRIORITY_RECONCILIATION ->
+            GatewayEventOutboxEntity.SOURCE_RECONCILIATION
+        else -> GatewayEventOutboxEntity.SOURCE_REALTIME
     }
 
     /** Inverse of [outboxRow]'s envelope — used by the uploader wire path. */
@@ -136,14 +154,27 @@ object GatewayEventFactory {
         if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
         if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
         if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
-        val eventId = if (priority == GatewayEventOutboxEntity.PRIORITY_BACKFILL)
-            UUID.nameUUIDFromBytes("evt:replica-v4:$source:$providerId:$dateMs".toByteArray()).toString()
-        else eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs)
+        // ONE identity for one logical message, whichever way it was discovered.
+        //
+        // This used to branch on priority, giving a history sweep its own `evt:replica-v4:` domain.
+        // That meant the same provider row seen by both paths produced TWO rows with two
+        // eventUuids and one shared payload.messageId — and the outbox's unique index cannot dedupe
+        // across namespaces, so the §33 race could put one message in the outbox twice
+        // (docs/gateway-replication-audit.md, Blocker 7). Mission §33 requires the same canonical
+        // identity, and §21 permits changing this because the bug was demonstrated rather than
+        // suspected.
+        //
+        // Existing rows carrying the old ids are unaffected: they keep their rows, and a replayed
+        // history sweep now computes this id, finds nothing, and re-sends — which the server
+        // answers as DUPLICATE, a case the uploader now acknowledges (mission §16) instead of
+        // retrying forever.
+        val eventId = eventUuidFor(Types.MESSAGE_CREATED, source, providerId, dateMs)
         return outboxRow(
             eventId,
             Types.MESSAGE_CREATED,
             conversationId,
-            payload.toString()
+            payload.toString(),
+            source = sourceFor(priority, originCommandId)
         ).copy(
             messageId = messageIdFor(source, providerId, dateMs),
             revision = revision,
@@ -152,6 +183,24 @@ object GatewayEventFactory {
         )
     }
 
+    /**
+     * A status/read transition on an existing message (mission §49).
+     *
+     * [originCommandId] and [clientMessageId] travel here for the same reason they travel on
+     * [messageCreated]: a web-requested send is optimistic on GMweb's side, and when it later turns
+     * DELIVERED or FAILED the server has to be able to find the bubble it created. `messageCreated`
+     * carried both from the start; this one carried neither, so a status change could never be tied
+     * back to the web bubble — §49 was half-implemented in exactly that direction.
+     *
+     * Adding payload keys does NOT touch the event identity: [eventUuidFor] is derived from the
+     * type, source, provider row and date only, and the caller overrides it with its own
+     * `message-state:` key. Mission §33 requires one identity per (source, row, date, state), and a
+     * status event's identity must not start depending on which send caused it.
+     *
+     * `source` deliberately stays [GatewayEventOutboxEntity.SOURCE_STATUS_UPDATE] and does not
+     * switch to `COMMAND_RESULT`: a status change IS a status change regardless of what caused it,
+     * and the causal link belongs in the payload rather than in the accounting bucket.
+     */
     fun messageStatusChanged(
         source: String,
         providerId: Long,
@@ -163,6 +212,8 @@ object GatewayEventFactory {
         address: String? = null,
         contactName: String? = null,
         read: Boolean = false,
+        originCommandId: String? = null,
+        clientMessageId: String? = null,
     ): GatewayEventOutboxEntity {
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
@@ -173,11 +224,14 @@ object GatewayEventFactory {
         if (body != null) payload.put("body", body)
         if (address != null) payload.put("address", address)
         if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
+        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
+        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
         return outboxRow(
             eventUuidFor("${Types.MESSAGE_STATUS_CHANGED}:$status", source, providerId, dateMs),
             Types.MESSAGE_STATUS_CHANGED,
             conversationId,
-            payload.toString()
+            payload.toString(),
+            source = GatewayEventOutboxEntity.SOURCE_STATUS_UPDATE
         ).copy(
             messageId = messageIdFor(source, providerId, dateMs),
             revision = System.currentTimeMillis(),
@@ -185,6 +239,17 @@ object GatewayEventFactory {
         )
     }
 
+    /**
+     * A message is gone.
+     *
+     * Deliberately does NOT carry `originCommandId`/`clientMessageId`, unlike the other three
+     * members of the family. It was given them for one round and then removed: `MessageMutation`
+     * .`Delete` carries neither, so no call site could populate them, and a parameter that is always
+     * null is precisely the defect this round fixed one function over (`clientMessageId` on
+     * `RemoteCommandEntity`). A correlation should be added here when a delete actually has one —
+     * i.e. if a remotely requested delete command ever exists — not because the shape looks
+     * symmetric.
+     */
     fun messageDeleted(
         source: String,
         providerId: Long,
@@ -247,6 +312,7 @@ object GatewayEventFactory {
             Types.CONVERSATION_UPSERTED,
             conversationId,
             payload.toString(),
+            source = sourceFor(priority, originCommandId = null),
         ).copy(revision = revision, sortKey = lastMessageAt, priority = priority)
     }
 

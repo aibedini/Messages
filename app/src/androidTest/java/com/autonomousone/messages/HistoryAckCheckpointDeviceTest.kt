@@ -57,8 +57,21 @@ class HistoryAckCheckpointDeviceTest {
                 ciphertext = byteArrayOf(1), historySource = "sms", historyGeneration = 4,
                 historyOrdinal = 5, historyDate = 995, historyProviderId = 5,
                 encoding = "envelope.v3", schemaVersion = 1, cryptoVersion = 3, createdAt = 1,
+                // markDead only moves a row that is IN FLIGHT (WHERE state = 'SENDING'), so the
+                // fixture must actually be in that state. Previously this inserted a PENDING row,
+                // which made the markDead below a silent no-op and left the fixture asserting
+                // nothing about dead letters.
+                state = GatewayEventOutboxEntity.STATE_SENDING
             ))
-            dao.markDead("history-5", "TEST", null, 1_000L, "test")
+            dao.markDead(
+                eventUuid = "history-5",
+                failureCategory = "TEST",
+                httpStatus = null,
+                at = 1_000L,
+                appVersion = "test",
+                errorCode = "UNKNOWN",
+                errorMessage = null
+            )
             val checkpoint = db.cloudHistoryCheckpointDao().get("sms")!!
             db.cloudHistoryCheckpointDao().upsert(checkpoint.copy(nextOrdinal = 6))
             assertFalse(repository.isHistoryDeliveryComplete("sms"))

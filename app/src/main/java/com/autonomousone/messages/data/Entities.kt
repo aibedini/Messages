@@ -25,6 +25,11 @@ import androidx.room.PrimaryKey
         Index("normalizedAddress", "date"),
         // Fast dedupe during incremental syncs.
         Index("date"),
+        // The per-source keyset walk: the history producer's page query and the full-mirror
+        // verification sweep both filter `source` and range an ordered `(date, providerId)` pair.
+        // Without it each page range-scans `date` and filters the source out of every row it reads,
+        // which doubles the work of a walk that is already the heaviest read in the app.
+        Index("source", "date", "providerId"),
         // O(unread_count) SQL COUNT for thread unread badges — declared here so
         // FRESH installs (Room-managed) and UPGRADES (MIGRATION_3_4) converge
         // to exactly the same schema. The old hand-rolled PARTIAL index

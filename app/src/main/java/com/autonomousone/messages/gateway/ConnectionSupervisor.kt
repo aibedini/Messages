@@ -62,6 +62,17 @@ class ConnectionSupervisor private constructor(
         @Volatile
         private var instance: ConnectionSupervisor? = null
 
+        /**
+         * Shortest gap between post-reconnect reconciliations.
+         *
+         * Ten minutes: reconnexions can happen in bursts, and a bounded reconciliation that finds
+         * nothing is not worth repeating every tick.
+         */
+        private const val RECONCILE_MIN_INTERVAL_MS = 10 * 60_000L
+
+        /** One verification page per source per two minutes; see [lastVerifyRequestAt]. */
+        private const val VERIFY_MIN_INTERVAL_MS = 2 * 60_000L
+
         fun get(
             context: Context,
             prefs: GatewayPreferences,
@@ -114,6 +125,23 @@ class ConnectionSupervisor private constructor(
          * the old server for a while after the user has been told the change took effect.
          */
         val retryUploader: () -> Unit = {},
+        /**
+         * Reconciles the mirror against the outbox after a reconnect (mission §34).
+         *
+         * The supervisor owns the MOMENT — "we are online again, which is when a gap is most likely
+         * and most fixable" — and the parent owns the work. Throttled here rather than in the
+         * caller, because only the supervisor knows how often it ticks.
+         */
+        val reconcileMissedEvents: () -> Unit = {},
+        /**
+         * Walks one bounded page of the full-mirror verification, once per source (mission §35).
+         *
+         * Separate from [reconcileMissedEvents] because it answers a different question: the window
+         * check asks "did anything RECENT fail to replicate?", while this one asks, over the whole
+         * mirror and resumably, "is there any message, however old, with no durable event?" — the
+         * question the 48-hour window structurally cannot ask.
+         */
+        val verifyMirror: () -> Unit = {},
         val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL
     )
 
@@ -153,6 +181,20 @@ class ConnectionSupervisor private constructor(
     private var boundIp: String? = null
     private var backoffMs = 5_000L
     @Volatile private var lastError: String? = null
+
+    /** When the last post-reconnect reconciliation was requested. Throttles the tick. */
+    private var lastReconcileRequestAt = 0L
+
+    /**
+     * How often one page of the full-mirror verification may be walked (mission §35).
+     *
+     * Much shorter than the recovery window, because a sweep of a large mirror is many pages and the
+     * only way it ever finishes is by making steady progress. One page of 500 rows per source per two
+     * minutes covers a 360k-message mirror in roughly 24 hours of online time, spread across page
+     * loads — deliberately unambitious, because this is a background audit and must never compete
+     * with delivering a message.
+     */
+    private var lastVerifyRequestAt = 0L
 
     init {
         desiredEnabled = prefs.gatewayDesiredEnabled && prefs.hasGatewayConsent
@@ -330,6 +372,11 @@ class ConnectionSupervisor private constructor(
                 onLog("📴 Gateway waiting for network…")
             }
             _stateFlow.value = State.WAITING_FOR_NETWORK
+            // Publish BEFORE returning. This branch used to skip publishHealthContext(), which is
+            // only reached at the end of the online path, so the health registry kept the last
+            // online reading and a diagnostic could report "Internet: validated" while the device
+            // had no network at all.
+            publishHealthContext()
             return
         }
 
@@ -381,6 +428,23 @@ class ConnectionSupervisor private constructor(
             }
         }
         notePhase("POLLER_OR_COMMAND_START")
+        // Mission §34: reconcile after a reconnect, which is when a missed message is most likely
+        // (the device was offline or the process was dead) and most useful to recover. Throttled,
+        // because reconcile() runs on a short tick and a bounded reconciliation on every tick would
+        // be pointless work for no new information.
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastReconcileRequestAt >= RECONCILE_MIN_INTERVAL_MS) {
+            lastReconcileRequestAt = nowMs
+            components.reconcileMissedEvents()
+            // The deep walk rides the same moment for the same reason — we are online and the
+            // reconcile tick is the only thing that knows how often this happens — but it is
+            // separately throttled and separately gated, so a slow verification can never slow down
+            // the repair of a fresh gap.
+            if (nowMs - lastVerifyRequestAt >= VERIFY_MIN_INTERVAL_MS) {
+                lastVerifyRequestAt = nowMs
+                components.verifyMirror()
+            }
+        }
         components.startSync()
         notePhase("SYNC_START_REQUEST")
 

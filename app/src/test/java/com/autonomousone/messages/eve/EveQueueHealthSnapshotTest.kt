@@ -31,7 +31,7 @@ class EveQueueHealthSnapshotTest {
         store = EveSmsQueue.MemoryStore()
         EveSmsQueue.resetForTest(store)
         EveSmsQueue.clock = { clock }
-        EveSmsQueue.bootstrap(store, sender = { _, _ -> true })
+        EveSmsQueue.bootstrap(store, sender = { true })
         // Stop the worker so the test drives the queue deterministically.
         EveSmsQueue.stop()
     }
