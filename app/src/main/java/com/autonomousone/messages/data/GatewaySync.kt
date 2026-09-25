@@ -275,6 +275,40 @@ data class GatewayEventOutboxEntity(
                 "AND gateway_event_outbox.historyOrdinal <= c.ackedContiguousOrdinal))"
 
         /**
+         * The acknowledgement write (mission §16).
+         *
+         * `AND state = 'SENDING'` is load-bearing, not tidiness: an acknowledgement is only ever the
+         * answer to an upload we made, so it must move a row that is IN_FLIGHT and nothing else. A
+         * replayed or delayed body cannot then rewrite an already-acknowledged row, change its
+         * `serverSequence`, or make a PENDING row look delivered. It also makes the lost-response
+         * window converge: re-send → server says DUPLICATE → this statement acknowledges it once.
+         *
+         * Shared as a constant so the process-death test executes the shipped statement rather than a
+         * retyped copy that can drift from the DAO.
+         */
+        const val MARK_ACKED_SQL =
+            "UPDATE gateway_event_outbox SET state = 'ACKED', serverSequence = :serverSequence, " +
+                "ackedAt = :ackedAt, leaseId = NULL, inFlightSince = NULL, " +
+                "lastHttpStatus = :httpStatus, lastErrorCode = NULL, lastErrorMessageSafe = NULL " +
+                "WHERE eventUuid = :eventUuid AND state = 'SENDING'"
+
+        /**
+         * Lease recovery for a row abandoned mid-upload (mission §12).
+         *
+         * AGE-BOUNDED on purpose: only a lease older than the caller's threshold is returned, so
+         * recovery can never steal a row another claimant is actively uploading — the interleaving
+         * that produces a duplicate upload. `inFlightSince IS NULL` is still recovered, because a
+         * row left SENDING by a pre-lease build has no timestamp and would otherwise be stranded
+         * forever. `attemptCount` is deliberately untouched: being reclaimed is not a failed
+         * attempt, and charging it one would burn the budget of a row that was never tried.
+         *
+         * Shared as a constant so the process-death test executes the shipped statement.
+         */
+        const val RECOVER_STALE_LEASES_SQL =
+            "UPDATE gateway_event_outbox SET state = 'PENDING', leaseId = NULL, inFlightSince = NULL " +
+                "WHERE state = 'SENDING' AND (inFlightSince IS NULL OR inFlightSince < :staleBefore)"
+
+        /**
          * The failure codes a successful enrollment actually repairs (mission §15/§17).
          *
          * These name a broken CREDENTIAL or a missing IDENTITY — the two things `/identity` fixes.
@@ -593,12 +627,7 @@ interface GatewayEventOutboxDao {
     suspend fun markSending(ids: List<Long>, leaseId: String, batchId: String, at: Long): Int
 
     /** Partial ACK (LOCK 13): only the reported eventUuid moves to ACKED. Releases the lease. */
-    @Query(
-        "UPDATE gateway_event_outbox SET state = 'ACKED', serverSequence = :serverSequence, " +
-            "ackedAt = :ackedAt, leaseId = NULL, inFlightSince = NULL, " +
-            "lastHttpStatus = :httpStatus, lastErrorCode = NULL, lastErrorMessageSafe = NULL " +
-            "WHERE eventUuid = :eventUuid AND state = 'SENDING'"
-    )
+    @Query(GatewayEventOutboxEntity.MARK_ACKED_SQL)
     suspend fun markAcked(
         eventUuid: String,
         serverSequence: Long,
@@ -656,12 +685,10 @@ interface GatewayEventOutboxDao {
      * predates leases has no timestamp to age out, and would otherwise be stuck permanently.
      *
      * This replaces the previous unbounded `resetSendingToPending`, which requeued EVERY SENDING
-     * row regardless of age — including rows another claimant was actively uploading.
+     * row regardless of age — including rows another claimant was actively uploading. The
+     * age bound is the whole point, so the predicate is a shared constant a test can execute.
      */
-    @Query(
-        "UPDATE gateway_event_outbox SET state = 'PENDING', leaseId = NULL, inFlightSince = NULL " +
-            "WHERE state = 'SENDING' AND (inFlightSince IS NULL OR inFlightSince < :staleBefore)"
-    )
+    @Query(GatewayEventOutboxEntity.RECOVER_STALE_LEASES_SQL)
     suspend fun recoverStaleLeases(staleBefore: Long): Int
 
     /**
@@ -868,6 +895,20 @@ interface GatewayEventOutboxDao {
         limit: Int
     ): List<GatewayEventOutboxEntity>
 
+    /**
+     * ACKed history rows for one source and generation — a COUNT, not the checkpoint watermark.
+     *
+     * The watermark is a contiguous frontier; this is how many rows are actually acknowledged. They
+     * coincide only while nothing in the sequence has permanently failed, which is precisely why
+     * reporting the watermark as "acked" invented thousands of pending events the moment one row
+     * died permanently (see `HistorySourceCounts`).
+     */
+    @Query(
+        "SELECT COUNT(*) FROM gateway_event_outbox WHERE historySource = :source " +
+            "AND historyGeneration = :generation AND state = 'ACKED'"
+    )
+    suspend fun historyAckedCount(source: String, generation: Long): Int
+
     @Query(
         "SELECT COUNT(*) FROM gateway_event_outbox WHERE historySource = :source " +
             "AND historyGeneration = :generation AND state = 'DEAD_LETTER'"
@@ -979,6 +1020,41 @@ data class RemoteCommandEntity(
         val NON_TERMINAL_STATES = listOf(STATE_RECEIVED, STATE_ACCEPTED, STATE_EXECUTING)
 
         /**
+         * The reason a state-only transition may not be used to finish a command.
+         *
+         * Returns null when the transition is legal. A PURE function so the rule is asserted in a
+         * unit test rather than only enforced at the two or three call sites someone remembered to
+         * check: textual guards on call sites were tried and one of them FALSE-PASSED, because the
+         * site passed a local `terminal` variable and the scan was looking for literal state names.
+         * A rule the callee enforces cannot be missed by a call site's shape.
+         */
+        fun refusalForStateOnlyTransition(state: String): String? =
+            if (state in TERMINAL_STATES) {
+                "a terminal command transition must use finishCommandFrom, so the row records why it " +
+                    "ended and when (state=$state)"
+            } else {
+                null
+            }
+
+        /**
+         * A terminal transition that ALSO records why it ended and when (mission §K).
+         *
+         * WHY THIS EXISTS ALONGSIDE `markFinished`: `markFinished` records the reason but has no
+         * from-state guard, and `markState` has the guard but records nothing else. Terminal command
+         * transitions need BOTH — the guard is what stops two drains finishing the same command, and
+         * the reason and timestamp are what make the terminal state mean something. Offering only the
+         * two halves is how five call sites came to be guarded-but-unexplained: a web-requested send
+         * the radio refused reached GMweb as FAILED with an empty `lastErrorCode` and
+         * `completedAt = 0`, so neither the reason nor the duration was recoverable.
+         *
+         * Shared as a constant so a test can execute the shipped statement.
+         */
+        const val MARK_FINISHED_FROM_SQL =
+            "UPDATE remote_commands SET state = :state, completedAt = :at, " +
+                "lastErrorCode = :errorCode, leaseId = NULL, leaseExpiresAt = NULL " +
+                "WHERE commandId = :commandId AND state IN (:fromStates)"
+
+        /**
          * How long a claim may be held before the command is presumed abandoned (mission §48).
          *
          * Five minutes, matching the outbox lease. Long enough for a slow send, short enough that a
@@ -1056,6 +1132,21 @@ interface RemoteCommandDao {
     /** Stamps the execution start, so "how long did this take?" has an answer. */
     @Query("UPDATE remote_commands SET state = 'EXECUTING', executedAt = :at WHERE commandId = :commandId")
     suspend fun markExecuting(commandId: String, at: Long): Int
+
+    /**
+     * Guarded terminal transition: state + reason + completion time, only from a legal state set.
+     *
+     * The single transition a terminal command outcome should use (see
+     * [RemoteCommandEntity.MARK_FINISHED_FROM_SQL]).
+     */
+    @Query(RemoteCommandEntity.MARK_FINISHED_FROM_SQL)
+    suspend fun markFinishedFrom(
+        commandId: String,
+        state: String,
+        at: Long,
+        errorCode: String?,
+        fromStates: List<String>
+    ): Int
 
     /** Stamps the event that carries this command's result. */
     @Query("UPDATE remote_commands SET resultEventId = :eventId WHERE commandId = :commandId")

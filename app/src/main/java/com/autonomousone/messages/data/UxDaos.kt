@@ -920,6 +920,14 @@ interface MessageAssetDao {
     suspend fun countByKind(threadId: Long, kind: String): Int
 
     /**
+     * Attachments known for one source, for the diagnostic's MMS attachment gap (mission §52).
+     *
+     * See [MessageAssetSql.COUNT_FOR_SOURCE_SQL] for why this number is surfaced at all.
+     */
+    @Query(MessageAssetSql.COUNT_FOR_SOURCE_SQL)
+    suspend fun countForSource(source: String): Int
+
+    /**
      * LINKS tab page: the asset PLUS the source message body, so the tab can show
      * a locally derived snippet without a per-row lookup (see
      * [MessageAssetSql.PAGE_LINKS_WITH_BODY_SQL] for the pinned statement).

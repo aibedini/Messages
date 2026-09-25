@@ -177,6 +177,72 @@ class OutboxRetentionSqlTest {
     }
 
     @Test
+    fun `aCrossedDeadLetterNoLongerPinsEveryLaterAcknowledgedRow`() {
+        // FIXED (round 47) — this test previously pinned the defect it now guards against.
+        //
+        // `HistoryAckWalk` used to stall on a DEAD_LETTER, so `ackedContiguousOrdinal` froze at the
+        // position before it forever. Since this predicate only removes a history row at or below the
+        // watermark, EVERY acknowledged row produced afterwards became permanently undeletable: one
+        // permanently failed event switched retention off for the rest of the history.
+        //
+        // A dead position is now terminal for the frontier (it will never change without human
+        // action, so waiting for it is waiting forever), so the watermark moves past it and the
+        // acknowledged rows behind it become removable again. The dead letter itself is NOT removed:
+        // this predicate only matches ACKED, and the failure record must survive.
+        val connection = connection()
+        try {
+            connection.createStatement().use {
+                it.execute(
+                    """
+                    INSERT INTO `cloud_history_checkpoint`
+                        (`source`,`generation`,`producerCursorDate`,`producerCursorProviderId`,
+                         `nextOrdinal`,`ackedContiguousOrdinal`,`ackedCursorDate`,`ackedCursorProviderId`,
+                         `sourceExhausted`,`updatedAt`)
+                    VALUES ('sms',4,0,0,4004,4003,0,0,1,0)
+                    """.trimIndent()
+                )
+            }
+            // The one permanent failure, now behind the watermark rather than holding it back.
+            insert(
+                connection, "blocked", "DEAD_LETTER", now - retention - 1,
+                historyGeneration = 4, historyOrdinal = 3, historySource = "sms"
+            )
+            // 4,000 acknowledged rows above it, every one older than retention.
+            connection.autoCommit = false
+            connection.prepareStatement(
+                """
+                INSERT INTO `gateway_event_outbox`
+                    (`eventUuid`,`eventType`,`aggregateId`,`messageId`,`revision`,`sortKey`,
+                     `priority`,`historySource`,`historyGeneration`,`historyOrdinal`,`historyDate`,
+                     `historyProviderId`,`sequenceLocal`,`ciphertext`,`encoding`,`schemaVersion`,
+                     `cryptoVersion`,`createdAt`,`attemptCount`,`nextAttemptAt`,`state`,
+                     `serverSequence`,`ackedAt`)
+                VALUES (?,'MESSAGE_CREATED','agg','msg',1,0,'BACKFILL','sms',4,?,0,0,0,X'01',
+                        'envelope.v3',1,3,0,0,0,'ACKED',0,?)
+                """.trimIndent()
+            ).use { statement ->
+                for (ordinal in 4L..4003L) {
+                    statement.setString(1, "acked-$ordinal")
+                    statement.setLong(2, ordinal)
+                    statement.setLong(3, now - retention - 1)
+                    statement.execute()
+                }
+            }
+            connection.commit()
+            connection.autoCommit = true
+
+            assertEquals("every acknowledged row behind the watermark is removable", 4_000, purge(connection))
+            assertEquals(
+                "the permanent failure is retained as the record of what happened",
+                setOf("blocked"),
+                remaining(connection)
+            )
+        } finally {
+            connection.close()
+        }
+    }
+
+    @Test
     fun `aHistoryRowAtExactlyTheWatermarkIsRemovable`() {
         val connection = connection()
         try {

@@ -64,6 +64,7 @@ object GatewayDiagnosticReport {
         appendLine()
         diagnostics?.let { appendReplicationSection(it) }
         diagnostics?.let { appendHistorySection(it) }
+        diagnostics?.let { appendMmsAttachmentSection(it) }
         diagnostics?.let { appendCommandSection(it) }
         appendLine()
 
@@ -382,6 +383,28 @@ object GatewayDiagnosticReport {
      * that recovered nothing is the good outcome and gets no line beyond the summary; one that
      * recovered something is the finding this pass exists to produce, and it is called a gap.
      */
+    /**
+     * The MMS attachment gap (mission §52).
+     *
+     * Rendered whenever the section was measured, including when the count is ZERO, because the
+     * useful fact is not the number — it is that attachments cannot be replicated at all. Reporting
+     * nothing here is how a device holding photos the web will never see looks identical in the
+     * report to one that holds none.
+     */
+    private fun StringBuilder.appendMmsAttachmentSection(diagnostics: SyncDiagnostics) {
+        val section = diagnostics.mmsAttachments ?: run {
+            appendLine("MMS attachments: not measured")
+            return
+        }
+        val local = section.localAssets?.toString() ?: "not measured"
+        val replication = if (section.replicationPathExists) {
+            "available"
+        } else {
+            "NONE — no upload protocol exists (see the GMweb attachment handoff)"
+        }
+        appendLine("MMS attachments: on device=$local · replication=$replication")
+    }
+
     private fun appendMirrorVerifySection(
         sb: StringBuilder,
         sections: List<SyncDiagnostics.MirrorVerifySection>
@@ -493,11 +516,27 @@ object GatewayDiagnosticReport {
             it.scanComplete == true && it.delivered == false
         }
         if (scannedNotDelivered.isNotEmpty()) {
-            appendLine(
-                "  NOTE: scan complete but NOT delivered for " +
-                    scannedNotDelivered.joinToString(", ") { it.source } +
-                    ". The Provider has been read to the end; GMweb does not yet have all of it."
-            )
+            // The reason matters, and the two reasons are opposite in kind. Outstanding work means
+            // the events are still coming ("not yet"); a permanent failure means they never will
+            // without a person acting. Saying "does not yet have all of it" for the second case was
+            // a promise the system cannot keep.
+            val failed = scannedNotDelivered.sumOf { it.failed ?: 0 }
+            val doomed = scannedNotDelivered.filter { (it.failed ?: 0) > 0 }.map { it.source }
+            val pendingWork = scannedNotDelivered.map { it.source } - doomed.toSet()
+            if (doomed.isNotEmpty()) {
+                appendLine(
+                    "  NOTE: scan complete with $failed permanently failed event(s) on " +
+                        doomed.joinToString(", ") +
+                        ". These will NOT arrive without action — see the dead-letter section."
+                )
+            }
+            if (pendingWork.isNotEmpty()) {
+                appendLine(
+                    "  NOTE: scan complete but NOT delivered for " +
+                        pendingWork.joinToString(", ") +
+                        ". The Provider has been read to the end; GMweb does not yet have all of it."
+                )
+            }
         }
     }
 

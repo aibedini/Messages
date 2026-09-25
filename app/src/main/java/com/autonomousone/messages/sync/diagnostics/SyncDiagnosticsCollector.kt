@@ -62,7 +62,21 @@ class SyncDiagnosticsCollector(context: Context) {
             val cloud = checkpoints.firstOrNull { it.source == source }
             // `nextOrdinal` is the next ordinal to assign, so the produced count is one less.
             val produced = cloud?.let { (it.nextOrdinal - 1L).coerceAtLeast(0L) }
-            val acked = cloud?.ackedContiguousOrdinal
+            // COUNTED, not inferred from the watermark: a dead letter freezes the contiguous
+            // frontier, so `ackedContiguousOrdinal` is a position in the sequence and not a number
+            // of acknowledged rows. Reporting it as `acked` invented thousands of pending events.
+            val outboxDao = db.gatewayEventOutboxDao()
+            val counts = historySourceCounts(
+                produced = produced,
+                ackedCount = cloud?.let {
+                    runCatching { outboxDao.historyAckedCount(source, it.generation) }
+                        .getOrNull()?.toLong()
+                },
+                deadLetters = cloud?.let {
+                    runCatching { outboxDao.historyDeadLetters(source, it.generation) }
+                        .getOrNull()?.toLong()
+                }
+            )
             val sessionRow = sessions[source]
             val session = sessionRow?.counters()?.let { it ->
                 SyncDiagnostics.HistorySessionSection(
@@ -86,14 +100,13 @@ class SyncDiagnosticsCollector(context: Context) {
                 // Not tracked per source anywhere in the app. Null, not zero.
                 scanned = null,
                 enqueued = produced?.toInt(),
-                acked = acked?.toInt(),
-                pending = if (produced != null && acked != null) {
-                    (produced - acked).coerceAtLeast(0L).toInt()
-                } else {
-                    null
-                },
+                acked = counts.acked?.toInt(),
+                pending = counts.pending?.toInt(),
                 skipped = null,
-                failed = null,
+                // A permanent failure is now REPORTED as one, rather than left unmeasured while the
+                // number sat unused in the DAO. Mission §70: nothing unexplained, and nothing
+                // disguised as work in progress.
+                failed = counts.failed?.toInt(),
                 // The PROVIDER crawl watermark, which is "where the scan is". Long.MAX_VALUE is
                 // the "never advanced" sentinel, and printing it as a date would be nonsense.
                 checkpointDate = state?.oldestDate?.takeIf { it != Long.MAX_VALUE },
@@ -118,8 +131,10 @@ class SyncDiagnosticsCollector(context: Context) {
             // Scan complete is NOT the same as delivered (mission §26): every source must also be
             // exhausted, fully acknowledged AND free of dead letters. That last clause is the one
             // that is easy to drop, and dropping it turns a permanently-failed row into "caught up".
-            historyAcknowledgedAll = historySources.isNotEmpty() &&
-                historySources.all { it.delivered == true },
+            historyResolvedAll = historySources.isNotEmpty() &&
+                SOURCES.all { source ->
+                    runCatching { repository.isHistoryCaughtUp(source) }.getOrNull() == true
+                },
             historySessionExists = checkpoints.isNotEmpty()
         )
 
@@ -229,7 +244,17 @@ class SyncDiagnosticsCollector(context: Context) {
                         updatedAt = progress.updatedAt,
                         completedAt = progress.completedAt,
                     )
-                }
+                },
+            // §52: the MMS attachment gap, REPORTED rather than left invisible. Measured/null only —
+            // never a zero standing for "fine" — and `replicationPathExists` is false because no
+            // upload protocol exists yet (docs/gmweb-mms-attachment-handoff.md), which is a different
+            // statement from "nothing to replicate".
+            mmsAttachments = SyncDiagnostics.MmsAttachmentSection(
+                localAssets = runCatching {
+                    db.messageAssetDao().countForSource(MessageEntity.SOURCE_MMS)
+                }.getOrNull(),
+                replicationPathExists = false
+            )
         )
     }
 

@@ -408,8 +408,15 @@ class SecureCommandPoller(
                             .markThreadAsRead(mapping.threadId)
                         com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
                             .markThreadReadAndPublish(mapping.threadId)
-                        repo.markCommandState(cmd.commandId, RemoteCommandEntity.STATE_COMPLETED,
-                            listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING))
+                        repo.finishCommandFrom(
+                            commandId = cmd.commandId,
+                            state = RemoteCommandEntity.STATE_COMPLETED,
+                            errorCode = null,
+                            fromStates = listOf(
+                                RemoteCommandEntity.STATE_ACCEPTED,
+                                RemoteCommandEntity.STATE_EXECUTING
+                            )
+                        )
                     } else withContext(Dispatchers.IO) {
                         GatewayOutgoingPipeline.executeIngested(cmd.copy(ciphertext = plaintext, cryptoVersion = 0), repo)
                     }
@@ -426,9 +433,16 @@ class SecureCommandPoller(
             } catch (e: Exception) {
                 Log.e(TAG, "SEND_SMS execution failed for ${cmd.commandId}", e)
                 runCatching {
-                    repo.markCommandState(
-                        cmd.commandId, RemoteCommandEntity.STATE_FAILED,
-                        listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+                    repo.finishCommandFrom(
+                        commandId = cmd.commandId,
+                        state = RemoteCommandEntity.STATE_FAILED,
+                        // The exception was not classified into a more specific code, so the honest
+                        // reason is the last-resort one; the human-readable detail travels in the ACK.
+                        errorCode = SyncErrorCode.UNKNOWN.name,
+                        fromStates = listOf(
+                            RemoteCommandEntity.STATE_ACCEPTED,
+                            RemoteCommandEntity.STATE_EXECUTING
+                        )
                     )
                     ack(cmd.commandId, "FAILED", e.message ?: "execution error")
                 }

@@ -111,20 +111,20 @@ class SyncStatesTest {
             HistorySyncState.CATCHING_UP,
             SyncStateMachine.history(
                 result,
-                SyncActivity(historyScanComplete = true, historyAcknowledgedAll = false)
+                SyncActivity(historyScanComplete = true, historyResolvedAll = false)
             )
         )
     }
 
     @Test
-    fun `onlyAcknowledgementOfEverythingIsCaughtUp`() {
+    fun `onlyResolutionOfEverythingIsCaughtUp`() {
         val result = prerequisites()
 
         assertEquals(
             HistorySyncState.CAUGHT_UP,
             SyncStateMachine.history(
                 result,
-                SyncActivity(historyScanComplete = true, historyAcknowledgedAll = true)
+                SyncActivity(historyScanComplete = true, historyResolvedAll = true)
             )
         )
     }

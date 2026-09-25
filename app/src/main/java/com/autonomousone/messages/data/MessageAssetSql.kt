@@ -47,6 +47,20 @@ object MessageAssetSql {
         "SELECT COUNT(*) FROM message_assets WHERE threadId = :threadId AND kind = :kind"
 
     /**
+     * How many attachments the device knows about for one source.
+     *
+     * Exists so the diagnostic can REPORT the MMS attachment gap as a measured number instead of
+     * leaving it invisible: these rows are indexed for the local media tabs and **none of them can be
+     * replicated**, because no attachment upload channel exists
+     * (`docs/gmweb-mms-attachment-handoff.md`). Without this the app looks exactly as healthy with
+     * twelve un-replicable photos as with none.
+     *
+     * Shared as a constant so a test can execute the shipped statement.
+     */
+    const val COUNT_FOR_SOURCE_SQL: String =
+        "SELECT COUNT(*) FROM message_assets WHERE source = :source"
+
+    /**
      * LINKS tab page: the asset PLUS the message body it came from.
      *
      * The Links tab shows a locally derived snippet ("title/snippet … from the

@@ -236,6 +236,11 @@ object GatewayEventFactory {
             messageId = messageIdFor(source, providerId, dateMs),
             revision = System.currentTimeMillis(),
             sortKey = dateMs,
+            // The declared rank, and it must be set EXPLICITLY: `outboxRow` takes no priority, so
+            // omitting it silently inherited the entity's REALTIME default — which made the
+            // STATUS_UPDATE class unreachable in production and let delivery reports rank equal to
+            // new messages, the exact crowding the ordering exists to prevent.
+            priority = GatewayEventOutboxEntity.PRIORITY_STATUS_UPDATE,
         )
     }
 

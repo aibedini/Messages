@@ -426,7 +426,8 @@ class GatewayDiagnosticReportTest {
         scanComplete: Boolean? = false,
         delivered: Boolean? = null,
         reconciliation: SyncDiagnostics.ReconcileSection? = null,
-        session: SyncDiagnostics.HistorySessionSection? = null
+        session: SyncDiagnostics.HistorySessionSection? = null,
+        failedHistory: Int? = null
     ) = SyncDiagnostics(
         generatedAt = now,
         application = SyncDiagnostics.ApplicationSection(null, null, null),
@@ -448,7 +449,7 @@ class GatewayDiagnosticReportTest {
             sources = listOf(
                 SyncDiagnostics.HistorySourceSection(
                     source = "sms", scanned = null, enqueued = 900, acked = 850, pending = 50,
-                    skipped = null, failed = null,
+                    skipped = null, failed = failedHistory,
                     checkpointDate = 1_600_000_000_000L, checkpointProviderId = 4242L,
                     scanComplete = scanComplete,
                     delivered = delivered,
@@ -728,6 +729,112 @@ class GatewayDiagnosticReportTest {
             diagnostics = diagnosticsFor(prerequisites()).let { it.copy(mirrorVerify = sections) },
             now = now
         )
+
+    @Test
+    fun `aPermanentlyFailedHistoryEventIsNotReportedAsMerelyNotYetArrived`() {
+        // The report used to say "GMweb does not yet have all of it" for BOTH cases, which is a
+        // promise the system cannot keep when events failed permanently: those never arrive without a
+        // person acting. The two reasons are opposite in kind and must not share a sentence.
+        val text = GatewayDiagnosticReport.render(
+            snapshot = snapshot(), probe = null, appVersion = "3.4.9 (116)",
+            deliveryMode = "LEGACY_PULL", supervisorState = "CONNECTED", gatewayDesired = true,
+            diagnostics = diagnosticsFor(
+                prerequisites(), scanComplete = true, delivered = false, failedHistory = 2
+            ),
+            now = now
+        )
+
+        assertTrue(
+            "the failure must be named as permanent: $text",
+            text.contains("permanently failed event(s)")
+        )
+        assertTrue(
+            "and must say it will not arrive on its own",
+            text.contains("will NOT arrive without action")
+        )
+        assertFalse(
+            "a permanent failure must not be described as 'not yet'",
+            text.contains("does not yet have all of it")
+        )
+    }
+
+    @Test
+    fun `outstandingHistoryWorkIsStillReportedAsNotYetArrived`() {
+        // The other direction: with no failures, the original wording is correct and must survive —
+        // the fix must not turn every lagging scan into a permanent loss.
+        val text = GatewayDiagnosticReport.render(
+            snapshot = snapshot(), probe = null, appVersion = "3.4.9 (116)",
+            deliveryMode = "LEGACY_PULL", supervisorState = "CONNECTED", gatewayDesired = true,
+            diagnostics = diagnosticsFor(
+                prerequisites(), scanComplete = true, delivered = false, failedHistory = 0
+            ),
+            now = now
+        )
+
+        assertTrue(text, text.contains("does not yet have all of it"))
+        assertFalse(text, text.contains("will NOT arrive without action"))
+    }
+
+    private fun renderMms(section: SyncDiagnostics.MmsAttachmentSection?) =        GatewayDiagnosticReport.render(
+            snapshot = snapshot(), probe = null, appVersion = "3.4.9 (116)",
+            deliveryMode = "LEGACY_PULL", supervisorState = "CONNECTED", gatewayDesired = true,
+            diagnostics = diagnosticsFor(prerequisites()).let { it.copy(mmsAttachments = section) },
+            now = now
+        )
+
+    @Test
+    fun `theMmsAttachmentGapIsReportedRatherThanLeftInvisible`() {
+        // The defect this closes: a device holding photos the web will never see produced a report
+        // identical to one holding none. The count alone is not the point — the point is that
+        // replication does not exist, which must be stated rather than implied by a zero.
+        val text = renderMms(
+            SyncDiagnostics.MmsAttachmentSection(localAssets = 12, replicationPathExists = false)
+        )
+
+        assertTrue(text, text.contains("MMS attachments: on device=12"))
+        assertTrue(
+            "the report must say replication is impossible, not merely that none happened",
+            text.contains("replication=NONE")
+        )
+        assertTrue(
+            "and must point at what has to happen next",
+            text.contains("GMweb attachment handoff")
+        )
+    }
+
+    @Test
+    fun `anUnmeasuredMmsCountIsReportedAsUnmeasuredNotAsZero`() {
+        // The model's rule: "we did not look" must never render as "there is nothing".
+        val text = renderMms(SyncDiagnostics.MmsAttachmentSection(localAssets = null))
+
+        assertTrue(text, text.contains("on device=not measured"))
+        assertFalse(
+            "an unmeasured count must not appear as a number that reads as healthy",
+            text.contains("on device=0")
+        )
+    }
+
+    @Test
+    fun `aMeasuredZeroStillNamesTheMissingReplicationPath`() {
+        // Zero attachments today does not mean the gap is closed — the next MMS with a photo would
+        // be silent again. The structural fact is reported either way.
+        val text = renderMms(
+            SyncDiagnostics.MmsAttachmentSection(localAssets = 0, replicationPathExists = false)
+        )
+
+        assertTrue(text, text.contains("on device=0"))
+        assertTrue(text, text.contains("replication=NONE"))
+    }
+
+    @Test
+    fun `anAbsentSectionIsReportedAsNotMeasuredRatherThanOmitted`() {
+        val text = renderMms(null)
+
+        assertTrue(
+            "a missing measurement must be visible, not silently skipped",
+            text.contains("MMS attachments: not measured")
+        )
+    }
 
     @Test
     fun `aFinishedSweepThatFoundNothingReportsItsCoverageAndDoesNotWarn`() {

@@ -71,9 +71,14 @@ enum class HistorySyncState {
     /** The scan is DONE but not everything is ACKed yet. Distinct from CAUGHT_UP. */
     CATCHING_UP,
 
-    /** Every history event is ACKed or confirmed duplicate. The only real success. */
+    /**
+     * Every history event is resolved: acknowledged, or permanently failed and counted.
+     *
+     * "Nothing left to do" rather than "everything delivered" — a permanent failure is a human's to
+     * act on, so it must not block the terminal state, and the diagnostics report the failure count
+     * beside this state so it cannot read as an unqualified success.
+     */
     CAUGHT_UP,
-
     PAUSED,
 
     FAILED
@@ -105,7 +110,16 @@ data class SyncActivity(
     val historyScanning: Boolean = false,
     val historyScanComplete: Boolean = false,
     val historyUploading: Boolean = false,
-    val historyAcknowledgedAll: Boolean = false,
+    /**
+     * Every history source is RESOLVED: nothing is left to do.
+     *
+     * Named for what it measures. It used to be `historyAcknowledgedAll`, which said "everything was
+     * accepted by the server" and made [HistorySyncState.CAUGHT_UP] unreachable for any source that
+     * had permanently failed one event. A permanent failure is waiting on a person, not on this
+     * device, so it must not block the terminal state — and it must not be hidden either, which is
+     * why the diagnostics report the dead-letter count beside it.
+     */
+    val historyResolvedAll: Boolean = false,
     val historyPaused: Boolean = false,
     val historyFailed: Boolean = false,
     /** True once a history session exists, so a block reports PAUSED rather than NOT_STARTED. */
@@ -164,7 +178,7 @@ object SyncStateMachine {
             activity.historyFailed -> HistorySyncState.FAILED
             activity.historyPaused -> HistorySyncState.PAUSED
             activity.historyScanning -> HistorySyncState.SCANNING
-            activity.historyAcknowledgedAll -> HistorySyncState.CAUGHT_UP
+            activity.historyResolvedAll -> HistorySyncState.CAUGHT_UP
             activity.historyUploading -> HistorySyncState.UPLOADING
             activity.historyScanComplete -> HistorySyncState.CATCHING_UP
             activity.historySessionExists -> HistorySyncState.CATCHING_UP

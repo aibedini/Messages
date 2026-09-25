@@ -277,6 +277,25 @@ class GatewaySyncRepository(
     }
 
     /**
+     * Whether a source is CAUGHT UP — nothing left to do, permanent failures notwithstanding.
+     *
+     * The state the UI shows, and deliberately weaker than [isHistoryDeliveryComplete] by the
+     * dead-letter clause alone (see [HistoryAckWalk.isResolved]). A permanently failed event is
+     * waiting on a human, not on the device, so blocking `CAUGHT_UP` on it made the terminal state
+     * unreachable for any source that had ever lost one event. The failure stays visible: the
+     * diagnostics report the dead-letter count beside the state, and [isHistoryDeliveryComplete] still
+     * answers the strict question.
+     */
+    suspend fun isHistoryCaughtUp(source: String): Boolean {
+        val checkpoint = db.cloudHistoryCheckpointDao().get(source) ?: return false
+        return HistoryAckWalk.isResolved(
+            sourceExhausted = checkpoint.sourceExhausted,
+            nextOrdinal = checkpoint.nextOrdinal,
+            ackedContiguousOrdinal = checkpoint.ackedContiguousOrdinal,
+        )
+    }
+
+    /**
      * A retryable failure: RETRY_WAIT with the next due time AND the reason stored on the row.
      *
      * [errorCode] is a `SyncErrorCode` name so the cause is machine-readable; [errorMessage] has
@@ -471,9 +490,37 @@ class GatewaySyncRepository(
     suspend fun setCommandClientMessageIdIfMissing(commandId: String, clientMessageId: String): Boolean =
         commandDao.setClientMessageIdIfMissing(commandId, clientMessageId) == 1
 
-    /** Guarded lifecycle transition used by the send executor (PR-03). */
-    suspend fun markCommandState(commandId: String, state: String, fromStates: List<String>): Boolean =
-        commandDao.markState(commandId, state, fromStates) == 1
+    /**
+     * Guarded, state-only lifecycle transition (PR-03).
+     *
+     * REFUSES a terminal target state. `markCommandState` records nothing but the state, so using it
+     * to finish a command leaves `completedAt = 0` and an empty `lastErrorCode` — a row that cannot
+     * say why it ended. The rule lives here rather than in a source scan of the call sites because
+     * the scan was fooled once already: the missed site passed a local `terminal` variable, and a
+     * guard looking for literal state names cannot see that. Enforcing it at the callee is
+     * shape-independent, so a new call site cannot reintroduce the defect in any form.
+     */
+    suspend fun markCommandState(commandId: String, state: String, fromStates: List<String>): Boolean {
+        RemoteCommandEntity.refusalForStateOnlyTransition(state)?.let { throw IllegalArgumentException(it) }
+        return commandDao.markState(commandId, state, fromStates) == 1
+    }
+
+    /**
+     * The terminal counterpart of [markCommandState]: guarded AND recorded (mission §K).
+     *
+     * Use this for any transition to a terminal state. It keeps the compare-and-set that stops two
+     * drains finishing the same command, and records `completedAt` and `lastErrorCode` in the same
+     * write — so the row can always answer why it ended and how long it took.
+     *
+     * @param errorCode the structured reason, or null for a clean completion.
+     */
+    suspend fun finishCommandFrom(
+        commandId: String,
+        state: String,
+        errorCode: String?,
+        fromStates: List<String>,
+        now: Long = System.currentTimeMillis()
+    ): Boolean = commandDao.markFinishedFrom(commandId, state, now, errorCode, fromStates) == 1
 
     /**
      * Open an execution-attempt row (mission §45).

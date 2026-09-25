@@ -771,6 +771,73 @@ class GatewayArchitectureGuardTest {
     }
 
     @Test
+    fun `aTerminalCommandTransitionAlwaysRecordsItsReason`() {
+        // WS-K: a transition that changes STATE without the fields that make the state meaningful is
+        // a split transition. For a command, the terminal fields are `lastErrorCode` (why it ended
+        // this way — the whole point of the structured codes) and `completedAt` (how long it took).
+        //
+        // `markCommandState` sets ONLY the state; `finishCommand` sets state + completedAt +
+        // lastErrorCode + clears the lease. So using `markCommandState` to reach a TERMINAL state
+        // leaves a row that cannot explain itself, and a web-requested send that failed arrives at
+        // GMweb as FAILED with no reason.
+        //
+        // A window is scanned rather than a single line because these calls wrap:
+        //     repo.markCommandState(
+        //         cmd.commandId, RemoteCommandEntity.STATE_FAILED,
+        //         listOf(...))
+        // and a line-based scan would miss the very site this guard was written for.
+        val terminalStates = listOf("STATE_COMPLETED", "STATE_FAILED", "STATE_EXPIRED")
+        val offenders = mutableListOf<String>()
+        mainSources().forEach { file ->
+            val lines = codeOnly(file.readText()).lines()
+            lines.forEachIndexed { index, line ->
+                if (!line.contains("markCommandState(")) return@forEachIndexed
+                val call = lines.subList(index, (index + 4).coerceAtMost(lines.size))
+                    .joinToString("\n")
+                // Only up to the closing paren: a following unrelated line should not flag it.
+                val body = call.substringBefore(")\n")
+                if (terminalStates.any { body.contains(it) }) {
+                    offenders += "${file.name}:${index + 1}"
+                }
+            }
+        }
+
+        // RATCHET: empty. Round 49 measured five offenders; round 50 moved all of them (and a sixth
+        // that this scan FALSE-PASSED — it passed a local `terminal` variable, so no literal state
+        // name appeared on the line) to `finishCommandFrom`.
+        //
+        // The scan is kept because it catches the literal form cheaply, but it is NOT the
+        // enforcement: a shape it cannot see would sail through. The enforcement is in the callee —
+        // `GatewaySyncRepository.markCommandState` refuses a terminal target state outright — which
+        // is why this can be empty without relying on a textual heuristic.
+        assertEquals(
+            "a terminal command transition must record why it ended and when. This list is a " +
+                "ratchet: it must stay empty, and a new offender is a regression",
+            emptyList<String>(),
+            offenders.sorted()
+        )
+
+        // …and the ENFORCEMENT must still be there. Emptying this list only means the literal shapes
+        // are gone; the callee rule is what covers the shapes this scan cannot see (it already missed
+        // one that passed a local `terminal` variable). Removing that call would silently restore the
+        // defect for every future call site, so it is asserted separately.
+        // NOTE: in THIS file `codeOnly` takes source TEXT, not a path (the other guard file has a
+        // path-taking overload). Passing a path here silently returns the path string, so the
+        // assertion reads as "the rule is missing" no matter what the file says — a false failure
+        // that this helper shape has now produced once.
+        val repository = codeOnly(
+            requireMainSource(
+                "java/com/autonomousone/messages/repository/GatewaySyncRepository.kt"
+            ).readText()
+        )
+        assertTrue(
+            "markCommandState must refuse a terminal target state, or the defect returns for any " +
+                "call-site shape this scan cannot see",
+            repository.contains("refusalForStateOnlyTransition(state)")
+        )
+    }
+
+    @Test
     fun `theCommandRecoveryPrimitivesAllHaveACaller`() {
         // A regression by OMISSION, which is the class of defect this round fixed: every command
         // recovery primitive already existed and nothing called any of them, so the features were

@@ -10,11 +10,27 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MessageDao {
 
-    @Query("""
-        SELECT * FROM messages
-        WHERE source = :source AND (date < :beforeDate OR (date = :beforeDate AND providerId < :beforeId))
-        ORDER BY date DESC, source DESC, providerId DESC LIMIT :limit
-    """)
+    /**
+     * The history backfill's page read (mission §33/§34).
+     *
+     * Newest-first with a COMPOUND cursor `(date, providerId)`: `date` alone is not unique — a
+     * phone can hold many messages in the same millisecond (bulk imports, multi-part bursts), and
+     * a date-only cursor either skips rows or loops forever on them. `providerId` breaks the tie,
+     * and it is compared only within the equal-date case so the index on `(date, providerId)` is
+     * usable.
+     *
+     * Shared as a constant so the backfill benchmark executes the SHIPPED statement rather than a
+     * retyped copy that can drift from it.
+     */
+    companion object {
+        const val CLOUD_HISTORY_PAGE_SQL =
+            "SELECT * FROM messages " +
+                "WHERE source = :source AND " +
+                "(date < :beforeDate OR (date = :beforeDate AND providerId < :beforeId)) " +
+                "ORDER BY date DESC, source DESC, providerId DESC LIMIT :limit"
+    }
+
+    @Query(MessageDao.CLOUD_HISTORY_PAGE_SQL)
     suspend fun cloudHistoryPage(source: String, beforeDate: Long, beforeId: Long, limit: Int): List<MessageEntity>
 
     /** Newest-first window of one conversation (the hot read path). */

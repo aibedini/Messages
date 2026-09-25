@@ -55,6 +55,9 @@ class GatewayService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val WATCHDOG_DELAY_MS = 15_000L
 
+        /** Log tag for the start path, including refused foreground starts. */
+        private const val TAG = "GatewayService"
+
         const val ACTION_START = "com.autonomousone.messages.ACTION_START_GATEWAY"
         const val ACTION_STOP = "com.autonomousone.messages.ACTION_STOP_GATEWAY"
         /** Manual "Reconnect now" from the UI: cancel backoff, retry immediately. */
@@ -90,16 +93,40 @@ class GatewayService : Service() {
         private val _logFlow = MutableSharedFlow<String>(extraBufferCapacity = 100)
         val logFlow: SharedFlow<String> = _logFlow.asSharedFlow()
 
-        fun startGateway(context: Context) {
-            if (!GatewayAccessPolicy.canStart(GatewayPreferences(context).hasGatewayConsent)) return
+        /**
+         * @param reason who is starting this. [GatewayForegroundStartPolicy.StartReason.BOOT] is not
+         *   decoration: on Android 15+ a boot receiver may not launch a `dataSync` foreground
+         *   service, so the reason decides which foregroundServiceType is legal. It travels as an
+         *   intent extra because the type is chosen later, in `startForegroundNotification`.
+         * @param deferOnFailure when the platform refuses, enqueue a WorkManager retry. The worker
+         *   itself passes false, because its own `Result.retry()` IS the deferral — without this the
+         *   two would enqueue work for each other.
+         * @return true when the platform accepted the start request.
+         */
+        fun startGateway(
+            context: Context,
+            reason: GatewayForegroundStartPolicy.StartReason =
+                GatewayForegroundStartPolicy.StartReason.USER_OR_APP,
+            deferOnFailure: Boolean = true
+        ): Boolean {
+            if (!GatewayAccessPolicy.canStart(GatewayPreferences(context).hasGatewayConsent)) return false
             val intent = Intent(context, GatewayService::class.java).apply {
                 action = ACTION_START
+                putExtra(EXTRA_START_REASON, reason.name)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            // A refused foreground start must never crash the caller: a boot receiver that throws
+            // takes the whole process down at boot, and the watchdog alarm would crash too. The
+            // policy avoids the documented refusals; this catches the undocumented ones.
+            return runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "gateway foreground start refused (${error.javaClass.simpleName})")
+                if (deferOnFailure) GatewayStartDeferral.defer(context)
+            }.isSuccess
         }
 
         fun stopGateway(context: Context) {
@@ -125,11 +152,37 @@ class GatewayService : Service() {
         fun retryNow(context: Context) {
             val intent = Intent(context, GatewayService::class.java).apply {
                 action = ACTION_RETRY_NOW
+                putExtra(EXTRA_START_REASON, GatewayForegroundStartPolicy.StartReason.RETRY.name)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "gateway retry start refused (${error.javaClass.simpleName}) — deferring")
+                GatewayStartDeferral.defer(context)
+            }
+        }
+
+        /** Intent extra carrying [GatewayForegroundStartPolicy.StartReason]. */
+        const val EXTRA_START_REASON = "com.autonomousone.messages.EXTRA_START_REASON"
+
+        /**
+         * The reason recorded for the current start, read by `startForegroundNotification`.
+         *
+         * Volatile and process-wide rather than per-intent because `startForeground` is called from
+         * the service lifecycle, after the intent that caused it has been consumed.
+         */
+        @Volatile
+        var startReason: GatewayForegroundStartPolicy.StartReason =
+            GatewayForegroundStartPolicy.StartReason.USER_OR_APP
+            private set
+
+        private fun recordStartReason(intent: Intent?) {
+            intent?.getStringExtra(EXTRA_START_REASON)?.let {
+                startReason = GatewayForegroundStartPolicy.StartReason.fromExtra(it)
             }
         }
     }
@@ -296,6 +349,10 @@ class GatewayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Before anything starts a foreground service: record WHY it was started, because the
+        // legal foregroundServiceType depends on it (a boot start may not use dataSync on
+        // Android 15+) and the type is chosen in startForegroundNotification below.
+        recordStartReason(intent)
         when (intent?.action) {
             ACTION_STOP -> {
                 supervisor.stop() // flips desired OFF persistently
@@ -339,6 +396,22 @@ class GatewayService : Service() {
                 prefs.gatewayDesiredEnabled
             )
         ) return // no consent or user explicitly turned the gateway off
+
+        // WorkManager FIRST, on every platform. It is the only revival that survives a refusal: its
+        // worker retries with backoff and a refusal is caught and logged. The alarm below cannot do
+        // that on API 31+, where the system performs the background start and simply refuses it with
+        // no callback here — which is how this watchdog used to report a revival that never happened.
+        GatewayStartDeferral.defer(this)
+
+        val mechanism = GatewayForegroundStartPolicy.restartMechanism(Build.VERSION.SDK_INT)
+        if (!GatewayForegroundStartPolicy.includesAlarm(mechanism)) {
+            _logFlow.tryEmit(
+                "⏱️ Gateway restart deferred to WorkManager " +
+                    "(background start restricted on API ${Build.VERSION.SDK_INT})"
+            )
+            return
+        }
+
         try {
             val alarmManager = getSystemService(AlarmManager::class.java) ?: return
             val restart = Intent(this, GatewayService::class.java).apply {
@@ -388,17 +461,24 @@ class GatewayService : Service() {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // v2.6.11: dataSync is the honest type for the pull bridge
-                // (a long-running network sync to GMweb) and gives the OS a
-                // correct policy signal, while specialUse stays for the LAN
-                // server aspect. On API 34+ both are declared; dataSync is
-                // what keeps Doze from freezing our sockets mid-long-poll.
-                val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                // The type is DECIDED, not hardcoded: a boot start on Android 15+ may not use
+                // dataSync (GatewayForegroundStartPolicy), and asking for a type the start reason
+                // forbids is what made the reboot re-arm throw.
+                val decision = GatewayForegroundStartPolicy.decide(
+                    apiLevel = Build.VERSION.SDK_INT,
+                    startReason = startReason
+                )
+                val wantsDataSync = GatewayForegroundStartPolicy.includesDataSync(decision)
+                val type = when {
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    wantsDataSync ->
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    else ->
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                } else {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 }
+                Log.i(TAG, "foreground start reason=$startReason decision=$decision type=$type")
                 startForeground(NOTIFICATION_ID, notification, type)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
@@ -452,6 +532,28 @@ class GatewayService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * Android 15+ stops a `dataSync` foreground service that has run too long in the background.
+     *
+     * This is the platform answer to "how long may the bridge run?", and the honest response is to
+     * accept it rather than fight it: the service CANNOT start itself back into the background, so
+     * pretending it is alive would be false. Record it, hand the retry to WorkManager — which will
+     * run when the OS next permits it — and stop promptly, because lingering past a timeout is what
+     * earns an ANR.
+     *
+     * Overridden against compileSdk 36; it is only ever invoked on API 35+, and the default
+     * implementation (which simply stops the service) still applies below that.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        android.util.Log.w(
+            TAG,
+            "foreground service timed out (startId=$startId fgsType=$fgsType) — deferring restart"
+        )
+        _logFlow.tryEmit("⏱️ Foreground service timed out; restart deferred to WorkManager")
+        GatewayStartDeferral.defer(this)
+        stopSelf(startId)
+    }
 
     private fun buildNotification(title: String, text: String): Notification {
         val openIntent = Intent(this, MainActivity::class.java).apply {

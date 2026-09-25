@@ -123,10 +123,11 @@ class HistoryAckWalkTest {
     }
 
     @Test
-    fun `anUnacknowledgedNextRowStopsTheWalkEvenWhenItIsTheRightOrdinal`() {
-        // Retrying counts as not delivered. The frontier's meaning is "every ordinal below this one has
-        // been accepted by the server", and a row still waiting has not been.
-        listOf("PENDING", "SENDING", "RETRY_WAIT", "DEAD_LETTER").forEach { state ->
+    fun `anOutstandingNextRowStopsTheWalkEvenWhenItIsTheRightOrdinal`() {
+        // Outstanding work stops the frontier. This is what keeps the frontier meaning "there is
+        // nothing left to do below here" — Pending = 0 and Retryable = 0 — even after a dead letter
+        // became crossable (see the dead-letter test below).
+        listOf("PENDING", "SENDING", "RETRY_WAIT").forEach { state ->
             assertNull(
                 "a $state row must not advance the frontier",
                 HistoryAckWalk.advanceFrom(0, Long.MAX_VALUE, Long.MAX_VALUE, listOf(row(1, state)))
@@ -135,10 +136,16 @@ class HistoryAckWalkTest {
     }
 
     @Test
-    fun `aDeadLetterStopsTheWalkRatherThanBeingSteppedOver`() {
-        // Deliberately stalled, not skipped. A dead letter will never be acknowledged without human
-        // action, and the honest observable for that is a scan that reports `scanComplete` while
-        // `delivered` stays false — not a frontier that silently closes the hole behind it.
+    fun `aDeadLetterIsCrossedSoTheFrontierDoesNotFreezeForever`() {
+        // REVERSED DELIBERATELY (round 47). This walk used to stall on a dead letter, and the cost
+        // was measured: the watermark froze for good, and because retention only deletes a history
+        // row at or below the watermark, every acknowledged row produced afterwards became
+        // permanently undeletable — 4,001 rows pinned in OutboxRetentionSqlTest. The diagnostic also
+        // reported those delivered rows as PENDING work.
+        //
+        // A permanent failure is TERMINAL for the frontier: it will never change without human
+        // action, so waiting for it is waiting forever. It is NOT terminal for `delivered`, which
+        // still requires zero dead letters — so crossing it here cannot turn a failure into success.
         val frontier = HistoryAckWalk.advanceFrom(
             ackedContiguousOrdinal = 0,
             ackedCursorDate = Long.MAX_VALUE,
@@ -146,7 +153,28 @@ class HistoryAckWalkTest {
             rows = listOf(acked(1), row(2, "DEAD_LETTER"), acked(3))
         )!!
 
-        assertEquals(1, frontier.ordinal)
+        assertEquals(3, frontier.ordinal)
+    }
+
+    @Test
+    fun `aDeadLetterIsCrossedButOutstandingWorkBehindItStillStopsTheWalk`() {
+        // The safety property of the reversal, and both halves are visible in one assertion: the
+        // walk crosses the dead letter at 1 (so the frontier is not frozen by a permanent failure)
+        // and stops AT the outstanding row at 2 (so the frontier still means "nothing left to do
+        // below here"). If it had reached 3, the frontier would claim the RETRY_WAIT row was dealt
+        // with — which is the claim that must never be made.
+        val frontier = HistoryAckWalk.advanceFrom(
+            ackedContiguousOrdinal = 0,
+            ackedCursorDate = Long.MAX_VALUE,
+            ackedCursorProviderId = Long.MAX_VALUE,
+            rows = listOf(row(1, "DEAD_LETTER"), row(2, "RETRY_WAIT"), acked(3))
+        )!!
+
+        assertEquals(
+            "crossed the dead letter, stopped at the outstanding row",
+            1,
+            frontier.ordinal
+        )
     }
 
     @Test
@@ -224,6 +252,45 @@ class HistoryAckWalkTest {
         assertFalse(
             "one dead letter is not delivered",
             HistoryAckWalk.isDelivered(sourceExhausted = true, nextOrdinal = 6, ackedContiguousOrdinal = 5, deadLetters = 1)
+        )
+    }
+
+    // ── Resolved (caught up) is not the same as delivered (mission §L) ────────
+
+    @Test
+    fun `aPermanentFailureDoesNotBlockBeingCaughtUp`() {
+        // The reversal, and the reason for it: a dead letter waits on a PERSON, not on this device.
+        // Blocking CAUGHT_UP on it made the terminal state unreachable for any source that had ever
+        // lost one event — a stuck indicator, not a stricter guarantee.
+        //
+        // It is still not DELIVERED (the assertion above), so nothing here calls a failure a success.
+        assertTrue(
+            HistoryAckWalk.isResolved(sourceExhausted = true, nextOrdinal = 6, ackedContiguousOrdinal = 5)
+        )
+        assertFalse(
+            "the same state is still not delivered — the strict claim is unchanged",
+            HistoryAckWalk.isDelivered(sourceExhausted = true, nextOrdinal = 6, ackedContiguousOrdinal = 5, deadLetters = 1)
+        )
+    }
+
+    @Test
+    fun `caughtUpStillRequiresTheScanToHaveFinishedAndNoOutstandingWork`() {
+        // Weakening the rule by ONE clause must not weaken it by two: a scan still running, or a
+        // frontier that has not reached the end, is not caught up.
+        assertFalse(
+            "a running scan is not caught up",
+            HistoryAckWalk.isResolved(sourceExhausted = false, nextOrdinal = 6, ackedContiguousOrdinal = 5)
+        )
+        assertFalse(
+            "an outstanding row below the end is not caught up",
+            HistoryAckWalk.isResolved(sourceExhausted = true, nextOrdinal = 6, ackedContiguousOrdinal = 4)
+        )
+    }
+
+    @Test
+    fun `anEmptySourceIsCaughtUpOnceScanned`() {
+        assertTrue(
+            HistoryAckWalk.isResolved(sourceExhausted = true, nextOrdinal = 1, ackedContiguousOrdinal = 0)
         )
     }
 

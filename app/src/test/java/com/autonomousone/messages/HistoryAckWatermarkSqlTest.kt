@@ -168,14 +168,32 @@ class HistoryAckWatermarkSqlTest {
     }
 
     @Test
-    fun `aDeadLetterStallsTheWalkInSqlExactlyAsTheRuleSays`() {
+    fun `aDeadLetterIsCrossedInSqlTooAndOutstandingWorkStillStalls`() {
+        // The rule and the SQL must agree about what is terminal. Before round 47 this asserted that
+        // the walk STALLED at ordinal 1, which froze the watermark for good and made retention
+        // unable to delete any acknowledged history row afterwards.
         connection().use { connection ->
             produce(connection, 1, "ACKED")
             produce(connection, 2, "DEAD_LETTER")
             produce(connection, 3, "ACKED")
 
             val frontier = walk(connection, "sms", HistoryAckFrontier.initial())!!
-            assertEquals(1, frontier.ordinal)
+            assertEquals("the dead position is terminal and is crossed", 3, frontier.ordinal)
+        }
+
+        // …and outstanding work behind a dead letter still stops it, so the frontier keeps meaning
+        // "nothing left to do below here". The walk crosses the dead letter at 1 and stops AT the
+        // PENDING row at 2 rather than reaching 3.
+        connection().use { connection ->
+            produce(connection, 1, "DEAD_LETTER")
+            produce(connection, 2, "PENDING")
+            produce(connection, 3, "ACKED")
+
+            assertEquals(
+                "a PENDING row must still stop the walk",
+                1,
+                walk(connection, "sms", HistoryAckFrontier.initial())!!.ordinal
+            )
         }
     }
 

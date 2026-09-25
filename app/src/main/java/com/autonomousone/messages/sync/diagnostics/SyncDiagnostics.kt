@@ -26,8 +26,7 @@ import org.json.JSONObject
  * Unknown is `null`, never `0`. "We have not measured this" and "this is zero" are different
  * facts, and collapsing them is how a diagnostic starts asserting things it never observed.
  */
-data class SyncDiagnostics(
-    val generatedAt: Long,
+data class SyncDiagnostics(    val generatedAt: Long,
     val application: ApplicationSection,
     val identity: IdentitySection,
     val gateway: GatewaySection,
@@ -70,7 +69,17 @@ data class SyncDiagnostics(
      *
      * Empty means no sweep has run — an unmeasured state, deliberately not rendered as "verified".
      */
-    val mirrorVerify: List<MirrorVerifySection> = emptyList()
+    val mirrorVerify: List<MirrorVerifySection> = emptyList(),
+    /**
+     * The MMS attachment gap (mission §52).
+     *
+     * Null means not measured. This section exists because the gap was otherwise INVISIBLE: the
+     * attachments are indexed for the local media tabs and none of them can be replicated, yet a
+     * device holding twelve un-replicable photos reported exactly as healthy as one holding none.
+     * Reporting it is the prerequisite that can be done without the server — see
+     * `docs/gmweb-mms-attachment-handoff.md`.
+     */
+    val mmsAttachments: MmsAttachmentSection? = null
 ) {
 
     /** The one actionable blocker, or null when replication is clear (mission §57). */
@@ -353,6 +362,27 @@ data class SyncDiagnostics(
      * durable event?" — and, until the sweep finishes, the honest answer is "not yet known", which is
      * why [complete] is reported alongside the counts rather than inferred from them.
      */
+    /**
+     * The MMS attachment gap, as measured facts rather than an absence (mission §52).
+     *
+     * WHY `replicationPathExists` IS A FIELD AND NOT AN INFERENCE: reporting "replicated = 0" would
+     * read as "nothing to replicate" or as a healthy zero. The honest statement is that the device
+     * holds [localAssets] attachments and there is **no protocol to upload any of them**, so the
+     * count of replicated attachments is not zero — it is *not a thing that exists yet*. When the
+     * endpoint in `docs/gmweb-mms-attachment-handoff.md` is agreed, this flips and the field becomes
+     * a real count.
+     */
+    data class MmsAttachmentSection(
+        /** Attachments known locally for MMS messages. Null = not measured. */
+        val localAssets: Int?,
+        /** Whether any attachment bytes can be replicated at all. False today, structurally. */
+        val replicationPathExists: Boolean = false,
+    ) {
+        fun toJson(): JSONObject = JSONObject()
+            .put("localAssets", localAssets ?: JSONObject.NULL)
+            .put("replicationPathExists", replicationPathExists)
+    }
+
     data class MirrorVerifySection(
         val source: String,
         val complete: Boolean,

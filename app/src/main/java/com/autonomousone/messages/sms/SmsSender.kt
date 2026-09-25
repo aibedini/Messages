@@ -188,11 +188,16 @@ class SmsSender(
                     phone, text, subscriptionIdOverride, smscOverride, showToast,
                     plan.commandId, idempotencyKey
                 )
-                repo.markCommandState(
-                    plan.commandId,
-                    if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+                repo.finishCommandFrom(
+                    commandId = plan.commandId,
+                    state = if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
                     else RemoteCommandEntity.STATE_FAILED,
-                    listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+                    errorCode = if (outcome is SendOutcome.Accepted) null
+                    else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
+                    fromStates = listOf(
+                        RemoteCommandEntity.STATE_ACCEPTED,
+                        RemoteCommandEntity.STATE_EXECUTING
+                    )
                 )
                 outcome
             } else {
@@ -293,11 +298,16 @@ class SmsSender(
                 phone, text, subscriptionIdOverride, smscOverride, showToast,
                 plan.commandId, clientMessageId
             )
-            repo.markCommandState(
-                plan.commandId,
-                if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+            repo.finishCommandFrom(
+                commandId = plan.commandId,
+                state = if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
                 else RemoteCommandEntity.STATE_FAILED,
-                listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+                errorCode = if (outcome is SendOutcome.Accepted) null
+                else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
+                fromStates = listOf(
+                    RemoteCommandEntity.STATE_ACCEPTED,
+                    RemoteCommandEntity.STATE_EXECUTING
+                )
             )
             when (outcome) {
                 is SendOutcome.Accepted -> IdempotentSendOutcome.Sent(outcome.rowId)

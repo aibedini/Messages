@@ -141,9 +141,16 @@ object GatewayOutgoingPipeline {
         val payload = try {
             org.json.JSONObject(String(cmd.ciphertext, Charsets.UTF_8))
         } catch (e: Exception) {
-            repo.markCommandState(
-                cmd.commandId, RemoteCommandEntity.STATE_FAILED,
-                listOf(RemoteCommandEntity.STATE_ACCEPTED, RemoteCommandEntity.STATE_EXECUTING)
+            repo.finishCommandFrom(
+                commandId = cmd.commandId,
+                state = com.autonomousone.messages.data.RemoteCommandEntity.STATE_FAILED,
+                // A payload this device cannot parse: the reason is recorded rather than only thrown,
+                // so the row explains itself even if the throw is swallowed a layer up.
+                errorCode = com.autonomousone.messages.sync.SyncErrorCode.UNKNOWN.name,
+                fromStates = listOf(
+                    com.autonomousone.messages.data.RemoteCommandEntity.STATE_ACCEPTED,
+                    com.autonomousone.messages.data.RemoteCommandEntity.STATE_EXECUTING
+                )
             )
             throw IllegalArgumentException("corrupt SEND_SMS payload for ${cmd.commandId}", e)
         }
@@ -181,9 +188,15 @@ object GatewayOutgoingPipeline {
         )
         val terminal = if (outcome is SmsSender.SendOutcome.Accepted)
             RemoteCommandEntity.STATE_COMPLETED else RemoteCommandEntity.STATE_FAILED
-        repo.markCommandState(
-            cmd.commandId, terminal,
-            listOf(RemoteCommandEntity.STATE_EXECUTING, RemoteCommandEntity.STATE_ACCEPTED)
+        repo.finishCommandFrom(
+            commandId = cmd.commandId,
+            state = terminal,
+            errorCode = if (outcome is SmsSender.SendOutcome.Accepted) null
+            else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
+            fromStates = listOf(
+                RemoteCommandEntity.STATE_EXECUTING,
+                RemoteCommandEntity.STATE_ACCEPTED
+            )
         )
         return true
     }

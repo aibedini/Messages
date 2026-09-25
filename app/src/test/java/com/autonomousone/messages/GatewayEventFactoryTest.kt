@@ -62,6 +62,27 @@ class GatewayEventFactoryTest {
     }
 
     @Test
+    fun `aStatusChangeCarriesTheStatusUpdatePriorityNotRealtime`() {
+        // The source was asserted above and the PRIORITY was not — which is how the declared
+        // STATUS_UPDATE class ended up unreachable in production: the builder set the source
+        // explicitly and left `priority` to the entity's REALTIME default, so no event anywhere ever
+        // had weight 80 and the `WHEN 'STATUS_UPDATE' THEN 2` ordering slot could never match.
+        //
+        // The declared model is a rank, not decoration: a delivery report on an old message must not
+        // rank equal to a new message, or a burst of status callbacks can displace the new messages
+        // the ordering exists to protect.
+        val row = GatewayEventFactory.messageStatusChanged(
+            source = "sms", providerId = 1, conversationId = "c", status = 0, dateMs = 1
+        )
+
+        assertEquals(
+            "a status change must not be queued as REALTIME",
+            GatewayEventOutboxEntity.PRIORITY_STATUS_UPDATE,
+            row.priority
+        )
+    }
+
+    @Test
     fun `aBackfillConversationSnapshotIsSourcedFromHistory`() {
         val row = GatewayEventFactory.conversationUpserted(
             conversationId = "c", displayName = null, address = "+1", lastMessagePreview = "p",
