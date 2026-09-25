@@ -1,0 +1,9 @@
+# Spec Kit manifest-tracked types. The Specify CLI hashes raw bytes, so with
+# core.autocrlf=true a fresh clone would check these out as CRLF and report
+# every managed file as locally modified. Measured on GMweb-API and EVE.
+*.md text eol=lf
+*.json text eol=lf
+*.ps1 text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.gitignore text eol=lf
