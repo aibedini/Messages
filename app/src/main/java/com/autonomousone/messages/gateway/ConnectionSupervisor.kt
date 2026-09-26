@@ -118,6 +118,14 @@ class ConnectionSupervisor private constructor(
          * second one.
          */
         val isPollerRunning: () -> Boolean = { false },
+        /**
+         * Whether the poller is running but demonstrably not polling.
+         *
+         * An active coroutine job is NOT proof of a live bridge: the network-wait branch and a hung
+         * socket both leave a job that issues no requests. Before this existed the supervisor could
+         * only see "running", so a stalled loop looked healthy for the nine hours it was silent.
+         */
+        val isPollerStalled: () -> Boolean = { false },
         val wakePoller: () -> Unit = {},
         /**
          * Nudges the OUTBOUND event uploader. Saving a new GMweb server must reach it
@@ -420,7 +428,34 @@ class ConnectionSupervisor private constructor(
         when (components.deliveryIntake) {
             DeliveryIntake.LEGACY_PULL -> {
                 components.stopCommandPoller()
-                if (prefs.gmwebServerOrigin.isNotBlank()) components.startPoller()
+                if (prefs.gmwebServerOrigin.isNotBlank()) {
+                    // Requirement 10: bounded controlled recovery. `startPoller` alone cannot fix a
+                    // loop that is ACTIVE and silent — an active job is not proof of a live bridge —
+                    // so a stalled one is replaced. The DECISION comes from the tested rule rather
+                    // than being restated here as a compound boolean: a rule at a call site loses
+                    // clauses, and this one decides whether a silent bridge is restarted at all.
+                    //
+                    // The recovery is self-limiting: a restart resets the loop's activity clock, so
+                    // this can fire at most once per healthy window and cannot become a hot restart
+                    // loop.
+                    when (
+                        PollStatePolicy.recovery(
+                            isActive = components.isPollerRunning(),
+                            stalled = components.isPollerStalled()
+                        )
+                    ) {
+                        PollStatePolicy.Recovery.RESTART -> {
+                            onLog("♻️ Pull loop stalled — replacing it")
+                            com.autonomousone.messages.utils.DiagnosticLog.event(
+                                "GATEWAY_PULL", "stalled_restart"
+                            )
+                            components.stopPoller()
+                            components.startPoller()
+                        }
+                        PollStatePolicy.Recovery.START -> components.startPoller()
+                        PollStatePolicy.Recovery.NONE -> Unit
+                    }
+                }
             }
             DeliveryIntake.CONTROL_PLANE_COMMANDS -> {
                 components.stopPoller()

@@ -223,7 +223,14 @@ data class EventUploadHealth(
 
 data class PullBridgeHealth(
     val running: Boolean = false,
-    /** The poller's own state name (`IDLE`, `POLLING`, `DELIVERING`, `ERROR`). */
+    /**
+     * The DERIVED poll state — one of `POLLER_JOB_ACTIVE`, `POLL_REQUEST_IN_FLIGHT`,
+     * `POLL_BACKOFF`, `POLL_WAITING_NETWORK`, `POLL_LOOP_DEAD`, `PULL_LOOP_STALLED`.
+     *
+     * It used to be `IDLE`/`POLLING`/`DELIVERING`/`ERROR`, and `POLLING` covered a live long-poll, a
+     * backoff sleep, a deliberate wait for the network, an idle gap AND a loop that had been dead for
+     * nine hours. One word for six facts is how that failure read as healthy.
+     */
     val state: String = "IDLE",
     val lastPollStartedAt: Long? = null,
     val lastSuccessfulPollAt: Long? = null,
@@ -247,7 +254,20 @@ data class PullBridgeHealth(
     val ackConsecutiveFailures: Int = 0,
     val lastAckFailureAt: Long? = null,
     val lastAckFailure: GatewayFailureKind? = null,
-    val lastAckFailureSafeDetail: String? = null
+    val lastAckFailureSafeDetail: String? = null,
+    // ── Poll-loop lifecycle telemetry (requirement 12) ───────────────────────
+    // Counts and timings only: no request ids, no recipients, no message content. These exist so a
+    // diagnostic can distinguish "the loop was replaced" from "the loop never ran" — the two facts
+    // that were indistinguishable while a stale boolean was the only evidence. Null means never
+    // observed, which is deliberately not the same as zero.
+    /** How many times the poll loop has been (re)started in this process. 0 = never. */
+    val pollLoopGeneration: Long? = null,
+    val pollLoopStartedAt: Long? = null,
+    val pollLoopCompletedAt: Long? = null,
+    /** Why the last completed loop ended: `RETURNED`, `FAILED` or `CANCELLED`. */
+    val pollLoopCompletionReason: String? = null,
+    val lastCycleStartedAt: Long? = null,
+    val lastCycleCompletedAt: Long? = null
 ) {
     /** A successful poll within [windowMs], whether or not it carried a task. */
     fun freshWithin(windowMs: Long, now: Long): Boolean =

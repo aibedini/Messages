@@ -75,6 +75,14 @@ object GatewayHealthRecorder {
 
     private var pollerRunning: Boolean = false
     private var pollerState: String = "IDLE"
+
+    // Poll-loop lifecycle telemetry (requirement 12). Null = never observed, never zero.
+    private var pollLoopGeneration: Long? = null
+    private var pollLoopStartedAt: Long? = null
+    private var pollLoopCompletedAt: Long? = null
+    private var pollLoopCompletionReason: String? = null
+    private var pollLastCycleStartedAt: Long? = null
+    private var pollLastCycleCompletedAt: Long? = null
     private var pullLastPollStartedAt: Long? = null
     private var pullLastSuccessfulPollAt: Long? = null
     private var pullLastEmptyPollAt: Long? = null
@@ -211,6 +219,38 @@ object GatewayHealthRecorder {
     fun setPollerRunning(running: Boolean) = mutate { pollerRunning = running }
 
     fun setPollerState(state: String) = mutate { pollerState = state }
+
+    /**
+     * Records the poll-loop lifecycle in ONE call (requirement 12).
+     *
+     * Deliberately one mutator rather than six setters: `running` and `state` are two views of the
+     * same fact, and the nine-hour lie was precisely a `running = true` left behind by a loop that had
+     * ended. Values are counts and timings only — no request ids, no recipients, no content.
+     *
+     * @param generation how many loops have been started in this process (0 = never).
+     * @param completionReason why the last COMPLETED loop ended; null while one is running.
+     */
+    fun setPollerLifecycle(
+        running: Boolean,
+        state: String,
+        generation: Long,
+        startedAt: Long,
+        completedAt: Long,
+        completionReason: String?,
+        lastCycleStartedAt: Long,
+        lastCycleCompletedAt: Long
+    ) = mutate {
+        pollerRunning = running
+        pollerState = state
+        pollLoopGeneration = generation
+        pollLoopStartedAt = startedAt.takeIf { it > 0L }
+        // A completed timestamp is only meaningful once a loop has actually finished; a running loop
+        // reports null rather than the previous loop's value, which would read as "it ended".
+        pollLoopCompletedAt = completedAt.takeIf { it > 0L }
+        pollLoopCompletionReason = completionReason
+        pollLastCycleStartedAt = lastCycleStartedAt.takeIf { it > 0L }
+        pollLastCycleCompletedAt = lastCycleCompletedAt.takeIf { it > 0L }
+    }
 
     /** A long-poll was issued. The previous failure stays visible until a success. */
     fun onPullStart(at: Long = System.currentTimeMillis()) = mutate {
@@ -375,6 +415,12 @@ object GatewayHealthRecorder {
                     lastFailureSafeDetail = pullLastFailureDetail,
                     currentRequestStartedAt = pullCurrentRequestStartedAt,
                     nextRetryAt = pullNextRetryAt,
+                    pollLoopGeneration = pollLoopGeneration,
+                    pollLoopStartedAt = pollLoopStartedAt,
+                    pollLoopCompletedAt = pollLoopCompletedAt,
+                    pollLoopCompletionReason = pollLoopCompletionReason,
+                    lastCycleStartedAt = pollLastCycleStartedAt,
+                    lastCycleCompletedAt = pollLastCycleCompletedAt,
                     ackFailures = ackFailureCount,
                     ackConsecutiveFailures = ackConsecutiveFailures,
                     lastAckFailureAt = lastAckFailureAt,
@@ -450,6 +496,15 @@ object GatewayHealthRecorder {
             lastAckFailure = null
             lastAckFailureDetail = null
             eveQueue = EveQueueHealth()
+            // The lifecycle telemetry must be reset with everything else. Omitting it was a real
+            // leak, caught by a test asserting "unmeasured": the recorder is a singleton, so one
+            // test's generation stayed visible to the next and "never started" could never be true.
+            pollLoopGeneration = null
+            pollLoopStartedAt = null
+            pollLoopCompletedAt = null
+            pollLoopCompletionReason = null
+            pollLastCycleStartedAt = null
+            pollLastCycleCompletedAt = null
         }
         _revision.value = 0L
     }

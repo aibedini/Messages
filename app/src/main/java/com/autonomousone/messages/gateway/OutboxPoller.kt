@@ -12,7 +12,6 @@ import com.autonomousone.messages.gateway.health.GatewayPullFailure
 import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.utils.PhoneToken
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,6 +82,16 @@ class OutboxPoller(
          * terminal state.
          */
         private const val DEFERRED_WAIT_MS = 30_000L
+
+        /**
+         * How long the network gate waits before re-checking.
+         *
+         * Bounded deliberately. The gate used to suspend on `onlineFlow().first { it }` with no
+         * timeout, which is a LIVE job that issues no requests — the same silent bridge as the zombie
+         * bug, reached by a different route, and invisible to `isActive`. Re-checking keeps the loop
+         * observably alive and lets the freshness watchdog tell "waiting for network" from "wedged".
+         */
+        private const val NETWORK_WAIT_RECHECK_MS = 60_000L
 
         /** Terminal outcome of one delivery attempt, as seen locally. */
         internal enum class Drain { SENT, SUPERSEDED, FAILED, CANCELLED, DEFERRED, TIMEOUT }
@@ -182,24 +191,85 @@ class OutboxPoller(
     private val wakeLock = context.getSystemService(PowerManager::class.java)
         ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Messages:OutboxPoller")
 
-    private var pollJob: Job? = null
-    @Volatile private var running = false
-
     /**
-     * Interrupts the failure backoff so a manual reconnect polls NOW instead of waiting out
-     * the 5-second ladder. Conflated: ten impatient taps are one wake-up.
+     * Owns the loop's lifetime, so "is it running?" is answered by a live job rather than by a
+     * remembered flag. See [PollLoop] for the production defect this replaced: the loop could exit
+     * (policy `break`, an escaped exception) leaving `running = true`, after which `start()` returned
+     * early for ever and the supervisor's self-healing call did nothing — a zombie bridge that
+     * reported `Running: yes · State: POLLING` with its last poll nine hours old.
      */
+    private val loop = PollLoop(scope)
+
+    /** Interrupts the failure backoff so a manual reconnect polls NOW instead of waiting out
+     * the 5-second ladder. Conflated: ten impatient taps are one wake-up. */
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     /**
      * True while the poll loop is alive.
      *
-     * A reconnect needs this: "the poller was started once" and "the poll loop is running
-     * now" are different facts, and a job that exited (gate disabled, consent revoked,
-     * cancellation) leaves [running] false with nothing polling. Restarting on that basis is
-     * what makes Reconnect do something rather than merely recolour the card.
+     * Delegates to the loop's own job. A loop that ended — for any reason — reports false at once,
+     * which is what makes `ConnectionSupervisor.retryNow()` able to repair it.
      */
-    val isRunning: Boolean get() = running && pollJob?.isActive == true
+    val isRunning: Boolean get() = loop.isActive
+
+    /**
+     * Lifecycle telemetry for the diagnostic (requirement 12). Timings and reasons only.
+     */
+    val pollLoopGeneration: Long get() = loop.currentGeneration
+    val pollLoopStartedAt: Long get() = loop.startedAt
+    val pollLoopCompletedAt: Long get() = loop.finishedAt
+    val pollLoopEndReason: String get() = loop.end.name
+    val lastCycleStartedAt: Long get() = loop.lastCycleStartedAt
+    val lastCycleCompletedAt: Long get() = loop.lastCycleFinishedAt
+
+    /**
+     * True when the loop is active but has not polled for longer than a healthy cycle can take.
+     *
+     * An active job is not proof of liveness: the network-wait branch and a hung socket both leave a
+     * live job that issues no requests. See [PollFreshness] for the derived window.
+     */
+    fun isStalled(now: Long = System.currentTimeMillis()): Boolean =
+        PollFreshness.isStalled(
+            now = now,
+            isActive = loop.isActive,
+            lastActivityAt = loop.lastActivityAt(),
+            online = networkMonitor.isOnline()
+        )
+
+    // ── The facts the poll state is DERIVED from (requirement 13) ────────────
+    // Each is a plain observation, set only where it is true. The label is computed from them, so
+    // "POLLING" can no longer stand in for six different situations.
+    @Volatile private var requestInFlight = false
+    @Volatile private var backingOff = false
+    @Volatile private var waitingForNetwork = false
+
+    /** What the bridge is actually doing right now. See [PollStatePolicy] for the precedence. */
+    fun pollState(now: Long = System.currentTimeMillis()): PollState =
+        PollStatePolicy.derive(
+            isActive = loop.isActive,
+            stalled = isStalled(now),
+            requestInFlight = requestInFlight,
+            backingOff = backingOff,
+            waitingForNetwork = waitingForNetwork
+        )
+
+    /** Publishes the derived state so the diagnostic reports a fact rather than a guess. */
+    private fun publishPollState() {
+        val state = pollState()
+        // One call, because `running` and `state` are two views of the same fact: the nine-hour lie
+        // was a `running = true` left behind by a loop that had ended, and two separate setters are
+        // how that happens.
+        GatewayHealthRecorder.setPollerLifecycle(
+            running = loop.isActive,
+            state = state.name,
+            generation = loop.currentGeneration,
+            startedAt = loop.startedAt,
+            completedAt = loop.finishedAt,
+            completionReason = if (loop.isActive) null else loop.end.name,
+            lastCycleStartedAt = loop.lastCycleStartedAt,
+            lastCycleCompletedAt = loop.lastCycleFinishedAt
+        )
+    }
 
     /**
      * Try again immediately: cancel any pending backoff and poll now.
@@ -228,66 +298,125 @@ class OutboxPoller(
     }
 
     fun start() {
-        if (running) return
-        running = true
+        // Idempotent against an ACTIVE loop, not against "start was once called". A dead loop is
+        // always replaceable — that is the whole fix — and a live one is never duplicated.
+        val started = loop.start(onFinished = { end -> onLoopFinished(end) }) { generation ->
+            runLoop(generation)
+        }
+        if (!started) return
         GatewayHealthRecorder.setPollerRunning(true)
         // Re-seed the local ACK ledger from the durable queue so a task parked
         // DEFERRED before a reboot is still retried and acked by local backoff.
         seedAckLedger()
-        pollJob = scope.launch {
-            _stateFlow.value = State.POLLING
-            GatewayHealthRecorder.setPollerState(State.POLLING.name)
-            Log.i(TAG, "Outbox poller started")
-            while (isActive) {
-                if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) {
+    }
+
+    /**
+     * The loop's own body: everything that used to be `scope.launch { … }` directly.
+     *
+     * It runs inside [PollLoop]'s try/finally, so every way out of here — the policy `break`, a throw
+     * from the network gate, cancellation — reaches [onLoopFinished]. There is deliberately no
+     * cleanup in this function: one place owns it.
+     */
+    private suspend fun runLoop(generation: Long) {
+        _stateFlow.value = State.POLLING
+        publishPollState()
+        Log.i(TAG, "Outbox poller started (generation=$generation)")
+        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+            // One pure decision per iteration, so the precedence between intent and the radio is
+            // asserted in a test rather than read out of two branches here.
+            when (
+                PollStatePolicy.nextIteration(
+                    canTransmit = GatewayAccessPolicy.canTransmit(
+                        prefs.hasGatewayConsent,
+                        prefs.isEnabled
+                    ),
+                    online = networkMonitor.isOnline()
+                )
+            ) {
+                PollStatePolicy.Iteration.EXIT -> {
+                    // The user's intent outranks the radio: exit, and let the supervisor start a
+                    // fresh loop if eligibility ever returns.
                     _stateFlow.value = State.IDLE
-                    GatewayHealthRecorder.setPollerState(State.IDLE.name)
-                    break
+                    return
                 }
-                // Network gate: while there is no validated route, hang up
-                // ZERO HTTP requests (each would burn a 40 s long-poll timeout
-                // against a dead radio). Wake the instant the network returns —
-                // event-driven via the callback flow, not a poll timer.
-                if (!networkMonitor.isOnline()) {
+                PollStatePolicy.Iteration.WAIT_FOR_NETWORK -> {
+                    waitingForNetwork = true
                     _stateFlow.value = State.IDLE
-                    GatewayHealthRecorder.setPollerState(State.IDLE.name)
+                    publishPollState()
                     onLog("📴 Outbox poller paused: waiting for network")
-                    networkMonitor.onlineFlow().first { online -> online }
-                    if (!isActive) break
+                    // Bounded on purpose: an unbounded wait here is a live job that issues no
+                    // requests, which is exactly the silent bridge the freshness watchdog exists to
+                    // catch. Re-checking every few minutes keeps the loop observably alive.
+                    val cameBack = withTimeoutOrNull(NETWORK_WAIT_RECHECK_MS) {
+                        networkMonitor.onlineFlow().first { online -> online }
+                    }
+                    if (cameBack == null) continue // still offline: loop again, do not exit
+                    waitingForNetwork = false
                     _stateFlow.value = State.POLLING
-                    GatewayHealthRecorder.setPollerState(State.POLLING.name)
+                    publishPollState()
                     onLog("🌐 Network back — resuming outbox poll immediately")
                 }
+                PollStatePolicy.Iteration.TRANSMIT -> Unit
+            }
+            try {
+                acquireCycleWakeLock()
                 try {
-                    acquireCycleWakeLock()
-                    try {
-                        // Local terminal outcomes are acked BEFORE dialling
-                        // again: a deferred task never waits for a redelivery.
-                        ackPending()
-                        cycle()
-                        _stateFlow.value = State.POLLING
-                        GatewayHealthRecorder.setPollerState(State.POLLING.name)
-                    } finally {
-                        releaseCycleWakeLock()
-                    }
-                } catch (e: Exception) {
-                    _stateFlow.value = State.ERROR
-                    GatewayHealthRecorder.setPollerState(State.ERROR.name)
-                    onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (ERROR_RETRY_MS / 1000) + "s")
-                    // Interruptible: a manual reconnect must not wait out the backoff.
-                    withTimeoutOrNull(ERROR_RETRY_MS) { wake.receive() }
+                    loop.onCycleStarted()
+                    // Local terminal outcomes are acked BEFORE dialling
+                    // again: a deferred task never waits for a redelivery.
+                    ackPending()
+                    requestInFlight = true
+                    publishPollState()
+                    cycle()
+                    _stateFlow.value = State.POLLING
+                    publishPollState()
+                } finally {
+                    requestInFlight = false
+                    loop.onCycleFinished()
+                    releaseCycleWakeLock()
                 }
+            } catch (e: Exception) {
+                _stateFlow.value = State.ERROR
+                // The backoff below is a legitimate silence, and it gets its OWN label so a reader
+                // does not have to read the last error to know why nothing is being requested.
+                backingOff = true
+                publishPollState()
+                onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (ERROR_RETRY_MS / 1000) + "s")
+                // Interruptible: a manual reconnect must not wait out the backoff.
+                withTimeoutOrNull(ERROR_RETRY_MS) { wake.receive() }
+                backingOff = false
+                publishPollState()
             }
         }
     }
 
-    fun stop() {
-        running = false
-        pollJob?.cancel()
-        pollJob = null
+    /**
+     * Clears everything that says "the bridge is running" when a loop ends for any reason.
+     *
+     * The health flag is the part the old code never cleared: `setPollerRunning(true)` was written on
+     * start and only ever undone by `stop()`, so a loop that ended on its own left the diagnostic
+     * claiming `Running: yes` while nothing polled.
+     */
+    private fun onLoopFinished(end: PollLoop.End) {
+        if (end == PollLoop.End.NOT_STARTED) return
+        requestInFlight = false
+        backingOff = false
+        waitingForNetwork = false
         _stateFlow.value = State.IDLE
-        GatewayHealthRecorder.setPollerRunning(false)
-        GatewayHealthRecorder.setPollerState(State.IDLE.name)
+        // Sets pollerRunning=false and the state to POLL_LOOP_DEAD, which is what the report must say
+        // when nothing is polling — the nine-hour lie was a stale `true` here.
+        publishPollState()
+        Log.i(TAG, "Outbox poller ended: $end")
+        onLog("⏹ Outbox poller stopped ($end) — a reconcile will restart it")
+    }
+
+    fun stop() {
+        requestInFlight = false
+        backingOff = false
+        waitingForNetwork = false
+        loop.stop()
+        _stateFlow.value = State.IDLE
+        publishPollState()
     }
 
     /** One pull → deliver → ack round trip. Throws only on transport errors. */

@@ -775,6 +775,68 @@ class GatewayDiagnosticReportTest {
         assertFalse(text, text.contains("will NOT arrive without action"))
     }
 
+    private fun renderBridge(bridge: PullBridgeHealth) =
+        GatewayDiagnosticReport.render(
+            snapshot = snapshot(bridge = bridge), probe = null, appVersion = "3.4.11 (118)",
+            deliveryMode = "LEGACY_PULL", supervisorState = "CONNECTED", gatewayDesired = true,
+            now = now
+        )
+
+    @Test
+    fun `thePollLoopLifecycleIsReportedSoAReplacementIsVisible`() {
+        // Requirement 12. Without these lines, "the loop was replaced at 09:41" and "the loop never
+        // ran" look identical — which is how a bridge that had been dead for nine hours still read as
+        // a running one.
+        val text = renderBridge(
+            PullBridgeHealth(
+                running = true,
+                state = "POLLER_JOB_ACTIVE",
+                pollLoopGeneration = 7L,
+                pollLoopStartedAt = now - 30_000L,
+                pollLoopCompletionReason = "CANCELLED",
+                pollLoopCompletedAt = now - 5_000L,
+                lastCycleStartedAt = now - 8_000L,
+                lastCycleCompletedAt = now - 7_000L
+            )
+        )
+
+        assertTrue("the generation must be visible: $text", text.contains("generation=7"))
+        assertTrue("the end reason must be visible", text.contains("CANCELLED"))
+        assertTrue("the last cycle must be visible", text.contains("Last poll cycle:"))
+    }
+
+    @Test
+    fun `aDeadPollLoopIsReportedAsDeadRatherThanPolling`() {
+        // The production report's exact combination — `Running: yes` beside a state that means
+        // nothing — must read as dead now, and must say the loop is not running.
+        val text = renderBridge(
+            PullBridgeHealth(
+                running = false,
+                state = "POLL_LOOP_DEAD",
+                pollLoopGeneration = 3L,
+                pollLoopStartedAt = now - 9 * 60 * 60 * 1000L,
+                pollLoopCompletedAt = now - 9 * 60 * 60 * 1000L + 1_000L,
+                pollLoopCompletionReason = "RETURNED"
+            )
+        )
+
+        assertTrue(text, text.contains("Running: no"))
+        assertTrue(text, text.contains("State: POLL_LOOP_DEAD"))
+        assertTrue("the reason it ended must be shown", text.contains("RETURNED"))
+    }
+
+    @Test
+    fun `aNeverStartedLoopIsReportedAsNeverStartedNotAsZero`() {
+        // The model's rule: "we have not seen it run" must never render as a number that reads as
+        // healthy. Generation 0 would look like a counter that had been working, and — the wording
+        // bug this test caught — a loop that has never run must not be described as "still running".
+        val text = renderBridge(PullBridgeHealth(running = false, state = "POLL_LOOP_DEAD"))
+
+        assertTrue(text, text.contains("generation=never started"))
+        assertTrue("an absent loop is not a running one: $text", text.contains("no loop has run"))
+        assertFalse(text, text.contains("still running"))
+    }
+
     private fun renderMms(section: SyncDiagnostics.MmsAttachmentSection?) =        GatewayDiagnosticReport.render(
             snapshot = snapshot(), probe = null, appVersion = "3.4.9 (116)",
             deliveryMode = "LEGACY_PULL", supervisorState = "CONNECTED", gatewayDesired = true,

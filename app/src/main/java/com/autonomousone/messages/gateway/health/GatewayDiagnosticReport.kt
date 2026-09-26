@@ -114,6 +114,22 @@ object GatewayDiagnosticReport {
         appendLine("  Last HTTP: ${snapshot.pullBridge.lastHttpStatus ?: "n/a"}")
         appendLine("  Last error: ${failureLine(snapshot.pullBridge.lastFailure, snapshot.pullBridge.lastFailureSafeDetail)}")
         appendLine("  Consecutive failures: ${snapshot.pullBridge.consecutiveFailures}")
+        // Requirement 12: the loop's own lifecycle. Without it, "the loop was replaced at 09:41" and
+        // "the loop never ran" are indistinguishable — which is how a bridge that had been dead for
+        // nine hours still looked like a running one.
+        val bridge = snapshot.pullBridge
+        val endReason = bridge.pollLoopCompletionReason
+            ?: if (bridge.running) "still running" else "no loop has run"
+        appendLine(
+            "  Loop: generation=${bridge.pollLoopGeneration ?: "never started"}" +
+                " · started ${ago(bridge.pollLoopStartedAt, now)}" +
+                " · last ended ${ago(bridge.pollLoopCompletedAt, now)}" +
+                " ($endReason)"
+        )
+        appendLine(
+            "  Last poll cycle: started ${ago(bridge.lastCycleStartedAt, now)}" +
+                " · completed ${ago(bridge.lastCycleCompletedAt, now)}"
+        )
         appendLine("  ACK failures this session: ${snapshot.pullBridge.ackFailures}")
         appendLine("  ACK consecutive failures: ${snapshot.pullBridge.ackConsecutiveFailures}")
         appendLine("  ACK last failure: ${ago(snapshot.pullBridge.lastAckFailureAt, now)}")
