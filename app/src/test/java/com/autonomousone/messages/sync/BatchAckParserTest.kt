@@ -97,6 +97,19 @@ class BatchAckParserTest {
     }
 
     @Test
+    fun `identity conflict and invalid wire events stop retrying without false acknowledgement`() {
+        val parsed = BatchAckParser.parse(
+            """{"results":[{"eventId":"a","status":"CONFLICTING_DUPLICATE"},
+                {"eventId":"b","status":"INVALID_EVENT","error":"invalid_metadata"},
+                {"eventId":"c","status":"DUPLICATE","serverSequence":7}]}"""
+        )
+        assertEquals(setOf("a", "b"), parsed.rejected.keys)
+        assertEquals("CONFLICTING_DUPLICATE", parsed.rejected.getValue("a").errorCode)
+        assertEquals(mapOf("c" to 7L), parsed.acknowledged)
+        assertTrue(parsed.retryable.isEmpty())
+    }
+
+    @Test
     fun `anUnknownStatusIsTreatedAsRetryableRatherThanFatal`() {
         // A status we do not understand is not evidence that the event is unacceptable.
         val parsed = BatchAckParser.parse(
