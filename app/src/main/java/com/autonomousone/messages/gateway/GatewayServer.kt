@@ -140,7 +140,8 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                         record.to,
                         record.text,
                         subscriptionIdOverride = null,
-                        clientMessageId = record.correlationId
+                        clientMessageId = record.correlationId,
+                        gatewayRequestId = record.gatewayRequestId
                     ) != null
                 },
                 GmwebTaskValidator.from(GatewayPreferences(context), NetworkMonitor.get(context))

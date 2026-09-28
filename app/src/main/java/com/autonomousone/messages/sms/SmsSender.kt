@@ -15,6 +15,7 @@ import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.data.SegmentCallbackState
 import com.autonomousone.messages.data.SendSegmentEntity
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.gateway.GatewayDeliveryReports
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -90,8 +91,14 @@ class SmsSender(
         showToast: Boolean,
         originCommandId: String? = null,
         clientMessageId: String? = null,
+        gatewayRequestId: String? = null,
     ): SendOutcome {
         val sentId = persistToSent(phone, text)
+        // Bind carrier callbacks to the durable GMweb task before the radio can
+        // answer. Only request identity is stored; never the SMS body/number.
+        if (gatewayRequestId != null && !GatewayDeliveryReports.remember(context, sentId, gatewayRequestId)) {
+            Log.w(TAG, "GMweb delivery-report identity could not be persisted")
+        }
         com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
             .providerRowChanged("sms", sentId, originCommandId, clientMessageId)
         // Tell the app (Home list) instantly: this thread now has a newer
@@ -135,11 +142,12 @@ class SmsSender(
         threadId: Long = 0L,
         originCommandId: String? = null,
         clientMessageId: String? = null,
+        gatewayRequestId: String? = null,
     ): SendOutcome {
         requireOffMainThread()
         return directSend(
             phone, text, subscriptionIdOverride, smscOverride, showToast,
-            originCommandId, clientMessageId
+            originCommandId, clientMessageId, gatewayRequestId
         )
     }
 
@@ -408,11 +416,13 @@ class SmsSender(
         phone: String,
         text: String,
         subscriptionIdOverride: Int?,
-        clientMessageId: String?
+        clientMessageId: String?,
+        gatewayRequestId: String? = null
     ): Long? =
         when (
             val outcome = sendWithOutcome(
-                phone, text, subscriptionIdOverride, clientMessageId = clientMessageId
+                phone, text, subscriptionIdOverride, clientMessageId = clientMessageId,
+                gatewayRequestId = gatewayRequestId
             )
         ) {
             is SendOutcome.Accepted -> outcome.rowId

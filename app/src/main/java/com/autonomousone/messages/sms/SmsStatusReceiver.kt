@@ -16,6 +16,7 @@ import com.autonomousone.messages.data.SegmentCallbackState
 import com.autonomousone.messages.data.SendSegmentEntity
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.gateway.GatewayDeliveryReports
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -249,7 +250,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             edit.putStringSet(dlvDoneKey, dlvDone)
                 .putStringSet(dlvPendingKey, dlvPending)
                 .putStringSet(dlvFailedKey, dlvFailed)
-            edit.apply()
+            if (delivered) edit.commit() else edit.apply()
 
             SmsStatusPolicy.nextStatus(
                 sentConfirmedParts = sentConfirmed,
@@ -263,6 +264,15 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
 
 
+        if (delivered && deliveryEvidence != SmsStatusPolicy.DeliveryEvidence.UNKNOWN &&
+            deliveryEvidence != SmsStatusPolicy.DeliveryEvidence.TEMPORARY &&
+            nextStatus in listOf(Telephony.Sms.STATUS_COMPLETE, Telephony.Sms.STATUS_FAILED)) {
+            // Persist the report before the provider/UI write: an app death in
+            // between must not lose the carrier evidence needed by GMweb.
+            runCatching {
+                GatewayDeliveryReports.recordFinal(context, rowId, nextStatus, System.currentTimeMillis())
+            }.onFailure { Log.w(TAG, "GMweb delivery-report persistence failed", it) }
+        }
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
         DiagnosticLog.event("SMS_STATE", "row=$rowId providerStatus=$nextStatus evidence=$deliveryEvidence")
 

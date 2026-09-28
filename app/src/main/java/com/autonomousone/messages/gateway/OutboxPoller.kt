@@ -365,6 +365,7 @@ class OutboxPoller(
                     // Local terminal outcomes are acked BEFORE dialling
                     // again: a deferred task never waits for a redelivery.
                     ackPending()
+                    drainDeliveryReports()
                     requestInFlight = true
                     publishPollState()
                     cycle()
@@ -727,6 +728,32 @@ class OutboxPoller(
     }
 
     /** Reports one record's outcome and says whether GMweb accepted it. */
+    private fun drainDeliveryReports() {
+        val base = prefs.gmwebUrl.trim().trimEnd('/')
+        if (base.isBlank()) return
+        // Bounded so a broken report endpoint can never starve new SMS pulls.
+        for (report in GatewayDeliveryReports.pending(context, 3)) {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = open(base + "/gateway/delivery-report", "POST", 5_000L)
+                conn.outputStream.use { it.write(report.json().toString().toByteArray(Charsets.UTF_8)) }
+                if (conn.responseCode !in 200..299) {
+                    Log.w(TAG, "delivery-report HTTP ${conn.responseCode}")
+                    break
+                }
+                if (!GatewayDeliveryReports.acknowledge(context, report.eventId)) {
+                    Log.w(TAG, "delivery-report acknowledgement was not persisted")
+                    break
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "delivery-report upload deferred", e)
+                break
+            } finally {
+                conn?.disconnect()
+            }
+        }
+    }
+
     private fun ackRecord(rec: EveSmsQueue.Record, outcome: String, reason: String?): Boolean {
         val gatewayRequestId = rec.gatewayRequestId ?: return false
         val accepted = ackInternal(gatewayRequestId, outcome, reason, traceFields(rec))
