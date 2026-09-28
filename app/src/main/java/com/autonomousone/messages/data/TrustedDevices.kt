@@ -132,6 +132,13 @@ interface TrustStatementOutboxDao {
     @Query("SELECT MIN(trustSequence) FROM trust_statement_outbox WHERE state = 'PENDING'")
     suspend fun oldestPendingSequence(): Int?
 
+    @Query("SELECT * FROM trust_statement_outbox WHERE trustSequence > :sequence ORDER BY trustSequence ASC")
+    suspend fun afterSequence(sequence: Int): List<TrustStatementOutboxEntity>
+
+    @Query("UPDATE trust_statement_outbox SET state = 'PENDING', ackedAt = NULL " +
+        "WHERE trustSequence > :sequence AND state = 'PUBLISHED'")
+    suspend fun requeuePublishedAfter(sequence: Int): Int
+
     @Query("UPDATE trust_statement_outbox SET state = 'PUBLISHED', ackedAt = :at WHERE statementId = :id")
     suspend fun markPublished(id: String, at: Long)
 

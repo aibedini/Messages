@@ -19,6 +19,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+internal object TrustPublicationPolicy {
+    fun durableReceipt(receipt: org.json.JSONObject?, sequence: Int): Boolean =
+        receipt != null && receipt.optBoolean("ok") &&
+            receipt.optInt("trustSequence", -1) == sequence &&
+            (receipt.optBoolean("applied") || receipt.optString("reason") == "duplicate")
+
+    fun hasContiguousReplay(serverSequence: Int, rows: List<TrustStatementOutboxEntity>): Boolean {
+        var expected = serverSequence + 1
+        for (row in rows) {
+            if (row.trustSequence != expected || row.state !in setOf(
+                TrustStatementOutboxEntity.STATE_PENDING,
+                TrustStatementOutboxEntity.STATE_PUBLISHED,
+            )) return false
+            expected++
+        }
+        return true
+    }
+}
+
 /** Publishes the durable, strictly ordered trust outbox and advances local state only after ACK. */
 class TrustStatementPublisher(
     context: Context,
@@ -29,8 +48,10 @@ class TrustStatementPublisher(
     companion object {
         private const val TAG = "TRUST_PUBLISHER"
         private const val PATH = "/api/v1/agent/trust/statements"
+        private const val POSITION_PATH = "/api/v1/agent/trust/position"
         private const val QUIET_MS = 5_000L
         private const val MAX_BACKOFF_MS = 300_000L
+        private const val POSITION_REFRESH_MS = 60_000L
 
         data class Health(
             val running: Boolean = false,
@@ -53,6 +74,7 @@ class TrustStatementPublisher(
     private val db = MessagesDatabase.get(appContext)
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private var job: Job? = null
+    private var lastPositionCheckAt = 0L
 
     fun start() {
         if (job?.isActive == true) return
@@ -91,6 +113,8 @@ class TrustStatementPublisher(
     private data class PublishResult(val acked: Int, val retryAfterMs: Long = QUIET_MS)
 
     private suspend fun publishBatch(): PublishResult {
+        if (System.currentTimeMillis() - lastPositionCheckAt >= POSITION_REFRESH_MS &&
+            !reconcileServerPosition()) return PublishResult(0, QUIET_MS)
         val batch = db.trustStatementOutboxDao().pendingBatch()
         updateQueueHealth()
         if (batch.isEmpty()) return PublishResult(0)
@@ -123,6 +147,19 @@ class TrustStatementPublisher(
                 if (code !in 200..299) {
                     db.trustStatementOutboxDao().markRetry(statement.statementId)
                     _health.value = _health.value.copy(lastFailureReason = safeHttpReason(conn, code))
+                    lastPositionCheckAt = 0L
+                    updateQueueHealth()
+                    return PublishResult(acked, backoffMs(statement.attemptCount + 1))
+                }
+
+                val receipt = runCatching {
+                    org.json.JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                }.getOrNull()
+                val persisted = TrustPublicationPolicy.durableReceipt(receipt, statement.trustSequence)
+                if (!persisted) {
+                    db.trustStatementOutboxDao().markRetry(statement.statementId)
+                    _health.value = _health.value.copy(lastFailureReason = "trust_receipt_not_applied")
+                    lastPositionCheckAt = 0L
                     updateQueueHealth()
                     return PublishResult(acked, backoffMs(statement.attemptCount + 1))
                 }
@@ -167,6 +204,51 @@ class TrustStatementPublisher(
         }
         updateQueueHealth()
         return PublishResult(acked)
+    }
+
+    /** Recover signed statements that an old client falsely marked published after a server gap. */
+    private suspend fun reconcileServerPosition(): Boolean {
+        val base = prefs.gmwebUrl.trimEnd('/')
+        val agentDeviceId = prefs.agentDeviceId(appContext)
+        var conn: java.net.HttpURLConnection? = null
+        try {
+            conn = java.net.URL(base + POSITION_PATH).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 15_000
+            check(AgentAuth.sign(conn, agentDeviceId, POSITION_PATH, "GET", ByteArray(0))) {
+                "agent_signing_failed"
+            }
+            val status = conn.responseCode
+            if (status !in 200..299) {
+                _health.value = _health.value.copy(lastHttpStatus = status,
+                    lastFailureReason = safeHttpReason(conn, status))
+                return false
+            }
+            val serverSequence = org.json.JSONObject(
+                conn.inputStream.bufferedReader().use { it.readText() }
+            ).getInt("trustSequence")
+            if (serverSequence < 0) error("invalid_server_trust_position")
+            val rows = db.trustStatementOutboxDao().afterSequence(serverSequence)
+            if (!TrustPublicationPolicy.hasContiguousReplay(serverSequence, rows)) {
+                _health.value = _health.value.copy(lastFailureReason = "local_trust_sequence_gap")
+                return false
+            }
+            if (rows.isNotEmpty()) {
+                val recovered = db.trustStatementOutboxDao().requeuePublishedAfter(serverSequence)
+                if (recovered > 0) onLog("Trust publication recovered $recovered signed statement(s)")
+            }
+            lastPositionCheckAt = System.currentTimeMillis()
+            _health.value = _health.value.copy(lastFailureReason = null)
+            updateQueueHealth()
+            return true
+        } catch (error: Exception) {
+            Log.w(TAG, "trust position reconciliation failed (${error.javaClass.simpleName})")
+            _health.value = _health.value.copy(lastFailureReason = "trust_position_unavailable")
+            return false
+        } finally {
+            conn?.disconnect()
+        }
     }
 
     private suspend fun updateQueueHealth() {

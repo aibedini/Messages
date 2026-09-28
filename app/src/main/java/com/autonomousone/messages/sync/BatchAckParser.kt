@@ -107,13 +107,16 @@ object BatchAckParser {
             val status = when (row.optString("status").uppercase()) {
                 "ACCEPTED" -> ItemStatus.ACCEPTED
                 "DUPLICATE" -> ItemStatus.DUPLICATE
-                "REJECTED" -> ItemStatus.REJECTED
+                "REJECTED", "CONFLICTING_DUPLICATE", "INVALID_EVENT", "INVALID_PAYLOAD",
+                "INVALID_EVENT_ID" -> ItemStatus.REJECTED
                 // An unrecognised status is not evidence of anything: treat it as retryable so
                 // the event is preserved rather than silently dropped.
                 else -> ItemStatus.REJECTED
             }
             val retryable = when (status) {
-                ItemStatus.REJECTED -> row.optBoolean("retryable", true)
+                ItemStatus.REJECTED -> row.optBoolean("retryable",
+                    row.optString("status").uppercase() !in setOf(
+                        "CONFLICTING_DUPLICATE", "INVALID_EVENT", "INVALID_PAYLOAD", "INVALID_EVENT_ID"))
                 else -> false
             }
             items += Item(
@@ -122,6 +125,7 @@ object BatchAckParser {
                 serverSequence = row.optLong("serverSequence", 0L),
                 retryable = retryable,
                 errorCode = row.optString("errorCode").takeIf { it.isNotEmpty() }
+                    ?: row.optString("status").takeIf { status == ItemStatus.REJECTED && it.isNotEmpty() }
             )
         }
         return items
