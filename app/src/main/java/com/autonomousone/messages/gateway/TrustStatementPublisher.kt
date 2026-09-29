@@ -7,6 +7,7 @@ import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustStatementOutboxEntity
 import com.autonomousone.messages.data.TrustedDeviceEntity
 import com.autonomousone.messages.security.SensitiveGrantStore
+import com.autonomousone.messages.security.TrustedDeviceRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +36,21 @@ internal object TrustPublicationPolicy {
             expected++
         }
         return true
+    }
+
+    /** Only absent sequence numbers are voided; existing approvals retain their original bytes. */
+    fun missingSequences(serverSequence: Int, rows: List<TrustStatementOutboxEntity>, limit: Int = 32): List<Int>? {
+        var expected = serverSequence + 1
+        val missing = mutableListOf<Int>()
+        for (row in rows) {
+            if (row.trustSequence < expected) return null
+            while (expected < row.trustSequence) {
+                if (missing.size == limit) return null
+                missing += expected++
+            }
+            expected++
+        }
+        return missing
     }
 }
 
@@ -229,9 +245,45 @@ class TrustStatementPublisher(
                 conn.inputStream.bufferedReader().use { it.readText() }
             ).getInt("trustSequence")
             if (serverSequence < 0) error("invalid_server_trust_position")
-            val rows = db.trustStatementOutboxDao().afterSequence(serverSequence)
+            val rows = db.withTransaction {
+                val dao = db.trustStatementOutboxDao()
+                val existing = dao.afterSequence(serverSequence)
+                val gaps = TrustPublicationPolicy.missingSequences(serverSequence, existing)
+                if (gaps == null) return@withTransaction existing
+                for (sequence in gaps) {
+                    // Older builds deleted failed pairing approvals. The primary
+                    // root signs a present-day no-op; it never grants a device.
+                    val id = java.util.UUID.randomUUID().toString()
+                    val deviceId = "void:$sequence"
+                    val statement = TrustedDeviceRegistry.buildStatement(
+                        op = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                        statementId = id,
+                        deviceId = deviceId,
+                        trustSequence = sequence,
+                        capabilities = emptyList(),
+                        historyGrant = "",
+                        certificateJson = null,
+                    )
+                    dao.enqueue(TrustStatementOutboxEntity(
+                        statementId = id,
+                        trustSequence = sequence,
+                        operation = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                        deviceId = deviceId,
+                        payload = statement.toString(),
+                        rootSignature = statement.getString("rootSignature"),
+                        state = TrustStatementOutboxEntity.STATE_PENDING,
+                        attemptCount = 0,
+                        createdAt = System.currentTimeMillis(),
+                        ackedAt = null,
+                    ))
+                }
+                if (gaps.isNotEmpty()) onLog("Voided ${gaps.size} missing trust sequence(s)")
+                dao.afterSequence(serverSequence)
+            }
             if (!TrustPublicationPolicy.hasContiguousReplay(serverSequence, rows)) {
-                _health.value = _health.value.copy(lastFailureReason = "local_trust_sequence_gap")
+                val reason = if (rows.any { it.state == TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL })
+                    "trust_approval_waiting" else "local_trust_sequence_gap"
+                _health.value = _health.value.copy(lastFailureReason = reason)
                 return false
             }
             if (rows.isNotEmpty()) {

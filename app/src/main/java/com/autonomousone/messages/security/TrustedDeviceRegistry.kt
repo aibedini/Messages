@@ -209,16 +209,35 @@ object TrustedDeviceRegistry {
         TrustStatementPublisher.nudge()
     }
 
-    /** A rejected or expired approval can never become a usable trust statement. */
+    /** A rejected approval occupies its sequence with a signed, non-authorizing record. */
     suspend fun failApproval(context: Context, deviceId: String, trustSequence: Int) {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
         db.withTransaction {
-            db.trustStatementOutboxDao().discardWaitingApproval(deviceId, trustSequence)
+            val waiting = db.trustStatementOutboxDao().waitingApproval(deviceId, trustSequence)
+            if (waiting != null) {
+                val statement = buildStatement(
+                    op = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                    statementId = waiting.statementId,
+                    deviceId = deviceId,
+                    trustSequence = trustSequence,
+                    capabilities = emptyList(),
+                    historyGrant = "",
+                    certificateJson = null,
+                )
+                db.trustStatementOutboxDao().update(waiting.copy(
+                    operation = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                    payload = statement.toString(),
+                    rootSignature = statement.getString("rootSignature"),
+                    state = TrustStatementOutboxEntity.STATE_PENDING,
+                ))
+            }
             db.trustedDeviceDao().setStatusForSequence(
                 deviceId, trustSequence, TrustedDeviceEntity.STATUS_FAILED, now,
             )
         }
+        SensitiveGrantStore.wipeGrants(context.applicationContext, deviceId)
+        TrustStatementPublisher.nudge()
     }
 
     /** Persist a capability change (biometric-confirmed). trustSequence++. */

@@ -3,6 +3,8 @@ package com.autonomousone.messages.gateway
 import com.autonomousone.messages.data.TrustStatementOutboxEntity
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,5 +35,15 @@ class TrustPublicationPolicyTest {
         assertFalse(TrustPublicationPolicy.hasContiguousReplay(43, listOf(
             row(44, TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL),
         )))
+    }
+
+    @Test fun `recovery identifies only absent sequence numbers and is bounded`() {
+        val published = row(45, TrustStatementOutboxEntity.STATE_PUBLISHED)
+        val waiting = row(47, TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL)
+        assertEquals(listOf(44, 46), TrustPublicationPolicy.missingSequences(43, listOf(published, waiting)))
+        assertEquals(emptyList<Int>(), TrustPublicationPolicy.missingSequences(43,
+            listOf(row(44, TrustStatementOutboxEntity.STATE_PENDING))))
+        assertNull(TrustPublicationPolicy.missingSequences(43, listOf(row(77, TrustStatementOutboxEntity.STATE_PENDING))))
+        assertNull(TrustPublicationPolicy.missingSequences(43, listOf(published, published)))
     }
 }

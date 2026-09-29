@@ -59,7 +59,7 @@ object ConnectionDiagnostics {
         local += Check("Event outbox", eventDao.pendingDepth() == 0,
             "${eventDao.pendingDepth()} pending · ${eventDao.deadLetterDepth()} dead letter")
         local += Check("Trust publisher", trust.running, "${trust.pendingCount} pending")
-        local += Check("Trust outbox", trust.pendingCount == 0,
+        local += Check("Trust outbox", trust.pendingCount == 0 && trust.lastFailureReason == null,
             "oldest ${trust.oldestPendingSequence ?: "none"}" +
                 (trust.lastFailureReason?.let { " · $it" } ?: ""))
 
