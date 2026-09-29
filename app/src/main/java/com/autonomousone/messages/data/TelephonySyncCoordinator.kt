@@ -1925,7 +1925,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     private suspend fun backfillOlderKeyset(source: String): Boolean {
         val stateDao = db.syncStateDao()
         var cursor = stateDao.forSource(source) ?: return false
-        if (cursor.historyBackfillComplete) return false
+        if (!HistoryWatermarkPolicy.needsProviderScan(source, cursor)) return false
         var changedAny = false
         while (true) {
             val mark = PerfTelemetry.mark()
