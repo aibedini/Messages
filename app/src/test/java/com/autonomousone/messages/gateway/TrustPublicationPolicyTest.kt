@@ -46,4 +46,17 @@ class TrustPublicationPolicyTest {
         assertNull(TrustPublicationPolicy.missingSequences(43, listOf(row(77, TrustStatementOutboxEntity.STATE_PENDING))))
         assertNull(TrustPublicationPolicy.missingSequences(43, listOf(published, published)))
     }
+
+    @Test fun `waiting approval requires matching server evidence or a live pairing session`() {
+        val confirmed = setOf(54 to "browser")
+        val pending = setOf("session-45")
+        assertEquals(TrustPublicationPolicy.WaitingApprovalAction.ACTIVATE,
+            TrustPublicationPolicy.waitingApprovalAction(54, "browser", "old-session", confirmed, pending))
+        assertEquals(TrustPublicationPolicy.WaitingApprovalAction.WAIT,
+            TrustPublicationPolicy.waitingApprovalAction(45, "browser", "session-45", confirmed, pending))
+        assertEquals(TrustPublicationPolicy.WaitingApprovalAction.VOID,
+            TrustPublicationPolicy.waitingApprovalAction(44, "browser", "expired", confirmed, pending))
+        assertEquals(TrustPublicationPolicy.WaitingApprovalAction.VOID,
+            TrustPublicationPolicy.waitingApprovalAction(54, "another-browser", null, confirmed, pending))
+    }
 }
