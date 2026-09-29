@@ -737,8 +737,21 @@ class OutboxPoller(
             try {
                 conn = open(base + "/gateway/delivery-report", "POST", 5_000L)
                 conn.outputStream.use { it.write(report.json().toString().toByteArray(Charsets.UTF_8)) }
-                if (conn.responseCode !in 200..299) {
-                    Log.w(TAG, "delivery-report HTTP ${conn.responseCode}")
+                val responseCode = conn.responseCode
+                if (responseCode !in 200..299) {
+                    val errorCode = if (responseCode == 404) runCatching {
+                        JSONObject(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "")
+                            .optString("error")
+                    }.getOrNull() else null
+                    if (GatewayDeliveryReports.isUnknownRequestResponse(responseCode, errorCode)) {
+                        if (!GatewayDeliveryReports.quarantineUnknownRequest(context, report.eventId)) {
+                            Log.w(TAG, "delivery-report quarantine was not persisted")
+                            break
+                        }
+                        Log.w(TAG, "delivery-report unknown task quarantined; other reports continue")
+                        continue
+                    }
+                    Log.w(TAG, "delivery-report HTTP $responseCode")
                     break
                 }
                 if (!GatewayDeliveryReports.acknowledge(context, report.eventId)) {
