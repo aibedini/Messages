@@ -21,6 +21,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal object TrustPublicationPolicy {
+    enum class WaitingApprovalAction { ACTIVATE, WAIT, VOID }
+
+    fun waitingApprovalAction(
+        sequence: Int, deviceId: String, pairingSessionId: String?,
+        confirmed: Set<Pair<Int, String>>, pendingSessions: Set<String>,
+    ): WaitingApprovalAction = when {
+        (sequence to deviceId) in confirmed -> WaitingApprovalAction.ACTIVATE
+        !pairingSessionId.isNullOrBlank() && pairingSessionId in pendingSessions -> WaitingApprovalAction.WAIT
+        else -> WaitingApprovalAction.VOID
+    }
+
     fun durableReceipt(receipt: org.json.JSONObject?, sequence: Int): Boolean =
         receipt != null && receipt.optBoolean("ok") &&
             receipt.optInt("trustSequence", -1) == sequence &&
@@ -241,10 +252,27 @@ class TrustStatementPublisher(
                     lastFailureReason = safeHttpReason(conn, status))
                 return false
             }
-            val serverSequence = org.json.JSONObject(
+            val position = org.json.JSONObject(
                 conn.inputStream.bufferedReader().use { it.readText() }
-            ).getInt("trustSequence")
+            )
+            val serverSequence = position.getInt("trustSequence")
             if (serverSequence < 0) error("invalid_server_trust_position")
+            // Older GMweb releases only returned the sequence. They cannot prove
+            // whether a stranded approval succeeded, so never infer a void.
+            val hasApprovalEvidence = position.has("confirmedApprovals") &&
+                position.has("pendingPairingSessionIds")
+            val confirmed = mutableSetOf<Pair<Int, String>>()
+            val pendingSessions = mutableSetOf<String>()
+            if (hasApprovalEvidence) {
+                val approvals = position.getJSONArray("confirmedApprovals")
+                for (i in 0 until approvals.length()) {
+                    val item = approvals.getJSONObject(i)
+                    confirmed += item.getInt("trustSequence") to item.getString("deviceId")
+                }
+                val pending = position.getJSONArray("pendingPairingSessionIds")
+                for (i in 0 until pending.length()) pendingSessions += pending.getString(i)
+            }
+            val wipeGrantsFor = mutableSetOf<String>()
             val rows = db.withTransaction {
                 val dao = db.trustStatementOutboxDao()
                 val existing = dao.afterSequence(serverSequence)
@@ -278,8 +306,46 @@ class TrustStatementPublisher(
                     ))
                 }
                 if (gaps.isNotEmpty()) onLog("Voided ${gaps.size} missing trust sequence(s)")
+                if (hasApprovalEvidence) for (row in existing) {
+                    if (row.state != TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL) continue
+                    val certificate = runCatching {
+                        org.json.JSONObject(org.json.JSONObject(row.payload).getString("certificate"))
+                    }.getOrNull()
+                    val sessionId = certificate?.optString("pairingSessionId")
+                    when (TrustPublicationPolicy.waitingApprovalAction(
+                        row.trustSequence, row.deviceId, sessionId, confirmed, pendingSessions,
+                    )) {
+                        TrustPublicationPolicy.WaitingApprovalAction.ACTIVATE -> {
+                            dao.update(row.copy(state = TrustStatementOutboxEntity.STATE_PENDING))
+                            db.trustedDeviceDao().setStatusForSequence(row.deviceId, row.trustSequence,
+                                TrustedDeviceEntity.STATUS_PENDING_PUBLICATION, System.currentTimeMillis())
+                        }
+                        TrustPublicationPolicy.WaitingApprovalAction.WAIT -> Unit
+                        TrustPublicationPolicy.WaitingApprovalAction.VOID -> {
+                            val statement = TrustedDeviceRegistry.buildStatement(
+                                op = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                                statementId = row.statementId,
+                                deviceId = row.deviceId,
+                                trustSequence = row.trustSequence,
+                                capabilities = emptyList(), historyGrant = "", certificateJson = null,
+                            )
+                            dao.update(row.copy(
+                                operation = TrustStatementOutboxEntity.OP_TRUST_SEQUENCE_VOIDED,
+                                payload = statement.toString(),
+                                rootSignature = statement.getString("rootSignature"),
+                                state = TrustStatementOutboxEntity.STATE_PENDING,
+                            ))
+                            if (db.trustedDeviceDao().byId(row.deviceId)?.trustSequence == row.trustSequence) {
+                                db.trustedDeviceDao().setStatusForSequence(row.deviceId, row.trustSequence,
+                                    TrustedDeviceEntity.STATUS_FAILED, System.currentTimeMillis())
+                                wipeGrantsFor += row.deviceId
+                            }
+                        }
+                    }
+                }
                 dao.afterSequence(serverSequence)
             }
+            for (deviceId in wipeGrantsFor) SensitiveGrantStore.wipeGrants(appContext, deviceId)
             if (!TrustPublicationPolicy.hasContiguousReplay(serverSequence, rows)) {
                 val reason = if (rows.any { it.state == TrustStatementOutboxEntity.STATE_WAITING_SERVER_APPROVAL })
                     "trust_approval_waiting" else "local_trust_sequence_gap"

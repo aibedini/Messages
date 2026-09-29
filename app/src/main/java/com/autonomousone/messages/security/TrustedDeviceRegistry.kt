@@ -213,6 +213,7 @@ object TrustedDeviceRegistry {
     suspend fun failApproval(context: Context, deviceId: String, trustSequence: Int) {
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
+        var wipeCurrentGrant = false
         db.withTransaction {
             val waiting = db.trustStatementOutboxDao().waitingApproval(deviceId, trustSequence)
             if (waiting != null) {
@@ -232,11 +233,14 @@ object TrustedDeviceRegistry {
                     state = TrustStatementOutboxEntity.STATE_PENDING,
                 ))
             }
-            db.trustedDeviceDao().setStatusForSequence(
-                deviceId, trustSequence, TrustedDeviceEntity.STATUS_FAILED, now,
-            )
+            if (db.trustedDeviceDao().byId(deviceId)?.trustSequence == trustSequence) {
+                db.trustedDeviceDao().setStatusForSequence(
+                    deviceId, trustSequence, TrustedDeviceEntity.STATUS_FAILED, now,
+                )
+                wipeCurrentGrant = true
+            }
         }
-        SensitiveGrantStore.wipeGrants(context.applicationContext, deviceId)
+        if (wipeCurrentGrant) SensitiveGrantStore.wipeGrants(context.applicationContext, deviceId)
         TrustStatementPublisher.nudge()
     }
 
