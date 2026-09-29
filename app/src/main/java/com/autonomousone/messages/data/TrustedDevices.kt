@@ -57,7 +57,7 @@ data class TrustedDeviceEntity(
 data class TrustStatementOutboxEntity(
     @PrimaryKey val statementId: String,   // UUID
     val trustSequence: Int,                // monotonic per account
-    /** DEVICE_APPROVED | DEVICE_REVOKED | DEVICE_CAPABILITIES_CHANGED | DEVICE_KEY_ROTATED */
+    /** DEVICE_APPROVED | DEVICE_REVOKED | DEVICE_CAPABILITIES_CHANGED | DEVICE_KEY_ROTATED | TRUST_SEQUENCE_VOIDED */
     val operation: String,
     val deviceId: String,
     val payload: String,                   // canonical statement JSON
@@ -76,6 +76,7 @@ data class TrustStatementOutboxEntity(
         const val OP_DEVICE_REVOKED = "DEVICE_REVOKED"
         const val OP_DEVICE_CAPABILITIES_CHANGED = "DEVICE_CAPABILITIES_CHANGED"
         const val OP_DEVICE_KEY_ROTATED = "DEVICE_KEY_ROTATED"
+        const val OP_TRUST_SEQUENCE_VOIDED = "TRUST_SEQUENCE_VOIDED"
     }
 }
 
@@ -148,8 +149,11 @@ interface TrustStatementOutboxDao {
     @Query("UPDATE trust_statement_outbox SET state = 'PENDING' WHERE deviceId = :deviceId AND trustSequence = :sequence AND state = 'WAITING_SERVER_APPROVAL'")
     suspend fun activateApproval(deviceId: String, sequence: Int): Int
 
-    @Query("DELETE FROM trust_statement_outbox WHERE deviceId = :deviceId AND trustSequence = :sequence AND state = 'WAITING_SERVER_APPROVAL'")
-    suspend fun discardWaitingApproval(deviceId: String, sequence: Int): Int
+    @Query("SELECT * FROM trust_statement_outbox WHERE deviceId = :deviceId AND trustSequence = :sequence AND state = 'WAITING_SERVER_APPROVAL' LIMIT 1")
+    suspend fun waitingApproval(deviceId: String, sequence: Int): TrustStatementOutboxEntity?
+
+    @Update
+    suspend fun update(statement: TrustStatementOutboxEntity)
 
     @Query("SELECT COALESCE(MAX(trustSequence), 0) FROM trust_statement_outbox")
     suspend fun maxTrustSequence(): Int
