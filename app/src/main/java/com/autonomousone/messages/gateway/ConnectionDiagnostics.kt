@@ -58,6 +58,9 @@ object ConnectionDiagnostics {
         local += Check("Event uploader", EventUploader.running.value)
         local += Check("Event outbox", eventDao.pendingDepth() == 0,
             "${eventDao.pendingDepth()} pending · ${eventDao.deadLetterDepth()} dead letter")
+        val quarantinedCarrierReports = GatewayDeliveryReports.quarantinedCount(app)
+        local += Check("Carrier report quarantine", quarantinedCarrierReports == 0,
+            "$quarantinedCarrierReports unknown GMweb request IDs")
         local += Check("Trust publisher", trust.running, "${trust.pendingCount} pending")
         local += Check("Trust outbox", trust.pendingCount == 0 && trust.lastFailureReason == null,
             "oldest ${trust.oldestPendingSequence ?: "none"}" +

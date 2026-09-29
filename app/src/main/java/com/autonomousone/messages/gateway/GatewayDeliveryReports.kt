@@ -11,6 +11,7 @@ object GatewayDeliveryReports {
     private const val MAP_PREFIX = "map_"
     private const val MAP_CREATED_PREFIX = "map_created_"
     private const val REPORT_PREFIX = "report_"
+    private const val QUARANTINE_PREFIX = "quarantine_"
     private const val MAP_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
     private val lock = Any()
 
@@ -88,6 +89,23 @@ object GatewayDeliveryReports {
     fun acknowledge(context: Context, eventId: String): Boolean = synchronized(lock) {
         prefs(context).edit().remove(REPORT_PREFIX + eventId).commit()
     }
+
+    /** Keep definitive modem evidence for operator review when GMweb has no task ledger row. */
+    fun quarantineUnknownRequest(context: Context, eventId: String): Boolean = synchronized(lock) {
+        val preferences = prefs(context)
+        val report = preferences.getString(REPORT_PREFIX + eventId, null) ?: return@synchronized false
+        preferences.edit()
+            .putString(QUARANTINE_PREFIX + eventId, report)
+            .remove(REPORT_PREFIX + eventId)
+            .commit()
+    }
+
+    fun quarantinedCount(context: Context): Int = synchronized(lock) {
+        prefs(context).all.keys.count { it.startsWith(QUARANTINE_PREFIX) }
+    }
+
+    internal fun isUnknownRequestResponse(statusCode: Int, errorCode: String?): Boolean =
+        statusCode == 404 && errorCode == "unknown_request_id"
 
     internal fun eventId(requestId: String, status: String): String {
         val bytes = MessageDigest.getInstance("SHA-256")

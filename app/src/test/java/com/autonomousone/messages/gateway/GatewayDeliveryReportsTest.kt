@@ -19,4 +19,10 @@ class GatewayDeliveryReportsTest {
             GatewayDeliveryReports.eventId("pull_task_42", "delivered")
         )
     }
+
+    @Test fun `only an explicit unknown request response can be quarantined`() {
+        assertEquals(true, GatewayDeliveryReports.isUnknownRequestResponse(404, "unknown_request_id"))
+        assertEquals(false, GatewayDeliveryReports.isUnknownRequestResponse(404, "not_found"))
+        assertEquals(false, GatewayDeliveryReports.isUnknownRequestResponse(503, "unknown_request_id"))
+    }
 }
