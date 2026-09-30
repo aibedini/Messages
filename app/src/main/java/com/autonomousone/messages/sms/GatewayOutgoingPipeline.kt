@@ -163,6 +163,18 @@ object GatewayOutgoingPipeline {
             "SEND_SMS payload missing phone/body (${cmd.commandId})"
         }
 
+        if (subId != null && com.autonomousone.messages.messaging.SimManager(
+                com.autonomousone.messages.Holders.appContext
+            ).getActiveSims().none { it.subscriptionId == subId }) {
+            repo.finishCommandFrom(
+                commandId = cmd.commandId,
+                state = RemoteCommandEntity.STATE_FAILED,
+                errorCode = com.autonomousone.messages.sync.SyncErrorCode.SIM_NOT_AVAILABLE.name,
+                fromStates = listOf(RemoteCommandEntity.STATE_ACCEPTED)
+            )
+            return true
+        }
+
         repo.markCommandState(
             cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
             listOf(RemoteCommandEntity.STATE_ACCEPTED)

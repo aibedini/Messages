@@ -291,6 +291,9 @@ class EventUploader(
                     .put("messageId", event.messageId.takeIf { it.isNotBlank() })
                     .put("revision", event.revision)
                     .put("sortKey", event.sortKey)
+                    // Room's autoincrement outbox id is the device's durable
+                    // enqueue order, independent of retry and upload priority.
+                    .put("sourceOrder", event.id)
                     .put("encoding", event.encoding)
                     .put("schemaVersion", event.schemaVersion)
                     .put("cryptoVersion", event.cryptoVersion)

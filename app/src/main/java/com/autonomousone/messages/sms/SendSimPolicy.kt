@@ -76,13 +76,9 @@ object SendSimPolicy {
         // The request was honoured — the only case where the requested id is also a fact.
         actual == requested -> SimDecision.Send(requested)
 
-        // The manager would not say which subscription it is bound to.
-        //
-        // Deliberately NOT a refusal: refusing here would stop every send on any device or platform
-        // version where this read fails, which is a far worse outcome than an unknown label in the
-        // ledger. Recording "unknown" is the honest maximum when the platform will not say — and it
-        // is emphatically not the requested id, which is what the old code recorded.
-        actual == UNKNOWN_SUBSCRIPTION_ID -> SimDecision.Send(UNKNOWN_SUBSCRIPTION_ID)
+        // An explicit line choice cannot be verified when the manager reports
+        // no bound subscription. Fail before modem submission.
+        actual == UNKNOWN_SUBSCRIPTION_ID -> SimDecision.Refuse(requested)
 
         // The manager says it is bound elsewhere. Positive evidence of a mismatch, so the safe
         // direction is to refuse: a wrong-origin SMS cannot be recalled.

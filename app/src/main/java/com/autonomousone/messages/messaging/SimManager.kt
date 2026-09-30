@@ -42,7 +42,7 @@ class SimManager(private val context: Context) {
                 ?: SubscriptionManager.from(context)
             val infos: List<SubscriptionInfo> = sm.activeSubscriptionInfoList ?: emptyList()
             val defaultSubId = try {
-                SubscriptionManager.getDefaultSubscriptionId()
+                SubscriptionManager.getDefaultSmsSubscriptionId()
             } catch (e: Exception) {
                 SubscriptionManager.INVALID_SUBSCRIPTION_ID
             }

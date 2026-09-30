@@ -69,21 +69,19 @@ class SendSimPolicyTest {
     }
 
     @Test
-    fun `anUnknownActiveListWithAManagerThatWillNotSayStillSends`() {
+    fun `anUnknownManagerCannotProveTheExplicitSimWasSelected`() {
         assertEquals(
-            SimDecision.Send(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID),
+            SimDecision.Refuse(2),
             decide(requested = 2, actual = SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID, active = null)
         )
     }
 
     @Test
     fun `anUnreadableSubscriptionNeverFabricatesTheRequest`() {
-        // The exact defect: the ledger said 2 because 2 was requested, while the message left on
-        // whatever the platform default was. "Unknown" is the honest answer, and it is not 2.
+        // A requested SIM with unknown manager binding cannot enter the modem.
         val decision = decide(requested = 2, actual = SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID, active = true)
 
-        assertEquals(SimDecision.Send(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID), decision)
-        assertTrue(decision !is SimDecision.Send || decision.recordedSubscriptionId != 2)
+        assertEquals(SimDecision.Refuse(2), decision)
     }
 
     @Test

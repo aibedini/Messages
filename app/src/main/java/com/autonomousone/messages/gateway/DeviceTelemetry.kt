@@ -10,12 +10,14 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.messaging.SimManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.json.JSONArray
 
 /** Best-effort operational telemetry. It never gates sync, trust, or messaging. */
 class DeviceTelemetry(
@@ -31,6 +33,13 @@ class DeviceTelemetry(
 
         internal fun batteryPercent(level: Int, scale: Int): Int =
             if (level >= 0 && scale > 0) (level * 100 / scale).coerceIn(0, 100) else -1
+
+        /** Subscription labels can be user supplied; never relay a phone-like value. */
+        internal fun safeSimLabel(value: String): String = value
+            .take(64)
+            .replace(Regex("[\\r\\n\\t]"), " ")
+            .replace(Regex("(?U)\\+?\\d[\\d\\s()\\-]{6,}"), "SIM")
+            .trim()
     }
 
     private val appContext = context.applicationContext
@@ -76,9 +85,24 @@ class DeviceTelemetry(
             packageInfo.versionCode.toLong()
         }
         val deviceId = prefs.agentDeviceId(appContext)
+        val simManager = SimManager(appContext)
+        val simPermission = simManager.hasReadPhoneState()
+        val activeSims = JSONArray()
+        if (simPermission) simManager.getActiveSims().forEach { sim ->
+            activeSims.put(JSONObject()
+                .put("subscriptionId", sim.subscriptionId)
+                .put("slotIndex", sim.slotIndex)
+                .put("displayName", safeSimLabel(sim.displayName))
+                .put("carrierName", safeSimLabel(sim.carrierName))
+                .put("isDefaultSms", sim.isSystemDefault)
+                .put("isActive", true))
+        }
         val payload = JSONObject()
             .put("deviceId", deviceId)
             .put("timestamp", System.currentTimeMillis())
+            .put("smsSubscriptions", JSONObject()
+                .put("available", simPermission)
+                .put("items", activeSims))
             .put("battery", JSONObject()
                 .put("level", batteryPercent(
                     battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1,
