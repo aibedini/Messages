@@ -148,6 +148,18 @@ object EveSmsQueue {
         val notificationKind: String? = null,
         val generation: Int = 0,
         val correlationId: String? = null,
+        /**
+         * The line GMweb named for THIS message, or null when it named none.
+         *
+         * null and -1 are not the same thing here: null means "no explicit
+         * choice was made, so the user's Messaging preference applies", while a
+         * concrete id means "send on exactly this line, or do not send at all"
+         * — the sender refuses rather than falling back (mission §50, see
+         * [com.autonomousone.messages.sms.SendSimPolicy]). It is persisted with
+         * the record so a reboot between pull and send cannot move the message
+         * to a different SIM.
+         */
+        val subscriptionId: Int? = null,
         /** When true the record MUST pass the final pre-send validation gate. */
         val requiresValidation: Boolean = false,
         // ── Observability / gate bookkeeping ──
@@ -460,7 +472,8 @@ object EveSmsQueue {
         priority: String,
         idempotencyKey: String?,
         meta: GatewayMeta? = null,
-        startDeferred: Boolean = false
+        startDeferred: Boolean = false,
+        subscriptionId: Int? = null
     ): EnqueueResult {
         synchronized(records) {
             if (!idempotencyKey.isNullOrBlank()) {
@@ -493,6 +506,7 @@ object EveSmsQueue {
                 notificationKind = meta?.notificationKind,
                 generation = meta?.generation ?: 0,
                 correlationId = meta?.correlationId,
+                subscriptionId = subscriptionId,
                 requiresValidation = requiresValidation,
                 pulledAt = meta?.pulledAt ?: 0L,
                 deferredUntil = if (deferred) createdAt + VALIDATION_DEFER_BASE_MS else 0L,
@@ -967,6 +981,12 @@ internal object EveQueueCodec {
         notificationKind = o.optString("notificationKind", "").ifBlank { null },
         generation = o.optInt("generation", 0),
         correlationId = o.optString("correlationId", "").ifBlank { null },
+        // Absent on records written before the per-message SIM existed (and on
+        // records for sends that named no line): null means "no explicit
+        // choice", which is exactly the legacy behaviour. A negative id is not
+        // a subscription, so it decodes to null rather than reaching the radio.
+        subscriptionId = if (o.has("subscriptionId") && !o.isNull("subscriptionId"))
+            o.optInt("subscriptionId", -1).takeIf { it >= 0 } else null,
         requiresValidation = o.optBoolean("requiresValidation", false),
         pulledAt = o.optLong("pulledAt", 0L),
         validatedAt = o.optLong("validatedAt", 0L),
@@ -1002,6 +1022,9 @@ internal object EveQueueCodec {
         .put("notificationKind", r.notificationKind ?: "")
         .put("generation", r.generation)
         .put("correlationId", r.correlationId ?: "")
+        // Additive: an older build ignores the key, and a record written by an
+        // older build simply has no key — both decode to "no explicit SIM".
+        .put("subscriptionId", r.subscriptionId ?: JSONObject.NULL)
         .put("requiresValidation", r.requiresValidation)
         .put("pulledAt", r.pulledAt)
         .put("validatedAt", r.validatedAt)

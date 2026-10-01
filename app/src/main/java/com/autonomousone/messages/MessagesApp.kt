@@ -244,6 +244,10 @@ class MessagesApp : Application() {
         val required = listOf(
             Manifest.permission.READ_SMS,
             Manifest.permission.RECEIVE_SMS,
+            // The gateway cannot send a single SMS without this, and its absence used to be
+            // invisible here while /ready still reported the device ready. Diagnostics must name
+            // the permission that is actually missing.
+            Manifest.permission.SEND_SMS,
             Manifest.permission.READ_CONTACTS,
         )
         for (permission in required) {

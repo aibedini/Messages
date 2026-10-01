@@ -137,6 +137,22 @@ class OutboxPollerPayloadTest {
     }
 
     @Test
+    fun aSuccessfulOutcomeIsLabelledAsASubmissionNotAsCarrierAcceptance() {
+        // `outcome=sent` is the canonical value GMweb reads, and it is emitted the moment the
+        // modem hand-off is accepted — NOT when the carrier accepts the message. `stage` makes
+        // that explicit so a consumer cannot read a carrier verdict out of a submission; the
+        // carrier's own verdict arrives on /gateway/delivery-report.
+        val sent = OutboxPoller.ackPayload("gw-request-1", EveSmsQueue.OUTCOME_SENT, null, 1L)
+        assertEquals(OutboxPoller.STAGE_SUBMITTED, sent.getString("stage"))
+
+        val failed = OutboxPoller.ackPayload("gw-request-1", EveSmsQueue.OUTCOME_FAILED, "sim_unavailable", 1L)
+        assertEquals(OutboxPoller.STAGE_FAILED, failed.getString("stage"))
+
+        val superseded = OutboxPoller.ackPayload("gw-request-1", EveSmsQueue.OUTCOME_SUPERSEDED, "renewed", 1L)
+        assertEquals(OutboxPoller.STAGE_SUPERSEDED, superseded.getString("stage"))
+    }
+
+    @Test
     fun supersededAckCarriesNoSentAtAndIsNotADeviceFailure() {
         val ack = OutboxPoller.ackPayload(
             "gw-request-1", EveSmsQueue.OUTCOME_SUPERSEDED, "renewed", 1_700_000_000_000L

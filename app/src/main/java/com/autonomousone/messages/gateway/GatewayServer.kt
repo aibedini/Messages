@@ -133,13 +133,18 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             // §49: the record's correlationId is GMweb's own key for the message it asked to send. It
             // used to stop here — the lambda only had `to` and `text` — so the message reached GMweb
             // with no way to tie it back to the request, and neither could its later status change.
+            //
+            // The record's subscriptionId is now handed over too. It used to be a hard-coded
+            // `null`, which meant a SIM chosen in GMweb was silently discarded here and the message
+            // left on the user's default line. `null` still means "no explicit choice"; a concrete id
+            // reaches SmsSender, which refuses rather than falling back when that line is unavailable.
             EveSmsQueue.start(
                 context,
                 { record ->
                     smsSender.sendForResult(
                         record.to,
                         record.text,
-                        subscriptionIdOverride = null,
+                        subscriptionIdOverride = record.subscriptionId,
                         clientMessageId = record.correlationId,
                         gatewayRequestId = record.gatewayRequestId
                     ) != null
@@ -299,19 +304,21 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             when {
                 // ── EVE provider endpoints (Custom HTTP SMS contract) ──
                 cleanPath == "/ready" && method == "GET" -> {
-                    val ready = isListening && isDefaultSmsApp() && EveSmsQueue.isRunning
-                    if (ready) {
-                        sendResponse(output, 200, JSONObject().put("status", "ready"))
-                    } else {
-                        sendResponse(
-                            output, 503,
-                            JSONObject()
-                                .put("error", "not_ready")
-                                .put("serverRunning", isListening)
-                                .put("defaultSmsApp", isDefaultSmsApp())
-                                .put("queueRunning", EveSmsQueue.isRunning)
-                        )
-                    }
+                    // The probe now answers the question its name implies. It used to be
+                    // `isListening && isDefaultSmsApp() && queueRunning`, which reported
+                    // `{"status":"ready"}` on a device whose SEND_SMS had been revoked or whose
+                    // selected SIM was gone — i.e. ready to fail every send. The decision table
+                    // (and the machine-readable blockers) lives in SmsSendPreflight.
+                    val preflight = com.autonomousone.messages.sms.SmsSendPreflight.inspect(
+                        context = context,
+                        gatewayRunning = isListening,
+                        queueRunning = EveSmsQueue.isRunning,
+                        defaultSmsApp = isDefaultSmsApp(),
+                        selectedSubscriptionId = com.autonomousone.messages.messaging.MessagingPreferences(context)
+                            .sendSubscriptionId
+                            .takeIf { it != com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET }
+                    )
+                    sendResponse(output, if (preflight.sendReady) 200 else 503, preflight.toJson())
                 }
                 cleanPath == "/send" && method == "POST" -> {
                     handleEveSend(body, headers["idempotency-key"], output)
@@ -357,7 +364,14 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                     val json = JSONObject(body)
                     val phone = com.autonomousone.messages.utils.DigitNormalizer
                         .toAsciiDigits(json.optString("phone", "").trim())
-                    val message = json.optString("message", "").trim()
+                    // The body is CONTENT, not metadata. It used to be read as
+                    // `json.optString("message", "").trim()` and that trimmed value was then
+                    // transmitted — so a message GMweb sent as "\nline1\nline2\n" left the device
+                    // as "line1\nline2", silently edited on a channel where the recipient cannot
+                    // tell. Only the line-ending REPRESENTATION is normalised here; validation
+                    // inspects the body and transmission receives this exact value.
+                    val message = com.autonomousone.messages.sms.SmsBodyText
+                        .normalizeLineEndings(json.optString("message", ""))
                     // mission §78: the same convention the EVE endpoint already accepts. The body field
                     // is allowed too, so a caller that cannot set headers still has a way to be safe.
                     val idempotencyKey = headers["idempotency-key"]
@@ -653,7 +667,10 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
             val json = JSONObject(body)
             val to = com.autonomousone.messages.utils.DigitNormalizer
                 .toAsciiDigits(json.optString("to", "").trim())
-            val text = json.optString("text", "").trim()
+            // Same rule as /api/v1/sms/send: normalise line endings, never trim the body that is
+            // going to be transmitted (see SmsBodyText).
+            val text = com.autonomousone.messages.sms.SmsBodyText
+                .normalizeLineEndings(json.optString("text", ""))
             val priority = json.optString("priority", "").trim().lowercase()
 
             val digitsOnly = to.filter { it.isDigit() }

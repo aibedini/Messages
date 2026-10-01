@@ -93,6 +93,31 @@ class OutboxPoller(
          */
         private const val NETWORK_WAIT_RECHECK_MS = 60_000L
 
+        /**
+         * Whether an ACK describes the modem hand-off or a terminal verdict.
+         *
+         * `outcome` is the canonical set GMweb already reads ({sent, failed, superseded}) and
+         * cannot express the difference between "the radio accepted the submit" and "the carrier
+         * accepted the message". `stage` states which one this report is, so a consumer never has
+         * to infer a carrier verdict from a submission: `outcome=sent, stage=submitted` means
+         * submitted, nothing more. The carrier's own verdict arrives separately, on
+         * `/gateway/delivery-report` (`delivered` / `failed`), once definitive evidence exists.
+         */
+        const val STAGE_SUBMITTED = "submitted"
+        const val STAGE_FAILED = "failed"
+        const val STAGE_SUPERSEDED = "superseded"
+
+        /** Canonical first, legacy spellings after it. */
+        private val SUBSCRIPTION_KEYS = listOf(
+            "subscriptionId", "subscription_id", "subId", "sub_id"
+        )
+
+        /**
+         * A SIM was named but the value cannot denote a subscription. Reported to
+         * GMweb as the ACK reason; see [parseRequestedSubscriptionId].
+         */
+        const val REASON_INVALID_SUBSCRIPTION = "invalid_subscription"
+
         /** Terminal outcome of one delivery attempt, as seen locally. */
         internal enum class Drain { SENT, SUPERSEDED, FAILED, CANCELLED, DEFERRED, TIMEOUT }
 
@@ -108,13 +133,58 @@ class OutboxPoller(
             val to = t.getString("to").trim()
             require(to.isNotEmpty()) { "task.to is blank" }
             val text = t.getString("text")
+            val requestedSim = parseRequestedSubscriptionId(t)
             return Task(
                 requestId = requestId,
                 to = to,
                 text = text,
                 priority = t.optString("priority", "announcement"),
-                meta = parseMeta(t.optJSONObject("meta"))
+                meta = parseMeta(t.optJSONObject("meta")),
+                subscriptionId = requestedSim.subscriptionId,
+                subscriptionError = requestedSim.error
             )
+        }
+
+        /**
+         * The canonical outbound SIM contract, and its legacy spellings.
+         *
+         * **Canonical:** `task.subscriptionId` (a JSON number).
+         *
+         * Accepted for compatibility with payloads already in the wild:
+         * `task.subscription_id`, `task.meta.subscriptionId`,
+         * `task.meta.subscription_id`. First match wins, canonical key first.
+         *
+         * A value that is present but unusable (negative, non-integral,
+         * non-numeric) is NOT silently downgraded to "no SIM chosen": that would
+         * send the message on the platform default line, which is exactly the
+         * wrong-SIM outcome the explicit request exists to prevent. It is
+         * reported as [RequestedSubscription.error] so the task fails closed
+         * with `invalid_subscription` before anything reaches the radio.
+         */
+        internal fun parseRequestedSubscriptionId(task: JSONObject): RequestedSubscription {
+            val containers = listOfNotNull(task, task.optJSONObject("meta"))
+            for (container in containers) {
+                for (key in SUBSCRIPTION_KEYS) {
+                    if (!container.has(key) || container.isNull(key)) continue
+                    return coerceSubscriptionId(container.get(key))
+                }
+            }
+            return RequestedSubscription(null, null)
+        }
+
+        private fun coerceSubscriptionId(raw: Any?): RequestedSubscription = when (raw) {
+            is Number -> {
+                val id = raw.toInt()
+                val exact = raw.toDouble() == id.toDouble()
+                if (exact && id >= 0) RequestedSubscription(id, null)
+                else RequestedSubscription(null, REASON_INVALID_SUBSCRIPTION)
+            }
+            is String -> {
+                val id = raw.trim().toIntOrNull()
+                if (id != null && id >= 0) RequestedSubscription(id, null)
+                else RequestedSubscription(null, REASON_INVALID_SUBSCRIPTION)
+            }
+            else -> RequestedSubscription(null, REASON_INVALID_SUBSCRIPTION)
         }
 
         /**
@@ -156,6 +226,16 @@ class OutboxPoller(
                 .put("requestId", requestId)
                 .put("ok", ok)
                 .put("outcome", outcome)
+                // Which physical stage this outcome describes. A successful submit is NOT a
+                // carrier verdict — see STAGE_SUBMITTED.
+                .put(
+                    "stage",
+                    when (outcome) {
+                        EveSmsQueue.OUTCOME_SENT -> STAGE_SUBMITTED
+                        EveSmsQueue.OUTCOME_SUPERSEDED -> STAGE_SUPERSEDED
+                        else -> STAGE_FAILED
+                    }
+                )
                 .put("ackAt", nowMs)
             if (ok) payload.put("sentAt", nowMs)
             if (!ok && !reason.isNullOrBlank()) payload.put("reason", reason)
@@ -438,6 +518,20 @@ class OutboxPoller(
         // log line is a durable copy, and this one is captured for every pulled task.
         onLog("📨 Pulled " + task.requestId + " → " + PhoneToken.of(task.to))
 
+        // A SIM that was NAMED but cannot be parsed must never degrade into "no
+        // SIM named": that would put the message on the platform default line,
+        // which is precisely the wrong-SIM outcome an explicit request exists to
+        // prevent. Fail the task closed, with a machine-readable reason.
+        if (task.subscriptionError != null) {
+            trace("SUBSCRIPTION_REJECTED", task, mapOf("reason" to task.subscriptionError))
+            onLog("🚫 Rejected " + task.requestId + " (" + task.subscriptionError + ")")
+            ackForTask(task, EveSmsQueue.OUTCOME_FAILED, task.subscriptionError)
+            return
+        }
+        if (task.subscriptionId != null) {
+            trace("SUBSCRIPTION_REQUESTED", task, mapOf("subscriptionId" to task.subscriptionId))
+        }
+
         // ── Phase 1: pull-time validation (optimisation only) ────────────────
         // Cheap rejection of a task GMweb already knows is stale. It does NOT
         // replace the final gate: the customer can renew during the wait.
@@ -487,7 +581,8 @@ class OutboxPoller(
                     pulledAt = System.currentTimeMillis()
                 )
             },
-            startDeferred = startDeferred
+            startDeferred = startDeferred,
+            subscriptionId = task.subscriptionId
         )
         if (!result.created) {
             // Same gateway requestId pulled twice — reuse the existing record so
@@ -862,7 +957,8 @@ class OutboxPoller(
         "notificationKind" to task.meta?.notificationKind,
         "generation" to task.meta?.generation,
         "correlationId" to task.meta?.correlationId,
-        "requiresValidation" to (task.meta?.requiresValidation == true)
+        "requiresValidation" to (task.meta?.requiresValidation == true),
+        "subscriptionId" to task.subscriptionId
     )
 
     private fun traceFields(rec: EveSmsQueue.Record): Map<String, Any?> = linkedMapOf(
@@ -873,6 +969,7 @@ class OutboxPoller(
         "generation" to rec.generation,
         "correlationId" to rec.correlationId,
         "requiresValidation" to rec.requiresValidation,
+        "subscriptionId" to rec.subscriptionId,
         "pulledAt" to rec.pulledAt
     )
 
@@ -897,8 +994,15 @@ class OutboxPoller(
         val to: String,
         val text: String,
         val priority: String,
-        val meta: TaskMeta? = null
+        val meta: TaskMeta? = null,
+        /** The exact line GMweb named for this message, or null when it named none. */
+        val subscriptionId: Int? = null,
+        /** Non-null when a SIM was named but could not be parsed: never send, fail closed. */
+        val subscriptionError: String? = null
     )
+
+    /** Outcome of reading the requested-SIM field off a pull payload. */
+    data class RequestedSubscription(val subscriptionId: Int?, val error: String?)
 
     /** task.meta as returned by GMweb. Absent entirely on older servers. */
     data class TaskMeta(
