@@ -116,28 +116,49 @@ class DeviceTelemetry(
     @Volatile
     private var pendingTrigger: TelemetryTrigger = TelemetryTrigger.PERIODIC
 
+    /** The last eligibility logged, so the line appears on CHANGE rather than every iteration. */
+    @Volatile
+    private var lastLoggedEligibility: TelemetryEligibility? = null
+
     fun start(initialTrigger: TelemetryTrigger = TelemetryTrigger.STARTUP) {
         if (job?.isActive == true) return
         instance.set(this)
         TelemetryHealth.setRunning(true)
+        // BOUNDARY 1+2 (P0 instrumentation): the instance exists and the loop is starting. Without
+        // this line, "telemetry never ran" and "telemetry ran and was blocked" look identical in a
+        // logcat that no longer exists after the process died — so it goes to the DURABLE diagnostic
+        // log as well.
+        Log.i(TAG, "TELEMETRY_INSTANCE_CREATED agent=${shortId(prefs.agentDeviceId(appContext))}")
+        trace("instance_created trigger=${initialTrigger.wireValue}")
         job = scope.launch {
+            trace("start trigger=${initialTrigger.wireValue} pid=${android.os.Process.myPid()}")
+            logEligibility(force = true)
             // The FIRST report is immediate: a phone that has just brought its gateway up (or just
             // been updated) must not wait a minute to become visible.
             pendingTrigger = initialTrigger
             var nextPeriodicAt = 0L
+            var attempt = 0L
             while (isActive) {
+                val eligibility = eligible()
                 val due = pendingTrigger != TelemetryTrigger.PERIODIC ||
                     System.currentTimeMillis() >= nextPeriodicAt
-                if (eligible() && due && wakeState.beginRun()) {
+                if (eligibility.eligible && due && wakeState.beginRun()) {
                     val trigger = pendingTrigger
                     pendingTrigger = TelemetryTrigger.PERIODIC
+                    attempt++
                     TelemetryHealth.onAttempt(trigger)
+                    // BOUNDARY 3: why this report exists, and for which device. IDs are shortened;
+                    // no secret, no path, no body.
+                    Log.i(TAG, "TELEMETRY_REPORT_BEGIN trigger=${trigger.wireValue} attempt=$attempt " +
+                        "agent=${shortId(prefs.agentDeviceId(appContext))}")
+                    trace("report_begin trigger=${trigger.wireValue} attempt=$attempt")
                     runCatching { report(trigger) }
                         .onFailure {
                             // A report that could not even be attempted is still a failed attempt;
                             // the registry must never show a silent gap.
                             TelemetryHealth.onFailure(errorCode = TelemetryHealth.ErrorCode.TRANSPORT)
-                            Log.w(TAG, "report_failed", it)
+                            Log.w(TAG, "TELEMETRY_REPORT_END result=threw", it)
+                            trace("report_end result=threw error=${it.javaClass.simpleName}")
                         }
                     nextPeriodicAt = System.currentTimeMillis() + INTERVAL_MS
                     if (wakeState.endRun()) {
@@ -148,9 +169,11 @@ class DeviceTelemetry(
                     }
                     continue
                 }
-                if (!eligible() && due) {
-                    // Not eligible (gateway off / no origin / not enrolled). Do not spin on a trigger
-                    // that can never be sent; the next start reports STARTUP.
+                if (!eligibility.eligible && due) {
+                    // BOUNDARY 4 (the one that was missing): not eligible, and WHY. A device that is
+                    // switched off is not misconfigured, and a device with no server is not
+                    // de-registered — the reason is the whole point of this branch.
+                    logEligibility(force = false, eligibility = eligibility)
                     pendingTrigger = TelemetryTrigger.PERIODIC
                     nextPeriodicAt = System.currentTimeMillis() + INTERVAL_MS
                 }
@@ -169,11 +192,49 @@ class DeviceTelemetry(
         if (job == null) instance.compareAndSet(this, null)
     }
 
+    /**
+     * Record and log the eligibility, loudly on a CHANGE.
+     *
+     * `eligible()` used to be a private Boolean expression whose answer nobody could see; a device
+     * that spent a week ineligible produced zero log lines and zero requests. Logging on change (not
+     * every iteration) keeps the log readable while making the transition — "the gateway came up, so
+     * telemetry became eligible" — impossible to miss.
+     */
+    private fun logEligibility(force: Boolean, eligibility: TelemetryEligibility = eligible()) {
+        TelemetryEligibilityState.record(eligibility)
+        val previous = lastLoggedEligibility
+        if (!force && previous == eligibility) return
+        lastLoggedEligibility = eligibility
+        val line = "TELEMETRY_ELIGIBILITY eligible=${eligibility.eligible} " +
+            "reason=${eligibility.reason ?: "none"} " +
+            "isEnabled=${prefs.isEnabled} identity=${prefs.identityRegistered} " +
+            "origin=${if (prefs.gmwebServerOrigin.isBlank()) "absent" else "present"} " +
+            "host=${safeHost()}"
+        Log.i(TAG, line)
+        trace("eligibility eligible=${eligibility.eligible} reason=${eligibility.reason ?: "none"} " +
+            "isEnabled=${prefs.isEnabled} identity=${prefs.identityRegistered} " +
+            "origin=${if (prefs.gmwebServerOrigin.isBlank()) "absent" else "present"} host=${safeHost()}")
+    }
+
+    private fun trace(message: String) {
+        runCatching {
+            com.autonomousone.messages.utils.DiagnosticLog.event("GM_TELEMETRY", message)
+        }
+    }
+
+    /** The origin's host only — never a path, query or credential. */
+    private fun safeHost(): String = runCatching {
+        java.net.URI(prefs.gmwebServerOrigin).host ?: "unknown"
+    }.getOrDefault("unparsable")
+
+    private fun shortId(value: String): String = value.take(8)
+
     fun stop() {
         job?.cancel()
         job = null
         instance.compareAndSet(this, null)
         TelemetryHealth.setRunning(false)
+        trace("stop")
     }
 
     /**
@@ -189,8 +250,12 @@ class DeviceTelemetry(
         wake.trySend(reason)
     }
 
-    private fun eligible(): Boolean =
-        prefs.isEnabled && prefs.identityRegistered && prefs.gmwebUrl.isNotBlank()
+    private fun eligible(): TelemetryEligibility = TelemetryEligibility.evaluate(
+        isEnabled = prefs.isEnabled,
+        identityRegistered = prefs.identityRegistered,
+        serverOrigin = prefs.gmwebServerOrigin
+    )
+
 
     internal suspend fun report(trigger: TelemetryTrigger = TelemetryTrigger.PERIODIC): Boolean {
         val db = MessagesDatabase.get(appContext)
@@ -297,9 +362,16 @@ class DeviceTelemetry(
                 .put("model", Build.MODEL)
                 .put("androidVersion", Build.VERSION.RELEASE)
                 .put("sdkInt", Build.VERSION.SDK_INT))
-        val result = client.post(PATH, payload) { conn, bytes ->
-            AgentAuth.sign(conn, deviceId, PATH, "POST", bytes)
-        }
+        val result = client.post(
+            path = PATH,
+            body = payload,
+            signer = { conn, bytes ->
+                // BOUNDARY 5+6: the exact bytes signed == the exact bytes written (the signer receives
+                // the same array the client then writes). Logged by the client around this call.
+                AgentAuth.sign(conn, deviceId, PATH, "POST", bytes)
+            },
+            traceTag = "GM_TELEMETRY"
+        )
         val now = System.currentTimeMillis()
         val ok = result is ControlPlaneClient.Result.Success
         if (ok) {
@@ -311,10 +383,22 @@ class DeviceTelemetry(
             val failure = result as? ControlPlaneClient.Result.Failure
             TelemetryHealth.onFailure(at = now, httpStatus = failure?.httpStatus)
         }
+        // BOUNDARY 7: the end of the attempt, with the outcome. Together with the lines above this
+        // makes "the report was never attempted" distinguishable from "it was attempted and failed"
+        // from "it succeeded" — the distinction the last seven days could not make.
         Log.i(
             TAG,
-            "report trigger=${trigger.wireValue} status=${if (ok) "stored" else "failed"} " +
+            "TELEMETRY_REPORT_END trigger=${trigger.wireValue} " +
+                "result=${if (ok) "success" else "failure"} " +
+                "http=${(result as? ControlPlaneClient.Result.Success)?.httpStatus ?: (result as? ControlPlaneClient.Result.Failure)?.httpStatus ?: "none"} " +
                 "sims=${sims.size} reason=${discoveryReason ?: "none"} outbox=${eventDao.pendingDepth()}"
+        )
+        trace(
+            "report_end trigger=${trigger.wireValue} result=${if (ok) "success" else "failure"} " +
+                "http=${(result as? ControlPlaneClient.Result.Success)?.httpStatus ?: (result as? ControlPlaneClient.Result.Failure)?.httpStatus ?: "none"} " +
+                "sims=${sims.size} simReason=${discoveryReason ?: "none"} " +
+                "outbox=${eventDao.pendingDepth()} realtime=${eventDao.pendingRealtimeDepth()} " +
+                "backfill=${eventDao.pendingBackfillDepth()} dead=${eventDao.deadLetterDepth()}"
         )
         return ok
     }

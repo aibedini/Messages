@@ -294,7 +294,12 @@ class GatewayViewModel(
         deadLetters = deadLetterBreakdown,
         deadLetterSummary = deadLetterSummary,
         // The one actionable blocker, when it has been read (mission §57).
-        diagnostics = syncDiagnostics
+        diagnostics = syncDiagnostics,
+        // Telemetry/presence: the row whose absence let a week of zero telemetry read as HEALTHY.
+        telemetry = com.autonomousone.messages.gateway.TelemetryHealth.snapshot(),
+        telemetryEligibility = com.autonomousone.messages.gateway.TelemetryEligibilityState.current(),
+        stableDeviceId = prefs.stableDeviceId(getApplication()),
+        agentDeviceId = prefs.agentDeviceId(getApplication())
     )
 
     /** Copies the redacted report to the clipboard. */

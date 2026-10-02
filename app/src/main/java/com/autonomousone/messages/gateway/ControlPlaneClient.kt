@@ -64,14 +64,28 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
         body: JSONObject,
         extraHeaders: Map<String, String> = emptyMap(),
         signer: ((java.net.HttpURLConnection, ByteArray) -> Boolean)? = null,
+        /**
+         * When set, one durable begin/result line per attempt is written under this category.
+         *
+         * The P0 that made this necessary: production saw ZERO `/api/v1/agent/device-telemetry`
+         * requests while `/api/v1/agent/events/batch` from the SAME process returned 200. A request
+         * that fails to sign, or that dies before the socket is opened, leaves NO server-side trace —
+         * so the only place the difference can be observed is on the device, and it has to be
+         * durable, because logcat is gone after a process death. The tag is a caller-chosen
+         * category, the path is already known to the caller, and nothing here logs a header, a body
+         * or a credential.
+         */
+        traceTag: String? = null,
     ): Result<String> {
         return try {
             // SSOT: control plane is gmwebUrl — /api/v1/agent/* lives there.
             val baseUrl = prefs.gmwebUrl.trimEnd('/')
             if (!baseUrl.startsWith("https://")) {
+                trace(traceTag, "begin_rejected reason=insecure_url")
                 return Result.Failure("Insecure control-plane URL rejected — HTTPS required")
             }
             val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
+            trace(traceTag, "http_begin host=${hostOf(baseUrl)} path=$path bytes=${bodyBytes.size}")
             val conn = URL(baseUrl + path).openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -79,17 +93,26 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
             conn.readTimeout = READ_TIMEOUT_MS
             conn.doOutput = true
             for ((k, v) in extraHeaders) conn.setRequestProperty(k, v)
-            if (signer != null && !signer(conn, bodyBytes)) {
-                return Result.Failure("signing failed — request aborted (fail closed)")
+            if (signer != null) {
+                trace(traceTag, "sign_begin path=$path bytes=${bodyBytes.size}")
+                val signed = signer(conn, bodyBytes)
+                trace(traceTag, "sign_result ok=$signed")
+                if (!signed) {
+                    // Fail closed, and say so: an unsigned request would be rejected anyway, and a
+                    // silent abort here is indistinguishable from "the server never answered".
+                    return Result.Failure("signing failed — request aborted (fail closed)")
+                }
             }
             conn.outputStream.use { it.write(bodyBytes) }
             val code = conn.responseCode
             if (code in 200..299) {
+                trace(traceTag, "http_result status=$code")
                 Result.Success(conn.inputStream.use { it.bufferedReader().readText() }, code)
             } else {
                 val err = conn.errorStream?.use { it.bufferedReader().readText() } ?: ""
                 val retryAfter = parseRetryAfter(conn.getHeaderField("Retry-After"))
                 Log.w(TAG, "POST $path → HTTP $code" + (retryAfter?.let { " retry-after=${it}ms" } ?: ""))
+                trace(traceTag, "http_result status=$code body=${err.take(120)}")
                 Result.Failure(
                     "HTTP $code ${err.take(200)}",
                     httpStatus = code,
@@ -99,7 +122,17 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
             }
         } catch (e: Exception) {
             Log.w(TAG, "POST $path failed: ${e.message}")
+            trace(traceTag, "transport_failure error=${e.javaClass.simpleName}")
             Result.Failure(e.message ?: "network error")
         }
+    }
+
+    /** Host only: a diagnostic must never print a path, a query or a credential. */
+    private fun hostOf(baseUrl: String): String =
+        runCatching { java.net.URI(baseUrl).host ?: "unknown" }.getOrDefault("unparsable")
+
+    private fun trace(tag: String?, message: String) {
+        if (tag == null) return
+        runCatching { com.autonomousone.messages.utils.DiagnosticLog.event(tag, message) }
     }
 }

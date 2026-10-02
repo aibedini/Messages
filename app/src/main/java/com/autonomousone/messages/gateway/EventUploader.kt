@@ -331,7 +331,7 @@ class EventUploader(
         // ordinary upload without a second registry read.
         val wasFailing = GatewayHealthRecorder.rawSnapshot(now).eventUpload.lastFailure != null
 
-        return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign)) {
+        return when (val result = client.post(EVENTS_PATH, JSONObject().put("events", events), signer = sign, traceTag = "GM_EVENT_UPLOAD")) {
             is ControlPlaneClient.Result.Success -> {
                 val parsed = BatchAckParser.parse(result.data)
                 val acknowledged = parsed.acknowledged

@@ -4,6 +4,8 @@ import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.gateway.AddressScope
 import com.autonomousone.messages.gateway.NetworkAddressFacts
+import com.autonomousone.messages.gateway.TelemetryEligibility
+import com.autonomousone.messages.gateway.TelemetryHealth
 import com.autonomousone.messages.sync.diagnostics.SyncDiagnostics
 import com.autonomousone.messages.sync.diagnostics.SyncDiagnosticsText
 import com.autonomousone.messages.utils.PhoneToken
@@ -50,6 +52,19 @@ object GatewayDiagnosticReport {
          * `Verdict: DEGRADED` and leave the cause to be guessed at.
          */
         diagnostics: SyncDiagnostics? = null,
+        /**
+         * Device telemetry / presence health.
+         *
+         * Added because the single most important fact about this device — whether GMweb is receiving
+         * its heartbeat at all — was absent from the report while the report said "HEALTHY". A
+         * production week with ZERO `/api/v1/agent/device-telemetry` requests left no trace here.
+         */
+        telemetry: TelemetryHealth.Snapshot? = null,
+        /** Live eligibility failure code when no reporter is running (`GATEWAY_DISABLED`, …). */
+        telemetryEligibility: TelemetryEligibility? = null,
+        /** The device identities, shortened by this renderer, so a mismatch is visible. */
+        stableDeviceId: String? = null,
+        agentDeviceId: String? = null,
         now: Long = System.currentTimeMillis()
     ): String = buildString {
         appendLine("GMweb Gateway Diagnostic")
@@ -101,6 +116,28 @@ object GatewayDiagnosticReport {
         appendLine("  Last success: ${ago(snapshot.eventUpload.lastSuccessAt, now)}")
         appendLine("  Last HTTP: ${snapshot.eventUpload.lastHttpStatus ?: "n/a"}")
         appendLine("  Last error: ${failureLine(snapshot.eventUpload.lastFailure, snapshot.eventUpload.lastFailureSafeDetail)}")
+        appendLine()
+
+        // ── Phone telemetry / presence ───────────────────────────────────────
+        // The acceptance row for the P0 that this report could not previously express: whether GMweb
+        // is receiving this device's heartbeat at all, and if not, WHICH condition is stopping it.
+        val telemetrySnapshot = telemetry
+        appendLine("Phone telemetry (Android → GMweb):")
+        appendLine("  Running: ${yesNo(telemetrySnapshot?.running == true)}")
+        appendLine("  Eligible: ${eligibilityLine(telemetryEligibility)}")
+        appendLine("  Destination host: ${snapshot.endpoint.host ?: "not configured"}")
+        appendLine("  Last trigger: ${telemetrySnapshot?.lastTrigger ?: "never"}")
+        appendLine("  Last attempt: ${ago(telemetrySnapshot?.lastAttemptAt, now)}")
+        appendLine("  Last success: ${ago(telemetrySnapshot?.lastSuccessAt, now)}")
+        appendLine("  Last HTTP: ${telemetrySnapshot?.lastHttpStatus ?: "n/a"}")
+        appendLine("  Last error: ${telemetrySnapshot?.lastErrorCode ?: "none"}")
+        appendLine("  Attempts/successes/failures: ${telemetrySnapshot?.attempts ?: 0}/" +
+            "${telemetrySnapshot?.successes ?: 0}/${telemetrySnapshot?.failures ?: 0}")
+        appendLine("  Skipped (no reporter running): ${telemetrySnapshot?.skipped ?: 0}")
+        appendLine(
+            "  Stable device: ${shortId(stableDeviceId)} · Agent device: ${shortId(agentDeviceId)}" +
+                " · Match: ${if (identityMatches(stableDeviceId, agentDeviceId)) "yes" else "NO"}"
+        )
         appendLine()
 
         appendLine("Pull bridge (GMweb → Android):")
@@ -306,6 +343,26 @@ object GatewayDiagnosticReport {
     }
 
     private fun yesNo(value: Boolean): String = if (value) "yes" else "no"
+
+    /**
+     * The eligibility line: `yes`, or `no (<REASON_CODE>)`.
+     *
+     * The reason CODE is printed in full on purpose — it is the machine-readable answer to "why is
+     * the phone not reporting?", and a report that only said `no` is what let a week of zero
+     * telemetry look like a healthy device.
+     */
+    private fun eligibilityLine(eligibility: TelemetryEligibility?): String = when {
+        eligibility == null -> "unknown (not evaluated yet)"
+        eligibility.eligible -> "yes"
+        else -> "no (${eligibility.reason ?: "unknown"})"
+    }
+
+    /** Eight characters, matching the diagnostic's own convention for identity references. */
+    private fun shortId(value: String?): String =
+        if (value.isNullOrBlank()) "unknown" else value.take(8) + "…"
+
+    private fun identityMatches(stable: String?, agent: String?): Boolean =
+        !stable.isNullOrBlank() && stable == agent
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Diagnostics V2 sections (mission §56-§57)
