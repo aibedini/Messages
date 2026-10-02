@@ -58,6 +58,19 @@ class SimManager(private val context: Context) {
         SubscriptionManager.INVALID_SUBSCRIPTION_ID
     }
 
+    /**
+     * The default SMS subscription, or NULL when the platform did not answer.
+     *
+     * The distinction the send path needs: `INVALID_SUBSCRIPTION_ID` from
+     * [defaultSmsSubscriptionId] means "the platform answered: there is no default", which must fail
+     * closed, while a failure to ask must not be read as the same fact.
+     */
+    fun defaultSmsSubscriptionIdOrNull(): Int? = try {
+        SubscriptionManager.getDefaultSmsSubscriptionId()
+    } catch (e: Exception) {
+        null
+    }
+
     @SuppressLint("MissingPermission") // reached only through discover(), which checks the permission
     private fun queryActiveSims(): List<SimInfo> {
         val result = mutableListOf<SimInfo>()

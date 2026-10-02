@@ -107,6 +107,14 @@ enum class SyncErrorCode {
     /** The requested SIM is not present or not active. Must never fall back silently. */
     SIM_NOT_AVAILABLE,
 
+    /**
+     * No line was named and the platform reports no default SMS subscription (mission §25).
+     *
+     * Distinct from [SIM_NOT_AVAILABLE]: the SIMs may be present and healthy — nothing designates one
+     * as the default line, so there is no honest line to send on and picking one is forbidden.
+     */
+    NO_DEFAULT_SMS_SUBSCRIPTION,
+
     /** The platform refused the send. */
     SMS_SEND_FAILED,
 
@@ -188,7 +196,7 @@ enum class SyncErrorCode {
             CRYPTO_KEY_UNAVAILABLE,
             HISTORY_GRANT_MISSING, HISTORY_KEY_MISSING,
             TELEPHONY_PERMISSION_MISSING, TELEPHONY_QUERY_FAILED,
-            SIM_NOT_AVAILABLE, SMS_SEND_FAILED,
+            SIM_NOT_AVAILABLE, SMS_SEND_FAILED, NO_DEFAULT_SMS_SUBSCRIPTION,
             READ_COMMAND_DECRYPT_FAILED, READ_INVALID_PAYLOAD, READ_MAPPING_MISSING,
             READ_UNKNOWN_CONVERSATION, READ_PROVIDER_WRITE_FAILED, READ_EVENT_PUBLISH_FAILED,
             READ_PERMISSION_DENIED,

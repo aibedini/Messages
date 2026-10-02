@@ -158,6 +158,10 @@ class SyncErrorCodeTest {
             SyncErrorCode.CRYPTO_KEY_UNAVAILABLE,
             SyncErrorCode.COMMAND_INTERRUPTED_AFTER_SUBMIT,
             SyncErrorCode.COMMAND_EXPIRED_BEFORE_CLAIM,
+            // MODE A (mission §25): "no default SMS subscription is set" had no minimum code, and
+            // reporting it as SIM_NOT_AVAILABLE would name the wrong condition — the SIM is fine,
+            // nothing designates it as the default line.
+            SyncErrorCode.NO_DEFAULT_SMS_SUBSCRIPTION,
             // The read-command family. MARK_THREAD_READ failures were being reported with
             // SMS_SEND_FAILED (a send code, on a read) and UNKNOWN, so "this conversation has no
             // mapping on the phone" was indistinguishable from "the provider refused the write" —
@@ -171,8 +175,8 @@ class SyncErrorCodeTest {
             SyncErrorCode.READ_PERMISSION_DENIED
         )
         assertEquals(
-            "the mission's minimum codes plus 10 that had no honest minimum equivalent",
-            30,
+            "the mission's minimum codes plus 11 that had no honest minimum equivalent",
+            31,
             SyncErrorCode.entries.size
         )
         assertEquals(

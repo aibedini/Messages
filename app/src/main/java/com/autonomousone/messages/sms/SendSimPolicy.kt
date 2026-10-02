@@ -49,6 +49,43 @@ object SendSimPolicy {
     const val UNKNOWN_SUBSCRIPTION_ID = -1
 
     /**
+     * What a send that named NO line must use (mission §25, MODE A `PHONE_DEFAULT`).
+     *
+     * The distinction this exists for: "the platform says there is no default SMS subscription" is a
+     * fact the user must be told about, while "the app could not read the platform's answer" is not —
+     * refusing every default-line send because a permission is missing would be worse than the
+     * failure it guards. Three states, so neither can be mistaken for the other, and never "pick a
+     * SIM at random" (mission §25 explicitly forbids falling back to SIM 1).
+     */
+    sealed interface DefaultSimResolution {
+        /** Send on exactly [subscriptionId]. */
+        data class Use(val subscriptionId: Int) : DefaultSimResolution
+
+        /** The platform answered: there is NO default SMS subscription. Fail closed. */
+        data object NoDefault : DefaultSimResolution
+
+        /** The platform's answer could not be read; the legacy platform-default manager applies. */
+        data object Unknown : DefaultSimResolution
+    }
+
+    /**
+     * Resolve a no-explicit-choice send against the CURRENT system default SMS subscription.
+     *
+     * Called at EXECUTION time, never from telemetry: a cached default line can be minutes or hours
+     * stale, and MODE A's whole purpose is that the phone's default at the moment of sending is what
+     * decides the line.
+     *
+     * @param platformDefaultSmsSubscriptionId `SubscriptionManager.getDefaultSmsSubscriptionId()`,
+     *   or null when the call could not be made/answered at all.
+     */
+    fun resolveDefault(platformDefaultSmsSubscriptionId: Int?): DefaultSimResolution = when {
+        platformDefaultSmsSubscriptionId == null -> DefaultSimResolution.Unknown
+        platformDefaultSmsSubscriptionId == UNKNOWN_SUBSCRIPTION_ID -> DefaultSimResolution.NoDefault
+        platformDefaultSmsSubscriptionId < 0 -> DefaultSimResolution.NoDefault
+        else -> DefaultSimResolution.Use(platformDefaultSmsSubscriptionId)
+    }
+
+    /**
      * Decide.
      *
      * @param requested the SIM the user asked for, or null when they made no choice at all (the

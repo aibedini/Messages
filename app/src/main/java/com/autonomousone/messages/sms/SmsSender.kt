@@ -438,7 +438,27 @@ class SmsSender(
         smscOverride: String?,
         showToast: Boolean
     ): Boolean {
-        val bound = resolveSmsManager(subscriptionIdOverride)
+        // ── MODE A / MODE B, resolved at EXECUTION time (mission §25/§26) ────
+        //
+        // MODE B: an explicit line was named (per message, or as the user's Messaging preference).
+        // MODE A: nothing was named, so the CURRENT system default SMS subscription decides — read
+        //         now, not from any cached telemetry, and never guessed.
+        val explicitSubId = subscriptionIdOverride ?: prefs.sendSubscriptionId
+            .takeIf { it != MessagingPreferences.SUBSCRIPTION_UNSET }
+        val defaultResolution = if (explicitSubId == null) {
+            SendSimPolicy.resolveDefault(platformDefaultSmsSubscriptionId())
+        } else {
+            null
+        }
+        if (defaultResolution is SendSimPolicy.DefaultSimResolution.NoDefault) {
+            // The platform answered, and the answer is "there is no default line". Sending on an
+            // arbitrary active subscription instead is precisely what the mission forbids.
+            return rejectForNoDefaultSubscription(sentId, phone, showToast)
+        }
+        val requestedSubId = explicitSubId
+            ?: (defaultResolution as? SendSimPolicy.DefaultSimResolution.Use)?.subscriptionId
+
+        val bound = resolveSmsManager(requestedSubId)
 
         // v2.6.14 — Effective SMSC, strictly user intent:
         //   per-request override → this SIM's manual override → global manual
@@ -449,8 +469,6 @@ class SmsSender(
         //   itself cause radio-side GENERIC_FAILURE.
         //
         // Resolved from the REQUEST, because the SMSC is chosen for the line the user meant to use.
-        val requestedSubId = subscriptionIdOverride ?: prefs.sendSubscriptionId
-            .takeIf { it != MessagingPreferences.SUBSCRIPTION_UNSET }
 
         // Mission §50: the id the user asked for and the id the manager is bound to are two facts,
         // and only the second belongs in the ledger. Deciding here — before anything is handed to the
@@ -601,6 +619,36 @@ class SmsSender(
     }
 
     /**
+     * Refuse a no-explicit-choice send when the platform says there is NO default SMS subscription
+     * (mission §25, MODE A).
+     *
+     * The alternative — choosing an active subscription because one exists — is the "random SIM 1"
+     * the mission forbids: the user designated no line, so the only honest outcomes are "send on the
+     * default" or "do not send and say why". Recorded like every other dispatch rejection, so the
+     * message shows Failed across restarts instead of looking queued.
+     *
+     * @return false, so every caller treats it exactly like any other failed send.
+     */
+    private fun rejectForNoDefaultSubscription(sentId: Long, phone: String, showToast: Boolean): Boolean {
+        updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
+        recordDispatchRejection(sentId, 1, null, SmsSendFailure.NoDefaultSubscription, null)
+        DiagnosticLog.event(
+            "SMS_SEND",
+            "no-default-subscription-refused row=$sentId phone=${DiagnosticLog.phoneToken(phone)}"
+        )
+        Log.w(TAG, "Refusing to send: no system default SMS subscription is set (mission §25)")
+        if (showToast) {
+            Toast.makeText(
+                context,
+                "No default SIM for SMS — message not sent. Set a default line in Android settings.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        return false
+    }
+
+
+    /**
      * Records the immutable native-submission fact for every part of a submit
      * the radio accepted.
      *
@@ -734,6 +782,18 @@ class SmsSender(
         if (actives.isEmpty()) return null
         return actives.any { it.subscriptionId == requested }
     }
+
+    /**
+     * The CURRENT system default SMS subscription, or null when the platform did not answer.
+     *
+     * `null` and `INVALID_SUBSCRIPTION_ID` are deliberately different answers here: the first is
+     * "could not ask" (legacy platform-default behaviour applies), the second is "asked, and there is
+     * none" (fail closed with `NO_DEFAULT_SMS_SUBSCRIPTION`). Collapsing them is how a send would
+     * either be refused on a device that simply withholds the list, or silently sent on whatever line
+     * the platform feels like.
+     */
+    private fun platformDefaultSmsSubscriptionId(): Int? =
+        com.autonomousone.messages.messaging.SimManager(context).defaultSmsSubscriptionIdOrNull()
 
     private fun resolveSmsManager(override: Int? = null): BoundSim {        val subId = override ?: prefs.sendSubscriptionId
         val hasSelection = subId != MessagingPreferences.SUBSCRIPTION_UNSET

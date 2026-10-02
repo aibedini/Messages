@@ -38,6 +38,16 @@ sealed interface SmsSendFailure {
     /** SIM missing, not ready, or the subscription is gone. */
     data object SimUnavailable : SmsSendFailure { override val code = "SIM_UNAVAILABLE" }
 
+    /**
+     * No line was named and the platform reports NO default SMS subscription (mission §25).
+     *
+     * Distinct from [SimUnavailable]: the SIM may be present and healthy, but nothing designates it
+     * as the default, so there is no honest line to send on. The mission forbids picking SIM 1.
+     */
+    data object NoDefaultSubscription : SmsSendFailure {
+        override val code = "NO_DEFAULT_SMS_SUBSCRIPTION"
+    }
+
     /** SMSC address rejected by the modem. */
     data object InvalidSmsc : SmsSendFailure { override val code = "INVALID_SMSC" }
 
