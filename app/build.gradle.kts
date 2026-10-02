@@ -35,8 +35,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 127
-        versionName = "3.4.20"
+        versionCode = 128
+        versionName = "3.4.21"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
