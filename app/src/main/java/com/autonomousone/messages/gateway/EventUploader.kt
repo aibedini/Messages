@@ -149,7 +149,13 @@ class EventUploader(
                         // Durable, so the cause outlives the process that observed it.
                         DiagnosticLog.event("SYNC_BLOCKED", "scope=upload code=$code")
                     }
-                    delay(30_000)
+                    // INTERRUPTIBLE, and that matters: an expiry, an enrollment or a reconnect can
+                    // clear the gate at any moment, and a plain `delay(30_000)` would then still hold
+                    // a freshly arrived message for the rest of the interval — up to 30 seconds of
+                    // latency for an event whose blocker no longer exists. Waiting on the same wake
+                    // channel the outbox invalidation uses means the loop re-evaluates the gate as
+                    // soon as anything changes.
+                    withTimeoutOrNull(30_000) { wake.receive() }
                     continue
                 }
                 val previouslyHeld = lastHold

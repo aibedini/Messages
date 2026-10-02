@@ -326,7 +326,15 @@ private fun SimSlotContent(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         onPermissionResult(granted)
-        if (granted) viewModel.refreshSims()
+        if (granted) {
+            viewModel.refreshSims()
+            // The SIM list GMweb holds is now WRONG, and the user is watching this screen: report
+            // immediately instead of waiting up to a minute for the telemetry heartbeat. A no-op when
+            // the gateway is not running (the next start reports anyway).
+            com.autonomousone.messages.gateway.DeviceTelemetry.requestImmediate(
+                com.autonomousone.messages.gateway.TelemetryTrigger.PHONE_PERMISSION_GRANTED
+            )
+        }
     }
 
     if (!hasPhonePermission) {

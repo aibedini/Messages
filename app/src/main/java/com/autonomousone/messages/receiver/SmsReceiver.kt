@@ -44,6 +44,13 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
+        // AN SMS IS THE MOMENT TO BE AWAKE. Nothing else on this path starts the sync stack — the
+        // relay, the repair scheduler and the uploader all live in the gateway service — so a message
+        // that arrived while the service was down was stored and then waited for the user to open the
+        // app. This can only start what the user already enabled, and a refused start is deferred to
+        // WorkManager rather than dropped.
+        com.autonomousone.messages.gateway.GatewayWakeOnSms.maybeStart(context.applicationContext)
+
         val pending = goAsync()
         val appContext = context.applicationContext
 

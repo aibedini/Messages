@@ -35,6 +35,7 @@ class GatewayService : Service() {
     private lateinit var commandPoller: SecureCommandPoller
     private lateinit var trustPublisher: TrustStatementPublisher
     private lateinit var deviceTelemetry: DeviceTelemetry
+    private lateinit var subscriptionMonitor: SubscriptionChangeMonitor
     private lateinit var contactsSyncPublisher: ContactsSyncPublisher
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var supervisor: ConnectionSupervisor
@@ -89,6 +90,18 @@ class GatewayService : Service() {
         @Volatile
         var bridgeStateFlow: StateFlow<OutboxPoller.State>? = null
             private set
+
+        /**
+         * The live command poller, for diagnostics only.
+         *
+         * The command channel is the ONLY transport that carries `MARK_THREAD_READ`, so a diagnostic
+         * that cannot see whether its loop is alive cannot explain "read not confirmed" — which is
+         * exactly the question this exists to answer. Null before the service is created.
+         */
+        @Volatile
+        private var liveCommandPoller: SecureCommandPoller? = null
+
+        fun peekCommandPoller(): SecureCommandPoller? = liveCommandPoller
 
         private val _logFlow = MutableSharedFlow<String>(extraBufferCapacity = 100)
         val logFlow: SharedFlow<String> = _logFlow.asSharedFlow()
@@ -230,6 +243,7 @@ class GatewayService : Service() {
             scope = serviceScope,
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
+        liveCommandPoller = commandPoller
         // LINKED DEVICE CONTROL pt2: publish signed trust statements
         // (DEVICE_APPROVED/CAPABILITIES_CHANGED/REVOKED) until ACKed.
         trustPublisher = TrustStatementPublisher(
@@ -239,7 +253,21 @@ class GatewayService : Service() {
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
         deviceTelemetry = DeviceTelemetry(this, prefs, ControlPlaneClient(prefs), serviceScope)
-        deviceTelemetry.start()
+        // The first report says WHY this process came up: an update re-announces the phone, a plain
+        // start says STARTUP. Both are immediate; neither waits for the 60-second heartbeat.
+        deviceTelemetry.start(
+            if (startReason == GatewayForegroundStartPolicy.StartReason.APP_UPDATED) {
+                TelemetryTrigger.APP_UPDATED
+            } else {
+                TelemetryTrigger.STARTUP
+            }
+        )
+        // SIM state must reach GMweb when it MOVES, not up to a minute later: a stale SIM list is how
+        // the web ends up offering a line that is no longer in the phone.
+        subscriptionMonitor = SubscriptionChangeMonitor(this, serviceScope) { msg ->
+            _logFlow.tryEmit(msg)
+        }
+        subscriptionMonitor.start()
         contactsSyncPublisher = ContactsSyncPublisher(this, prefs, serviceScope)
         contactsSyncPublisher.start()
         // Expose poller state app-wide so the Gateway screen can show it live.
@@ -268,6 +296,7 @@ class GatewayService : Service() {
                 isPollerRunning = { outboxPoller.isRunning },
         isPollerStalled = { outboxPoller.isStalled() },
                 wakePoller = { outboxPoller.retryNow() },
+                retryCommandPoller = { commandPoller.retryNow() },
                 retryUploader = { eventUploader.retryNow() },
                 startEventUploader = { eventUploader.start() },
                 stopEventUploader = { eventUploader.stop() },
@@ -451,6 +480,7 @@ class GatewayService : Service() {
         supervisor.shutdown()
         supervisorStateFlow = null
         bridgeStateFlow = null
+        liveCommandPoller = null
     }
 
     private fun startForegroundNotification() {
@@ -526,6 +556,7 @@ class GatewayService : Service() {
         // bridge comes back even under Doze — this is the 503-killer.
         scheduleRestartWatchdog()
         changeRelay.stop()
+        subscriptionMonitor.stop()
         deviceTelemetry.stop()
         contactsSyncPublisher.stop()
         shutdownComponents()

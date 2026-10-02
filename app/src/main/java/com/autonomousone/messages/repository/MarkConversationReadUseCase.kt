@@ -220,13 +220,26 @@ internal class CoordinatorReadRepairRequester(
     }
 }
 
-/** Room shadow half: delegates to the sync core's existing local API. */
+/**
+ * Room shadow half: delegates to the sync core's existing local API.
+ *
+ * It publishes the THREAD_READ event as part of the same call, and that is the fix for a P0: a read
+ * performed ON THE PHONE previously reached GMweb by no route at all. The local write happened first
+ * and the provider write second, so when the observer reconciled the thread the read flag already
+ * matched (`ProviderTransition.UNCHANGED`) and no read-carrying event was ever built; THREAD_READ had
+ * exactly one caller, the remote command. GMweb's unread badge therefore stayed set until some
+ * unrelated event re-published the conversation.
+ *
+ * `applyMarkThreadRead` writes the shadow read state and enqueues the durable event in ONE
+ * transaction, and the event identity is deterministic per conversation+revision — so a repeated read
+ * of the same state is a dedupe, not a storm.
+ */
 internal class ShadowThreadReadApplier(
     private val context: Context
 ) : LocalThreadReadApplier {
     override suspend fun markThreadReadLocally(threadId: Long) {
         if (threadId <= 0L) return
-        TelephonySyncCoordinator.get(context).markThreadReadInShadow(threadId)
+        TelephonySyncCoordinator.get(context).markThreadReadAndPublish(threadId)
     }
 }
 

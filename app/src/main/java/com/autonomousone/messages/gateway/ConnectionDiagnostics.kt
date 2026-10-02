@@ -66,6 +66,73 @@ object ConnectionDiagnostics {
             "oldest ${trust.oldestPendingSequence ?: "none"}" +
                 (trust.lastFailureReason?.let { " · $it" } ?: ""))
 
+        // ── Telemetry / presence ────────────────────────────────────────────
+        // GMweb's answer to "is this phone alive?" is our heartbeat. Reporting whether it is actually
+        // landing is the difference between "connected" and "the server has not heard from us in
+        // seven minutes" — a state the UI previously could not express at all.
+        val telemetry = TelemetryHealth.snapshot()
+        val nowMs = System.currentTimeMillis()
+        val sinceSuccess = telemetry.secondsSinceSuccess(nowMs)
+        local += Check(
+            "GMweb telemetry",
+            telemetry.failures == 0L || (sinceSuccess != null && sinceSuccess < 180),
+            buildString {
+                append("last success ")
+                append(sinceSuccess?.let { "${it}s ago" } ?: "never")
+                append(" · attempts ${telemetry.attempts} · failures ${telemetry.failures}")
+                telemetry.lastHttpStatus?.let { append(" · HTTP $it") }
+                telemetry.lastErrorCode?.let { append(" · $it") }
+                telemetry.lastTrigger?.let { append(" · ${it}") }
+                if (telemetry.skipped > 0) append(" · ${telemetry.skipped} skipped (gateway off)")
+            }
+        )
+
+        // ── SIM / permissions, reported SEPARATELY ──────────────────────────
+        // "Cannot enumerate SIMs" and "cannot send" are different capabilities with different fixes,
+        // and so are "permission missing" and "no active subscription".
+        val simManager = com.autonomousone.messages.messaging.SimManager(app)
+        val discovery = simManager.discover()
+        val discoveryReason = com.autonomousone.messages.messaging.SimDiscovery.reasonOf(discovery)
+        local += Check(
+            "SMS subscriptions",
+            discovery is com.autonomousone.messages.messaging.SimDiscoveryResult.Available,
+            when (discovery) {
+                is com.autonomousone.messages.messaging.SimDiscoveryResult.Available ->
+                    "${discovery.sims.size} active · default SMS sub ${simManager.defaultSmsSubscriptionId()}"
+                com.autonomousone.messages.messaging.SimDiscoveryResult.PermissionMissing ->
+                    "not readable · $discoveryReason"
+                is com.autonomousone.messages.messaging.SimDiscoveryResult.Failed ->
+                    "platform failure · ${discovery.reason}"
+            }
+        )
+        local += Check(
+            "READ_PHONE_STATE (SIM list)",
+            simManager.hasReadPhoneState(),
+            if (simManager.hasReadPhoneState()) "granted" else "missing — GMweb cannot list SIMs"
+        )
+        local += Check(
+            "SEND_SMS (send capable)",
+            com.autonomousone.messages.sms.SmsSendPreflight.hasSendSmsPermission(app),
+            if (com.autonomousone.messages.sms.SmsSendPreflight.hasSendSmsPermission(app)) "granted" else "missing"
+        )
+        local += Check(
+            "Default SMS role",
+            DefaultSmsRole.isHeld(app),
+            if (DefaultSmsRole.isHeld(app)) "held" else "not held — provider writes are limited"
+        )
+        telemetry.lastSubscriptionChangeAt?.let {
+            local += Check("Last SIM change", true, "${(nowMs - it) / 1000}s ago")
+        }
+
+        // ── Command channel (the only MARK_THREAD_READ transport) ───────────
+        val commandPoller = GatewayService.peekCommandPoller()
+        local += Check(
+            "Command channel",
+            commandPoller?.isRunning == true,
+            commandPoller?.let { "state ${it.stateFlow.value}" } ?: "not created (gateway stopped)"
+        )
+
+
         val smsProviderCount = providerCount(app, Telephony.Sms.CONTENT_URI)
         val mmsProviderCount = providerCount(app, Telephony.Mms.CONTENT_URI)
         val roomTotal = database.messageDao().count()

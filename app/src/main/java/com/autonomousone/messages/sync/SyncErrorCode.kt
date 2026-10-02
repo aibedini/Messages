@@ -110,6 +110,38 @@ enum class SyncErrorCode {
     /** The platform refused the send. */
     SMS_SEND_FAILED,
 
+    // ── Read commands (MARK_THREAD_READ) ─────────────────────────────────────
+    //
+    // A read command is not a send, and reporting its failures with [SMS_SEND_FAILED] or [UNKNOWN]
+    // was actively harmful: GMweb was told "failed" with no way to tell "this conversation has no
+    // mapping on the phone" (needs a re-link) from "the provider refused the write" (transient) from
+    // "the read event could not be published" (privacy gate). Those are three different actions.
+
+    /** The command payload could not be decrypted. */
+    READ_COMMAND_DECRYPT_FAILED,
+
+    /** The decrypted payload is not the expected shape (missing/blank conversationId). */
+    READ_INVALID_PAYLOAD,
+
+    /** No thread is mapped to the requested conversation id, and none can be inferred safely. */
+    READ_MAPPING_MISSING,
+
+    /** A mapping exists but points at a thread the provider does not have. */
+    READ_UNKNOWN_CONVERSATION,
+
+    /** The Android provider refused the read write. */
+    READ_PROVIDER_WRITE_FAILED,
+
+    /**
+     * The provider was updated but the durable read event was REFUSED by a local policy gate (a
+     * LOCAL_ONLY conversation, or sync switched off by the ADR-006 kill switch), so GMweb will not
+     * learn about it. Deliberately not a success and deliberately not a provider failure.
+     */
+    READ_EVENT_PUBLISH_FAILED,
+
+    /** `READ_PHONE_STATE`/provider permission missing while applying a read. */
+    READ_PERMISSION_DENIED,
+
     // ── Command execution ────────────────────────────────────────────────────
 
     /**
@@ -157,6 +189,9 @@ enum class SyncErrorCode {
             HISTORY_GRANT_MISSING, HISTORY_KEY_MISSING,
             TELEPHONY_PERMISSION_MISSING, TELEPHONY_QUERY_FAILED,
             SIM_NOT_AVAILABLE, SMS_SEND_FAILED,
+            READ_COMMAND_DECRYPT_FAILED, READ_INVALID_PAYLOAD, READ_MAPPING_MISSING,
+            READ_UNKNOWN_CONVERSATION, READ_PROVIDER_WRITE_FAILED, READ_EVENT_PUBLISH_FAILED,
+            READ_PERMISSION_DENIED,
             COMMAND_INTERRUPTED_AFTER_SUBMIT, COMMAND_EXPIRED_BEFORE_CLAIM,
             UNKNOWN -> false
         }

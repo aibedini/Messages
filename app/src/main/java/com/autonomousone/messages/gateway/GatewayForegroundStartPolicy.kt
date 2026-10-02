@@ -41,6 +41,15 @@ object GatewayForegroundStartPolicy {
         /** The device just booted: a manifest receiver is asking. */
         BOOT,
 
+        /**
+         * The app was just replaced by an update and the `MY_PACKAGE_REPLACED` receiver is asking.
+         *
+         * Same restriction class as [BOOT] — a manifest receiver asking with no user present — so it
+         * takes the same decision. It is its own value because the two are different facts and the
+         * telemetry trigger for an update is not the trigger for a reboot.
+         */
+        APP_UPDATED,
+
         /** The user or an in-app component (Activity, ViewModel, watchdog alarm) asked. */
         USER_OR_APP,
 
@@ -73,11 +82,20 @@ object GatewayForegroundStartPolicy {
      * @param startReason   who is asking.
      */
     fun decide(apiLevel: Int, startReason: StartReason): Decision =
-        if (startReason == StartReason.BOOT && apiLevel >= BOOT_DATA_SYNC_FORBIDDEN_FROM_API) {
+        if (startReason in MANIFEST_RECEIVER_REASONS && apiLevel >= BOOT_DATA_SYNC_FORBIDDEN_FROM_API) {
             Decision.START_SPECIAL_USE_ONLY
         } else {
             Decision.START_WITH_DATA_SYNC
         }
+
+    /**
+     * Starts that are driven by a manifest receiver rather than by the user.
+     *
+     * The Android 15 restriction is about the START being background/unattended, not about the
+     * `BOOT_COMPLETED` action by name: an update restart has the same shape and the same restriction,
+     * so treating it differently would just be a way to have the update path fail.
+     */
+    private val MANIFEST_RECEIVER_REASONS = setOf(StartReason.BOOT, StartReason.APP_UPDATED)
 
     /**
      * True when the decision means the `dataSync` type must be left out.

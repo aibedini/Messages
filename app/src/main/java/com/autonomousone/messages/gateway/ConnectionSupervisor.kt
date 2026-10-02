@@ -128,6 +128,14 @@ class ConnectionSupervisor private constructor(
         val isPollerStalled: () -> Boolean = { false },
         val wakePoller: () -> Unit = {},
         /**
+         * Nudges the strategic command poller out of whatever interval it is sitting on.
+         *
+         * The command channel is the only transport that carries `MARK_THREAD_READ`, so a reconnect
+         * that leaves it waiting out its 2-second (or 5-second error) interval is a read command the
+         * user is still waiting for. Separate from [wakePoller] because they are different loops.
+         */
+        val retryCommandPoller: () -> Unit = {},
+        /**
          * Nudges the OUTBOUND event uploader. Saving a new GMweb server must reach it
          * immediately, not on its next invalidation — otherwise the phone keeps uploading to
          * the old server for a while after the user has been told the change took effect.
@@ -278,6 +286,12 @@ class ConnectionSupervisor private constructor(
             }
             components.wakePoller()
         }
+        // The command channel gets the same treatment: waking only the delivery poller left a
+        // read command waiting out an interval on a link that had just come back.
+        components.retryCommandPoller()
+        // Tell GMweb this phone is reachable again NOW instead of at the next 60-second heartbeat.
+        // A no-op when the gateway service is not running.
+        DeviceTelemetry.requestImmediate(TelemetryTrigger.NETWORK_RECONNECTED)
         // The reconnect is a REQUEST, not a result: clearing the recorded error lets the
         // card say "reconnecting", and it deliberately does not claim success.
         GatewayHealthRecorder.onReconnectRequested()
@@ -427,7 +441,23 @@ class ConnectionSupervisor private constructor(
         // migration switch explicit; never run both consumers concurrently.
         when (components.deliveryIntake) {
             DeliveryIntake.LEGACY_PULL -> {
-                components.stopCommandPoller()
+                // THE COMMAND CHANNEL STAYS UP.
+                //
+                // `deliveryIntake` selects which transport OWNS `SEND_SMS` — it was never meant to
+                // switch the command channel off. Because nothing passes
+                // `DeliveryIntake.CONTROL_PLANE_COMMANDS`, the branch below stopped the command
+                // poller on every reconcile, and it was therefore NEVER started. The command channel
+                // is the only transport that carries `MARK_THREAD_READ`, so a read command sent from
+                // GMweb could not be claimed, executed or ACKed at all — the device's answer to
+                // "mark this conversation read on the phone" was silence, which is exactly the
+                // "Read not confirmed" the user sees in the web UI.
+                //
+                // Running both is safe for exactly one reason, and it is worth stating: the poller
+                // itself refuses to execute a `SEND_SMS` command while
+                // `prefs.controlPlaneSendsEnabled` is false — it marks that row FAILED and reports
+                // "owned by legacy pull intake" rather than sending. So there is still exactly ONE
+                // intake owner for a remote send, while read and other non-send commands are served.
+                components.startCommandPoller()
                 if (prefs.gmwebServerOrigin.isNotBlank()) {
                     // Requirement 10: bounded controlled recovery. `startPoller` alone cannot fix a
                     // loop that is ACTIVE and silent — an active job is not proof of a live bridge —
@@ -486,7 +516,14 @@ class ConnectionSupervisor private constructor(
         backoffMs = 5_000L
         lastError = null
         prefs.isEnabled = true // runtime state — now DERIVED by the supervisor, never clobbered elsewhere
+        // Announce the phone on the TRANSITION into CONNECTED only. reconcile() also runs on a 10s
+        // tick while healthy, so triggering unconditionally would be a telemetry POST every ten
+        // seconds; triggering on the edge is what "the gateway just came up" actually means.
+        val wasConnected = _stateFlow.value == State.CONNECTED
         _stateFlow.value = State.CONNECTED
+        if (!wasConnected) {
+            DeviceTelemetry.requestImmediate(TelemetryTrigger.GATEWAY_CONNECTED)
+        }
         notePhase("CONNECTED")
         // Publish the INTENT and the TARGET, never a verdict. `State.CONNECTED` above says
         // the components were started; the health card's answer comes from what those

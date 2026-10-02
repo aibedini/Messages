@@ -34,44 +34,60 @@ class SimManager(private val context: Context) {
             PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission") // guarded by hasReadPhoneState() before the platform call
-    fun getActiveSims(): List<SimInfo> {
-        if (!hasReadPhoneState()) return emptyList()
-        val result = mutableListOf<SimInfo>()
-        try {
-            val sm = context.getSystemService(SubscriptionManager::class.java)
-                ?: SubscriptionManager.from(context)
-            val infos: List<SubscriptionInfo> = sm.activeSubscriptionInfoList ?: emptyList()
-            val defaultSubId = try {
-                SubscriptionManager.getDefaultSmsSubscriptionId()
-            } catch (e: Exception) {
-                SubscriptionManager.INVALID_SUBSCRIPTION_ID
-            }
+    fun getActiveSims(): List<SimInfo> = when (val result = discover()) {
+        is SimDiscoveryResult.Available -> result.sims
+        // Callers that ask "which lines are there" get an empty list for both non-answers. That is
+        // the right shape for them (a send must fail closed either way) but it is NOT the whole
+        // truth — see discover(), which is what telemetry and diagnostics use.
+        SimDiscoveryResult.PermissionMissing -> emptyList()
+        is SimDiscoveryResult.Failed -> emptyList()
+    }
 
-            for (info in infos) {
-                val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    try {
-                        info.getNumber().orEmpty()
-                    } catch (e: Exception) {
-                        ""
-                    }
-                } else {
-                    // Pre-13: per-subscription number lookup is no longer exposed
-                    // by current SDK stubs; the carrier label is still shown.
+    /**
+     * The full answer: available (possibly with zero SIMs), permission missing, or a platform
+     * failure. Never collapses the three into an empty list.
+     */
+    fun discover(): SimDiscoveryResult = SimDiscovery.classify(hasReadPhoneState()) {
+        queryActiveSims()
+    }
+
+    /** The default SMS subscription, or the platform's INVALID id when it cannot be read. */
+    fun defaultSmsSubscriptionId(): Int = try {
+        SubscriptionManager.getDefaultSmsSubscriptionId()
+    } catch (e: Exception) {
+        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+    }
+
+    @SuppressLint("MissingPermission") // reached only through discover(), which checks the permission
+    private fun queryActiveSims(): List<SimInfo> {
+        val result = mutableListOf<SimInfo>()
+        val sm = context.getSystemService(SubscriptionManager::class.java)
+            ?: SubscriptionManager.from(context)
+        val infos: List<SubscriptionInfo> = sm.activeSubscriptionInfoList ?: emptyList()
+        val defaultSubId = defaultSmsSubscriptionId()
+
+        for (info in infos) {
+            val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    info.getNumber().orEmpty()
+                } catch (e: Exception) {
                     ""
                 }
-                result += SimInfo(
-                    subscriptionId = info.subscriptionId,
-                    slotIndex = info.simSlotIndex,
-                    carrierName = info.carrierName?.toString().orEmpty(),
-                    displayName = info.displayName?.toString().orEmpty(),
-                    number = number,
-                    isSystemDefault = info.subscriptionId == defaultSubId
-                )
+            } else {
+                // Pre-13: per-subscription number lookup is no longer exposed
+                // by current SDK stubs; the carrier label is still shown.
+                ""
             }
-            result.sortBy { it.slotIndex }
-        } catch (e: Exception) {
-            // Degrade gracefully — callers treat an empty list as "SIMs unknown".
+            result += SimInfo(
+                subscriptionId = info.subscriptionId,
+                slotIndex = info.simSlotIndex,
+                carrierName = info.carrierName?.toString().orEmpty(),
+                displayName = info.displayName?.toString().orEmpty(),
+                number = number,
+                isSystemDefault = info.subscriptionId == defaultSubId
+            )
         }
+        result.sortBy { it.slotIndex }
         return result
     }
 

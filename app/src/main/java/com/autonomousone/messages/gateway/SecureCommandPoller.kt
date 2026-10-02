@@ -7,11 +7,14 @@ import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.repository.GatewaySyncRepository
 import com.autonomousone.messages.sms.GatewayOutgoingPipeline
 import com.autonomousone.messages.sync.CommandDrainPolicy
+import com.autonomousone.messages.sync.ReadCommandError
+import com.autonomousone.messages.sync.ReadCommandFailure
 import com.autonomousone.messages.sync.SyncErrorCode
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -151,6 +154,25 @@ class SecureCommandPoller(
     private val _stateFlow = MutableStateFlow(State.IDLE)
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
 
+    /**
+     * Interrupts whatever wait the loop is sitting on.
+     *
+     * Conflated, because the only thing a wake-up can mean is "poll now": five nudges are one poll.
+     * Used by the supervisor when the network comes back — the 2-second quiet cadence and the
+     * 5-second error backoff are both *waits*, and waiting them out after connectivity has returned
+     * is exactly the delay the reconnect path exists to remove.
+     */
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /** Poll immediately instead of waiting out the current quiet/backoff interval. */
+    fun retryNow() {
+        wake.trySend(Unit)
+    }
+
+    private suspend fun waitOrWake(ms: Long) {
+        kotlinx.coroutines.withTimeoutOrNull(ms) { wake.receive() }
+    }
+
     /** Stable device id — the SAME one sent at registration (PR-05/08b). */
     private fun deviceId(): String = prefs.gatewayId.ifBlank {
         android.provider.Settings.Secure.getString(
@@ -175,7 +197,7 @@ class SecureCommandPoller(
                     // Same runtime gate as EventUploader: the supervisor owns
                     // enablement; zero HTTP until CONNECTED.
                     _stateFlow.value = State.IDLE
-                    delay(5_000)
+                    waitOrWake(5_000)
                     continue
                 }
                 _stateFlow.value = State.POLLING
@@ -185,7 +207,7 @@ class SecureCommandPoller(
                     drainIfDue()
                     val commands = claim()
                     if (commands.isEmpty()) {
-                        delay(QUIET_MS)
+                        waitOrWake(QUIET_MS)
                         continue
                     }
                     _stateFlow.value = State.INGESTING
@@ -219,7 +241,7 @@ class SecureCommandPoller(
                 } catch (e: Exception) {
                     Log.w(TAG, "poll cycle failed: ${e.message}")
                     _stateFlow.value = State.ERROR
-                    delay(ERROR_RETRY_MS)
+                    waitOrWake(ERROR_RETRY_MS)
                 }
             }
         }
@@ -230,6 +252,15 @@ class SecureCommandPoller(
         job = null
         _stateFlow.value = State.IDLE
     }
+
+    /**
+     * Whether the command loop is alive RIGHT NOW.
+     *
+     * Diagnostics asks this because "start() was called once" and "the loop is running" are different
+     * facts, and the read channel is useless without the second: MARK_THREAD_READ has no other
+     * transport.
+     */
+    val isRunning: Boolean get() = job?.isActive == true
 
     /** When the drain last ran; 0 makes the first loop iteration after a start always drain. */
     private var lastDrainAt = 0L
@@ -396,32 +427,16 @@ class SecureCommandPoller(
                 var result = "completed"
                 try {
                     ack(cmd.commandId, "EXECUTING", null)
-                    if (cmd.type == "MARK_THREAD_READ") {
-                        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
-                        repo.markCommandState(cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
-                            listOf(RemoteCommandEntity.STATE_ACCEPTED))
-                        val payload = JSONObject(String(plaintext, Charsets.UTF_8))
-                        val mapping = MessagesDatabase.get(context).remoteConversationMapDao()
-                            .getByConversationId(payload.getString("conversationId"))
-                            ?: error("unknown conversation")
-                        com.autonomousone.messages.repository.SmsRepository(context)
-                            .markThreadAsRead(mapping.threadId)
-                        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
-                            .markThreadReadAndPublish(mapping.threadId)
-                        repo.finishCommandFrom(
-                            commandId = cmd.commandId,
-                            state = RemoteCommandEntity.STATE_COMPLETED,
-                            errorCode = null,
-                            fromStates = listOf(
-                                RemoteCommandEntity.STATE_ACCEPTED,
-                                RemoteCommandEntity.STATE_EXECUTING
-                            )
-                        )
+                    if (cmd.type == ReadCommandError.READ_COMMAND_TYPE) {
+                        executeMarkThreadRead(cmd, plaintext, repo)
                     } else withContext(Dispatchers.IO) {
                         GatewayOutgoingPipeline.executeIngested(cmd.copy(ciphertext = plaintext, cryptoVersion = 0), repo)
                     }
                 } catch (e: Exception) {
-                    result = SyncErrorCode.SMS_SEND_FAILED.name
+                    // TYPE-AWARE: a read failure is classified by what actually went wrong and is
+                    // NEVER recorded as SMS_SEND_FAILED. That conflation is why a missing conversation
+                    // mapping and a transient provider refusal looked identical on GMweb.
+                    result = ReadCommandError.classifyFor(cmd.type, e).name
                     throw e
                 } finally {
                     plaintext.fill(0)
@@ -431,23 +446,90 @@ class SecureCommandPoller(
                 }
                 ackIfTerminal(cmd.commandId)
             } catch (e: Exception) {
-                Log.e(TAG, "SEND_SMS execution failed for ${cmd.commandId}", e)
+                Log.e(TAG, "command execution failed type=${cmd.type} id=${cmd.commandId}", e)
+                val code = ReadCommandError.classifyFor(cmd.type, e)
                 runCatching {
                     repo.finishCommandFrom(
                         commandId = cmd.commandId,
                         state = RemoteCommandEntity.STATE_FAILED,
-                        // The exception was not classified into a more specific code, so the honest
-                        // reason is the last-resort one; the human-readable detail travels in the ACK.
-                        errorCode = SyncErrorCode.UNKNOWN.name,
+                        // The typed cause, so the ledger names the condition instead of saying
+                        // "unknown" about a failure that was classified two frames up.
+                        errorCode = code.name,
                         fromStates = listOf(
                             RemoteCommandEntity.STATE_ACCEPTED,
                             RemoteCommandEntity.STATE_EXECUTING
                         )
                     )
-                    ack(cmd.commandId, "FAILED", e.message ?: "execution error")
+                    ack(cmd.commandId, "FAILED", code.name)
                 }
             }
         }
+    }
+
+    /**
+     * `MARK_THREAD_READ`: mark the conversation read on this device and PROVE it before completing.
+     *
+     * The previous version acked `COMPLETED` whenever none of the four steps threw — and three of
+     * them could not throw: the provider write's result was discarded, the read event's
+     * `EnqueueAttempt` was discarded (a LOCAL_ONLY conversation silently publishes nothing), and
+     * `finishCommandFrom`'s own boolean was discarded. So "read on the phone" could be reported to
+     * GMweb having changed nothing and told nobody.
+     *
+     * Order is now load-bearing: resolve → provider write → durable event → only then COMPLETED.
+     */
+    private suspend fun executeMarkThreadRead(
+        cmd: RemoteCommandEntity,
+        plaintext: ByteArray,
+        repo: GatewaySyncRepository
+    ) {
+        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+        val payload = try {
+            JSONObject(String(plaintext, Charsets.UTF_8))
+        } catch (e: Exception) {
+            throw ReadCommandFailure.InvalidPayload(e)
+        }
+        val conversationId = payload.optString("conversationId").takeIf { it.isNotBlank() }
+            ?: throw ReadCommandFailure.InvalidPayload()
+        val mapping = MessagesDatabase.get(context).remoteConversationMapDao()
+            .getByConversationId(conversationId)
+            ?: throw ReadCommandFailure.MappingMissing(conversationId)
+        if (mapping.threadId <= 0L) throw ReadCommandFailure.UnknownConversation(mapping.threadId)
+
+        val providerResult = com.autonomousone.messages.repository.SmsRepository(context)
+            .markThreadAsReadStrict(mapping.threadId)
+        if (providerResult.hasFailure) {
+            val reason = listOfNotNull(
+                (providerResult.sms as? com.autonomousone.messages.repository.SourceWriteResult.Failure)?.reason,
+                (providerResult.mms as? com.autonomousone.messages.repository.SourceWriteResult.Failure)?.reason
+            ).joinToString(",").ifBlank { "unspecified" }
+            throw ReadCommandFailure.ProviderWriteFailed(reason)
+        }
+
+        // The durable event must exist BEFORE the command is completed: GMweb learns the read state
+        // from this event, so completing first would be a claim the phone cannot back up.
+        when (val outcome = com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+            .applyMarkThreadRead(mapping.threadId)
+        ) {
+            is com.autonomousone.messages.data.TelephonySyncCoordinator.ThreadReadOutcome.Published -> Unit
+            is com.autonomousone.messages.data.TelephonySyncCoordinator.ThreadReadOutcome.NotPublished ->
+                throw ReadCommandFailure.EventPublishFailed(outcome.attempt)
+            com.autonomousone.messages.data.TelephonySyncCoordinator.ThreadReadOutcome.Failed ->
+                throw ReadCommandFailure.UnknownConversation(mapping.threadId)
+        }
+
+        repo.finishCommandFrom(
+            commandId = cmd.commandId,
+            state = RemoteCommandEntity.STATE_COMPLETED,
+            errorCode = null,
+            fromStates = listOf(
+                RemoteCommandEntity.STATE_ACCEPTED,
+                RemoteCommandEntity.STATE_EXECUTING
+            )
+        )
     }
 
     /** Report lifecycle to GMweb (§58); failures are logged, never fatal. */

@@ -114,12 +114,11 @@ This is where "delivered" comes from. It is never inferred from `sent`.
 
 A read that happens **on the phone** (conversation opened, notification action) writes the Android
 provider (`SMS.READ = 1` via the `THREAD_ID`/`ADDRESS` path in `SmsRepository.markThreadAsReadStrict`)
-and the Room shadow. The sync then observes the provider change and publishes, through the existing
-durable event outbox with retry/backoff — never a fire-and-forget HTTP call:
+and, in the SAME transaction, the Room shadow plus a durable `THREAD_READ` event. The sync then
+observes the provider change and publishes, through the existing durable event outbox with
+retry/backoff — never a fire-and-forget HTTP call:
 
-* `MESSAGE_STATUS_CHANGED` per affected message, with `read: true` (the `READ_CHANGED` transition);
-* `CONVERSATION_UPSERTED` with the new `unreadCount`;
-* `THREAD_READ` at thread level when the conversation is marked read through the sync mutation path:
+* `THREAD_READ` at thread level — the primary read signal:
 
 ```json
 {
@@ -129,7 +128,33 @@ durable event outbox with retry/backoff — never a fire-and-forget HTTP call:
 }
 ```
 
-`eventId` is derived from `conversationId` + revision, so retries are duplicates by construction.
+* `CONVERSATION_UPSERTED` with the new `unreadCount`.
+* `MESSAGE_STATUS_CHANGED` per affected message with `read: true` (the `READ_CHANGED` transition) —
+  note this transition is only observable when the provider changes *before* the local shadow does.
+
+`eventId` / `eventUuid` are deterministic (conversation + revision, and the thread-read identity
+respectively), so retries and repeated reads of the same state are duplicates by construction and are
+deduped by `insertOrIgnore`.
+
+**Read state is gated on content, deliberately.** The read event is built from the thread's newest
+message, and a conversation whose newest message is LOCAL_ONLY (OTP/bank/password-reset codes) is not
+published at all. A read command for such a conversation is reported as
+`READ_EVENT_PUBLISH_FAILED` — the phone is read, GMweb is not told, and the command does **not** claim
+success.
+
+### Read command failure codes (ACK `FAILED` result / durable `errorCode`)
+
+```text
+READ_COMMAND_DECRYPT_FAILED  payload could not be decrypted
+READ_INVALID_PAYLOAD         payload decrypted but has no usable conversationId
+READ_MAPPING_MISSING         no remote_conversation_map row for that conversationId
+READ_UNKNOWN_CONVERSATION    a mapping exists but its thread is not present locally
+READ_PROVIDER_WRITE_FAILED   the Android provider refused the read write
+READ_EVENT_PUBLISH_FAILED    provider updated, but the durable read event was refused
+READ_PERMISSION_DENIED       provider permission missing while applying the read
+```
+
+A read failure is never reported as `SMS_SEND_FAILED` or a bare `UNKNOWN`.
 
 ### GMweb → Android: `MARK_THREAD_READ` command (control plane, encrypted)
 
@@ -199,6 +224,52 @@ Blocked example (`SEND_SMS` revoked, no active SIM): HTTP **503**
   Availability is then *unknown* and is not reported as a blocker; the manager-level fail-closed check
   still refuses a proven mismatch at send time.
 * No IMSI, ICCID or phone number is exposed.
+
+## 6. Device telemetry / presence (Android → GMweb)
+
+`POST /api/v1/agent/device-telemetry` (authenticated, `X-Agent-Auth` signed). The 60-second heartbeat
+remains, and it is no longer the only report: the same payload is sent immediately on `STARTUP`,
+`NETWORK_RECONNECTED`, `GATEWAY_CONNECTED`, `SUBSCRIPTIONS_CHANGED`, `DEFAULT_SMS_CHANGED`,
+`PHONE_PERMISSION_GRANTED`, `APP_UPDATED` and `MANUAL_DIAGNOSTIC_REFRESH` (bursts are debounced, at
+most one report in flight and one queued behind it).
+
+```json
+{
+  "deviceId": "…",
+  "timestamp": 1700000000000,
+  "trigger": "SUBSCRIPTIONS_CHANGED",
+  "smsSubscriptions": {
+    "available": true,
+    "reason": null,
+    "permissionGranted": true,
+    "defaultSubscriptionId": 1,
+    "lastChangedAt": 1699999990000,
+    "items": [
+      { "subscriptionId": 1, "slotIndex": 0, "displayName": "SIM 1", "carrierName": "Carrier",
+        "isDefaultSms": true, "isActive": true }
+    ]
+  },
+  "permissions": { "readPhoneState": true, "sendSms": true, "defaultSmsRole": true },
+  "battery": { "level": 71, "isCharging": false, "chargingSource": "NONE" },
+  "sync": { "outboxDepth": 0, "realtimeQueueDepth": 0, "backfillQueueDepth": 0,
+            "deadLetterCount": 0, "historyAckLag": 0, "trustOutboxDepth": 0 },
+  "trust": { "isEnrolled": true, "approvedDevicesCount": 1, "trustSequence": 12 },
+  "network": { "isConnected": true, "networkType": "WIFI" },
+  "app": { "versionName": "3.4.19", "versionCode": 126, "uptimeMs": 51234 },
+  "device": { "manufacturer": "samsung", "model": "SM-G998B", "androidVersion": "15", "sdkInt": 35 }
+}
+```
+
+* `smsSubscriptions.available` means the question was ANSWERED — it is `true` with an empty `items`
+  when the device genuinely has no active subscription.
+* `reason` distinguishes the two non-answers: `READ_PHONE_STATE_MISSING` (the permission is missing —
+  the user can fix it) and `SUBSCRIPTION_API_FAILURE` (granted, but the platform refused). Neither is
+  ever reported as "no SIM".
+* `available`, `items` and every previously-published field keep their old meaning; the rest is
+  additive.
+* `trigger` says why this report exists, so a consumer can tell a heartbeat from a change report.
+* Presence/"last seen" should be derived from the server's own receive time; the device timestamp is
+  for diagnostics only.
 
 ## 5. Other send endpoints (unchanged contract, body rule applies)
 

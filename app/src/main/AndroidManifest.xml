@@ -139,8 +139,10 @@
             </intent-filter>
         </receiver>
 
-        <!-- Gateway reboot recovery: replays ACTION_START when the user left
-             the gateway enabled before the reboot (gatewayDesiredEnabled). -->
+        <!-- Gateway reboot/update recovery: replays ACTION_START when the user left
+             the gateway enabled before the reboot (gatewayDesiredEnabled). MY_PACKAGE_REPLACED is
+             the same recovery for an app update, which also kills the process: without it the
+             gateway stayed dead after every update until the user opened the app. -->
         <receiver
             android:name=".receiver.BootGatewayReceiver"
             android:enabled="true"
@@ -148,6 +150,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

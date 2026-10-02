@@ -26,17 +26,21 @@ import com.autonomousone.messages.gateway.GatewayService
  */
 class BootGatewayReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        val reason = when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED -> GatewayForegroundStartPolicy.StartReason.BOOT
+            // An app update kills the process exactly as a reboot does, and nothing brought the
+            // gateway back: the user had to open the app after every update. Same recovery, and the
+            // start reason is distinct so telemetry can say "this phone was just updated".
+            Intent.ACTION_MY_PACKAGE_REPLACED -> GatewayForegroundStartPolicy.StartReason.APP_UPDATED
+            else -> return
+        }
         val prefs = GatewayPreferences(context)
         if (!prefs.gatewayDesiredEnabled || !prefs.hasGatewayConsent) {
-            Log.d(TAG, "Boot: gateway not desired (enabled=${prefs.gatewayDesiredEnabled} consent=${prefs.hasGatewayConsent}) — skip")
+            Log.d(TAG, "${intent.action}: gateway not desired (enabled=${prefs.gatewayDesiredEnabled} consent=${prefs.hasGatewayConsent}) — skip")
             return
         }
-        Log.i(TAG, "Boot: restarting gateway (user intent persisted)")
-        GatewayService.startGateway(
-            context,
-            GatewayForegroundStartPolicy.StartReason.BOOT
-        )
+        Log.i(TAG, "${intent.action}: restarting gateway (user intent persisted)")
+        GatewayService.startGateway(context, reason)
     }
 
     companion object { private const val TAG = "BOOT_GW" }

@@ -843,48 +843,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
 
             is MessageMutation.MarkThreadRead -> {
-                db.withTransaction {
-                    db.messageDao().markThreadRead(m.threadId)
-                    db.conversationDao().markRead(m.threadId)
-                    // Thread-read carries no message content — but if the
-                    // thread CONTAINS a LOCAL_ONLY message, its very existence
-                    // must stay untraceable. Gate on the latest message of the
-                    // thread; content never leaves the device either way.
-                    val latest = db.messageDao().newestWindowForThread(m.threadId, 1).firstOrNull()
-                    enqueueCloudEvent(
-                        source = "sms",
-                        providerId = latest?.providerId ?: 0L,
-                        sender = latest?.normalizedAddress ?: "",
-                        body = latest?.body ?: ""
-                    ) {
-                        GatewayEventFactory.threadRead(
-                            conversationId = conversationIdFor(m.threadId),
-                            revisionKey = latest?.let { "${it.source}:${it.providerId}:${it.date}" } ?: "empty"
-                        )
-                    }
-                    if (latest != null) {
-                        val conversation = db.conversationDao().byThread(m.threadId) ?: return@withTransaction
-                        val direction = cloudMessageDirection(latest.type) ?: return@withTransaction
-                        enqueueCloudEvent(
-                            source = latest.source,
-                            providerId = latest.providerId,
-                            sender = latest.normalizedAddress,
-                            body = latest.body,
-                        ) {
-                            GatewayEventFactory.conversationUpserted(
-                                conversationId = conversationIdFor(m.threadId),
-                                displayName = contactNameFor(latest.normalizedAddress),
-                                address = latest.normalizedAddress,
-                                lastMessagePreview = latest.body,
-                                lastMessageDirection = direction,
-                                lastMessageAt = latest.date,
-                                unreadCount = 0,
-                                pinned = conversation.pinned,
-                                archived = conversation.archived,
-                            )
-                        }
-                    }
-                }
+                applyMarkThreadRead(m.threadId)
             }
 
             is MessageMutation.DeleteThread -> {
@@ -2144,6 +2103,90 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
     suspend fun markThreadReadAndPublish(threadId: Long) {
         if (threadId > 0L) applyMutation(MessageMutation.MarkThreadRead(threadId))
+    }
+
+    /**
+     * What actually happened when a read was applied — the FACT, not an assumption.
+     *
+     * The old path returned nothing, so a caller could not tell "the provider was updated and GMweb
+     * will hear about it" from "the local read landed but the event was refused by a privacy gate"
+     * from "nothing happened". A read command was acked COMPLETED in all three cases.
+     */
+    sealed interface ThreadReadOutcome {
+        /** Local state updated AND the durable read event is in the outbox (queued or already there). */
+        data object Published : ThreadReadOutcome
+
+        /**
+         * Local state updated, but no event left the device: the newest message of the thread is
+         * LOCAL_ONLY (or sync is switched off). The phone is read; GMweb will not be told.
+         */
+        data class NotPublished(val attempt: String) : ThreadReadOutcome
+
+        /** Nothing was applied (invalid thread id, or the write threw). */
+        data object Failed : ThreadReadOutcome
+    }
+
+    /**
+     * Apply a read and report whether the durable event was actually queued.
+     *
+     * The read event is gated on the thread's NEWEST message (content never leaves the device): a
+     * conversation whose latest message is an OTP/bank/reset code is deliberately not published. That
+     * gate must be VISIBLE to the caller rather than silently turning a refused publish into a
+     * completed read command.
+     */
+    internal suspend fun applyMarkThreadRead(threadId: Long): ThreadReadOutcome {
+        if (threadId <= 0L) return ThreadReadOutcome.Failed
+        var published: EnqueueAttempt = EnqueueAttempt.SKIPPED_SYNC_OFF
+        db.withTransaction {
+            db.messageDao().markThreadRead(threadId)
+            db.conversationDao().markRead(threadId)
+            // Thread-read carries no message content — but if the
+            // thread CONTAINS a LOCAL_ONLY message, its very existence
+            // must stay untraceable. Gate on the latest message of the
+            // thread; content never leaves the device either way.
+            val latest = db.messageDao().newestWindowForThread(threadId, 1).firstOrNull()
+            published = enqueueCloudEvent(
+                source = "sms",
+                providerId = latest?.providerId ?: 0L,
+                sender = latest?.normalizedAddress ?: "",
+                body = latest?.body ?: ""
+            ) {
+                GatewayEventFactory.threadRead(
+                    conversationId = conversationIdFor(threadId),
+                    revisionKey = latest?.let { "${it.source}:${it.providerId}:${it.date}" } ?: "empty"
+                )
+            }
+            if (latest != null) {
+                val conversation = db.conversationDao().byThread(threadId)
+                val direction = cloudMessageDirection(latest.type)
+                if (conversation != null && direction != null) {
+                    enqueueCloudEvent(
+                        source = latest.source,
+                        providerId = latest.providerId,
+                        sender = latest.normalizedAddress,
+                        body = latest.body,
+                    ) {
+                        GatewayEventFactory.conversationUpserted(
+                            conversationId = conversationIdFor(threadId),
+                            displayName = contactNameFor(latest.normalizedAddress),
+                            address = latest.normalizedAddress,
+                            lastMessagePreview = latest.body,
+                            lastMessageDirection = direction,
+                            lastMessageAt = latest.date,
+                            unreadCount = 0,
+                            pinned = conversation.pinned,
+                            archived = conversation.archived,
+                        )
+                    }
+                }
+            }
+        }
+        return when (published) {
+            // Both mean the event is DURABLE: inserted now, or already there from an earlier read of
+            // the same revision (the deterministic thread-read identity makes that a dedupe, §88).
+            EnqueueAttempt.INSERTED, EnqueueAttempt.ALREADY_PRESENT -> ThreadReadOutcome.Published
+            else -> ThreadReadOutcome.NotPublished(published.name)
+        }
     }
 
     /**

@@ -641,14 +641,7 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
 
     // ── EVE provider handlers (Custom HTTP SMS contract) ─────────────────────
 
-    private fun isDefaultSmsApp(): Boolean = try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
-            roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_SMS) == true
-        } else {
-            Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
-        }
-    } catch (e: Exception) { false }
+    private fun isDefaultSmsApp(): Boolean = DefaultSmsRole.isHeld(context)
 
     private fun handleEveSend(body: String, idempotencyKey: String?, output: java.io.OutputStream) {
         try {

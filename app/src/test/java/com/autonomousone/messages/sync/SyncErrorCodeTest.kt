@@ -157,11 +157,22 @@ class SyncErrorCodeTest {
         val deliberateAdditions = setOf(
             SyncErrorCode.CRYPTO_KEY_UNAVAILABLE,
             SyncErrorCode.COMMAND_INTERRUPTED_AFTER_SUBMIT,
-            SyncErrorCode.COMMAND_EXPIRED_BEFORE_CLAIM
+            SyncErrorCode.COMMAND_EXPIRED_BEFORE_CLAIM,
+            // The read-command family. MARK_THREAD_READ failures were being reported with
+            // SMS_SEND_FAILED (a send code, on a read) and UNKNOWN, so "this conversation has no
+            // mapping on the phone" was indistinguishable from "the provider refused the write" —
+            // two conditions with opposite remedies.
+            SyncErrorCode.READ_COMMAND_DECRYPT_FAILED,
+            SyncErrorCode.READ_INVALID_PAYLOAD,
+            SyncErrorCode.READ_MAPPING_MISSING,
+            SyncErrorCode.READ_UNKNOWN_CONVERSATION,
+            SyncErrorCode.READ_PROVIDER_WRITE_FAILED,
+            SyncErrorCode.READ_EVENT_PUBLISH_FAILED,
+            SyncErrorCode.READ_PERMISSION_DENIED
         )
         assertEquals(
-            "the mission's minimum codes plus 3 that had no honest minimum equivalent",
-            23,
+            "the mission's minimum codes plus 10 that had no honest minimum equivalent",
+            30,
             SyncErrorCode.entries.size
         )
         assertEquals(
