@@ -35,8 +35,8 @@ android {
         applicationId = "com.autonomousone.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 132
-        versionName = "3.4.25"
+        versionCode = 133
+        versionName = "3.4.26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,8 +89,8 @@ android {
 
     sourceSets {
         getByName("test").resources.srcDir(rootProject.file("protocol"))
-        getByName("androidTest").assets.srcDir(rootProject.file("protocol"))
         getByName("androidTest").assets.srcDir(project.file("schemas"))
+        getByName("androidTest").assets.srcDir(rootProject.file("protocol"))
     }
 
     testOptions {
