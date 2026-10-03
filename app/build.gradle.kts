@@ -89,8 +89,8 @@ android {
 
     sourceSets {
         getByName("test").resources.srcDir(rootProject.file("protocol"))
-        getByName("androidTest").assets.srcDir(project.file("schemas"))
         getByName("androidTest").assets.srcDir(rootProject.file("protocol"))
+        getByName("androidTest").assets.srcDir(project.file("schemas"))
     }
 
     testOptions {
