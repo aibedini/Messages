@@ -2,6 +2,7 @@ package com.autonomousone.messages.gateway
 
 import android.content.Context
 import android.util.Log
+import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.repository.GatewaySyncRepository
@@ -79,11 +80,13 @@ class SecureCommandPoller(
         private const val DRAIN_BATCH = 50
 
         /** The encrypted command types this build can execute. Advertised in telemetry capabilities. */
-        internal val SUPPORTED_TYPES = setOf(
+        private val COMMAND_TYPES = listOf(
             SEND_SMS,
             ReadCommandError.READ_COMMAND_TYPE,
-            REFRESH_DEVICE_TELEMETRY
+            REFRESH_DEVICE_TELEMETRY,
         )
+
+        internal val SUPPORTED_TYPES = COMMAND_TYPES.toSet()
 
         /** Ask the phone for a fresh device/SIM telemetry report (GMweb → Android). */
         const val REFRESH_DEVICE_TELEMETRY = "REFRESH_DEVICE_TELEMETRY"
@@ -100,9 +103,37 @@ class SecureCommandPoller(
         /** How long a web-requested refresh may wait for its POST before reporting a timeout. */
         internal const val REMOTE_REFRESH_TIMEOUT_MS = 10_000L
 
-        internal fun buildClaimBody(deviceId: String): ByteArray = JSONObject()
+        internal fun buildClaimBody(context: Context, deviceId: String): ByteArray {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            @Suppress("DEPRECATION")
+            val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                packageInfo.versionCode.toLong()
+            }
+            return buildClaimBody(deviceId, packageInfo.versionName ?: "", versionCode)
+        }
+
+        /** Compatibility helper for JVM contract tests; production never uses this overload. */
+        internal fun buildClaimBody(deviceId: String): ByteArray =
+            buildClaimBody(deviceId, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong())
+
+        /** JVM-test helper; production claims always use [buildClaimBody] with a Context. */
+        internal fun buildClaimBody(
+            deviceId: String,
+            versionName: String,
+            versionCode: Long,
+        ): ByteArray = JSONObject()
             .put("agentId", deviceId)
             .put("limit", CLAIM_LIMIT)
+            .put(
+                "runtime",
+                JSONObject()
+                    .put("protocolVersion", 1)
+                    .put("appVersionName", versionName)
+                    .put("appVersionCode", versionCode)
+                    .put("commandTypes", JSONArray(COMMAND_TYPES))
+            )
             .toString()
             .toByteArray(Charsets.UTF_8)
 
@@ -378,7 +409,7 @@ class SecureCommandPoller(
                 doOutput = true
             }
             val currentDeviceId = deviceId()
-            val bodyBytes = buildClaimBody(currentDeviceId)
+            val bodyBytes = buildClaimBody(context, currentDeviceId)
             // PR-08b: per-device signature over the canonical request (ADR-001).
             // X-API-Key stays as a legacy fallback for older GMweb builds.
             conn.setRequestProperty("X-API-Key", prefs.apiKey)
