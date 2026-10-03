@@ -104,6 +104,14 @@ class SecureCommandPoller(
         internal const val REMOTE_REFRESH_TIMEOUT_MS = 10_000L
 
         internal fun buildClaimBody(context: Context, deviceId: String): ByteArray {
+            val runtime = installedRuntime(context)
+            return buildClaimBody(deviceId, runtime.versionName, runtime.versionCode)
+        }
+
+        /** The installed APK's own identity, straight from PackageManager. */
+        internal data class InstalledRuntime(val versionName: String, val versionCode: Long)
+
+        internal fun installedRuntime(context: Context): InstalledRuntime {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             @Suppress("DEPRECATION")
             val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -111,9 +119,8 @@ class SecureCommandPoller(
             } else {
                 packageInfo.versionCode.toLong()
             }
-            return buildClaimBody(deviceId, packageInfo.versionName ?: "", versionCode)
+            return InstalledRuntime(packageInfo.versionName ?: "", versionCode)
         }
-
         /** Compatibility helper for JVM contract tests; production never uses this overload. */
         internal fun buildClaimBody(deviceId: String): ByteArray =
             buildClaimBody(deviceId, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong())
@@ -409,16 +416,30 @@ class SecureCommandPoller(
                 doOutput = true
             }
             val currentDeviceId = deviceId()
-            val bodyBytes = buildClaimBody(context, currentDeviceId)
+            // RUNTIME ADVERTISEMENT, and it depends on NOTHING else: the installed APK's own metadata
+            // (PackageManager) and this build's command contract. DeviceTelemetry is deliberately not
+            // consulted — a phone whose telemetry has never succeeded must still tell GMweb which
+            // build is running and what it can execute.
+            val runtime = installedRuntime(context)
+            CommandRuntimeHealth.onClaimAttempt(
+                versionName = runtime.versionName,
+                versionCode = runtime.versionCode,
+                commandTypes = COMMAND_TYPES
+            )
+            val bodyBytes = buildClaimBody(currentDeviceId, runtime.versionName, runtime.versionCode)
             // PR-08b: per-device signature over the canonical request (ADR-001).
             // X-API-Key stays as a legacy fallback for older GMweb builds.
             conn.setRequestProperty("X-API-Key", prefs.apiKey)
             if (!AgentAuth.sign(conn, currentDeviceId, path, "POST", bodyBytes)) {
                 throw IllegalStateException("agent signing failed (keystore unavailable)")
             }
+            // The SAME array that was signed: the signature covers the runtime block above, and no
+            // regeneration happens between signing and transmission.
             conn.outputStream.use { it.write(bodyBytes) }
-            if (conn.responseCode != 200) {
-                throw IllegalStateException("claim HTTP ${conn.responseCode}")
+            val status = conn.responseCode
+            CommandRuntimeHealth.onClaimResult(status)
+            if (status != 200) {
+                throw IllegalStateException("claim HTTP $status")
             }
             val body = conn.inputStream.use { it.bufferedReader().readText() }
             val rows = JSONObject(body).optJSONArray("commands") ?: JSONArray()

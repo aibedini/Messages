@@ -47,6 +47,7 @@ import androidx.compose.material3.CardDefaults
 import com.autonomousone.messages.gateway.HeartbeatManager
 import com.autonomousone.messages.gateway.health.GatewayLogFilter
 import com.autonomousone.messages.ui.gateway.GatewayHealthCard
+import com.autonomousone.messages.ui.gateway.TelemetryDiagnosticsCard
 import com.autonomousone.messages.ui.gateway.GatewayLogFeedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -422,6 +423,35 @@ fun GatewayScreen(
                     diagnosticResult = viewModel.diagnosticResult,
                     onRunDiagnostics = { viewModel.runDiagnostics() },
                     onReconnect = { viewModel.reconnectNow() }
+                )
+            }
+
+            // ── 0b. Phone telemetry diagnostics ─────────────────────────────
+            // Live runtime (which APK is running, what it advertises) and device telemetry
+            // (allowed to fail) are shown as SEPARATE facts, with one action that forces a real
+            // report through the production reporter. See TelemetryDiagnosticsCard.
+            item {
+                val liveRevision by viewModel.healthRevision.collectAsState()
+                val telemetrySnapshot = remember(viewModel.healthTick, liveRevision) {
+                    com.autonomousone.messages.gateway.TelemetryHealth.snapshot()
+                }
+                val runtimeSnapshot = remember(viewModel.healthTick, liveRevision) {
+                    com.autonomousone.messages.gateway.CommandRuntimeHealth.snapshot()
+                }
+                TelemetryDiagnosticsCard(
+                    installedAppVersion = viewModel.installedAppVersion,
+                    runtime = runtimeSnapshot,
+                    commandPollerRunning = com.autonomousone.messages.gateway.GatewayService
+                        .peekCommandPoller()?.isRunning == true,
+                    telemetry = telemetrySnapshot,
+                    eligibility = com.autonomousone.messages.gateway.TelemetryEligibilityState.current(),
+                    destinationHost = viewModel.gmwebServerOrigin
+                        .takeIf { it.isNotBlank() }
+                        ?.let { runCatching { java.net.URI(it).host }.getOrNull() },
+                    simDiscoveryReason = telemetrySnapshot.lastSubscriptionReason,
+                    testState = viewModel.telemetryTestState.name,
+                    testDetail = viewModel.telemetryTestDetail,
+                    onTestTelemetry = { viewModel.testTelemetryNow() }
                 )
             }
 

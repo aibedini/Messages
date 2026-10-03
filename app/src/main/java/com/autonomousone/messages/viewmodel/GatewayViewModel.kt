@@ -141,6 +141,68 @@ class GatewayViewModel(
     var diagnosticRunning by mutableStateOf(false)
         private set
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Phone telemetry diagnostics (P0): report local truth, and let a human force
+    // ONE real report through the production reporter.
+    //
+    // The running build's own identity is read from PackageManager, NOT from telemetry:
+    // telemetry is allowed to fail, and "which APK is running" must not depend on it.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** What the OS says is installed right now. */
+    val installedAppVersion: String = runCatching {
+        val info = application.packageManager.getPackageInfo(application.packageName, 0)
+        val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        "${info.versionName ?: "?"} ($code)"
+    }.getOrDefault("unknown")
+
+    /** IDLE → RUNNING → SUCCESS/FAILED, so the button cannot be double-tapped mid-report. */
+    enum class TelemetryTestState { IDLE, RUNNING, SUCCESS, FAILED }
+
+    var telemetryTestState by mutableStateOf(TelemetryTestState.IDLE)
+        private set
+
+    /** The result line shown under the button: a stable code, an HTTP status, nothing sensitive. */
+    var telemetryTestDetail by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Force exactly ONE telemetry attempt through the REAL reporter.
+     *
+     * No HTTP is constructed here, no client is called directly, and no second reporter is created:
+     * the singleton's [com.autonomousone.messages.gateway.DeviceTelemetry.requestImmediateAndAwait]
+     * runs the same gated, serialized path as the heartbeat, and only a 2xx counts as success.
+     */
+    fun testTelemetryNow() {
+        if (telemetryTestState == TelemetryTestState.RUNNING) return
+        telemetryTestState = TelemetryTestState.RUNNING
+        telemetryTestDetail = null
+        viewModelScope.launch {
+            val result = com.autonomousone.messages.gateway.DeviceTelemetry.requestImmediateAndAwait(
+                com.autonomousone.messages.gateway.TelemetryTrigger.MANUAL_DIAGNOSTIC_REFRESH,
+                timeoutMs = 10_000L
+            )
+            when (result) {
+                is com.autonomousone.messages.gateway.TelemetryReportResult.Success -> {
+                    telemetryTestState = TelemetryTestState.SUCCESS
+                    telemetryTestDetail = "HTTP ${result.httpStatus}"
+                }
+                is com.autonomousone.messages.gateway.TelemetryReportResult.Failure -> {
+                    telemetryTestState = TelemetryTestState.FAILED
+                    telemetryTestDetail = buildString {
+                        append(result.code.name)
+                        result.httpStatus?.let { append(" · HTTP $it") }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * The dead-letter aggregate, refreshed alongside diagnostics.
      *
@@ -299,7 +361,13 @@ class GatewayViewModel(
         telemetry = com.autonomousone.messages.gateway.TelemetryHealth.snapshot(),
         telemetryEligibility = com.autonomousone.messages.gateway.TelemetryEligibilityState.current(),
         stableDeviceId = prefs.stableDeviceId(getApplication()),
-        agentDeviceId = prefs.agentDeviceId(getApplication())
+        agentDeviceId = prefs.agentDeviceId(getApplication()),
+        // The running build, from PackageManager, plus what it last advertised over the command
+        // channel: both survive a telemetry failure by construction.
+        installedApp = installedAppVersion,
+        commandRuntime = com.autonomousone.messages.gateway.CommandRuntimeHealth.snapshot(),
+        commandPollerRunning = com.autonomousone.messages.gateway.GatewayService
+            .peekCommandPoller()?.isRunning
     )
 
     /** Copies the redacted report to the clipboard. */

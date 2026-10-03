@@ -3,6 +3,7 @@ package com.autonomousone.messages.gateway.health
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.gateway.AddressScope
+import com.autonomousone.messages.gateway.CommandRuntimeHealth
 import com.autonomousone.messages.gateway.DeviceTelemetry
 import com.autonomousone.messages.gateway.NetworkAddressFacts
 import com.autonomousone.messages.gateway.TelemetryEligibility
@@ -66,6 +67,11 @@ object GatewayDiagnosticReport {
         /** The device identities, shortened by this renderer, so a mismatch is visible. */
         stableDeviceId: String? = null,
         agentDeviceId: String? = null,
+        /** The INSTALLED APK, from PackageManager — never from a telemetry report. */
+        installedApp: String? = null,
+        /** What the running build last advertised over the command channel. */
+        commandRuntime: CommandRuntimeHealth.Snapshot? = null,
+        commandPollerRunning: Boolean? = null,
         now: Long = System.currentTimeMillis()
     ): String = buildString {
         appendLine("GMweb Gateway Diagnostic")
@@ -145,6 +151,24 @@ object GatewayDiagnosticReport {
             "  Stable device: ${shortId(stableDeviceId)} · Agent device: ${shortId(agentDeviceId)}" +
                 " · Match: ${if (identityMatches(stableDeviceId, agentDeviceId)) "yes" else "NO"}"
         )
+        appendLine()
+
+        // ── Live agent runtime: the facts that do NOT depend on telemetry ────
+        // A telemetry failure must never hide which build is running or what it can execute: GMweb
+        // learns both from this build's signed command claim.
+        appendLine("Live agent runtime")
+        appendLine("------------------")
+        appendLine("Installed app: ${installedApp ?: "unknown"}")
+        appendLine("Command poller: ${if (commandPollerRunning == true) "running" else "stopped"}")
+        appendLine("Runtime advertised: ${if (commandRuntime?.runtimeEverAccepted == true) "yes" else "not yet accepted"}")
+        appendLine("Advertised version: ${commandRuntime?.lastAdvertisedVersionName ?: "none"}" +
+            " (${commandRuntime?.lastAdvertisedVersionCode ?: 0})")
+        appendLine("Supported command types: ${commandRuntime?.advertisedCommandTypeCount ?: 0}" +
+            (commandRuntime?.advertisedCommandTypes?.takeIf { it.isNotEmpty() }
+                ?.let { " · " + it.joinToString(",") } ?: ""))
+        appendLine("Last claim: ${ago(commandRuntime?.lastClaimAttemptAt, now)}" +
+            " · HTTP ${commandRuntime?.lastClaimHttpStatus ?: "n/a"}" +
+            " · last success ${ago(commandRuntime?.lastClaimSuccessAt, now)}")
         appendLine()
 
         appendLine("Pull bridge (GMweb → Android):")
