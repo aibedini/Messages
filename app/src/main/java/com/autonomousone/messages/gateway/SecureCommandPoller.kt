@@ -7,6 +7,8 @@ import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.repository.GatewaySyncRepository
 import com.autonomousone.messages.sms.GatewayOutgoingPipeline
 import com.autonomousone.messages.sync.CommandDrainPolicy
+import com.autonomousone.messages.sync.CommandRoute
+import com.autonomousone.messages.sync.CommandRouting
 import com.autonomousone.messages.sync.ReadCommandError
 import com.autonomousone.messages.sync.ReadCommandFailure
 import com.autonomousone.messages.sync.SyncErrorCode
@@ -75,6 +77,28 @@ class SecureCommandPoller(
 
         /** How many non-terminal rows one drain pass looks at. */
         private const val DRAIN_BATCH = 50
+
+        /** The encrypted command types this build can execute. Advertised in telemetry capabilities. */
+        internal val SUPPORTED_TYPES = setOf(
+            SEND_SMS,
+            ReadCommandError.READ_COMMAND_TYPE,
+            REFRESH_DEVICE_TELEMETRY
+        )
+
+        /** Ask the phone for a fresh device/SIM telemetry report (GMweb → Android). */
+        const val REFRESH_DEVICE_TELEMETRY = "REFRESH_DEVICE_TELEMETRY"
+
+        /** Classic SMS send. The only type that may enter the SMS pipeline. */
+        const val SEND_SMS = "SEND_SMS"
+
+        /** Result code for a command this build does not implement. */
+        const val RESULT_UNSUPPORTED_COMMAND_TYPE = "UNSUPPORTED_COMMAND_TYPE"
+
+        /** The only `reason` this build accepts for a telemetry refresh. */
+        const val REASON_SIM_REFRESH = "SIM_REFRESH"
+
+        /** How long a web-requested refresh may wait for its POST before reporting a timeout. */
+        internal const val REMOTE_REFRESH_TIMEOUT_MS = 10_000L
 
         internal fun buildClaimBody(deviceId: String): ByteArray = JSONObject()
             .put("agentId", deviceId)
@@ -395,7 +419,31 @@ class SecureCommandPoller(
 
     /** SEND_SMS executes immediately through the single funnel (§19/§20). */
     private suspend fun execute(cmd: RemoteCommandEntity) {
-        if (cmd.type !in setOf("SEND_SMS", "MARK_THREAD_READ")) return
+        // UNKNOWN TYPES REACH A TERMINAL STATE. This used to `return` silently, which left a claimed
+        // row non-terminal for ever: GMweb's optimistic entry spun with nothing on the device working
+        // on it, and the row could never be resolved. An unsupported type is now a durable FAILED,
+        // ACKed as such — the honest answer, and the one that makes forward compatibility possible.
+        if (cmd.type !in SUPPORTED_TYPES) {
+            Log.w(TAG, "unsupported command type=${cmd.type} id=${cmd.commandId}")
+            DiagnosticLog.event(
+                "GM_COMMAND",
+                "unsupported_type id=${cmd.commandId.take(8)} type=${cmd.type.take(40)}"
+            )
+            withContext(Dispatchers.IO) {
+                repo.finishCommandFrom(
+                    commandId = cmd.commandId,
+                    state = RemoteCommandEntity.STATE_FAILED,
+                    errorCode = RESULT_UNSUPPORTED_COMMAND_TYPE,
+                    fromStates = listOf(
+                        RemoteCommandEntity.STATE_RECEIVED,
+                        RemoteCommandEntity.STATE_ACCEPTED,
+                        RemoteCommandEntity.STATE_EXECUTING
+                    )
+                )
+            }
+            ack(cmd.commandId, "FAILED", RESULT_UNSUPPORTED_COMMAND_TYPE)
+            return
+        }
         // Intake ownership (P0, no-dual-execution): SEND_SMS is owned by
         // exactly ONE transport. Until the strategic command path passes
         // real-device E2E, the legacy pull bridge owns delivery — strategic
@@ -427,10 +475,17 @@ class SecureCommandPoller(
                 var result = "completed"
                 try {
                     ack(cmd.commandId, "EXECUTING", null)
-                    if (cmd.type == ReadCommandError.READ_COMMAND_TYPE) {
-                        executeMarkThreadRead(cmd, plaintext, repo)
-                    } else withContext(Dispatchers.IO) {
-                        GatewayOutgoingPipeline.executeIngested(cmd.copy(ciphertext = plaintext, cryptoVersion = 0), repo)
+                    when (CommandRouting.routeOf(cmd.type)) {
+                        CommandRoute.READ_THREAD -> executeMarkThreadRead(cmd, plaintext, repo)
+                        CommandRoute.TELEMETRY_REFRESH -> executeRefreshDeviceTelemetry(cmd, plaintext, repo)
+                        // SEND_SMS is the ONLY type that may enter the SMS pipeline.
+                        CommandRoute.SMS_PIPELINE -> withContext(Dispatchers.IO) {
+                            GatewayOutgoingPipeline.executeIngested(
+                                cmd.copy(ciphertext = plaintext, cryptoVersion = 0), repo
+                            )
+                        }
+                        // Handled above, before execution starts; unreachable by construction.
+                        CommandRoute.UNSUPPORTED -> error(RESULT_UNSUPPORTED_COMMAND_TYPE)
                     }
                 } catch (e: Exception) {
                     // TYPE-AWARE: a read failure is classified by what actually went wrong and is
@@ -462,6 +517,98 @@ class SecureCommandPoller(
                     )
                     ack(cmd.commandId, "FAILED", code.name)
                 }
+            }
+        }
+    }
+
+    /**
+     * `REFRESH_DEVICE_TELEMETRY`: ask the live reporter for a FRESH report and complete only on a
+     * real 2xx.
+     *
+     * The browser's "Refresh SIMs" button must not be answered by a queued wake-up. It needs proof
+     * that a telemetry POST reached GMweb, so this command awaits the structured result and reports
+     * the exact failure code when there is none. The report goes through the SAME reporter and the
+     * SAME report mutex as the heartbeat: no second loop, no second transport, no overlapping POST.
+     */
+    private suspend fun executeRefreshDeviceTelemetry(
+        cmd: RemoteCommandEntity,
+        plaintext: ByteArray,
+        repo: GatewaySyncRepository
+    ) {
+        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+        val payload = try {
+            JSONObject(String(plaintext, Charsets.UTF_8))
+        } catch (e: Exception) {
+            throw ReadCommandFailure.InvalidPayload(e)
+        }
+        // Contract: the plaintext type must agree with the envelope type, and the only reason this
+        // build accepts is a SIM refresh. Unknown FIELDS are ignored (additive-safe); an unknown
+        // reason is refused, because silently treating it as a SIM refresh would answer a question
+        // nobody asked.
+        val declaredType = payload.optString("type").takeIf { it.isNotBlank() }
+        if (declaredType != null && declaredType != REFRESH_DEVICE_TELEMETRY) {
+            throw ReadCommandFailure.InvalidPayload()
+        }
+        val reason = payload.optString("reason", REASON_SIM_REFRESH)
+        if (reason != REASON_SIM_REFRESH) throw ReadCommandFailure.InvalidPayload()
+        if (payload.has("requestedAt") && !payload.isNull("requestedAt")) {
+            val requestedAt = payload.optLong("requestedAt", 0L)
+            // A timestamp far in the future is a broken clock, not a request: refuse it rather than
+            // record it as this device's own time.
+            if (requestedAt > System.currentTimeMillis() + 24L * 3600_000) {
+                throw ReadCommandFailure.InvalidPayload()
+            }
+        }
+
+        DiagnosticLog.event(
+            "GM_TELEMETRY",
+            "REMOTE_TELEMETRY_REFRESH_BEGIN id=${cmd.commandId.take(8)} reason=$reason"
+        )
+        val outcome = DeviceTelemetry.requestImmediateAndAwait(
+            TelemetryTrigger.REMOTE_REFRESH,
+            timeoutMs = REMOTE_REFRESH_TIMEOUT_MS
+        )
+        val statusText = when (outcome) {
+            is TelemetryReportResult.Success -> outcome.httpStatus.toString()
+            is TelemetryReportResult.Failure -> outcome.httpStatus?.toString() ?: "none"
+        }
+        when (outcome) {
+            is TelemetryReportResult.Success -> {
+                DiagnosticLog.event(
+                    "GM_TELEMETRY",
+                    "REMOTE_TELEMETRY_REFRESH_END result=success http=$statusText"
+                )
+                repo.finishCommandFrom(
+                    commandId = cmd.commandId,
+                    state = RemoteCommandEntity.STATE_COMPLETED,
+                    errorCode = null,
+                    fromStates = listOf(
+                        RemoteCommandEntity.STATE_ACCEPTED,
+                        RemoteCommandEntity.STATE_EXECUTING
+                    )
+                )
+            }
+            is TelemetryReportResult.Failure -> {
+                DiagnosticLog.event(
+                    "GM_TELEMETRY",
+                    "REMOTE_TELEMETRY_REFRESH_END result=failure " +
+                        "code=${outcome.code.commandCode} http=$statusText"
+                )
+                // Durable FAILED, and the SAME stable code goes to GMweb: the command is not
+                // completed merely because the refresh was requested.
+                repo.finishCommandFrom(
+                    commandId = cmd.commandId,
+                    state = RemoteCommandEntity.STATE_FAILED,
+                    errorCode = outcome.code.commandCode,
+                    fromStates = listOf(
+                        RemoteCommandEntity.STATE_ACCEPTED,
+                        RemoteCommandEntity.STATE_EXECUTING
+                    )
+                )
             }
         }
     }

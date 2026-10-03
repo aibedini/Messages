@@ -85,7 +85,14 @@ object CommandDrainPolicy {
      * working on it. It is reported as a failure with `UNKNOWN` instead, which is the honest code —
      * the device genuinely does not know what the command means.
      */
-    val EXECUTABLE_TYPES: Set<String> = setOf("SEND_SMS", "MARK_THREAD_READ")
+    val EXECUTABLE_TYPES: Set<String> = setOf(
+        "SEND_SMS",
+        "MARK_THREAD_READ",
+        // A telemetry refresh is executable and idempotent (re-reporting is harmless), but it is
+        // deliberately NOT in RE_DRIVABLE_TYPES: an abandoned refresh has no side effect worth
+        // re-running, and leaving it to the fail-safe default keeps the re-drive set minimal.
+        "REFRESH_DEVICE_TELEMETRY"
+    )
 
     /**
      * Decide one row.
