@@ -87,14 +87,18 @@ class TelemetryReporterTest {
     }
 
     @Test
-    fun `a payload that cannot be built is a local failure, not a silent gap`() = runBlocking {
+    fun `a payload that cannot be built is a LOCAL failure, not a network one`() = runBlocking {
         val result = reporter(
             transport = accepted(),
             payload = { throw IllegalStateException("db unavailable") }
         ).perform(TelemetryTrigger.PERIODIC)
 
         val failure = result as TelemetryReportResult.Failure
-        assertEquals(TelemetryFailureCode.TRANSPORT_ERROR, failure.code)
+        // Corrected expectation: this used to assert TRANSPORT_ERROR, which is the conflation a real
+        // device exposed — a local payload exception was being reported as "the network is broken" on
+        // a phone whose command channel was answering HTTP 200 on the same host.
+        assertEquals(TelemetryFailureCode.PAYLOAD_BUILD_FAILED, failure.code)
+        assertEquals("PAYLOAD", failure.code.stage)
         assertTrue(failure.detail!!.startsWith("payload_build_failed"))
     }
 

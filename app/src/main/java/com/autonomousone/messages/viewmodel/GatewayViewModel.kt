@@ -197,6 +197,9 @@ class GatewayViewModel(
                     telemetryTestDetail = buildString {
                         append(result.code.name)
                         result.httpStatus?.let { append(" · HTTP $it") }
+                        // The stage/detail is what makes the failure actionable: a payload-build
+                        // exception and a socket timeout must not both read as "TRANSPORT_ERROR".
+                        result.detail?.let { append(" · $it") }
                     }
                 }
             }

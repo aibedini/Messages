@@ -173,7 +173,9 @@ class DeviceTelemetry(
                     pendingTrigger = TelemetryTrigger.PERIODIC
                     attempt++
                     // BOUNDARY 3: why this report exists, and for which device. IDs are shortened; no
-                    // secret, no path, no body.
+                    // secret, no path, no body. NOTE: the attempt COUNTER is recorded inside
+                    // performReport, once, for every path — recording it here as well would double
+                    // count the heartbeat.
                     Log.i(
                         TAG,
                         "TELEMETRY_REPORT_BEGIN trigger=${trigger.wireValue} attempt=$attempt " +
@@ -293,6 +295,14 @@ class DeviceTelemetry(
      * POST in flight") is a property of the design rather than a convention.
      */
     internal suspend fun performReport(trigger: TelemetryTrigger): TelemetryReportResult {
+        // ATTEMPT RECORDED FIRST, exactly once, before gating/payload/signing/HTTP.
+        //
+        // This is what the real device exposed: failures reached 10 while attempts stayed 0 and
+        // "last attempt" showed "never", because the periodic loop recorded the attempt and the
+        // awaited (manual / remote) path never did. The counter is now owned by the ONE place every
+        // report passes through, so `attempts == successes + failures` holds for completed reports
+        // and "last attempt" can never be older than "last failure".
+        TelemetryHealth.onAttempt(trigger)
         val result = reporter.perform(trigger)
         val now = System.currentTimeMillis()
         when (result) {
@@ -303,7 +313,9 @@ class DeviceTelemetry(
             is TelemetryReportResult.Failure -> TelemetryHealth.onFailure(
                 at = now,
                 httpStatus = result.httpStatus,
-                errorCode = result.code.name
+                errorCode = result.code.name,
+                stage = result.code.stage,
+                detail = result.detail
             )
         }
         if (trigger == TelemetryTrigger.REMOTE_REFRESH) {
@@ -354,22 +366,34 @@ class DeviceTelemetry(
      * make the phone look offline.
      */
     private suspend fun buildPayload(trigger: TelemetryTrigger): JSONObject {
+        // BOUNDARY: the payload build. Traced around the call so a local failure names the exception
+        // class instead of arriving as "the network is broken".
+        trace("payload_build_begin trigger=${trigger.wireValue}")
+        return try {
+            buildPayloadSections(trigger).also { trace("payload_build_result ok=true") }
+        } catch (e: Exception) {
+            trace("payload_build_result ok=false errorClass=${e.javaClass.simpleName}")
+            throw e
+        }
+    }
+
+    /**
+     * A NON-CRITICAL payload section.
+     *
+     * Telemetry must not disappear because one diagnostic counter could not be read: the phone's
+     * presence, its version and its SIM state are worth far more than the outbox depths. A failing
+     * section degrades to "not reported" and is traced with its exception class, while identity,
+     * signing and the core fields stay mandatory — those failures must never be swallowed.
+     */
+    private suspend fun optionalSection(name: String, block: suspend () -> Any?): Any? = try {
+        block()
+    } catch (e: Exception) {
+        trace("payload_section_failed name=$name errorClass=${e.javaClass.simpleName}")
+        null
+    }
+
+    private suspend fun buildPayloadSections(trigger: TelemetryTrigger): JSONObject {
         val db = MessagesDatabase.get(appContext)
-        val battery = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
-        val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
-        val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
-        val networkType = when {
-            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "WIFI"
-            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "CELLULAR"
-            else -> "UNKNOWN"
-        }
-        val eventDao = db.gatewayEventOutboxDao()
-        val historyAckLag = db.cloudHistoryCheckpointDao().all().sumOf {
-            (it.nextOrdinal - 1 - it.ackedContiguousOrdinal).coerceAtLeast(0)
-        }
-        val trustHealth = TrustStatementPublisher.health.value
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
         @Suppress("DEPRECATION")
         val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -388,6 +412,75 @@ class DeviceTelemetry(
         TelemetryHealth.onSubscriptionDiscovery(count = simCount, reason = discoveryReason)
         val defaultSmsSubscriptionId = simManager.defaultSmsSubscriptionId()
         val telemetryHealth = TelemetryHealth.snapshot()
+
+        // ── Optional diagnostic sections ────────────────────────────────────
+        // Every one of these is a NICE-TO-HAVE. A failing counter must cost its own section, not the
+        // whole heartbeat: the phone's presence, version and SIM state are what GMweb cannot do
+        // without, and a diagnostic read that throws is not a reason to disappear.
+        val batterySection = optionalSection("battery") {
+            val battery = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+            JSONObject()
+                .put(
+                    "level",
+                    batteryPercent(
+                        battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1,
+                        battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1,
+                    )
+                )
+                .put(
+                    "isCharging",
+                    status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+                )
+                .put(
+                    "chargingSource",
+                    when (plugged) {
+                        BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+                        BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+                        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "WIRELESS"
+                        else -> "NONE"
+                    }
+                )
+        }
+        val networkSection = optionalSection("network") {
+            val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
+            val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+            val networkType = when {
+                capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "WIFI"
+                capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "CELLULAR"
+                else -> "UNKNOWN"
+            }
+            JSONObject()
+                .put(
+                    "isConnected",
+                    capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                )
+                .put("networkType", networkType)
+        }
+        val syncSection = optionalSection("sync") {
+            val eventDao = db.gatewayEventOutboxDao()
+            val historyAckLag = db.cloudHistoryCheckpointDao().all().sumOf {
+                (it.nextOrdinal - 1 - it.ackedContiguousOrdinal).coerceAtLeast(0)
+            }
+            val trustHealth = TrustStatementPublisher.health.value
+            JSONObject()
+                .put("outboxDepth", eventDao.pendingDepth())
+                .put("realtimeQueueDepth", eventDao.pendingRealtimeDepth())
+                .put("backfillQueueDepth", eventDao.pendingBackfillDepth())
+                .put("deadLetterCount", eventDao.deadLetterDepth())
+                .put("historyAckLag", historyAckLag)
+                .put("trustOutboxDepth", trustHealth.pendingCount)
+                .putOpt("lastTrustAckAt", trustHealth.lastAckAt)
+                .putOpt("lastTrustHttpStatus", trustHealth.lastHttpStatus)
+        }
+        val trustSection = optionalSection("trust") {
+            JSONObject()
+                .put("isEnrolled", prefs.identityRegistered)
+                .put("approvedDevicesCount", db.trustedDeviceDao().countTrusted())
+                .put("trustSequence", db.trustStatementOutboxDao().maxTrustSequence())
+        }
 
         return JSONObject()
             .put("deviceId", deviceId)
@@ -414,59 +507,10 @@ class DeviceTelemetry(
             // LOCAL BUILD EVIDENCE: what this APK can be asked to do over the encrypted command
             // channel. Never derived from server input; older GMweb ignores additive fields.
             .put("capabilities", TelemetryPayloadSections.capabilities())
-            .put(
-                "battery",
-                JSONObject()
-                    .put(
-                        "level",
-                        batteryPercent(
-                            battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1,
-                            battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1,
-                        )
-                    )
-                    .put(
-                        "isCharging",
-                        status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                            status == BatteryManager.BATTERY_STATUS_FULL
-                    )
-                    .put(
-                        "chargingSource",
-                        when (plugged) {
-                            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
-                            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
-                            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "WIRELESS"
-                            else -> "NONE"
-                        }
-                    )
-            )
-            .put(
-                "sync",
-                JSONObject()
-                    .put("outboxDepth", eventDao.pendingDepth())
-                    .put("realtimeQueueDepth", eventDao.pendingRealtimeDepth())
-                    .put("backfillQueueDepth", eventDao.pendingBackfillDepth())
-                    .put("deadLetterCount", eventDao.deadLetterDepth())
-                    .put("historyAckLag", historyAckLag)
-                    .put("trustOutboxDepth", trustHealth.pendingCount)
-                    .putOpt("lastTrustAckAt", trustHealth.lastAckAt)
-                    .putOpt("lastTrustHttpStatus", trustHealth.lastHttpStatus)
-            )
-            .put(
-                "trust",
-                JSONObject()
-                    .put("isEnrolled", prefs.identityRegistered)
-                    .put("approvedDevicesCount", db.trustedDeviceDao().countTrusted())
-                    .put("trustSequence", db.trustStatementOutboxDao().maxTrustSequence())
-            )
-            .put(
-                "network",
-                JSONObject()
-                    .put(
-                        "isConnected",
-                        capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-                    )
-                    .put("networkType", networkType)
-            )
+            .putOpt("battery", batterySection)
+            .putOpt("sync", syncSection)
+            .putOpt("trust", trustSection)
+            .putOpt("network", networkSection)
             .put(
                 "app",
                 JSONObject()
@@ -502,10 +546,11 @@ class DeviceTelemetry(
             is ControlPlaneClient.Result.Failure -> when (result.kind) {
                 ControlPlaneClient.FailureKind.SIGNING -> TelemetryPostOutcome.SigningFailed
                 ControlPlaneClient.FailureKind.HTTP -> TelemetryPostOutcome.Rejected(result.httpStatus ?: 0)
-                // An insecure origin and a dead socket are both "no server accepted this".
-                ControlPlaneClient.FailureKind.TRANSPORT,
-                ControlPlaneClient.FailureKind.INSECURE_URL ->
-                    TelemetryPostOutcome.TransportError(result.error.take(120))
+                ControlPlaneClient.FailureKind.INSECURE_URL -> TelemetryPostOutcome.InsecureUrl
+                // A genuine network failure, and only that: its exception class is the detail the
+                // on-device card needs to tell DNS from TLS from a read timeout.
+                ControlPlaneClient.FailureKind.TRANSPORT ->
+                    TelemetryPostOutcome.TransportError(result.error.take(TelemetryHealth.MAX_DETAIL_CHARS))
             }
         }
 }

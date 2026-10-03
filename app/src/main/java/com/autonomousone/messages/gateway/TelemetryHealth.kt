@@ -23,6 +23,9 @@ object TelemetryHealth {
         const val NOT_ELIGIBLE = "not_eligible"
     }
 
+    /** Upper bound on a stored failure detail. Long enough to name a cause, short enough to be safe. */
+    internal const val MAX_DETAIL_CHARS = 160
+
     data class Snapshot(
         val running: Boolean,
         val lastTrigger: String?,
@@ -30,6 +33,12 @@ object TelemetryHealth {
         val lastSuccessAt: Long?,
         val lastHttpStatus: Int?,
         val lastErrorCode: String?,
+        /** WHICH stage the last failure happened at: PAYLOAD, SIGNING, HTTP, NETWORK, TIMEOUT, … */
+        val lastFailureStage: String?,
+        /** Sanitised, bounded detail: an exception class name or a short message. Never a payload. */
+        val lastFailureDetail: String?,
+        /** The exception CLASS of the last failure, when there was one. */
+        val lastFailureExceptionClass: String?,
         val attempts: Long,
         val successes: Long,
         val failures: Long,
@@ -58,6 +67,9 @@ object TelemetryHealth {
     private var lastSuccessAt: Long? = null
     private var lastHttpStatus: Int? = null
     private var lastErrorCode: String? = null
+    private var lastFailureStage: String? = null
+    private var lastFailureDetail: String? = null
+    private var lastFailureExceptionClass: String? = null
     private var attempts = 0L
     private var successes = 0L
     private var failures = 0L
@@ -83,20 +95,52 @@ object TelemetryHealth {
         lastSuccessAt = at
         lastHttpStatus = httpStatus
         lastErrorCode = null
+        lastFailureStage = null
+        lastFailureDetail = null
+        lastFailureExceptionClass = null
     }
 
     /**
-     * A failed attempt. [httpStatus] is null for a transport failure that never produced a response,
-     * in which case the cause is [ErrorCode.TRANSPORT] rather than a fabricated status.
+     * A failed attempt, with the STAGE and the sanitised detail.
+     *
+     * The stage and detail are what turned "TRANSPORT_ERROR" into a lead: a payload-build exception
+     * and a socket timeout both used to arrive as the same word, so the on-device card could not say
+     * which one the phone was hitting.
      */
     fun onFailure(
         at: Long = System.currentTimeMillis(),
         httpStatus: Int? = null,
-        errorCode: String = if (httpStatus == null) ErrorCode.TRANSPORT else ErrorCode.HTTP_STATUS
+        errorCode: String = if (httpStatus == null) ErrorCode.TRANSPORT else ErrorCode.HTTP_STATUS,
+        stage: String? = null,
+        detail: String? = null
     ) = synchronized(lock) {
         failures++
         lastHttpStatus = httpStatus
         lastErrorCode = errorCode
+        lastFailureStage = stage
+        lastFailureDetail = sanitizeDetail(detail)
+        lastFailureExceptionClass = exceptionClassOf(detail)
+    }
+
+    /**
+     * Bounded, privacy-safe failure detail.
+     *
+     * A failure line must never become a data leak: the detail is a diagnostic hint (an exception
+     * class, a short message), so it is truncated and stripped of anything that could carry a
+     * credential, a number or a payload.
+     */
+    private fun sanitizeDetail(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val flat = raw.replace(Regex("[\\r\\n\\t]"), " ")
+            .replace(Regex("(?U)\\+?\\d[\\d\\s()\\-]{6,}"), "<number>")
+            .take(MAX_DETAIL_CHARS)
+        return flat.ifBlank { null }
+    }
+
+    /** The exception class a `Class: message` style detail starts with, when it looks like one. */
+    private fun exceptionClassOf(detail: String?): String? {
+        val head = detail?.substringBefore(':')?.trim().orEmpty()
+        return head.takeIf { it.endsWith("Exception") || it.endsWith("Error") }
     }
 
     /** A subscription change was observed (SIM inserted/removed, eSIM toggled, default changed). */
@@ -142,6 +186,9 @@ object TelemetryHealth {
             lastSuccessAt = lastSuccessAt,
             lastHttpStatus = lastHttpStatus,
             lastErrorCode = lastErrorCode,
+            lastFailureStage = lastFailureStage,
+            lastFailureDetail = lastFailureDetail,
+            lastFailureExceptionClass = lastFailureExceptionClass,
             attempts = attempts,
             successes = successes,
             failures = failures,
@@ -163,6 +210,9 @@ object TelemetryHealth {
         lastSuccessAt = null
         lastHttpStatus = null
         lastErrorCode = null
+        lastFailureStage = null
+        lastFailureDetail = null
+        lastFailureExceptionClass = null
         attempts = 0
         successes = 0
         failures = 0

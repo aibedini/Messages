@@ -12,6 +12,9 @@ internal sealed interface TelemetryPostOutcome {
     /** The request was aborted before it was sent because it could not be signed. */
     data object SigningFailed : TelemetryPostOutcome
 
+    /** The configured origin is not HTTPS, so the request was never attempted. */
+    data object InsecureUrl : TelemetryPostOutcome
+
     data class TransportError(val detail: String?) : TelemetryPostOutcome
 }
 
@@ -59,11 +62,13 @@ internal class TelemetryReporter(
         val body = try {
             payload(trigger)
         } catch (e: Exception) {
-            // A payload that cannot be built is a local failure, not a transport one, and it must be
-            // visible as such: this is the boundary that would otherwise look like "the server never
-            // answered".
+            // A payload that cannot be built is a LOCAL failure, and it gets its own code: calling it
+            // a transport error told a reader "your network is broken" about a phone whose command
+            // channel was answering HTTP 200 on the same host. The exception CLASS is kept (a
+            // class name carries no payload, no number and no secret) so the on-device card can name
+            // the failing operation instead of guessing.
             return@withLock TelemetryReportResult.Failure(
-                code = TelemetryFailureCode.TRANSPORT_ERROR,
+                code = TelemetryFailureCode.PAYLOAD_BUILD_FAILED,
                 detail = "payload_build_failed:" + e.javaClass.simpleName
             )
         }
@@ -80,6 +85,9 @@ internal class TelemetryReporter(
             )
             TelemetryPostOutcome.SigningFailed -> TelemetryReportResult.Failure(
                 code = TelemetryFailureCode.SIGNING_FAILED
+            )
+            TelemetryPostOutcome.InsecureUrl -> TelemetryReportResult.Failure(
+                code = TelemetryFailureCode.INSECURE_URL
             )
             is TelemetryPostOutcome.TransportError -> TelemetryReportResult.Failure(
                 code = TelemetryFailureCode.TRANSPORT_ERROR,

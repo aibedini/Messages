@@ -100,7 +100,12 @@ fun TelemetryDiagnosticsCard(
             Line("Last attempt", ago(telemetry.lastAttemptAt))
             Line("Last success", ago(telemetry.lastSuccessAt))
             Line("Last HTTP", telemetry.lastHttpStatus?.toString() ?: "n/a")
+            Line("Failure stage", telemetry.lastFailureStage ?: "none")
             Line("Last failure code", telemetry.lastErrorCode ?: "none")
+            // The detail is the whole point of this card: "TRANSPORT_ERROR" alone could not tell a
+            // payload-build exception from a socket timeout, and the phone was hitting one of them.
+            Line("Failure detail", telemetry.lastFailureDetail ?: "none")
+            telemetry.lastFailureExceptionClass?.let { Line("Failure exception", it) }
             Line(
                 "Attempts / successes / failures",
                 "${telemetry.attempts} / ${telemetry.successes} / ${telemetry.failures}"

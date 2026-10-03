@@ -138,6 +138,8 @@ object GatewayDiagnosticReport {
         appendLine("  Last success: ${ago(telemetrySnapshot?.lastSuccessAt, now)}")
         appendLine("  Last HTTP: ${telemetrySnapshot?.lastHttpStatus ?: "n/a"}")
         appendLine("  Last error: ${telemetrySnapshot?.lastErrorCode ?: "none"}")
+        appendLine("  Failure stage: ${telemetrySnapshot?.lastFailureStage ?: "none"}")
+        appendLine("  Failure detail: ${telemetrySnapshot?.lastFailureDetail ?: "none"}")
         appendLine("  Attempts/successes/failures: ${telemetrySnapshot?.attempts ?: 0}/" +
             "${telemetrySnapshot?.successes ?: 0}/${telemetrySnapshot?.failures ?: 0}")
         appendLine("  Skipped (no reporter running): ${telemetrySnapshot?.skipped ?: 0}")
