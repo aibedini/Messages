@@ -125,16 +125,44 @@ object TelemetryHealth {
     /**
      * Bounded, privacy-safe failure detail.
      *
-     * A failure line must never become a data leak: the detail is a diagnostic hint (an exception
-     * class, a short message), so it is truncated and stripped of anything that could carry a
-     * credential, a number or a payload.
+     * IMPORTANT: this method runs while handling an already-failed telemetry report, so it must be
+     * impossible for the sanitiser itself to throw. Android's ICU regex engine does not support all
+     * inline java.util.regex flags (the old `(?U)` pattern crashed API 35 on every telemetry error).
+     * Phone-like runs are therefore redacted with a tiny scanner instead of a regex.
      */
     private fun sanitizeDetail(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
-        val flat = raw.replace(Regex("[\\r\\n\\t]"), " ")
-            .replace(Regex("(?U)\\+?\\d[\\d\\s()\\-]{6,}"), "<number>")
-            .take(MAX_DETAIL_CHARS)
-        return flat.ifBlank { null }
+        val flat = raw.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+        val out = StringBuilder(minOf(flat.length, MAX_DETAIL_CHARS))
+        var i = 0
+        while (i < flat.length && out.length < MAX_DETAIL_CHARS) {
+            val first = flat[i]
+            if (first == '+' || first.isDigit()) {
+                var j = i
+                var digits = 0
+                if (flat[j] == '+') j++
+                while (j < flat.length) {
+                    val ch = flat[j]
+                    when {
+                        ch.isDigit() -> {
+                            digits++
+                            j++
+                        }
+                        ch == ' ' || ch == '(' || ch == ')' || ch == '-' -> j++
+                        else -> break
+                    }
+                }
+                if (digits >= 7) {
+                    val redacted = "<number>"
+                    out.append(redacted, 0, minOf(redacted.length, MAX_DETAIL_CHARS - out.length))
+                    i = j
+                    continue
+                }
+            }
+            out.append(first)
+            i++
+        }
+        return out.toString().ifBlank { null }
     }
 
     /** The exception class a `Class: message` style detail starts with, when it looks like one. */
@@ -218,10 +246,10 @@ object TelemetryHealth {
         failures = 0
         skipped = 0
         lastSubscriptionChangeAt = null
-        subscriptionChangeCount = 0
+        subscriptionChangeCount = 0L
         lastSubscriptionCount = null
         lastSubscriptionReason = null
-        remoteRefreshCount = 0
+        remoteRefreshCount = 0L
         lastRemoteRefreshAt = null
         lastRemoteRefreshResult = null
     }
