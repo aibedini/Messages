@@ -16,40 +16,37 @@ import com.autonomousone.messages.messaging.SimManager
 import com.autonomousone.messages.sms.SmsSendPreflight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
-import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Best-effort operational telemetry — now event-driven, not only periodic.
+ * Operational telemetry — the phone's presence and SIM state, reported to GMweb.
  *
- * **What was wrong.** This class was a loop that reported once and then slept 60 seconds, and its
- * result was discarded. So:
+ * **What this class is now.** One loop, one reporter, one POST at a time:
  *
- *  - GMweb's SIM list could be a minute stale, and a SIM inserted, ejected or re-defaulted in that
- *    minute was reported as "not reported" or as the previous state;
- *  - a user granting Phone permission waited up to a minute for the SIMs to appear at all;
- *  - a reconnect did not re-announce the phone, so GMweb's "last seen" lagged behind reality;
- *  - a failing report was invisible: the returned boolean went nowhere.
+ *  - a 60-second heartbeat PLUS nine event triggers (so a phone that changed nothing still proves it
+ *    is alive, and a phone that just changed its SIM does not wait a minute to say so);
+ *  - every attempt — heartbeat, lifecycle trigger or web-requested refresh — runs through
+ *    [TelemetryReporter], which holds the single report mutex and returns a STRUCTURED result
+ *    (`Success(2xx)` / `Failure(code)`) instead of a Boolean;
+ *  - [requestImmediateAndAwait] is the awaitable door a remote command uses, so a browser-requested
+ *    refresh can only be ACKed after a real 2xx.
  *
- * The timer remains — a heartbeat is the only thing that proves a phone which changed nothing is
- * still alive — but it is no longer the only trigger. Every trigger is a moment GMweb's picture
- * becomes wrong: process start, network back, gateway connected, subscriptions changed, permission
- * granted, default SMS line changed, app updated, or a manual diagnostic refresh.
+ * **What went wrong before.** A week of production produced ZERO
+ * `POST /api/v1/agent/device-telemetry` requests while the event upload and pull bridge returned 200,
+ * and the app could not say why: the gate was a Boolean over three prefs, every outcome was collapsed
+ * to true/false, and a signing failure aborted before the socket with no record anywhere. The gate is
+ * still enforced (consent, origin and identity are required); it is now NAMED, every stage is
+ * recorded durably, and success means 2xx and nothing weaker.
  *
- * Two properties make that safe to do often:
- *
- *  1. [TelemetryWakeState] guarantees at most ONE report in flight and at most ONE queued behind it,
- *     so a burst of SIM changes is one extra POST, never five overlapping ones;
- *  2. a short debounce lets a burst (an eSIM toggle fires several subscription callbacks) collapse
- *     into a single report that already reflects the settled state.
- *
- * It still never gates sync, trust or messaging: every failure is recorded in [TelemetryHealth] and
- * swallowed.
+ * It still never gates sync, trust or messaging: a telemetry failure is recorded, never thrown into
+ * another component.
  */
 class DeviceTelemetry(
     context: Context,
@@ -61,7 +58,7 @@ class DeviceTelemetry(
         private const val TAG = "DEVICE_TELEMETRY"
         private const val PATH = "/api/v1/agent/device-telemetry"
 
-        /** The heartbeat interval. The floor on how stale GMweb's picture may get when nothing happens. */
+        /** The heartbeat interval: the floor on how stale GMweb's picture may get when nothing happens. */
         internal const val INTERVAL_MS = 60_000L
 
         /**
@@ -75,13 +72,15 @@ class DeviceTelemetry(
         /** The live instance, if the gateway service exists. Written only on its own thread. */
         private val instance = AtomicReference<DeviceTelemetry?>(null)
 
+        /** True when this build can serve a web-requested telemetry refresh. */
+        const val REMOTE_REFRESH_SUPPORTED = true
+
         /**
          * Ask the running telemetry loop to report now, for [reason].
          *
          * Safe from any thread, and a NO-OP when the gateway service is not running: a trigger must
-         * never start a reporter of its own, because that is how a second loop gets created. When the
-         * service is down, nothing is being reported anyway — and the next start reports immediately
-         * as [TelemetryTrigger.STARTUP].
+         * never start a reporter of its own, because that is how a second loop gets created. Use
+         * [requestImmediateAndAwait] when the caller needs the actual outcome.
          */
         fun requestImmediate(reason: TelemetryTrigger) {
             val live = instance.get() ?: run {
@@ -91,6 +90,24 @@ class DeviceTelemetry(
                 return
             }
             live.requestImmediate(reason)
+        }
+
+        /**
+         * Report now and WAIT for the outcome — the door the remote refresh command uses.
+         *
+         * Every failure is a structured code, never an exception and never a silent success. The
+         * report itself runs in the service scope, so the timeout below abandons only the WAIT: the
+         * attempt finishes, releases the report mutex and updates health, and no second POST can
+         * start beside it.
+         */
+        suspend fun requestImmediateAndAwait(
+            reason: TelemetryTrigger,
+            timeoutMs: Long = 10_000L
+        ): TelemetryReportResult {
+            val live = instance.get() ?: return TelemetryReportResult.Failure(
+                code = TelemetryFailureCode.NOT_RUNNING
+            )
+            return live.reportAndAwait(reason, timeoutMs)
         }
 
         internal fun batteryPercent(level: Int, scale: Int): Int =
@@ -120,21 +137,30 @@ class DeviceTelemetry(
     @Volatile
     private var lastLoggedEligibility: TelemetryEligibility? = null
 
+    /**
+     * The single reporter. `perform` is the ONLY thing that opens a telemetry socket, and it is
+     * serialized inside — the heartbeat, the lifecycle triggers and a remote refresh all contend for
+     * the same mutex, so two POSTs can never overlap.
+     */
+    private val reporter = TelemetryReporter(
+        eligibility = { eligible() },
+        deviceId = { prefs.agentDeviceId(appContext) },
+        payload = { trigger -> buildPayload(trigger) },
+        transport = { body, deviceId -> postViaControlPlane(body, deviceId) }
+    )
+
     fun start(initialTrigger: TelemetryTrigger = TelemetryTrigger.STARTUP) {
         if (job?.isActive == true) return
         instance.set(this)
         TelemetryHealth.setRunning(true)
-        // BOUNDARY 1+2 (P0 instrumentation): the instance exists and the loop is starting. Without
-        // this line, "telemetry never ran" and "telemetry ran and was blocked" look identical in a
-        // logcat that no longer exists after the process died — so it goes to the DURABLE diagnostic
-        // log as well.
+        // BOUNDARY 1+2: the instance exists and the loop is starting, in the DURABLE log as well as
+        // logcat — logcat is gone after a process death, and "telemetry never ran" must stay
+        // distinguishable from "telemetry ran and was blocked".
         Log.i(TAG, "TELEMETRY_INSTANCE_CREATED agent=${shortId(prefs.agentDeviceId(appContext))}")
         trace("instance_created trigger=${initialTrigger.wireValue}")
         job = scope.launch {
             trace("start trigger=${initialTrigger.wireValue} pid=${android.os.Process.myPid()}")
             logEligibility(force = true)
-            // The FIRST report is immediate: a phone that has just brought its gateway up (or just
-            // been updated) must not wait a minute to become visible.
             pendingTrigger = initialTrigger
             var nextPeriodicAt = 0L
             var attempt = 0L
@@ -146,59 +172,52 @@ class DeviceTelemetry(
                     val trigger = pendingTrigger
                     pendingTrigger = TelemetryTrigger.PERIODIC
                     attempt++
-                    TelemetryHealth.onAttempt(trigger)
-                    // BOUNDARY 3: why this report exists, and for which device. IDs are shortened;
-                    // no secret, no path, no body.
-                    Log.i(TAG, "TELEMETRY_REPORT_BEGIN trigger=${trigger.wireValue} attempt=$attempt " +
-                        "agent=${shortId(prefs.agentDeviceId(appContext))}")
+                    // BOUNDARY 3: why this report exists, and for which device. IDs are shortened; no
+                    // secret, no path, no body.
+                    Log.i(
+                        TAG,
+                        "TELEMETRY_REPORT_BEGIN trigger=${trigger.wireValue} attempt=$attempt " +
+                            "agent=${shortId(prefs.agentDeviceId(appContext))}"
+                    )
                     trace("report_begin trigger=${trigger.wireValue} attempt=$attempt")
-                    runCatching { report(trigger) }
-                        .onFailure {
-                            // A report that could not even be attempted is still a failed attempt;
-                            // the registry must never show a silent gap.
-                            TelemetryHealth.onFailure(errorCode = TelemetryHealth.ErrorCode.TRANSPORT)
-                            Log.w(TAG, "TELEMETRY_REPORT_END result=threw", it)
-                            trace("report_end result=threw error=${it.javaClass.simpleName}")
-                        }
+                    performReport(trigger)
                     nextPeriodicAt = System.currentTimeMillis() + INTERVAL_MS
                     if (wakeState.endRun()) {
                         // A trigger arrived while this report ran: ONE immediate extra pass, so the
-                        // newest state is what GMweb ends up holding. Deliberately not a loop —
-                        // endRun() collapses any number of triggers into this single pass.
+                        // newest state is what GMweb ends up holding. endRun() collapses any number of
+                        // triggers into this single pass.
                         delay(DEBOUNCE_MS)
                     }
                     continue
                 }
                 if (!eligibility.eligible && due) {
-                    // BOUNDARY 4 (the one that was missing): not eligible, and WHY. A device that is
-                    // switched off is not misconfigured, and a device with no server is not
-                    // de-registered — the reason is the whole point of this branch.
+                    // BOUNDARY 4 (the one that was missing): not eligible, and WHY.
                     logEligibility(force = false, eligibility = eligibility)
+                    TelemetryHealth.onFailure(
+                        errorCode = TelemetryFailureCode
+                            .forEligibility(eligibility.reason)?.name ?: TelemetryFailureCode.NOT_RUNNING.name
+                    )
                     pendingTrigger = TelemetryTrigger.PERIODIC
                     nextPeriodicAt = System.currentTimeMillis() + INTERVAL_MS
                 }
                 // Idle: wait for a trigger, or until the periodic heartbeat is due.
                 val waitMs = (nextPeriodicAt - System.currentTimeMillis()).coerceAtLeast(0L)
-                val signalled = kotlinx.coroutines.withTimeoutOrNull(waitMs) { wake.receive() } != null
+                val signalled = withTimeoutOrNull(waitMs) { wake.receive() } != null
                 if (signalled) {
                     // Let a burst settle (an eSIM toggle fires several callbacks) so the report
-                    // carries the SETTLED state; the conflated channel keeps only the newest wake-up,
-                    // and pendingTrigger already holds the newest reason.
+                    // carries the SETTLED state.
                     delay(DEBOUNCE_MS)
                     while (wake.tryReceive().isSuccess) { /* conflated: nothing further to drain */ }
                 }
             }
         }
-        if (job == null) instance.compareAndSet(this, null)
     }
 
     /**
      * Record and log the eligibility, loudly on a CHANGE.
      *
-     * `eligible()` used to be a private Boolean expression whose answer nobody could see; a device
-     * that spent a week ineligible produced zero log lines and zero requests. Logging on change (not
-     * every iteration) keeps the log readable while making the transition — "the gateway came up, so
-     * telemetry became eligible" — impossible to miss.
+     * `eligible()` used to be a private Boolean whose answer nobody could see; a device that spent a
+     * week ineligible produced zero log lines and zero requests.
      */
     private fun logEligibility(force: Boolean, eligibility: TelemetryEligibility = eligible()) {
         TelemetryEligibilityState.record(eligibility)
@@ -211,9 +230,11 @@ class DeviceTelemetry(
             "origin=${if (prefs.gmwebServerOrigin.isBlank()) "absent" else "present"} " +
             "host=${safeHost()}"
         Log.i(TAG, line)
-        trace("eligibility eligible=${eligibility.eligible} reason=${eligibility.reason ?: "none"} " +
-            "isEnabled=${prefs.isEnabled} identity=${prefs.identityRegistered} " +
-            "origin=${if (prefs.gmwebServerOrigin.isBlank()) "absent" else "present"} host=${safeHost()}")
+        trace(
+            "eligibility eligible=${eligibility.eligible} reason=${eligibility.reason ?: "none"} " +
+                "isEnabled=${prefs.isEnabled} identity=${prefs.identityRegistered} " +
+                "origin=${if (prefs.gmwebServerOrigin.isBlank()) "absent" else "present"} host=${safeHost()}"
+        )
     }
 
     private fun trace(message: String) {
@@ -238,16 +259,84 @@ class DeviceTelemetry(
     }
 
     /**
-     * Report now, for [reason].
+     * Report now, for [reason] — fire and forget.
      *
      * [TelemetryWakeState] decides whether this starts a run or queues exactly one behind the run in
-     * progress — the caller is never told to wait, and never spawns a loop of its own.
+     * progress. Callers that need the outcome use [requestImmediateAndAwait].
      */
     fun requestImmediate(reason: TelemetryTrigger) {
-        // The newest reason is the one reported; the signal itself only has to wake the loop.
         pendingTrigger = reason
         wakeState.markTriggered()
         wake.trySend(reason)
+    }
+
+    /**
+     * One awaited attempt, run in the SERVICE scope.
+     *
+     * The timeout bounds only the wait. The attempt itself belongs to [scope], so it is not cancelled
+     * mid-socket: it finishes, releases the report mutex and updates health. A refresh that reported
+     * `TIMEOUT` therefore cannot overlap a later one.
+     */
+    internal suspend fun reportAndAwait(
+        trigger: TelemetryTrigger,
+        timeoutMs: Long
+    ): TelemetryReportResult {
+        val pending = scope.async { performReport(trigger) }
+        return withTimeoutOrNull(timeoutMs) { pending.await() }
+            ?: TelemetryReportResult.Failure(code = TelemetryFailureCode.TIMEOUT)
+    }
+
+    /**
+     * Perform exactly one report: gate, build, POST, record. Never throws.
+     *
+     * This is the ONE path a telemetry socket is opened on, so the concurrency rule ("at most one
+     * POST in flight") is a property of the design rather than a convention.
+     */
+    internal suspend fun performReport(trigger: TelemetryTrigger): TelemetryReportResult {
+        val result = reporter.perform(trigger)
+        val now = System.currentTimeMillis()
+        when (result) {
+            is TelemetryReportResult.Success -> TelemetryHealth.onSuccess(
+                at = result.completedAt,
+                httpStatus = result.httpStatus
+            )
+            is TelemetryReportResult.Failure -> TelemetryHealth.onFailure(
+                at = now,
+                httpStatus = result.httpStatus,
+                errorCode = result.code.name
+            )
+        }
+        if (trigger == TelemetryTrigger.REMOTE_REFRESH) {
+            TelemetryHealth.onRemoteRefresh(
+                at = now,
+                succeeded = result.succeeded,
+                resultCode = when (result) {
+                    is TelemetryReportResult.Success -> "success"
+                    is TelemetryReportResult.Failure -> result.code.commandCode
+                }
+            )
+        }
+        val statusText = when (result) {
+            is TelemetryReportResult.Success -> result.httpStatus.toString()
+            is TelemetryReportResult.Failure -> result.httpStatus?.toString() ?: "none"
+        }
+        val codeText = (result as? TelemetryReportResult.Failure)?.code?.name ?: "none"
+        // BOUNDARY 7: the end of the attempt, with the outcome — which together with the lines above
+        // makes "never attempted" distinguishable from "attempted and failed" from "succeeded".
+        Log.i(
+            TAG,
+            "TELEMETRY_REPORT_END trigger=${trigger.wireValue} " +
+                "result=${if (result.succeeded) "success" else "failure"} " +
+                "http=$statusText code=$codeText"
+        )
+        trace(
+            "report_end trigger=${trigger.wireValue} " +
+                "result=${if (result.succeeded) "success" else "failure"} " +
+                "http=$statusText code=$codeText " +
+                "sims=${TelemetryHealth.snapshot().lastSubscriptionCount ?: "unknown"} " +
+                "simReason=${TelemetryHealth.snapshot().lastSubscriptionReason ?: "none"}"
+        )
+        return result
     }
 
     private fun eligible(): TelemetryEligibility = TelemetryEligibility.evaluate(
@@ -256,8 +345,15 @@ class DeviceTelemetry(
         serverOrigin = prefs.gmwebServerOrigin
     )
 
-
-    internal suspend fun report(trigger: TelemetryTrigger = TelemetryTrigger.PERIODIC): Boolean {
+    /**
+     * Build the payload for THIS report.
+     *
+     * SIM discovery happens here, per report, and is never a cached list: a web-requested refresh
+     * exists precisely because a cached one can be stale. A missing permission is reported as an
+     * unavailable SIM list INSIDE a successful report — it is not a transport failure and must not
+     * make the phone look offline.
+     */
+    private suspend fun buildPayload(trigger: TelemetryTrigger): JSONObject {
         val db = MessagesDatabase.get(appContext)
         val battery = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
@@ -283,123 +379,133 @@ class DeviceTelemetry(
         }
         val deviceId = prefs.agentDeviceId(appContext)
 
-        // ── SIMs: three different answers, never collapsed into "no SIM" ──────
+        // ── SIMs: a FRESH discovery, three distinguishable answers ──────────
         val simManager = SimManager(appContext)
         val discovery = simManager.discover()
         val permissionGranted = simManager.hasReadPhoneState()
-        val sims = (discovery as? SimDiscoveryResult.Available)?.sims.orEmpty()
         val discoveryReason = SimDiscovery.reasonOf(discovery)
-        TelemetryHealth.onSubscriptionDiscovery(
-            count = (discovery as? SimDiscoveryResult.Available)?.sims?.size,
-            reason = discoveryReason
-        )
-        val activeSims = JSONArray()
-        sims.forEach { sim ->
-            activeSims.put(JSONObject()
-                .put("subscriptionId", sim.subscriptionId)
-                .put("slotIndex", sim.slotIndex)
-                .put("displayName", safeSimLabel(sim.displayName))
-                .put("carrierName", safeSimLabel(sim.carrierName))
-                .put("isDefaultSms", sim.isSystemDefault)
-                .put("isActive", true))
-        }
+        val simCount = (discovery as? SimDiscoveryResult.Available)?.sims?.size
+        TelemetryHealth.onSubscriptionDiscovery(count = simCount, reason = discoveryReason)
         val defaultSmsSubscriptionId = simManager.defaultSmsSubscriptionId()
         val telemetryHealth = TelemetryHealth.snapshot()
 
-        val payload = JSONObject()
+        return JSONObject()
             .put("deviceId", deviceId)
             .put("timestamp", System.currentTimeMillis())
-            // Why this report exists. Additive: a consumer that ignores it still sees a heartbeat.
             .put("trigger", trigger.wireValue)
-            .put("smsSubscriptions", JSONObject()
-                .put("available", discovery is SimDiscoveryResult.Available)
-                // Additive detail, so "permission missing" and "no SIM" stop looking identical.
-                .putOpt("reason", discoveryReason)
-                .put("permissionGranted", permissionGranted)
-                .put("defaultSubscriptionId", defaultSmsSubscriptionId)
-                .putOpt("lastChangedAt", telemetryHealth.lastSubscriptionChangeAt)
-                .put("items", activeSims))
-            // The permissions that decide what this phone can be asked to do, reported separately:
-            // being able to enumerate SIMs says nothing about being able to send.
-            .put("permissions", JSONObject()
-                .put("readPhoneState", permissionGranted)
-                .put("sendSms", SmsSendPreflight.hasSendSmsPermission(appContext))
-                .put("defaultSmsRole", DefaultSmsRole.isHeld(appContext)))
-            .put("battery", JSONObject()
-                .put("level", batteryPercent(
-                    battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1,
-                    battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1,
-                ))
-                .put("isCharging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
-                .put("chargingSource", when (plugged) {
-                    BatteryManager.BATTERY_PLUGGED_AC -> "AC"
-                    BatteryManager.BATTERY_PLUGGED_USB -> "USB"
-                    BatteryManager.BATTERY_PLUGGED_WIRELESS -> "WIRELESS"
-                    else -> "NONE"
-                }))
-            .put("sync", JSONObject()
-                .put("outboxDepth", eventDao.pendingDepth())
-                .put("realtimeQueueDepth", eventDao.pendingRealtimeDepth())
-                .put("backfillQueueDepth", eventDao.pendingBackfillDepth())
-                .put("deadLetterCount", eventDao.deadLetterDepth())
-                .put("historyAckLag", historyAckLag)
-                .put("trustOutboxDepth", trustHealth.pendingCount)
-                .putOpt("lastTrustAckAt", trustHealth.lastAckAt)
-                .putOpt("lastTrustHttpStatus", trustHealth.lastHttpStatus))
-            .put("trust", JSONObject()
-                .put("isEnrolled", prefs.identityRegistered)
-                .put("approvedDevicesCount", db.trustedDeviceDao().countTrusted())
-                .put("trustSequence", db.trustStatementOutboxDao().maxTrustSequence()))
-            .put("network", JSONObject()
-                .put("isConnected", capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
-                .put("networkType", networkType))
-            .put("app", JSONObject()
-                .put("versionName", packageInfo.versionName ?: "")
-                .put("versionCode", versionCode)
-                .put("uptimeMs", SystemClock.elapsedRealtime() - startedAt))
-            .put("device", JSONObject()
-                .put("manufacturer", Build.MANUFACTURER)
-                .put("model", Build.MODEL)
-                .put("androidVersion", Build.VERSION.RELEASE)
-                .put("sdkInt", Build.VERSION.SDK_INT))
-        val result = client.post(
-            path = PATH,
-            body = payload,
-            signer = { conn, bytes ->
-                // BOUNDARY 5+6: the exact bytes signed == the exact bytes written (the signer receives
-                // the same array the client then writes). Logged by the client around this call.
-                AgentAuth.sign(conn, deviceId, PATH, "POST", bytes)
-            },
-            traceTag = "GM_TELEMETRY"
-        )
-        val now = System.currentTimeMillis()
-        val ok = result is ControlPlaneClient.Result.Success
-        if (ok) {
-            TelemetryHealth.onSuccess(
-                at = now,
-                httpStatus = (result as ControlPlaneClient.Result.Success).httpStatus
+            .put(
+                "smsSubscriptions",
+                TelemetryPayloadSections.smsSubscriptions(
+                    discovery = discovery,
+                    permissionGranted = permissionGranted,
+                    defaultSubscriptionId = defaultSmsSubscriptionId,
+                    lastChangedAt = telemetryHealth.lastSubscriptionChangeAt,
+                    safeLabel = Companion::safeSimLabel
+                )
             )
-        } else {
-            val failure = result as? ControlPlaneClient.Result.Failure
-            TelemetryHealth.onFailure(at = now, httpStatus = failure?.httpStatus)
-        }
-        // BOUNDARY 7: the end of the attempt, with the outcome. Together with the lines above this
-        // makes "the report was never attempted" distinguishable from "it was attempted and failed"
-        // from "it succeeded" — the distinction the last seven days could not make.
-        Log.i(
-            TAG,
-            "TELEMETRY_REPORT_END trigger=${trigger.wireValue} " +
-                "result=${if (ok) "success" else "failure"} " +
-                "http=${(result as? ControlPlaneClient.Result.Success)?.httpStatus ?: (result as? ControlPlaneClient.Result.Failure)?.httpStatus ?: "none"} " +
-                "sims=${sims.size} reason=${discoveryReason ?: "none"} outbox=${eventDao.pendingDepth()}"
-        )
-        trace(
-            "report_end trigger=${trigger.wireValue} result=${if (ok) "success" else "failure"} " +
-                "http=${(result as? ControlPlaneClient.Result.Success)?.httpStatus ?: (result as? ControlPlaneClient.Result.Failure)?.httpStatus ?: "none"} " +
-                "sims=${sims.size} simReason=${discoveryReason ?: "none"} " +
-                "outbox=${eventDao.pendingDepth()} realtime=${eventDao.pendingRealtimeDepth()} " +
-                "backfill=${eventDao.pendingBackfillDepth()} dead=${eventDao.deadLetterDepth()}"
-        )
-        return ok
+            .put(
+                "permissions",
+                TelemetryPayloadSections.permissions(
+                    readPhoneState = permissionGranted,
+                    sendSms = SmsSendPreflight.hasSendSmsPermission(appContext),
+                    defaultSmsRole = DefaultSmsRole.isHeld(appContext)
+                )
+            )
+            // LOCAL BUILD EVIDENCE: what this APK can be asked to do over the encrypted command
+            // channel. Never derived from server input; older GMweb ignores additive fields.
+            .put("capabilities", TelemetryPayloadSections.capabilities())
+            .put(
+                "battery",
+                JSONObject()
+                    .put(
+                        "level",
+                        batteryPercent(
+                            battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1,
+                            battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1,
+                        )
+                    )
+                    .put(
+                        "isCharging",
+                        status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                            status == BatteryManager.BATTERY_STATUS_FULL
+                    )
+                    .put(
+                        "chargingSource",
+                        when (plugged) {
+                            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+                            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+                            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "WIRELESS"
+                            else -> "NONE"
+                        }
+                    )
+            )
+            .put(
+                "sync",
+                JSONObject()
+                    .put("outboxDepth", eventDao.pendingDepth())
+                    .put("realtimeQueueDepth", eventDao.pendingRealtimeDepth())
+                    .put("backfillQueueDepth", eventDao.pendingBackfillDepth())
+                    .put("deadLetterCount", eventDao.deadLetterDepth())
+                    .put("historyAckLag", historyAckLag)
+                    .put("trustOutboxDepth", trustHealth.pendingCount)
+                    .putOpt("lastTrustAckAt", trustHealth.lastAckAt)
+                    .putOpt("lastTrustHttpStatus", trustHealth.lastHttpStatus)
+            )
+            .put(
+                "trust",
+                JSONObject()
+                    .put("isEnrolled", prefs.identityRegistered)
+                    .put("approvedDevicesCount", db.trustedDeviceDao().countTrusted())
+                    .put("trustSequence", db.trustStatementOutboxDao().maxTrustSequence())
+            )
+            .put(
+                "network",
+                JSONObject()
+                    .put(
+                        "isConnected",
+                        capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                    )
+                    .put("networkType", networkType)
+            )
+            .put(
+                "app",
+                JSONObject()
+                    .put("versionName", packageInfo.versionName ?: "")
+                    .put("versionCode", versionCode)
+                    .put("uptimeMs", SystemClock.elapsedRealtime() - startedAt)
+            )
+            .put(
+                "device",
+                JSONObject()
+                    .put("manufacturer", Build.MANUFACTURER)
+                    .put("model", Build.MODEL)
+                    .put("androidVersion", Build.VERSION.RELEASE)
+                    .put("sdkInt", Build.VERSION.SDK_INT)
+            )
     }
+
+    /**
+     * The transport, through the SAME client, path, method and signature family as every other agent
+     * channel. The body's `deviceId` and the signed device id are the same value by construction:
+     * both come from `prefs.agentDeviceId`.
+     */
+    private suspend fun postViaControlPlane(body: JSONObject, deviceId: String): TelemetryPostOutcome =
+        when (
+            val result = client.post(
+                path = PATH,
+                body = body,
+                signer = { conn, bytes -> AgentAuth.sign(conn, deviceId, PATH, "POST", bytes) },
+                traceTag = "GM_TELEMETRY"
+            )
+        ) {
+            is ControlPlaneClient.Result.Success -> TelemetryPostOutcome.Accepted(result.httpStatus)
+            is ControlPlaneClient.Result.Failure -> when (result.kind) {
+                ControlPlaneClient.FailureKind.SIGNING -> TelemetryPostOutcome.SigningFailed
+                ControlPlaneClient.FailureKind.HTTP -> TelemetryPostOutcome.Rejected(result.httpStatus ?: 0)
+                // An insecure origin and a dead socket are both "no server accepted this".
+                ControlPlaneClient.FailureKind.TRANSPORT,
+                ControlPlaneClient.FailureKind.INSECURE_URL ->
+                    TelemetryPostOutcome.TransportError(result.error.take(120))
+            }
+        }
 }

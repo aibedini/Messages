@@ -81,4 +81,15 @@ class TelemetryWakeStateTest {
         assertEquals("MANUAL_DIAGNOSTIC_REFRESH", TelemetryTrigger.MANUAL_DIAGNOSTIC_REFRESH.wireValue)
         assertEquals("PERIODIC", TelemetryTrigger.PERIODIC.wireValue)
     }
+
+    @Test
+    fun `a web-requested refresh is its own trigger, never the diagnostics one`() {
+        // Two different actors. If GMweb's refresh reported MANUAL_DIAGNOSTIC_REFRESH, a payload could
+        // not answer "did the browser's refresh actually work?".
+        assertEquals("REMOTE_REFRESH", TelemetryTrigger.REMOTE_REFRESH.wireValue)
+        assertTrue(TelemetryTrigger.REMOTE_REFRESH != TelemetryTrigger.MANUAL_DIAGNOSTIC_REFRESH)
+
+        val values = TelemetryTrigger.entries.map { it.wireValue }
+        assertEquals("every trigger must have a distinct wire value", values.size, values.toSet().size)
+    }
 }

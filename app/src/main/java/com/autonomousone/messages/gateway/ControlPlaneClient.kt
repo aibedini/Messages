@@ -56,7 +56,30 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
              * 2xx: it only means anything alongside a refusal.
              */
             val retryAfterMs: Long? = null,
+            /**
+             * WHICH stage failed, so a caller can report the truth instead of parsing [error].
+             *
+             * Added because telemetry could not tell "the request was aborted before it was sent"
+             * from "the server refused it": both arrived as a String, and a request that never
+             * opened a socket leaves no server-side trace at all.
+             */
+            val kind: FailureKind = FailureKind.HTTP,
         ) : Result<Nothing>()
+    }
+
+    /** The stage at which a control-plane call failed. */
+    enum class FailureKind {
+        /** The configured origin is not https, so the request was never attempted. */
+        INSECURE_URL,
+
+        /** The Keystore could not sign: the request was aborted BEFORE it was opened (fail closed). */
+        SIGNING,
+
+        /** A response arrived and it was not 2xx. */
+        HTTP,
+
+        /** No response: DNS, TCP, TLS, socket read/write. */
+        TRANSPORT,
     }
 
     fun post(
@@ -82,7 +105,10 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
             val baseUrl = prefs.gmwebUrl.trimEnd('/')
             if (!baseUrl.startsWith("https://")) {
                 trace(traceTag, "begin_rejected reason=insecure_url")
-                return Result.Failure("Insecure control-plane URL rejected — HTTPS required")
+                return Result.Failure(
+                    "Insecure control-plane URL rejected — HTTPS required",
+                    kind = FailureKind.INSECURE_URL
+                )
             }
             val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
             trace(traceTag, "http_begin host=${hostOf(baseUrl)} path=$path bytes=${bodyBytes.size}")
@@ -100,7 +126,10 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
                 if (!signed) {
                     // Fail closed, and say so: an unsigned request would be rejected anyway, and a
                     // silent abort here is indistinguishable from "the server never answered".
-                    return Result.Failure("signing failed — request aborted (fail closed)")
+                    return Result.Failure(
+                        "signing failed — request aborted (fail closed)",
+                        kind = FailureKind.SIGNING
+                    )
                 }
             }
             conn.outputStream.use { it.write(bodyBytes) }
@@ -123,7 +152,10 @@ class ControlPlaneClient(private val prefs: GatewayPreferences) {
         } catch (e: Exception) {
             Log.w(TAG, "POST $path failed: ${e.message}")
             trace(traceTag, "transport_failure error=${e.javaClass.simpleName}")
-            Result.Failure(e.message ?: "network error")
+            Result.Failure(
+                e.message ?: "network error",
+                kind = FailureKind.TRANSPORT
+            )
         }
     }
 

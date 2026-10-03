@@ -22,6 +22,15 @@ enum class TelemetryTrigger(val wireValue: String) {
     APP_UPDATED("APP_UPDATED"),
     MANUAL_DIAGNOSTIC_REFRESH("MANUAL_DIAGNOSTIC_REFRESH"),
 
+    /**
+     * A refresh asked for by GMweb, through the encrypted command channel.
+     *
+     * Deliberately NOT [MANUAL_DIAGNOSTIC_REFRESH]: that one means "someone holding this phone asked
+     * from the diagnostics screen", and this one means "the web asked". They are different actors, and
+     * a payload that cannot tell them apart cannot answer "did the browser's refresh actually work?".
+     */
+    REMOTE_REFRESH("REMOTE_REFRESH"),
+
     /** The 60-second heartbeat. Never the only trigger, never suppressed. */
     PERIODIC("PERIODIC"),
 }

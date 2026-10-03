@@ -39,7 +39,12 @@ object TelemetryHealth {
         val subscriptionChangeCount: Long,
         /** Live: the last observed active-subscription count, or null when it could not be read. */
         val lastSubscriptionCount: Int?,
-        val lastSubscriptionReason: String?
+        val lastSubscriptionReason: String?,
+        /** How many web-requested refreshes have completed (successfully or not). */
+        val remoteRefreshCount: Long,
+        val lastRemoteRefreshAt: Long?,
+        /** `success` or the stable `TELEMETRY_*` code of the last web-requested refresh. */
+        val lastRemoteRefreshResult: String?
     ) {
         /** Age of the last successful report, or null when none has ever succeeded. */
         fun secondsSinceSuccess(now: Long): Long? =
@@ -61,6 +66,9 @@ object TelemetryHealth {
     private var subscriptionChangeCount = 0L
     private var lastSubscriptionCount: Int? = null
     private var lastSubscriptionReason: String? = null
+    private var remoteRefreshCount = 0L
+    private var lastRemoteRefreshAt: Long? = null
+    private var lastRemoteRefreshResult: String? = null
 
     fun setRunning(value: Boolean) = synchronized(lock) { running = value }
 
@@ -114,6 +122,18 @@ object TelemetryHealth {
         lastSubscriptionReason = reason
     }
 
+    /**
+     * The outcome of a web-requested telemetry refresh.
+     *
+     * Recorded even on failure: "the browser asked and the phone could not deliver" is exactly the
+     * fact that was missing while GMweb showed a three-day-old report.
+     */
+    fun onRemoteRefresh(at: Long, succeeded: Boolean, resultCode: String) = synchronized(lock) {
+        remoteRefreshCount++
+        lastRemoteRefreshAt = at
+        lastRemoteRefreshResult = if (succeeded) "success" else resultCode
+    }
+
     fun snapshot(): Snapshot = synchronized(lock) {
         Snapshot(
             running = running,
@@ -129,7 +149,10 @@ object TelemetryHealth {
             lastSubscriptionChangeAt = lastSubscriptionChangeAt,
             subscriptionChangeCount = subscriptionChangeCount,
             lastSubscriptionCount = lastSubscriptionCount,
-            lastSubscriptionReason = lastSubscriptionReason
+            lastSubscriptionReason = lastSubscriptionReason,
+            remoteRefreshCount = remoteRefreshCount,
+            lastRemoteRefreshAt = lastRemoteRefreshAt,
+            lastRemoteRefreshResult = lastRemoteRefreshResult
         )
     }
 
@@ -148,5 +171,8 @@ object TelemetryHealth {
         subscriptionChangeCount = 0
         lastSubscriptionCount = null
         lastSubscriptionReason = null
+        remoteRefreshCount = 0
+        lastRemoteRefreshAt = null
+        lastRemoteRefreshResult = null
     }
 }

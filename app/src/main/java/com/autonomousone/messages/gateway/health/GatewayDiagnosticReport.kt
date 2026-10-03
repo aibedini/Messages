@@ -3,6 +3,7 @@ package com.autonomousone.messages.gateway.health
 import com.autonomousone.messages.data.DeadLetterBreakdownRow
 import com.autonomousone.messages.data.DeadLetterSummary
 import com.autonomousone.messages.gateway.AddressScope
+import com.autonomousone.messages.gateway.DeviceTelemetry
 import com.autonomousone.messages.gateway.NetworkAddressFacts
 import com.autonomousone.messages.gateway.TelemetryEligibility
 import com.autonomousone.messages.gateway.TelemetryHealth
@@ -134,6 +135,12 @@ object GatewayDiagnosticReport {
         appendLine("  Attempts/successes/failures: ${telemetrySnapshot?.attempts ?: 0}/" +
             "${telemetrySnapshot?.successes ?: 0}/${telemetrySnapshot?.failures ?: 0}")
         appendLine("  Skipped (no reporter running): ${telemetrySnapshot?.skipped ?: 0}")
+        appendLine("  Last SIM discovery: ${telemetrySnapshot?.lastSubscriptionCount ?: "unknown"} active" +
+            " · ${telemetrySnapshot?.lastSubscriptionReason ?: "no reason"}")
+        appendLine("  Remote refresh supported: ${yesNo(DeviceTelemetry.REMOTE_REFRESH_SUPPORTED)}" +
+            " · last ${ago(telemetrySnapshot?.lastRemoteRefreshAt, now)}" +
+            " · result ${telemetrySnapshot?.lastRemoteRefreshResult ?: "none"}" +
+            " · count ${telemetrySnapshot?.remoteRefreshCount ?: 0}")
         appendLine(
             "  Stable device: ${shortId(stableDeviceId)} · Agent device: ${shortId(agentDeviceId)}" +
                 " · Match: ${if (identityMatches(stableDeviceId, agentDeviceId)) "yes" else "NO"}"
