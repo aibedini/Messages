@@ -113,12 +113,46 @@ class DeviceTelemetry(
         internal fun batteryPercent(level: Int, scale: Int): Int =
             if (level >= 0 && scale > 0) (level * 100 / scale).coerceIn(0, 100) else -1
 
-        /** Subscription labels can be user supplied; never relay a phone-like value. */
-        internal fun safeSimLabel(value: String): String = value
-            .take(64)
-            .replace(Regex("[\\r\\n\\t]"), " ")
-            .replace(Regex("(?U)\\+?\\d[\\d\\s()\\-]{6,}"), "SIM")
-            .trim()
+        /**
+         * Subscription labels can be user supplied; never relay a phone-like value.
+         *
+         * Deliberately regex-free. Android's ICU regex engine on API 35 rejects Java's inline
+         * `(?U)` flag, and the old sanitizer therefore threw PatternSyntaxException while building
+         * every telemetry payload that contained a SIM. This scanner handles both ASCII and
+         * non-ASCII decimal digits via Char.isDigit() and cannot fail during payload construction.
+         */
+        internal fun safeSimLabel(value: String): String {
+            val flat = value.take(64).replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+            val out = StringBuilder(flat.length)
+            var i = 0
+            while (i < flat.length) {
+                val first = flat[i]
+                if (first == '+' || first.isDigit()) {
+                    var j = i
+                    var digits = 0
+                    if (flat[j] == '+') j++
+                    while (j < flat.length) {
+                        val ch = flat[j]
+                        when {
+                            ch.isDigit() -> {
+                                digits++
+                                j++
+                            }
+                            ch == ' ' || ch == '(' || ch == ')' || ch == '-' -> j++
+                            else -> break
+                        }
+                    }
+                    if (digits >= 7) {
+                        out.append("SIM")
+                        i = j
+                        continue
+                    }
+                }
+                out.append(first)
+                i++
+            }
+            return out.toString().trim()
+        }
     }
 
     private val appContext = context.applicationContext
