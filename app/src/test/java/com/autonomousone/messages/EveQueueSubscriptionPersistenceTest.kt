@@ -198,7 +198,27 @@ class EveQueueSubscriptionPersistenceTest {
         assertNotNull("the old record must still be loadable", EveSmsQueue.status("sms_old"))
         assertEquals("old\nbody", capture.text)
         assertNull(capture.subscriptionId)
-        assertEquals(EveSmsQueue.Status.SENT, EveSmsQueue.status("sms_old")!!.status)
+        // The sender callback completes BEFORE the queue writes the terminal status, and on CI the
+        // worker (not this thread) is often the one draining — so reading the status the instant the
+        // callback fires is a race. Wait for the terminal state instead of reading it mid-write; the
+        // assertion itself is unchanged.
+        assertEquals(EveSmsQueue.Status.SENT, awaitTerminalStatus("sms_old"))
+    }
+
+    /** Bounded wait for a terminal queue status, so a worker-thread write cannot race the assert. */
+    private fun awaitTerminalStatus(
+        requestId: String,
+        timeoutMs: Long = 5_000L
+    ): EveSmsQueue.Status? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val status = EveSmsQueue.status(requestId)?.status
+            if (status != null && status != EveSmsQueue.Status.QUEUED && status != EveSmsQueue.Status.ACTIVE) {
+                return status
+            }
+            Thread.sleep(10)
+        }
+        return EveSmsQueue.status(requestId)?.status
     }
 
     private fun record(
