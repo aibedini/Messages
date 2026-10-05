@@ -26,6 +26,7 @@ import com.autonomousone.messages.sync.MirrorVerifyPolicy
 import com.autonomousone.messages.sync.MirrorReconcilePolicy
 import com.autonomousone.messages.sync.MirrorReconcileStatus
 import com.autonomousone.messages.sync.ReconcileResult
+import com.autonomousone.messages.sync.ThreadHistoryCommand
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,50 @@ internal fun cloudMessageDirection(type: Int): String? = when (type) {
     Telephony.Sms.MESSAGE_TYPE_FAILED,
     Telephony.Sms.MESSAGE_TYPE_QUEUED -> "out"
     else -> null
+}
+
+/**
+ * The outcome of one `FETCH_THREAD_HISTORY` page, with the cursor of the page it published.
+ *
+ * `publishedCount` is the number of rows handed to the encrypted replication path; `oldestDate` /
+ * `oldestProviderId` are the keyset cursor for the NEXT (older) page, so a caller never has to guess
+ * how to continue.
+ */
+data class ThreadHistoryPageResult(
+    val status: ThreadHistoryCommand.Status,
+    val publishedCount: Int,
+    val hasMore: Boolean,
+    val oldestDate: Long? = null,
+    val oldestProviderId: Long? = null
+)
+
+/**
+ * Keyset selection for one thread's history page. Pure, so page walking can be tested without a
+ * provider: the `(date, _id)` tie-break is what stops equal timestamps from producing duplicates or
+ * gaps, and a half-specified cursor is refused instead of being guessed.
+ */
+internal fun threadHistorySelection(
+    source: String,
+    threadId: Long,
+    beforeDateMs: Long?,
+    beforeProviderId: Long?
+): Pair<String, Array<String>> {
+    val threadColumn = if (source == MessageEntity.SOURCE_MMS) Telephony.Mms.THREAD_ID else Telephony.Sms.THREAD_ID
+    val dateColumn = if (source == MessageEntity.SOURCE_MMS) Telephony.Mms.DATE else Telephony.Sms.DATE
+    val idColumn = if (source == MessageEntity.SOURCE_MMS) Telephony.Mms._ID else Telephony.Sms._ID
+
+    return if (beforeDateMs != null && beforeProviderId != null) {
+        // Strictly older than the cursor, with the id breaking equal timestamps.
+        "($threadColumn = ?) AND ($dateColumn < ? OR ($dateColumn = ? AND $idColumn < ?))" to
+            arrayOf(
+                threadId.toString(),
+                beforeDateMs.toString(),
+                beforeDateMs.toString(),
+                beforeProviderId.toString()
+            )
+    } else {
+        "$threadColumn = ?" to arrayOf(threadId.toString())
+    }
 }
 
 enum class DiscoveryMode {
@@ -184,6 +229,78 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
 
     /** Long-running work scope (mutations, reconcile, detached backfill). */
     private val syncScope = CoroutineScope(Dispatchers.IO)
+
+    /**
+     * Publish ONE bounded page of an existing conversation's history, for `FETCH_THREAD_HISTORY`.
+     *
+     * This is deliberately not a second replication path: the page is read from the provider with a
+     * keyset cursor and handed to [ingestProviderRows] with [DiscoveryMode.HISTORY_BACKFILL] — the same
+     * canonical ingest that normal history sync uses, which is what produces the encrypted events in
+     * the existing outbox. Success therefore means "durably placed into the replication path", not
+     * "a SQL query ran".
+     *
+     * The query is scoped to exactly one thread id and bounded by `limit + 1` rows: no full scan, no
+     * OFFSET, no heuristic phone matching. The extra row is how `hasMore` is known without a second
+     * query, and it is not ingested.
+     */
+    suspend fun publishThreadHistoryPage(
+        source: String,
+        threadId: Long,
+        beforeDateMs: Long?,
+        beforeProviderId: Long?,
+        limit: Int
+    ): ThreadHistoryPageResult = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext ThreadHistoryPageResult(ThreadHistoryCommand.Status.THREAD_NOT_FOUND, 0, false)
+
+        val bounded = limit.coerceIn(1, ThreadHistoryCommand.MAX_LIMIT)
+        val (selection, args) = threadHistorySelection(source, threadId, beforeDateMs, beforeProviderId)
+
+        val rows = try {
+            when (source) {
+                MessageEntity.SOURCE_SMS -> smsRepository.querySmsRaw(
+                    selection = selection,
+                    selectionArgs = args,
+                    sortOrder = "${Telephony.Sms.DATE} DESC, ${Telephony.Sms._ID} DESC",
+                    limit = bounded + 1
+                )
+                MessageEntity.SOURCE_MMS -> smsRepository.queryMmsRaw(
+                    selection = selection,
+                    selectionArgs = args,
+                    sortOrder = "${Telephony.Mms.DATE} DESC, ${Telephony.Mms._ID} DESC",
+                    limit = bounded + 1
+                )
+                else -> emptyList()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "thread history read failed for thread $threadId", e)
+            return@withContext ThreadHistoryPageResult(ThreadHistoryCommand.Status.HISTORY_QUERY_FAILED, 0, false)
+        }
+
+        if (rows.isEmpty()) {
+            // Positively proven: no older rows in this thread.
+            return@withContext ThreadHistoryPageResult(ThreadHistoryCommand.Status.END_OF_THREAD_HISTORY, 0, false)
+        }
+
+        val page = rows.take(bounded)
+        val hasMore = rows.size > bounded
+        val oldest = page.minWithOrNull(compareBy<Sms> { it.date }.thenBy { providerId(it) })
+
+        try {
+            ingestProviderRows(source, page, DiscoveryMode.HISTORY_BACKFILL)
+        } catch (e: Exception) {
+            // The rows were read but not durably handed on: that is a failure, never a completion.
+            Log.e(TAG, "thread history ingest failed for thread $threadId", e)
+            return@withContext ThreadHistoryPageResult(ThreadHistoryCommand.Status.EVENT_ENQUEUE_FAILED, 0, hasMore)
+        }
+
+        ThreadHistoryPageResult(
+            status = ThreadHistoryCommand.Status.ROWS_PUBLISHED,
+            publishedCount = page.size,
+            hasMore = hasMore,
+            oldestDate = oldest?.date,
+            oldestProviderId = oldest?.let { providerId(it) }
+        )
+    }
 
     companion object {
         const val FIRST_BATCH = 500

@@ -10,6 +10,9 @@ import com.autonomousone.messages.sms.GatewayOutgoingPipeline
 import com.autonomousone.messages.sync.CommandDrainPolicy
 import com.autonomousone.messages.sync.CommandRoute
 import com.autonomousone.messages.sync.CommandRouting
+import com.autonomousone.messages.sync.ThreadHistoryCommand
+import com.autonomousone.messages.data.TelephonySyncCoordinator
+import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.sync.ReadCommandError
 import com.autonomousone.messages.sync.ReadCommandFailure
 import com.autonomousone.messages.sync.SyncErrorCode
@@ -80,11 +83,7 @@ class SecureCommandPoller(
         private const val DRAIN_BATCH = 50
 
         /** The encrypted command types this build can execute. Advertised in telemetry capabilities. */
-        private val COMMAND_TYPES = listOf(
-            SEND_SMS,
-            ReadCommandError.READ_COMMAND_TYPE,
-            REFRESH_DEVICE_TELEMETRY,
-        )
+        private val COMMAND_TYPES = CommandRouting.ADVERTISED_COMMAND_TYPES
 
         internal val SUPPORTED_TYPES = COMMAND_TYPES.toSet()
 
@@ -530,6 +529,9 @@ class SecureCommandPoller(
                     when (CommandRouting.routeOf(cmd.type)) {
                         CommandRoute.READ_THREAD -> executeMarkThreadRead(cmd, plaintext, repo)
                         CommandRoute.TELEMETRY_REFRESH -> executeRefreshDeviceTelemetry(cmd, plaintext, repo)
+                        // On-demand history: ONE bounded page, published through the existing
+                        // encrypted replication path. Never a plaintext list in the ack.
+                        CommandRoute.THREAD_HISTORY -> executeFetchThreadHistory(cmd, plaintext, repo)
                         // SEND_SMS is the ONLY type that may enter the SMS pipeline.
                         CommandRoute.SMS_PIPELINE -> withContext(Dispatchers.IO) {
                             GatewayOutgoingPipeline.executeIngested(
@@ -582,6 +584,86 @@ class SecureCommandPoller(
      * the exact failure code when there is none. The report goes through the SAME reporter and the
      * SAME report mutex as the heartbeat: no second loop, no second transport, no overlapping POST.
      */
+    /**
+     * `FETCH_THREAD_HISTORY`: one bounded, keyset-paged slice of an existing conversation.
+     *
+     * The command is a TRIGGER. The selected rows are handed to the canonical ingest
+     * (`TelephonySyncCoordinator.publishThreadHistoryPage`) which produces the normal encrypted events
+     * in the existing replication outbox; the acknowledgement carries counts and a cursor flag only —
+     * never a body, a phone number or a raw sender.
+     *
+     * Completion is honest: a page that was read but could not be placed in the replication path is a
+     * FAILED command, not a completed one.
+     */
+    private suspend fun executeFetchThreadHistory(
+        cmd: RemoteCommandEntity,
+        plaintext: ByteArray,
+        repo: GatewaySyncRepository
+    ) {
+        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+
+        val payload = try {
+            JSONObject(String(plaintext, Charsets.UTF_8))
+        } catch (e: Exception) {
+            throw ReadCommandFailure.InvalidPayload(e)
+        }
+
+        val parsed = ThreadHistoryCommand.parse(payload)
+        if (parsed is ThreadHistoryCommand.ParseResult.Invalid) {
+            DiagnosticLog.event(
+                "GM_HISTORY",
+                "invalid id=${cmd.commandId.take(8)} status=${parsed.status.commandCode} detail=${parsed.detail}"
+            )
+            // A malformed or unbounded request is a terminal FAILED with a machine code — never a
+            // completion, and never a heuristic scan of some other thread.
+            throw IllegalStateException(parsed.status.commandCode)
+        }
+
+        val request = (parsed as ThreadHistoryCommand.ParseResult.Ok).request
+        DiagnosticLog.event(
+            "GM_HISTORY",
+            "begin id=${cmd.commandId.take(8)} thread=${request.androidThreadId} limit=${request.limit} " +
+                "cursor=${if (request.beforeDateMs != null) "yes" else "newest"}"
+        )
+
+        val page = TelephonySyncCoordinator.get(context).publishThreadHistoryPage(
+            source = MessageEntity.SOURCE_SMS,
+            threadId = request.androidThreadId,
+            beforeDateMs = request.beforeDateMs,
+            beforeProviderId = request.beforeProviderId,
+            limit = request.limit
+        )
+
+        DiagnosticLog.event(
+            "GM_HISTORY",
+            "page id=${cmd.commandId.take(8)} status=${page.status.commandCode} " +
+                "published=${page.publishedCount} hasMore=${page.hasMore}"
+        )
+
+        if (!page.status.terminalSuccess) {
+            // Read-but-not-published, unknown thread, bad cursor and query failure are all FAILED with
+            // their own code: "the SQL ran" is not the contract.
+            throw IllegalStateException(page.status.commandCode)
+        }
+
+        // ROWS_PUBLISHED / END_OF_THREAD_HISTORY: the rows are durably in the existing encrypted
+        // replication path (or the phone positively proved there are none older). The ack stays
+        // count-and-flag only.
+        repo.finishCommandFrom(
+            commandId = cmd.commandId,
+            state = RemoteCommandEntity.STATE_COMPLETED,
+            errorCode = null,
+            fromStates = listOf(
+                RemoteCommandEntity.STATE_ACCEPTED,
+                RemoteCommandEntity.STATE_EXECUTING
+            )
+        )
+    }
+
     private suspend fun executeRefreshDeviceTelemetry(
         cmd: RemoteCommandEntity,
         plaintext: ByteArray,

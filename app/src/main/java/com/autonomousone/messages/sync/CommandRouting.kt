@@ -22,6 +22,9 @@ enum class CommandRoute {
     /** `REFRESH_DEVICE_TELEMETRY`: one awaited telemetry report. Never the SMS pipeline. */
     TELEMETRY_REFRESH,
 
+    /** `FETCH_THREAD_HISTORY`: one bounded, keyset-paged history publication. */
+    THREAD_HISTORY,
+
     /** Not implemented by this build: must reach a durable terminal failure. */
     UNSUPPORTED
 }
@@ -31,11 +34,31 @@ object CommandRouting {
     const val SEND_SMS = "SEND_SMS"
     const val MARK_THREAD_READ = "MARK_THREAD_READ"
     const val REFRESH_DEVICE_TELEMETRY = "REFRESH_DEVICE_TELEMETRY"
+    const val FETCH_THREAD_HISTORY = ThreadHistoryCommand.TYPE
+
+    /**
+     * THE single source of truth for what this build can execute.
+     *
+     * It is used for two things that must never disagree: the `runtime.commandTypes` array advertised in
+     * the command claim, and the set the router accepts. A second hand-maintained list is exactly how a
+     * command came to be advertised but unroutable (or routable but never advertised).
+     */
+    val ADVERTISED_COMMAND_TYPES: List<String> = listOf(
+        SEND_SMS,
+        MARK_THREAD_READ,
+        REFRESH_DEVICE_TELEMETRY,
+        FETCH_THREAD_HISTORY
+    )
+
+    /** Types this build can actually route to an executor. Derived, never typed twice. */
+    val EXECUTABLE_COMMAND_TYPES: Set<String> =
+        ADVERTISED_COMMAND_TYPES.filter { routeOf(it) != CommandRoute.UNSUPPORTED }.toSet()
 
     fun routeOf(type: String): CommandRoute = when (type) {
         SEND_SMS -> CommandRoute.SMS_PIPELINE
         MARK_THREAD_READ -> CommandRoute.READ_THREAD
         REFRESH_DEVICE_TELEMETRY -> CommandRoute.TELEMETRY_REFRESH
+        FETCH_THREAD_HISTORY -> CommandRoute.THREAD_HISTORY
         else -> CommandRoute.UNSUPPORTED
     }
 }
