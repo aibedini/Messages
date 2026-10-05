@@ -142,18 +142,27 @@ object GatewayEventFactory {
         clientMessageId: String? = null,
         revision: Long = System.currentTimeMillis(),
         priority: String = GatewayEventOutboxEntity.PRIORITY_REALTIME,
+        /**
+         * The Android Telephony thread id. INSIDE the ciphertext, never outer metadata: GMweb needs it
+         * to request older history for exactly this conversation, and it must not be able to guess it
+         * from a phone number (branded senders have none).
+         */
+        androidThreadId: Long = 0L,
     ): GatewayEventOutboxEntity {
-        val payload = JSONObject()
-            .put("messageId", messageIdFor(source, providerId, dateMs))
-            .put("direction", direction)
-            .put("body", body)
-            .put("dateMs", dateMs)
-            .put("status", status)
-            .put("address", address)
-            .put("read", read)
-        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
-        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
-        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
+        val payload = messageCreatedPayload(
+            source = source,
+            providerId = providerId,
+            direction = direction,
+            body = body,
+            dateMs = dateMs,
+            status = status,
+            address = address,
+            contactName = contactName,
+            read = read,
+            originCommandId = originCommandId,
+            clientMessageId = clientMessageId,
+            androidThreadId = androidThreadId
+        )
         // ONE identity for one logical message, whichever way it was discovered.
         //
         // This used to branch on priority, giving a history sweep its own `evt:replica-v4:` domain.
@@ -181,6 +190,45 @@ object GatewayEventFactory {
             sortKey = dateMs,
             priority = priority,
         )
+    }
+
+    /**
+     * The PLAINTEXT logical payload of [messageCreated].
+     *
+     * Extracted so the encrypted contract can be asserted without decrypting anything: these fields are
+     * the ones GMweb reads after it decrypts, and the two that caused the production bug — `address`
+     * (must be the RAW provider sender) and `androidThreadId` (must be the exact Telephony thread) —
+     * are pinned by a test rather than trusted to a builder.
+     */
+    internal fun messageCreatedPayload(
+        source: String,
+        providerId: Long,
+        direction: String,
+        body: String,
+        dateMs: Long,
+        status: Int,
+        address: String,
+        contactName: String?,
+        read: Boolean,
+        originCommandId: String?,
+        clientMessageId: String?,
+        androidThreadId: Long
+    ): JSONObject {
+        val payload = JSONObject()
+            .put("messageId", messageIdFor(source, providerId, dateMs))
+            .put("source", source)
+            .put("providerId", providerId)
+            .put("direction", direction)
+            .put("body", body)
+            .put("dateMs", dateMs)
+            .put("status", status)
+            .put("address", address)
+            .put("read", read)
+        if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
+        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
+        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
+        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
+        return payload
     }
 
     /**
@@ -214,18 +262,22 @@ object GatewayEventFactory {
         read: Boolean = false,
         originCommandId: String? = null,
         clientMessageId: String? = null,
+        androidThreadId: Long = 0L,
     ): GatewayEventOutboxEntity {
-        val payload = JSONObject()
-            .put("messageId", messageIdFor(source, providerId, dateMs))
-            .put("status", status)
-            .put("dateMs", dateMs)
-            .put("read", read)
-        if (direction != null) payload.put("direction", direction)
-        if (body != null) payload.put("body", body)
-        if (address != null) payload.put("address", address)
-        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
-        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
-        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
+        val payload = messageStatusChangedPayload(
+            source = source,
+            providerId = providerId,
+            status = status,
+            dateMs = dateMs,
+            direction = direction,
+            body = body,
+            address = address,
+            contactName = contactName,
+            read = read,
+            originCommandId = originCommandId,
+            clientMessageId = clientMessageId,
+            androidThreadId = androidThreadId
+        )
         return outboxRow(
             eventUuidFor("${Types.MESSAGE_STATUS_CHANGED}:$status", source, providerId, dateMs),
             Types.MESSAGE_STATUS_CHANGED,
@@ -242,6 +294,38 @@ object GatewayEventFactory {
             // new messages, the exact crowding the ordering exists to prevent.
             priority = GatewayEventOutboxEntity.PRIORITY_STATUS_UPDATE,
         )
+    }
+
+    /** The plaintext payload of [messageStatusChanged] — see [messageCreatedPayload]. */
+    internal fun messageStatusChangedPayload(
+        source: String,
+        providerId: Long,
+        status: Int,
+        dateMs: Long,
+        direction: String?,
+        body: String?,
+        address: String?,
+        contactName: String?,
+        read: Boolean,
+        originCommandId: String?,
+        clientMessageId: String?,
+        androidThreadId: Long
+    ): JSONObject {
+        val payload = JSONObject()
+            .put("messageId", messageIdFor(source, providerId, dateMs))
+            .put("source", source)
+            .put("providerId", providerId)
+            .put("status", status)
+            .put("dateMs", dateMs)
+            .put("read", read)
+        if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
+        if (direction != null) payload.put("direction", direction)
+        if (body != null) payload.put("body", body)
+        if (address != null) payload.put("address", address)
+        if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
+        if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
+        if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
+        return payload
     }
 
     /**
@@ -301,7 +385,43 @@ object GatewayEventFactory {
         archived: Boolean,
         revision: Long = System.currentTimeMillis(),
         priority: String = GatewayEventOutboxEntity.PRIORITY_REALTIME,
+        /** The exact Telephony thread id this conversation maps to — inside the ciphertext. */
+        androidThreadId: Long = 0L,
     ): GatewayEventOutboxEntity {
+        val payload = conversationUpsertedPayload(
+            conversationId = conversationId,
+            displayName = displayName,
+            address = address,
+            lastMessagePreview = lastMessagePreview,
+            lastMessageDirection = lastMessageDirection,
+            lastMessageAt = lastMessageAt,
+            unreadCount = unreadCount,
+            pinned = pinned,
+            archived = archived,
+            androidThreadId = androidThreadId
+        )
+        return outboxRow(
+            UUID.nameUUIDFromBytes("conversation:$conversationId:$revision".toByteArray()).toString(),
+            Types.CONVERSATION_UPSERTED,
+            conversationId,
+            payload.toString(),
+            source = sourceFor(priority, originCommandId = null),
+        ).copy(revision = revision, sortKey = lastMessageAt, priority = priority)
+    }
+
+    /** The plaintext payload of [conversationUpserted] — the projection contract GMweb reads. */
+    internal fun conversationUpsertedPayload(
+        conversationId: String,
+        displayName: String?,
+        address: String,
+        lastMessagePreview: String,
+        lastMessageDirection: String,
+        lastMessageAt: Long,
+        unreadCount: Int,
+        pinned: Boolean,
+        archived: Boolean,
+        androidThreadId: Long
+    ): JSONObject {
         val payload = JSONObject()
             .put("conversationId", conversationId)
             .put("displayName", displayName ?: address)
@@ -312,13 +432,8 @@ object GatewayEventFactory {
             .put("unreadCount", unreadCount)
             .put("pinned", pinned)
             .put("archived", archived)
-        return outboxRow(
-            UUID.nameUUIDFromBytes("conversation:$conversationId:$revision".toByteArray()).toString(),
-            Types.CONVERSATION_UPSERTED,
-            conversationId,
-            payload.toString(),
-            source = sourceFor(priority, originCommandId = null),
-        ).copy(revision = revision, sortKey = lastMessageAt, priority = priority)
+        if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
+        return payload
     }
 
     fun conversationDeleted(conversationId: String, revision: Long = System.currentTimeMillis()) =

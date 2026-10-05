@@ -14,6 +14,8 @@ data class MirrorReconcileRow(
     val providerId: Long,
     val threadId: Long,
     val normalizedAddress: String,
+    /** The provider's EXACT sender string — the identity that must leave the device. */
+    val rawAddress: String = "",
     val body: String,
     val date: Long,
     val type: Int,
@@ -36,7 +38,7 @@ interface MirrorReconcileDao {
      * Backed by the existing `Index("date")`, so the window is an indexed range scan.
      */
     @Query(
-        "SELECT source, providerId, threadId, normalizedAddress, body, date, type, status, read " +
+        "SELECT source, providerId, threadId, normalizedAddress, rawAddress, body, date, type, status, read " +
             "FROM messages WHERE date >= :since ORDER BY date DESC, providerId DESC LIMIT :limit"
     )
     suspend fun recentWindow(since: Long, limit: Int): List<MirrorReconcileRow>
@@ -57,7 +59,7 @@ interface MirrorReconcileDao {
      * Per-source, like the history checkpoint, because two key spaces cannot share one cursor.
      */
     @Query(
-        "SELECT source, providerId, threadId, normalizedAddress, body, date, type, status, read " +
+        "SELECT source, providerId, threadId, normalizedAddress, rawAddress, body, date, type, status, read " +
             "FROM messages WHERE source = :source " +
             "AND (date < :beforeDate OR (date = :beforeDate AND providerId < :beforeId)) " +
             "ORDER BY date DESC, providerId DESC LIMIT :limit"

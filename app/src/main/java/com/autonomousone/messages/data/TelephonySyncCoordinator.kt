@@ -26,6 +26,7 @@ import com.autonomousone.messages.sync.MirrorVerifyPolicy
 import com.autonomousone.messages.sync.MirrorReconcilePolicy
 import com.autonomousone.messages.sync.MirrorReconcileStatus
 import com.autonomousone.messages.sync.ReconcileResult
+import com.autonomousone.messages.sync.SenderIdentity
 import com.autonomousone.messages.sync.ThreadHistoryCommand
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -861,7 +862,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     enqueueCloudEvent(
                         source = m.source,
                         providerId = m.providerId,
-                        sender = deleted.normalizedAddress,
+                        sender = SenderIdentity.eventAddress(deleted.rawAddress, deleted.normalizedAddress),
                         body = deleted.body
                     ) {
                         GatewayEventFactory.messageDeleted(
@@ -897,7 +898,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         enqueueCloudEvent(
                             source = m.source,
                             providerId = m.providerId,
-                            sender = deleted.normalizedAddress,
+                            sender = SenderIdentity.eventAddress(deleted.rawAddress, deleted.normalizedAddress),
                             body = deleted.body
                         ) {
                             GatewayEventFactory.conversationDeleted(conversationId)
@@ -927,13 +928,15 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         enqueueCloudEvent(
                             source = newest.source,
                             providerId = newest.providerId,
-                            sender = newest.normalizedAddress,
+                            sender = SenderIdentity.eventAddress(newest.rawAddress, newest.normalizedAddress),
                             body = newest.body
                         ) {
                             GatewayEventFactory.conversationUpserted(
-                                conversationId, contactNameFor(newest.normalizedAddress),
-                                newest.normalizedAddress, newest.body, direction, newest.date,
+                                conversationId, contactNameFor(newest.rawAddress, newest.normalizedAddress),
+                                SenderIdentity.eventAddress(newest.rawAddress, newest.normalizedAddress),
+                                newest.body, direction, newest.date,
                                 projected.unreadCount, projected.pinned, projected.archived,
+                                androidThreadId = threadId,
                             )
                         }
                     }
@@ -1071,7 +1074,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         enqueueCloudEvent(
                             source = source,
                             providerId = entity.providerId,
-                            sender = entity.normalizedAddress,
+                            sender = SenderIdentity.eventAddress(entity.rawAddress, entity.normalizedAddress),
                             body = entity.body
                         ) {
                             when (transition) {
@@ -1083,11 +1086,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                     body = entity.body,
                                     dateMs = entity.date,
                                     status = entity.status,
-                                    address = entity.normalizedAddress,
-                                    contactName = contactNameFor(entity.normalizedAddress),
+                                    address = SenderIdentity.eventAddress(entity.rawAddress, entity.normalizedAddress),
+                                    contactName = contactNameFor(entity.rawAddress, entity.normalizedAddress),
                                     read = entity.read,
                                     originCommandId = originCommandId,
                                     clientMessageId = clientMessageId,
+                                    androidThreadId = entity.threadId,
                                     revision = stableRevision("new:$source:${entity.providerId}:${entity.date}")
                                 )
                                 ProviderTransition.CONTENT_CHANGED -> {
@@ -1099,8 +1103,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                         body = entity.body,
                                         dateMs = entity.date,
                                         status = entity.status,
-                                        address = entity.normalizedAddress,
-                                        contactName = contactNameFor(entity.normalizedAddress),
+                                        address = SenderIdentity.eventAddress(entity.rawAddress, entity.normalizedAddress),
+                                        contactName = contactNameFor(entity.rawAddress, entity.normalizedAddress),
                                         read = entity.read,
                                         originCommandId = originCommandId,
                                         clientMessageId = clientMessageId,
@@ -1123,15 +1127,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                     dateMs = entity.date,
                                     direction = direction,
                                     body = entity.body,
-                                    address = entity.normalizedAddress,
-                                    contactName = contactNameFor(entity.normalizedAddress),
+                                    address = SenderIdentity.eventAddress(entity.rawAddress, entity.normalizedAddress),
+                                    contactName = contactNameFor(entity.rawAddress, entity.normalizedAddress),
                                     read = entity.read,
                                     // The same two values the NEW branch above passes. They were
                                     // in scope here all along and simply were not forwarded, which
                                     // is why a web send's DELIVERED transition could not be matched
                                     // to its optimistic bubble (§49).
                                     originCommandId = originCommandId,
-                                    clientMessageId = clientMessageId
+                                    clientMessageId = clientMessageId,
+                                    androidThreadId = entity.threadId
                                 ).copy(
                                     eventUuid = java.util.UUID.nameUUIDFromBytes(
                                         "message-state:$source:${entity.providerId}:${entity.date}:${entity.status}:${entity.dateSent}:${entity.read}"
@@ -1192,7 +1197,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                             enqueueCloudEvent(
                                 source = newest.source,
                                 providerId = newest.providerId,
-                                sender = newest.normalizedAddress,
+                                sender = SenderIdentity.eventAddress(newest.rawAddress, newest.normalizedAddress),
                                 body = newest.body
                             ) {
                                 val revision = stableRevision(
@@ -1200,15 +1205,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                                 )
                                 GatewayEventFactory.conversationUpserted(
                                     conversationId = conversationId,
-                                    displayName = contactNameFor(newest.normalizedAddress),
-                                    address = newest.normalizedAddress,
+                                    displayName = contactNameFor(newest.rawAddress, newest.normalizedAddress),
+                                    address = SenderIdentity.eventAddress(newest.rawAddress, newest.normalizedAddress),
                                     lastMessagePreview = newest.body,
                                     lastMessageDirection = direction,
                                     lastMessageAt = newest.date,
                                     unreadCount = unread,
                                     pinned = pinned,
                                     archived = archived,
-                                    revision = revision
+                                    revision = revision,
+                                    androidThreadId = threadId
                                 )
                             }
                         }
@@ -1268,12 +1274,19 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * phone number. ContactRepository keeps a process-wide cache (one provider
      * scan at most); resolution is additive to the envelope payload only.
      */
-    private fun contactNameFor(address: String?): String? {
-        val phone = address ?: return null
+    /**
+     * A contact display name, but ONLY for a real phone-number sender.
+     *
+     * Contacts are matched for subscriber numbers. Looking up `PARSIANBANK`, `Google` or `Ssh3-652` in
+     * the address book is meaningless, and the normalized helper is empty for them — which is how a
+     * branded sender ended up with no name AND no address at all. The raw provider value is the
+     * identity; the contact map only decorates it when the sender genuinely is a number.
+     */
+    private fun contactNameFor(rawAddress: String?, normalizedAddress: String? = null): String? {
+        val key = SenderIdentity.contactLookupKey(rawAddress, normalizedAddress) ?: return null
         val contacts = ContactRepository(appContext).getContactNameMap()
         if (contacts.isEmpty()) return null
-        val normalized = ContactRepository.normalizePhone(phone)
-        return contacts[normalized] ?: contacts[phone]
+        return contacts[key] ?: contacts[rawAddress?.trim().orEmpty()]
     }
 
 
@@ -1631,8 +1644,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 body = entity.body,
                 dateMs = entity.date,
                 status = entity.status,
-                address = entity.normalizedAddress,
-                contactName = contactNameFor(entity.normalizedAddress),
+                address = SenderIdentity.eventAddress(entity.rawAddress, entity.normalizedAddress),
+                contactName = contactNameFor(entity.rawAddress, entity.normalizedAddress),
                 read = entity.read,
                 revision = 1,
                 priority = GatewayEventOutboxEntity.PRIORITY_BACKFILL,
@@ -1704,7 +1717,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 body = row.body,
                 dateMs = row.date,
                 status = row.status,
-                address = row.normalizedAddress,
+                address = SenderIdentity.eventAddress(row.rawAddress, row.normalizedAddress),
                 read = row.read,
                 revision = 1,
                 priority = GatewayEventOutboxEntity.PRIORITY_RECONCILIATION,
@@ -1862,13 +1875,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             enqueueCloudEvent(
                 source = MessageEntity.SOURCE_SMS,
                 providerId = 0,
-                sender = conversation.normalizedAddress,
+                sender = SenderIdentity.eventAddress(conversation.rawAddress, conversation.normalizedAddress),
                 body = conversation.snippet,
             ) {
                 GatewayEventFactory.conversationUpserted(
                     conversationId = conversationIdFor(conversation.threadId),
-                    displayName = contactNameFor(conversation.normalizedAddress),
-                    address = conversation.normalizedAddress,
+                    displayName = contactNameFor(conversation.rawAddress, conversation.normalizedAddress),
+                    address = SenderIdentity.eventAddress(conversation.rawAddress, conversation.normalizedAddress),
                     lastMessagePreview = conversation.snippet,
                     lastMessageDirection = direction,
                     lastMessageAt = conversation.lastMessageDate,
@@ -2292,7 +2305,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             published = enqueueCloudEvent(
                 source = "sms",
                 providerId = latest?.providerId ?: 0L,
-                sender = latest?.normalizedAddress ?: "",
+                sender = SenderIdentity.eventAddress(latest?.rawAddress, latest?.normalizedAddress),
                 body = latest?.body ?: ""
             ) {
                 GatewayEventFactory.threadRead(
