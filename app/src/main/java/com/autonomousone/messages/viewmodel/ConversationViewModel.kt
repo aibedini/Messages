@@ -50,6 +50,7 @@ import com.autonomousone.messages.repository.ConversationWindow
 import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.messaging.VisibleConversationTracker
+import com.autonomousone.messages.messaging.ConversationMembership
 import com.autonomousone.messages.messaging.ConversationReadAudit
 import com.autonomousone.messages.messaging.ReadCause
 import com.autonomousone.messages.messaging.ReadSkipReason
@@ -307,6 +308,21 @@ class ConversationViewModel(
      * reverse-layout may briefly re-anchor after the new index 0 exists.
      */
     private fun appendLiveMessage(row: Sms, source: String): Boolean {
+        // ── DEFENCE IN DEPTH: MEMBERSHIP (P0) ───────────────────────────────
+        //
+        // A live event for another conversation must never enter this window, this cache or this
+        // animation, whatever caller got it wrong. Both thread ids known and different is a hard no:
+        // the regression that prompted this guard appended a foreign thread's SMS into the open
+        // conversation ("so the bubble still appears"), poisoning `messages` and ThreadMessageCache.
+        if (ConversationMembership.isForeignThread(currentThreadId, row.threadId)) {
+            DiagnosticLog.event(
+                "CHAT_LIVE_REJECTED",
+                "reason=THREAD_MISMATCH source=$source current=${threadToken(currentThreadId)} " +
+                    "row=${threadToken(row.threadId)}"
+            )
+            return false
+        }
+
         val duplicate = messages.any { existing ->
             ConversationWindow.identity(existing.id) == ConversationWindow.identity(row.id)
         }
@@ -1615,14 +1631,38 @@ class ConversationViewModel(
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
                 if (currentPhone.isBlank() && currentThreadId == 0L) return@collect
 
-                // ── THE READ AUTHORITY (P0) ─────────────────────────────────
+                // ── STEP 1: MEMBERSHIP — is this event even about this conversation? ──
                 //
-                // `currentPhone` matching used to be sufficient, and that was the production bug:
-                // it survives navigation, backgrounding and a ViewModel the user no longer sees, so
-                // a message for the last-opened conversation was marked read while the user was on
-                // Home (or in another app). The message is now auto-read ONLY while this exact
-                // conversation is genuinely RESUMED on screen — thread id first, address only as the
-                // legacy fallback when no thread id is known.
+                // This gate is MANDATORY and comes first. It used to be missing: when the
+                // conversation was not visible the code appended the message anyway, so a live SMS
+                // for conversation B appeared inside conversation A (and in ThreadMessageCache).
+                // Membership and visibility are different questions — "not visible" must never mean
+                // "append it here regardless".
+                //
+                // The CURRENT identity is read here, at apply time, so an event queued before a
+                // navigation (A → B) is judged against the conversation that will receive it.
+                val belongs = ConversationMembership.belongs(
+                    currentThreadId = currentThreadId,
+                    currentAddress = currentPhone,
+                    incomingThreadId = incomingSms.threadId,
+                    incomingAddress = incomingSms.sender
+                )
+                if (!belongs) {
+                    DiagnosticLog.event(
+                        "CHAT_LIVE_REJECTED",
+                        "reason=CROSS_THREAD source=incoming current=${threadToken(currentThreadId)} " +
+                            "row=${threadToken(incomingSms.threadId)} decision=ignored"
+                    )
+                    return@collect
+                }
+
+                // ── STEP 2: READ VISIBILITY — same conversation, is it genuinely on screen? ──
+                //
+                // `currentPhone` matching used to be sufficient, and that was the earlier production
+                // bug: it survives navigation, backgrounding and a ViewModel the user no longer sees,
+                // so a message for the last-opened conversation was marked read while the user was on
+                // Home. The message is auto-read ONLY while this exact conversation is genuinely
+                // RESUMED — thread id first, address only as the legacy fallback.
                 val incomingThread = incomingSms.threadId
                 val genuinelyVisible = if (incomingThread > 0L) {
                     VisibleConversationTracker.isVisible(incomingThread)
@@ -2432,6 +2472,10 @@ class ConversationViewModel(
             }
         }
     }
+
+    /** Hashed thread reference for diagnostics: a raw thread id must not reach a log line. */
+    private fun threadToken(threadId: Long): String =
+        if (threadId > 0L) ConversationReadAudit.token(threadId) else "none"
 
     /**
      * The conversation screen became RESUMED — the ONE authority for "the user opened this chat".
