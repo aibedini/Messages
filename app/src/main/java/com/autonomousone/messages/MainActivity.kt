@@ -240,8 +240,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * ACTION_SEND (shared text) / ACTION_SENDTO (sms: links). Returns null for
-     * anything that carries no usable payload (launcher intent, empty share).
+     * ACTION_SEND (shared text) / ACTION_SENDTO (sms: links) / ACTION_VIEW
+     * (the same sms: links when a browser delivers them). Returns null for
+     * anything that carries no usable payload (launcher intent, empty share,
+     * or a URI scheme this app does not advertise).
      */
     private fun parseShareIntent(intent: Intent?): MainActivity.SharePayload? {
         if (intent == null) return null
@@ -250,16 +252,32 @@ class MainActivity : AppCompatActivity() {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
                 if (text.isBlank()) null else SharePayload("", text)
             }
-            Intent.ACTION_SENDTO -> {
-                val r = IncomingShareParser.fromSendTo(
-                    dataUri = intent.data?.toString(),
-                    smsBody = intent.getStringExtra("sms_body"),
-                    extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
-                )
-                if (r.phone.isBlank() && r.text.isBlank()) null else SharePayload(r.phone, r.text)
-            }
+            // ACTION_SENDTO is the canonical SMS-compose action (dialer,
+            // contacts, native senders); ACTION_VIEW is what browsers emit for
+            // a sms:/smsto:/mms:/mmsto: link. Both funnel into the same parser.
+            Intent.ACTION_SENDTO, Intent.ACTION_VIEW -> smsPayload(intent)
             else -> null
         }
+    }
+
+    /**
+     * Shared SMS/MMS payload extraction. The URI is accepted only when its
+     * scheme is one of the four advertised ones, so an explicit Intent aimed
+     * at this activity cannot turn an http(s)/tel:/content: URI into a compose
+     * recipient. A missing URI is still fine: ACTION_SENDTO may carry the
+     * draft in sms_body / EXTRA_TEXT alone.
+     */
+    private fun smsPayload(intent: Intent): MainActivity.SharePayload? {
+        val dataUri = intent.data?.toString()
+        if (!dataUri.isNullOrBlank() && !IncomingShareParser.isSupportedSmsUri(dataUri)) {
+            return null
+        }
+        val r = IncomingShareParser.fromSendTo(
+            dataUri = dataUri,
+            smsBody = intent.getStringExtra("sms_body"),
+            extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        )
+        return if (r.phone.isBlank() && r.text.isBlank()) null else SharePayload(r.phone, r.text)
     }
 
     private var wasPausedForLock = false

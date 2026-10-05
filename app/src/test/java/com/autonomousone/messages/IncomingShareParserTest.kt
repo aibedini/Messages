@@ -2,9 +2,11 @@ package com.autonomousone.messages
 
 import com.autonomousone.messages.utils.IncomingShareParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** External share-intent parsing (ACTION_SEND / ACTION_SENDTO). */
+/** External share-intent parsing (ACTION_SEND / ACTION_SENDTO / ACTION_VIEW). */
 class IncomingShareParserTest {
 
     @Test
@@ -70,5 +72,50 @@ class IncomingShareParserTest {
         )
         assertEquals("09121234567", r.phone)
         assertEquals("draft message", r.text)
+    }
+
+    // v3.4.28 — browsers deliver sms: links as ACTION_VIEW, so the same
+    // payload rules must apply there, scoped to the advertised SMS schemes.
+
+    @Test
+    fun `view smsto with body query parses recipient and draft`() {
+        val r = IncomingShareParser.fromView("smsto:+989121234567?body=hello", null, null)
+        assertEquals("+989121234567", r?.phone)
+        assertEquals("hello", r?.text)
+    }
+
+    @Test
+    fun `view sms without body still parses the recipient`() {
+        val r = IncomingShareParser.fromView("sms:+989121234567", null, null)
+        assertEquals("+989121234567", r?.phone)
+        assertEquals("", r?.text)
+    }
+
+    @Test
+    fun `view sms_body extra wins over the query on the view path`() {
+        val r = IncomingShareParser.fromView("sms:09120000000?body=query", "extra", null)
+        assertEquals("09120000000", r?.phone)
+        assertEquals("extra", r?.text)
+    }
+
+    @Test
+    fun `view rejects schemes this app does not advertise`() {
+        assertEquals(null, IncomingShareParser.fromView("https://example.com", null, "hi"))
+        assertEquals(null, IncomingShareParser.fromView("tel:+989121234567", null, null))
+        assertEquals(null, IncomingShareParser.fromView("content://sms/1", null, null))
+        assertEquals(null, IncomingShareParser.fromView("file:///sdcard/x.txt", null, null))
+        assertEquals(null, IncomingShareParser.fromView(null, null, null))
+    }
+
+    @Test
+    fun `only the four sms schemes are supported`() {
+        listOf("sms", "smsto", "mms", "mmsto").forEach { scheme ->
+            assertTrue(scheme, IncomingShareParser.isSupportedSmsUri("$scheme:+989121234567"))
+            assertTrue(scheme, IncomingShareParser.isSupportedSmsUri("$scheme:"))
+        }
+        listOf("http", "https", "tel", "mailto", "content", "file", "").forEach { scheme ->
+            assertFalse(scheme, IncomingShareParser.isSupportedSmsUri("$scheme:payload"))
+        }
+        assertFalse("null", IncomingShareParser.isSupportedSmsUri(null))
     }
 }

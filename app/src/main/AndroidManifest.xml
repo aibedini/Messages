@@ -84,6 +84,27 @@
 
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- v3.4.28: browser-delivered sms:/smsto:/mms:/mmsto: links.
+                 Chrome turns every non-http(s) URL into
+                 Intent(ACTION_VIEW).setData(uri) (ExternalNavigationHandler),
+                 and it only routes an "sms:" URL straight to the default SMS
+                 app when that package resolves THIS intent
+                 (maybeSetSmsPackage -> getDefaultSmsPackageName). Declaring
+                 ACTION_SENDTO alone meant the default-SMS role never applied,
+                 so Messages was missing from the EVE/browser chooser.
+                 Deliberately scheme-scoped: no http(s), no mimeType, no
+                 generic VIEW, so no unrelated chooser is polluted. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
         </activity>
 
         <!--

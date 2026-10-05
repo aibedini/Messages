@@ -1,9 +1,9 @@
 package com.autonomousone.messages.utils
 
 /**
- * Parses external share/send intents (ACTION_SEND / ACTION_SENDTO) into a
- * (phone, text) pair. Pure string logic — no android.net.Uri — so it runs in
- * JVM unit tests.
+ * Parses external share/send intents (ACTION_SEND / ACTION_SENDTO /
+ * ACTION_VIEW) into a (phone, text) pair. Pure string logic — no
+ * android.net.Uri — so it runs in JVM unit tests.
  *
  * Handles:
  *   - sms: / smsto: / mms: / mmsto: data URIs, with or without ?body=/sms_body=
@@ -15,6 +15,33 @@ package com.autonomousone.messages.utils
 object IncomingShareParser {
 
     data class Result(val phone: String, val text: String)
+
+    /**
+     * The only URI schemes this app accepts for SMS/MMS compose, i.e. exactly
+     * the schemes the manifest advertises for ACTION_SENDTO and ACTION_VIEW.
+     */
+    val SUPPORTED_SMS_SCHEMES = setOf("sms", "smsto", "mms", "mmsto")
+
+    /** True when [dataUri] carries one of [SUPPORTED_SMS_SCHEMES]. */
+    fun isSupportedSmsUri(dataUri: String?): Boolean {
+        val scheme = dataUri?.substringBefore(':')?.trim()?.lowercase().orEmpty()
+        return scheme in SUPPORTED_SMS_SCHEMES
+    }
+
+    /**
+     * ACTION_VIEW: browsers deliver `sms:` links as ACTION_VIEW — Chrome builds
+     * Intent(ACTION_VIEW, uri) for every non-http(s) URL — so the SMS/MMS
+     * schemes have to be accepted on this action too. Returns null for anything
+     * else (http/https, tel:, content:, file:, ...): the manifest filter is
+     * deliberately scheme-scoped and an explicit Intent aimed at MainActivity
+     * must not smuggle a foreign URI into the compose path.
+     */
+    fun fromView(
+        dataUri: String?,
+        smsBody: String?,
+        extraText: String?
+    ): Result? =
+        if (isSupportedSmsUri(dataUri)) fromSendTo(dataUri, smsBody, extraText) else null
 
     /** ACTION_SENDTO family: [dataUri] like "smsto:09121234567?body=Hi". */
     fun fromSendTo(
