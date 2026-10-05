@@ -15,17 +15,59 @@ object GatewayDeliveryReports {
     private const val MAP_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
     private val lock = Any()
 
+    /**
+     * One durable carrier verdict, body-free.
+     *
+     * The last five fields are ADDITIVE: a report persisted by an older build simply lacks them and
+     * decodes with the defaults below (see [pending]), so no existing queued report is lost or has to
+     * be migrated. `eventId` remains `sha256(requestId|status)`, so every retry of the same verdict
+     * sends byte-identical identity and GMweb can deduplicate it.
+     */
     data class Report(
         val eventId: String,
         val requestId: String,
         val status: String,
-        val occurredAt: Long
+        val occurredAt: Long,
+        /** 0-based index of the part whose callback produced this aggregate verdict. */
+        val segmentIndex: Int = 0,
+        val segmentCount: Int = 1,
+        /** The subscription that actually carried the message, when it was known at callback time. */
+        val subscriptionId: Int? = null,
+        /** The native modem result code (SENT callback), when this verdict came from a SENT result. */
+        val carrierResultCode: Int? = null,
+        /** True only when EVERY expected part has carrier delivery evidence. */
+        val allSegmentsDelivered: Boolean = false,
+        /** When the device received the callback — distinct from when the carrier produced it. */
+        val receivedAtDevice: Long = occurredAt
     ) {
         fun json(): JSONObject = JSONObject()
             .put("eventId", eventId)
             .put("requestId", requestId)
             .put("status", status)
             .put("occurredAt", occurredAt)
+            // ── additive, backward-safe ──────────────────────────────────────
+            .put("eventType", EVENT_TYPE_CARRIER_DELIVERY)
+            .put("segmentIndex", segmentIndex)
+            .put("segmentCount", segmentCount)
+            .put("allSegmentsDelivered", allSegmentsDelivered)
+            .put("receivedAtDevice", receivedAtDevice)
+            .putOpt("subscriptionId", subscriptionId)
+            .putOpt("carrierResultCode", carrierResultCode)
+    }
+
+    /** The one event type this endpoint reports. */
+    const val EVENT_TYPE_CARRIER_DELIVERY = "carrier_delivery"
+
+    /**
+     * True when this Telephony row belongs to a GMweb/Gateway task.
+     *
+     * Read-only probe used by the SEND path: a gateway-originated message must always ask the modem
+     * for a delivery report, even if the user turned delivery reports off for their own messages —
+     * otherwise GMweb would never learn the carrier's verdict for the send it requested.
+     */
+    fun isGatewayOriginated(context: Context, rowId: Long): Boolean {
+        if (rowId <= 0L) return false
+        return synchronized(lock) { prefs(context).contains(MAP_PREFIX + rowId) }
     }
 
     private fun prefs(context: Context) =
@@ -51,7 +93,20 @@ object GatewayDeliveryReports {
     }
 
     /** Persist only definitive carrier evidence. Neither SENT nor temporary/unknown implies delivery. */
-    fun recordFinal(context: Context, rowId: Long, providerStatus: Int, at: Long): Boolean {
+    fun recordFinal(
+        context: Context,
+        rowId: Long,
+        providerStatus: Int,
+        at: Long,
+        /**
+         * Part metadata and native result, all optional so an older caller keeps compiling and an
+         * older persisted report keeps decoding.
+         */
+        segmentIndex: Int = 0,
+        segmentCount: Int = 1,
+        subscriptionId: Int? = null,
+        carrierResultCode: Int? = null
+    ): Boolean {
         val status = when (providerStatus) {
             Telephony.Sms.STATUS_COMPLETE -> "delivered"
             Telephony.Sms.STATUS_FAILED -> "failed"
@@ -62,9 +117,26 @@ object GatewayDeliveryReports {
             val requestId = preferences.getString(MAP_PREFIX + rowId, null) ?: return@synchronized false
             val eventId = eventId(requestId, status)
             val key = REPORT_PREFIX + eventId
+            // Already queued (or already quarantined) — the same verdict twice is one event.
             if (preferences.contains(key)) return@synchronized true
             preferences.edit()
-                .putString(key, Report(eventId, requestId, status, at).json().toString())
+                .putString(
+                    key,
+                    Report(
+                        eventId = eventId,
+                        requestId = requestId,
+                        status = status,
+                        occurredAt = at,
+                        segmentIndex = segmentIndex,
+                        segmentCount = segmentCount,
+                        subscriptionId = subscriptionId,
+                        carrierResultCode = carrierResultCode,
+                        // Only a `delivered` aggregate verdict means every expected part has carrier
+                        // evidence: `failed` can be one refused part of a multipart message.
+                        allSegmentsDelivered = status == "delivered",
+                        receivedAtDevice = at
+                    ).json().toString()
+                )
                 .remove(MAP_PREFIX + rowId)
                 .remove(MAP_CREATED_PREFIX + rowId)
                 .commit()
@@ -77,14 +149,34 @@ object GatewayDeliveryReports {
             .mapNotNull { (_, value) ->
                 runCatching {
                     val obj = JSONObject(value as String)
-                    Report(obj.getString("eventId"), obj.getString("requestId"),
-                        obj.getString("status"), obj.getLong("occurredAt"))
+                    val status = obj.getString("status")
+                    Report(
+                        eventId = obj.getString("eventId"),
+                        requestId = obj.getString("requestId"),
+                        status = status,
+                        occurredAt = obj.getLong("occurredAt"),
+                        // A report written before these fields existed decodes to the safe defaults
+                        // rather than crashing the uploader for every legacy row.
+                        segmentIndex = obj.optInt("segmentIndex", 0),
+                        segmentCount = obj.optInt("segmentCount", 1),
+                        subscriptionId = obj.optIntOrNull("subscriptionId"),
+                        carrierResultCode = obj.optIntOrNull("carrierResultCode"),
+                        allSegmentsDelivered = obj.optBoolean(
+                            "allSegmentsDelivered",
+                            status == "delivered"
+                        ),
+                        receivedAtDevice = obj.optLong("receivedAtDevice", obj.optLong("occurredAt", 0L))
+                    )
                 }.getOrNull()
             }
             .sortedBy { it.occurredAt }
             .take(limit.coerceIn(1, 100))
             .toList()
     }
+
+    /** Absent, JSON-null and non-numeric all mean "not reported" — never a fabricated 0. */
+    private fun JSONObject.optIntOrNull(key: String): Int? =
+        if (has(key) && !isNull(key)) optInt(key) else null
 
     fun acknowledge(context: Context, eventId: String): Boolean = synchronized(lock) {
         prefs(context).edit().remove(REPORT_PREFIX + eventId).commit()

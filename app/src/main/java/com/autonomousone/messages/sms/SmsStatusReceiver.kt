@@ -269,12 +269,41 @@ class SmsStatusReceiver : BroadcastReceiver() {
             nextStatus in listOf(Telephony.Sms.STATUS_COMPLETE, Telephony.Sms.STATUS_FAILED)) {
             // Persist the report before the provider/UI write: an app death in
             // between must not lose the carrier evidence needed by GMweb.
-            runCatching {
-                GatewayDeliveryReports.recordFinal(context, rowId, nextStatus, System.currentTimeMillis())
+            //
+            // The part/SIM metadata travels WITH the aggregate verdict: GMweb needs to know that a
+            // `delivered` verdict covers all N parts, and which line actually carried them — and the
+            // subscription recorded here is the SEND-TIME one (from the PendingIntent), never a
+            // re-read of the current default after the fact.
+            val persisted = runCatching {
+                GatewayDeliveryReports.recordFinal(
+                    context = context,
+                    rowId = rowId,
+                    providerStatus = nextStatus,
+                    at = System.currentTimeMillis(),
+                    segmentIndex = partIndex,
+                    segmentCount = partCount,
+                    subscriptionId = subscriptionId.takeIf { it >= 0 },
+                    carrierResultCode = callbackResultCode
+                )
             }.onFailure { Log.w(TAG, "GMweb delivery-report persistence failed", it) }
+                .getOrDefault(false)
+            DiagnosticLog.event(
+                "GM_DELIVERY",
+                "persisted=$persisted row=$rowId part=${partIndex + 1}/$partCount " +
+                    "status=${if (nextStatus == Telephony.Sms.STATUS_COMPLETE) "delivered" else "failed"} " +
+                    "evidence=$deliveryEvidence sub=$subscriptionId code=$callbackResultCode"
+            )
         }
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
         DiagnosticLog.event("SMS_STATE", "row=$rowId providerStatus=$nextStatus evidence=$deliveryEvidence")
+        // One line per callback, so the durable log shows the carrier evidence arriving even when it
+        // does not (yet) complete the aggregate verdict — a missing DLR is otherwise invisible.
+        DiagnosticLog.event(
+            "GM_DELIVERY",
+            "callback_received row=$rowId part=${partIndex + 1}/$partCount " +
+                "phase=${if (delivered) "DELIVERED" else "SENT"} evidence=$deliveryEvidence " +
+                "code=$callbackResultCode sub=$subscriptionId aggregate=$nextStatus"
+        )
 
         // v2.6.13: targeted status mutation — only refresh this message.
         TelephonySyncCoordinator.get(context).mutate(

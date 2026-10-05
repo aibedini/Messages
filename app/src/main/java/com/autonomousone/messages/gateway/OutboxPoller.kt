@@ -847,12 +847,25 @@ class OutboxPoller(
                         continue
                     }
                     Log.w(TAG, "delivery-report HTTP $responseCode")
+                    com.autonomousone.messages.utils.DiagnosticLog.event(
+                        "GM_DELIVERY",
+                        "upload_retry event=${report.eventId} status=${report.status} " +
+                            "part=${report.segmentIndex + 1}/${report.segmentCount} http=$responseCode"
+                    )
                     break
                 }
                 if (!GatewayDeliveryReports.acknowledge(context, report.eventId)) {
                     Log.w(TAG, "delivery-report acknowledgement was not persisted")
                     break
                 }
+                // Acknowledged ONLY after a 2xx (and the removal itself was durable): the event id is
+                // stable, so a duplicate upload of the same verdict is the same event for GMweb.
+                com.autonomousone.messages.utils.DiagnosticLog.event(
+                    "GM_DELIVERY",
+                    "upload_ack event=${report.eventId} request=${report.requestId} " +
+                        "status=${report.status} part=${report.segmentIndex + 1}/${report.segmentCount} " +
+                        "allParts=${report.allSegmentsDelivered} http=$responseCode"
+                )
             } catch (e: Exception) {
                 Log.w(TAG, "delivery-report upload deferred", e)
                 break

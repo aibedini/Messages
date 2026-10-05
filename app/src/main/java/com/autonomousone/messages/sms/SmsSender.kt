@@ -489,7 +489,15 @@ class SmsSender(
         val scAddress = smscOverride?.trim()?.takeIf { it.isNotBlank() }
             ?: prefs.smscForSim(requestedSubId ?: MessagingPreferences.SUBSCRIPTION_UNSET)
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
-        val wantReports = prefs.deliveryReportsEnabled
+        // A GATEWAY-ORIGINATED SEND ALWAYS ASKS FOR A DELIVERY REPORT.
+        //
+        // `deliveryReportsEnabled` is the LOCAL user's preference for their own messages, and it
+        // defaults on — but a user who turned it off would silently remove GMweb's only source of
+        // carrier evidence for the sends GMweb requested, leaving those tasks at "submitted" for
+        // ever. The carrier verdict is part of the gateway contract, not a UI nicety, so it is
+        // forced for a row that belongs to a gateway task (the durable map written before submit).
+        val gatewayOriginated = GatewayDeliveryReports.isGatewayOriginated(context, sentId)
+        val wantReports = prefs.deliveryReportsEnabled || gatewayOriginated
 
         // Kept outside the try so a synchronous rejection can report how many
         // parts were about to be submitted.
@@ -828,7 +836,6 @@ class SmsSender(
             // Which SIM actually carried this part — feeds the per-SIM send
             // ledger (null = platform default; recorded as -1/unknown).
             .putExtra(SmsStatusReceiver.EXTRA_SUBSCRIPTION_ID, subscriptionId ?: -1)
-        val requestCode = 31 * (31 * action.hashCode() + rowId.hashCode()) + partIndex
         // SmsManager fills callback-only extras (delivery "pdu" and optional
         // SENT "errorCode") when firing this PendingIntent. FLAG_IMMUTABLE
         // discards those fill-in extras, which made delivery reports
@@ -842,7 +849,7 @@ class SmsSender(
         }
         return PendingIntent.getBroadcast(
             context,
-            requestCode,
+            statusRequestCode(action, rowId, partIndex),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or mutability
         )
@@ -918,5 +925,17 @@ class SmsSender(
     companion object {
         private const val TAG = "SMS_SENDER"
         private val ledgerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * The PendingIntent identity of ONE callback (action × message row × part).
+         *
+         * Two callbacks that must not be confused — the SENT result and the carrier DELIVERY report,
+         * and different parts of the same multipart message — must not share a requestCode, because
+         * `PendingIntent` equality ignores extras: a reused code would silently overwrite the extras
+         * of the earlier callback and correlate a carrier verdict to the wrong part. Extracted as a
+         * pure function so that uniqueness is asserted by a test instead of trusted.
+         */
+        internal fun statusRequestCode(action: String, rowId: Long, partIndex: Int): Int =
+            31 * (31 * action.hashCode() + rowId.hashCode()) + partIndex
     }
 }
