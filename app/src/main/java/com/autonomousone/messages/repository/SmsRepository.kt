@@ -1229,16 +1229,33 @@ class SmsRepository(
      * id is unknown (threadId == 0).
      */
     fun markThreadAsReadStrict(threadId: Long, phone: String = ""): MarkReadProviderResult {
+        // ── READ HORIZON ─────────────────────────────────────────────────────
+        //
+        // A bulk `UPDATE ... WHERE thread = ? AND read = 0` runs as one statement but is not
+        // instantaneous with respect to the world: a message can land between the user's decision to
+        // read and the statement executing, and the blind form would swallow it — the new SMS would
+        // be marked read although nobody saw it. The horizon is the highest row id that existed when
+        // the decision was taken; anything newer stays unread (it will be read by the RESUMED screen
+        // through the INCOMING_WHILE_VISIBLE authority if the user is genuinely looking).
+        val smsHorizon = if (threadId > 0) highestRowId(Telephony.Sms.CONTENT_URI, threadId) else null
+
         val smsResult: SourceWriteResult = try {
             val values = ContentValues().apply { put(Telephony.Sms.READ, 1) }
             val updated = when {
                 threadId > 0 -> {
                     LocalProviderWrites.noteMarkRead(threadId)
+                    val (selection, args) = readHorizonSelection(
+                        threadColumn = Telephony.Sms.THREAD_ID,
+                        readColumn = Telephony.Sms.READ,
+                        idColumn = Telephony.Sms._ID,
+                        threadId = threadId,
+                        horizonId = smsHorizon
+                    )
                     context.contentResolver.update(
                         Telephony.Sms.CONTENT_URI,
                         values,
-                        "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
-                        arrayOf(threadId.toString())
+                        selection,
+                        args
                     )
                 }
                 phone.isNotBlank() -> {
@@ -1261,12 +1278,20 @@ class SmsRepository(
 
         val mmsResult: SourceWriteResult = if (threadId > 0) {
             try {
+                val mmsHorizon = highestRowId(Telephony.Mms.CONTENT_URI, threadId)
+                val (selection, args) = readHorizonSelection(
+                    threadColumn = Telephony.Mms.THREAD_ID,
+                    readColumn = Telephony.Mms.READ,
+                    idColumn = Telephony.Mms._ID,
+                    threadId = threadId,
+                    horizonId = mmsHorizon
+                )
                 SourceWriteResult.Success(
                     context.contentResolver.update(
                         Telephony.Mms.CONTENT_URI,
                         ContentValues().apply { put(Telephony.Mms.READ, 1) },
-                        "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.READ} = 0",
-                        arrayOf(threadId.toString())
+                        selection,
+                        args
                     )
                 )
             } catch (e: Exception) {
@@ -1276,6 +1301,26 @@ class SmsRepository(
         } else SourceWriteResult.NotApplicable
 
         return MarkReadProviderResult(smsResult, mmsResult)
+    }
+
+    /**
+     * The highest provider row id in [threadId] right now, or null when it cannot be established.
+     *
+     * Null means "no horizon could be captured", and the caller then falls back to the plain
+     * thread-scoped update: refusing to read at all because a bounds query failed would break the
+     * user's explicit action, and a bound that cannot be read is not a bound.
+     */
+    private fun highestRowId(uri: android.net.Uri, threadId: Long): Long? = try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(android.provider.BaseColumns._ID),
+            "${Telephony.Sms.THREAD_ID} = ?",
+            arrayOf(threadId.toString()),
+            "${android.provider.BaseColumns._ID} DESC LIMIT 1"
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+    } catch (e: Exception) {
+        Log.w("SMS_DEBUG", "read horizon query failed for thread $threadId", e)
+        null
     }
 
     /** Compatibility facade; correctness callers consume the strict result above. */
@@ -1544,4 +1589,25 @@ class SmsRepository(
             observer
         )
     }
+}
+
+/**
+ * The selection/args for a bounded mark-read (the READ HORIZON).
+ *
+ * Pure and top-level so the boundary is asserted by a test rather than trusted: with a horizon the
+ * provider update can never touch a row that arrived after the user's read decision, and without one
+ * it degrades to exactly the previous thread-scoped behaviour (a bounds query that failed is not a
+ * reason to refuse the user's explicit action).
+ */
+internal fun readHorizonSelection(
+    threadColumn: String,
+    readColumn: String,
+    idColumn: String,
+    threadId: Long,
+    horizonId: Long?
+): Pair<String, Array<String>> = if (horizonId != null && horizonId > 0L) {
+    "$threadColumn = ? AND $readColumn = 0 AND $idColumn <= ?" to
+        arrayOf(threadId.toString(), horizonId.toString())
+} else {
+    "$threadColumn = ? AND $readColumn = 0" to arrayOf(threadId.toString())
 }

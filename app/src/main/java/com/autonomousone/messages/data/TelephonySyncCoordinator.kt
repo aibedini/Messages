@@ -11,6 +11,9 @@ import com.autonomousone.messages.diagnostics.TraceSections
 import com.autonomousone.messages.media.IndexableMessage
 import com.autonomousone.messages.media.MessageAssetIndexer
 import com.autonomousone.messages.messaging.VisibleConversationTracker
+import com.autonomousone.messages.messaging.ConversationReadAudit
+import com.autonomousone.messages.messaging.ReadCause
+import com.autonomousone.messages.messaging.ReadSkipReason
 import com.autonomousone.messages.repository.ContactRepository
 import com.autonomousone.messages.repository.SmsRepository
 import com.autonomousone.messages.sync.EnqueueAttempt
@@ -903,10 +906,34 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     val old = dao.findByKey(source, providerEntity.providerId)
                     // READ is monotonic in the local read model: once the user has
                     // read a row, a stale provider READ=0 cannot resurrect unread.
-                    // A row arriving while its thread is visible is locally read in
-                    // this same durable transaction.
-                    val entity = if ((old?.read == true || VisibleConversationTracker.isVisible(providerEntity.threadId)) &&
-                        !providerEntity.read
+                    // A row arriving while its thread is GENUINELY VISIBLE is locally
+                    // read in this same durable transaction.
+                    //
+                    // `isVisible` now means "that conversation's screen is RESUMED"
+                    // (VisibleConversationTracker follows the screen lifecycle). It is
+                    // hardened here as well: an unknown/zero thread id may never match,
+                    // so a stale or unset identity cannot auto-read anything, and the
+                    // decision is recorded with its reason.
+                    val autoRead = !providerEntity.read &&
+                        providerEntity.threadId > 0L &&
+                        VisibleConversationTracker.isVisible(providerEntity.threadId)
+                    if (autoRead) {
+                        ConversationReadAudit.allowed(
+                            cause = ReadCause.INCOMING_WHILE_VISIBLE,
+                            threadId = providerEntity.threadId,
+                            source = source,
+                            beforeRead = false
+                        )
+                    } else if (!providerEntity.read && providerEntity.threadId > 0L) {
+                        ConversationReadAudit.skipped(
+                            reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
+                            threadId = providerEntity.threadId,
+                            source = source,
+                            detail = "provider_unread"
+                        )
+                    }
+                    val entity = if (autoRead ||
+                        (old?.read == true && !providerEntity.read)
                     ) providerEntity.copy(read = true) else providerEntity
                     val transition = classifyTransition(old, entity)
                     if (transition == ProviderTransition.UNCHANGED) continue

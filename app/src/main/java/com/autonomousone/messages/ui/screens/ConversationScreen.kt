@@ -368,14 +368,53 @@ fun ConversationScreen(
         }
     }
 
-    // Screen lifecycle = conversation visibility. The sync core consults this
-    // while it builds an incoming-message mutation, so an incoming SMS for the
-    // thread on screen is written read in the same transaction (no 0→1→0
-    // badge flash). Idempotent with the ViewModel's own open/close hooks.
-    DisposableEffect(threadId) {
-        if (threadId != 0L) VisibleConversationTracker.onOpened(threadId)
+    // ── Screen lifecycle = conversation visibility (THE read authority) ─────
+    //
+    // This used to be a composition-scoped effect, and the ViewModel also announced
+    // visibility from its load path. Both were wrong in the same way: "the composable
+    // exists" and "the data was loaded" are not "the user is looking at this screen".
+    // A backgrounded activity keeps its composition alive, and a ViewModel survives
+    // navigation, so a Home-visible or background app could still be treated as
+    // viewing the last-opened conversation — which marked its incoming SMS read.
+    //
+    // Visibility now follows ON_RESUME / ON_PAUSE of this screen's lifecycle owner, and
+    // the same boundary drives SmsEventBus.activeConversationPhone so the notification
+    // layer and the read authority cannot disagree.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(threadId, lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (threadId == 0L) return@LifecycleEventObserver
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    VisibleConversationTracker.onScreenResumed(threadId, phone)
+                    SmsEventBus.activeConversationPhone = phone
+                    // The user is looking at this chat: THIS is the read authority.
+                    viewModel.onConversationScreenResumed(threadId)
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP,
+                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
+                    VisibleConversationTracker.onScreenPaused(threadId)
+                    SmsEventBus.activeConversationPhone = ""
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        // Navigating to an already-resumed host: ON_RESUME has already fired, so mark now.
+        if (threadId != 0L &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        ) {
+            VisibleConversationTracker.onScreenResumed(threadId, phone)
+            SmsEventBus.activeConversationPhone = phone
+            viewModel.onConversationScreenResumed(threadId)
+        }
         onDispose {
-            if (threadId != 0L) VisibleConversationTracker.onClosed(threadId)
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (threadId != 0L) {
+                VisibleConversationTracker.onScreenPaused(threadId)
+                SmsEventBus.activeConversationPhone = ""
+            }
         }
     }
 

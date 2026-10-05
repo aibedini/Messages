@@ -50,6 +50,9 @@ import com.autonomousone.messages.repository.ConversationWindow
 import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.messaging.VisibleConversationTracker
+import com.autonomousone.messages.messaging.ConversationReadAudit
+import com.autonomousone.messages.messaging.ReadCause
+import com.autonomousone.messages.messaging.ReadSkipReason
 import com.autonomousone.messages.sms.SmsSender
 import com.autonomousone.messages.ui.selection.SelectionState
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -884,10 +887,12 @@ class ConversationViewModel(
                 "authority=${load.capturedRevision}"
         )
 
-        // Announce visibility to the sync core BEFORE any async read so an
-        // incoming message for this thread is written read in the same
-        // transaction that inserts it (no 0 → 1 → 0 badge flash).
-        if (threadId > 0L) VisibleConversationTracker.onOpened(threadId)
+        // NOTE: visibility is NOT announced from here any more.
+        //
+        // This used to call VisibleConversationTracker.onOpened(threadId), which is what made a LOAD
+        // look like a SCREEN: the tracker stayed set after the user navigated Home or backgrounded the
+        // app, and the sync core then folded their incoming SMS to read. Visibility is granted only by
+        // the screen's RESUMED lifecycle edge (see onConversationScreenResumed).
 
         // ReactiveRoomTail: bounded Room window feeds the UI from here on.
         startRoomTail(threadId, gen, load)
@@ -1056,11 +1061,13 @@ class ConversationViewModel(
                 val targetThreadId = if (currentThreadId != 0L) currentThreadId else loadedMessages.lastOrNull()?.threadId ?: 0L
                 val targetPhone = if (currentPhone.isNotBlank()) currentPhone else loadedMessages.firstOrNull()?.sender ?: ""
 
-                if (targetThreadId != 0L || targetPhone.isNotBlank()) {
-                    // Unified read path: local Room transaction first, the
-                    // provider write is eventual persistence.
-                    markReadUseCase.markRead(targetThreadId, targetPhone)
-                }
+                // NOTE: the read write is deliberately NOT here any more.
+                //
+                // It used to run BEFORE the stale-result guard below, so a load that started for
+                // conversation A and finished after the user had navigated away could still mark A
+                // read. A loader may finish reading data; it may not mutate user state. The read now
+                // happens on the screen's RESUMED edge (USER_OPEN_RESUMED) — the only evidence that
+                // the user is actually looking at this conversation.
 
                 val readMessages = loadedMessages.map { it.copy(unread = false) }
 
@@ -1608,18 +1615,49 @@ class ConversationViewModel(
             SmsEventBus.incomingSmsFlow.collect { incomingSms ->
                 if (currentPhone.isBlank() && currentThreadId == 0L) return@collect
 
-                val isMatch = ContactRepository.sameConversation(incomingSms.sender, currentPhone)
+                // ── THE READ AUTHORITY (P0) ─────────────────────────────────
+                //
+                // `currentPhone` matching used to be sufficient, and that was the production bug:
+                // it survives navigation, backgrounding and a ViewModel the user no longer sees, so
+                // a message for the last-opened conversation was marked read while the user was on
+                // Home (or in another app). The message is now auto-read ONLY while this exact
+                // conversation is genuinely RESUMED on screen — thread id first, address only as the
+                // legacy fallback when no thread id is known.
+                val incomingThread = incomingSms.threadId
+                val genuinelyVisible = if (incomingThread > 0L) {
+                    VisibleConversationTracker.isVisible(incomingThread)
+                } else {
+                    VisibleConversationTracker.isVisibleForAddress(incomingSms.sender)
+                }
 
-                if (isMatch) {
+                if (genuinelyVisible) {
                     val readIncoming = incomingSms.copy(unread = false)
                     appendLiveMessage(readIncoming, source = "incoming")
-                    // An already-open conversation receiving an incoming
-                    // message takes the SAME unified read path as an open.
-                    val thread = currentThreadId
+                    val thread = if (incomingThread > 0L) incomingThread else currentThreadId
                     val phone = currentPhone
+                    ConversationReadAudit.allowed(
+                        cause = ReadCause.INCOMING_WHILE_VISIBLE,
+                        threadId = thread,
+                        source = "sms",
+                        beforeRead = true
+                    )
                     viewModelScope.launch(Dispatchers.IO) {
                         markReadUseCase.markRead(thread, phone)
                     }
+                } else {
+                    // NO authority: the message keeps the unread state it arrived with. The bubble
+                    // still appears (that is the point of a live append); the badge and the durable
+                    // state stay honest, and Home shows the blue dot.
+                    appendLiveMessage(incomingSms, source = "incoming-unread")
+                    ConversationReadAudit.skipped(
+                        reason = if (incomingThread > 0L) {
+                            ReadSkipReason.SCREEN_NOT_VISIBLE
+                        } else {
+                            ReadSkipReason.NO_USER_EVIDENCE
+                        },
+                        threadId = incomingThread,
+                        source = "sms"
+                    )
                 }
             }
         }
@@ -1688,8 +1726,25 @@ class ConversationViewModel(
                 .toList()
         ).orEmpty()
 
-        if (currentThreadId != 0L || currentPhone.isNotBlank()) {
+        // The app-resume refresh is NOT read authority by itself: this runs when the ACTIVITY
+        // resumes, which is true on Home, in Search, on Settings — anywhere. It used to mark the
+        // remembered conversation read unconditionally, which is a second route to the same bug
+        // ("an SMS for the last-opened chat became read without the chat being on screen").
+        if (currentThreadId != 0L && VisibleConversationTracker.isVisible(currentThreadId)) {
+            ConversationReadAudit.allowed(
+                cause = ReadCause.USER_OPEN_RESUMED,
+                threadId = currentThreadId,
+                source = "sms",
+                beforeRead = true
+            )
             markReadUseCase.markRead(currentThreadId, currentPhone)
+        } else if (currentThreadId != 0L) {
+            ConversationReadAudit.skipped(
+                reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
+                threadId = currentThreadId,
+                source = "sms",
+                detail = "resume_refresh"
+            )
         }
 
         withContext(Dispatchers.Main) {
@@ -2378,6 +2433,30 @@ class ConversationViewModel(
         }
     }
 
+    /**
+     * The conversation screen became RESUMED — the ONE authority for "the user opened this chat".
+     *
+     * This replaces the read that used to sit in the load path, where it ran BEFORE the stale-result
+     * guard and could therefore mark read a conversation the user had already navigated away from.
+     * Being RESUMED is evidence that the user is looking at the chat; having loaded data is not.
+     */
+    fun onConversationScreenResumed(threadId: Long) {
+        if (threadId <= 0L) return
+        // The tracker is the authority; the screen sets it immediately before calling this, so a
+        // mismatch here means this call is stale and must not read anything.
+        if (!VisibleConversationTracker.isVisible(threadId)) return
+        ConversationReadAudit.allowed(
+            cause = ReadCause.USER_OPEN_RESUMED,
+            threadId = threadId,
+            source = "sms",
+            beforeRead = true
+        )
+        val phone = currentPhone
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { markReadUseCase.markRead(threadId, phone) }
+        }
+    }
+
     override fun onCleared() {
         repository.unregisterObserver(observer)
         roomTailJob?.cancel()
@@ -2385,9 +2464,9 @@ class ConversationViewModel(
         searchLoadMoreJob?.cancel()
         searchLoadMoreJob = null
         clearMessageSelection()
-        // Leaving the conversation: the sync core must stop suppressing
-        // unread for this thread (a fresh incoming message is unread again).
-        if (currentThreadId > 0L) VisibleConversationTracker.onClosed(currentThreadId)
+        // Leaving the conversation: the SCREEN's lifecycle already cleared visibility when it paused
+        // or was disposed. A ViewModel must not clear it either — its teardown can arrive long after
+        // the UI is gone, and (before this fix) it was the only thing that ever did.
         SmsEventBus.activeConversationPhone = ""
         // Leaving this chat must reconcile the Home list deterministically:
         // chat → home never passes through Activity.onResume, so without this
