@@ -132,18 +132,15 @@ class SmsStatusReceiver : BroadcastReceiver() {
             }
             // ── the transport gate learns the truth from THIS callback ───────
             //
-            // Not from "SmsManager did not throw". A rate limit opens the SIM's cooldown here; a
-            // confirmed success is the only thing that clears it. The radio's own errorCode is passed
-            // through so the durable log carries both numbers (see §9 of the mission).
+            // Not from "SmsManager did not throw". Evidence is aggregated per logical send: a rate
+            // limit on ANY part opens the SIM's cooldown, and only a fully confirmed multipart send
+            // clears it. A callback for an older/already-timed-out row is ignored rather than allowed
+            // to release the send that is currently in flight.
             SmsTransportGate.onSentCallback(
                 subscriptionId = subscriptionId,
-                verdict = SmsTransportClassifier.classify(
-                    callbackResultCode,
-                    intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
-                ),
                 rowId = rowId,
                 partIndex = partIndex,
-                partCount = partCount,
+                resultCode = callbackResultCode,
                 errorCode = intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
             )
             // Only a stable CODE is persisted; user-facing text is generated at
