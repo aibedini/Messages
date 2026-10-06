@@ -63,19 +63,12 @@ class SmsSender(
      * recovered from the outcome.
      */
     fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long {
-        // Respect the user's send rate limit (protects the SIM from throttling).
-        val prefs2 = prefs
-        if (prefs2.rateLimitEnabled) {
-            com.autonomousone.messages.sms.SendRateLimiter.enabled = true
-            com.autonomousone.messages.sms.SendRateLimiter.maxMessages = prefs2.rateLimitCount
-            com.autonomousone.messages.sms.SendRateLimiter.windowMillis =
-                prefs2.rateLimitWindowMin * 60_000L
-            val waitMs = com.autonomousone.messages.sms.SendRateLimiter.acquireSlot()
-            if (waitMs > 0) {
-                try { Thread.sleep(waitMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-                com.autonomousone.messages.sms.SendRateLimiter.record()
-            }
-        }
+        // NOTE: the old `SendRateLimiter` was removed here.
+        //
+        // It had three defects this gate does not: it only guarded THIS legacy path (so GMweb/EVE
+        // sends bypassed it entirely), `acquireSlot` handed several concurrent callers the same wait
+        // so they woke together, and it slept the calling thread. Physical submission is now
+        // serialized per SIM in [SmsTransportGate], which every path reaches through [dispatch].
         return when (val outcome = sendWithOutcome(phone, text, subscriptionIdOverride, smscOverride, showToast = true)) {
             is SendOutcome.Accepted -> outcome.rowId
             is SendOutcome.Rejected -> outcome.rowId ?: -1L
@@ -536,18 +529,31 @@ class SmsSender(
                     }
                 }
             } else null
-            if (parts.size > 1) {
-                manager.sendMultipartTextMessage(
-                    phone,
-                    scAddress,
-                    parts,
-                    sentIntents,
-                    deliveredIntents
-                )
-            } else {
-                manager.sendTextMessage(
-                    phone, scAddress, text, sentIntents.single(), deliveredIntents?.single()
-                )
+            // ── THE PHYSICAL SUBMIT, THROUGH THE ONE GATE ───────────────────
+            //
+            // Every caller of SmsSender (composer, GMweb, EVE, delayed, resend, headless) arrives
+            // here, and this is the ONLY place `SmsManager.send*` is called in the whole app (a source
+            // guard test enforces that). The gate serializes submits per SIM and holds the lane only
+            // for the submit itself — the SENT/DELIVERY callbacks arrive later and are reported to it
+            // separately, when they carry real evidence.
+            SmsTransportGate.submit(
+                subscriptionId = recordedSubId,
+                partCount = parts.size,
+                rowId = sentId
+            ) {
+                if (parts.size > 1) {
+                    manager.sendMultipartTextMessage(
+                        phone,
+                        scAddress,
+                        parts,
+                        sentIntents,
+                        deliveredIntents
+                    )
+                } else {
+                    manager.sendTextMessage(
+                        phone, scAddress, text, sentIntents.single(), deliveredIntents?.single()
+                    )
+                }
             }
 
             // The radio accepted the submit (no synchronous dispatch exception)

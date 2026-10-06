@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * Failure copy must be honest about what Android actually knows.
  *
- * The rule this protects (mission §10/§33/§59): there is no portable Android result for "insufficient
+ * The rule this protects (mission §10/§22): there is no portable Android result for "insufficient
  * prepaid balance". A prepaid SIM with no balance and a carrier outage both arrive as
  * `GENERIC_FAILURE`/`NETWORK_REJECT`, so the UI may say the carrier rejected the message and may hint
  * that balance *might* be involved — it may never state a balance problem as fact.
@@ -19,9 +19,22 @@ import org.junit.Test
  */
 class SmsFailurePresentationTest {
 
+    /** Every user-visible code in the canonical taxonomy. */
+    private val PRESENTED_CODES = listOf(
+        "NO_SERVICE", "RADIO_OFF", "RADIO_UNAVAILABLE", "NULL_PDU", "SIM_UNAVAILABLE",
+        "NO_DEFAULT_SMS_SUBSCRIPTION", "QUEUE_LIMIT_EXCEEDED", "RIL_RATE_LIMITED",
+        "RIL_RETRY_REQUIRED", "NETWORK_REJECTED", "NETWORK_NOT_READY", "NETWORK_ERROR",
+        "MODEM_FAILURE", "MODEM_INVALID_STATE", "SYSTEM_ERROR", "NO_RESOURCES",
+        "INVALID_SMSC", "INVALID_DESTINATION", "INVALID_SMS_FORMAT", "ENCODING_ERROR",
+        "FDN_RESTRICTED", "SHORT_CODE_NOT_ALLOWED", "OPERATION_NOT_ALLOWED",
+        "ACCESS_BARRED", "BLOCKED_DUE_TO_CALL", "DISPATCH_REJECTED",
+        "CARRIER_REJECTED", "CARRIER_FAILURE_UNKNOWN", "SEND_CALLBACK_TIMEOUT",
+        "DELIVERY_REPORT_TIMEOUT", "DELIVERY_UNKNOWN"
+    )
+
     @Test
     fun `a generic failure never claims the balance is the cause`() {
-        val copy = SmsFailurePresentation.forCode(SmsTransportFailure.CARRIER_FAILURE_UNKNOWN.persistable)
+        val copy = SmsFailurePresentation.forCode("CARRIER_FAILURE_UNKNOWN")
 
         assertFalse(copy.primary.contains("balance", ignoreCase = true))
         assertNotNull(copy.detail)
@@ -29,19 +42,20 @@ class SmsFailurePresentationTest {
             "balance may only be mentioned as a possible cause",
             copy.actionHint!!.contains("balance", ignoreCase = true)
         )
-        assertFalse("never state a zero balance", copy.primary.contains("zero", ignoreCase = true))
+        assertFalse(copy.primary.contains("zero", ignoreCase = true))
     }
 
     @Test
     fun `no presentation anywhere asserts a balance problem`() {
-        for (failure in SmsTransportFailure.entries) {
-            val copy = SmsFailurePresentation.forCode(failure.persistable)
+        for (code in PRESENTED_CODES) {
+            val copy = SmsFailurePresentation.forCode(code)
             for (text in listOfNotNull(copy.primary, copy.detail, copy.actionHint)) {
                 assertFalse(
-                    "${failure.persistable} asserts a balance problem: $text",
+                    "$code asserts a balance problem: $text",
                     text.contains("balance is", ignoreCase = true) ||
                         text.contains("no balance", ignoreCase = true) ||
-                        text.contains("insufficient balance", ignoreCase = true)
+                        text.contains("insufficient balance", ignoreCase = true) ||
+                        text.contains("no credit", ignoreCase = true)
                 )
             }
         }
@@ -49,7 +63,7 @@ class SmsFailurePresentationTest {
 
     @Test
     fun `a network rejection says what happened and hints at balance as a possibility`() {
-        val copy = SmsFailurePresentation.forCode(SmsTransportFailure.NETWORK_REJECTED.persistable)
+        val copy = SmsFailurePresentation.forCode("NETWORK_REJECTED")
 
         assertEquals("Network rejected the message", copy.primary)
         assertTrue(copy.actionHint!!.contains("balance", ignoreCase = true))
@@ -58,7 +72,7 @@ class SmsFailurePresentationTest {
 
     @Test
     fun `rate limiting is presented as a wait, never as a user error`() {
-        val copy = SmsFailurePresentation.forCode(SmsTransportFailure.RIL_RATE_LIMITED.persistable)
+        val copy = SmsFailurePresentation.forCode("RIL_RATE_LIMITED")
 
         assertEquals("Too many SMS requests", copy.primary)
         assertTrue(copy.actionHint!!.contains("Wait", ignoreCase = true))
@@ -67,32 +81,23 @@ class SmsFailurePresentationTest {
 
     @Test
     fun `ambiguous outcomes are flagged as duplicate risks`() {
-        for (failure in listOf(
-            SmsTransportFailure.CARRIER_FAILURE_UNKNOWN,
-            SmsTransportFailure.SEND_CALLBACK_TIMEOUT,
-            SmsTransportFailure.MODEM_ERROR
-        )) {
+        for (code in listOf("CARRIER_FAILURE_UNKNOWN", "SEND_CALLBACK_TIMEOUT", "MODEM_FAILURE")) {
             assertTrue(
-                "${failure.persistable} must warn about a duplicate",
-                SmsFailurePresentation.forCode(failure.persistable).duplicateRisk
+                "$code must warn about a duplicate",
+                SmsFailurePresentation.forCode(code).duplicateRisk
             )
         }
-        for (failure in listOf(
-            SmsTransportFailure.NO_SERVICE,
-            SmsTransportFailure.RADIO_OFF,
-            SmsTransportFailure.SIM_UNAVAILABLE,
-            SmsTransportFailure.INVALID_SMSC
-        )) {
+        for (code in listOf("NO_SERVICE", "RADIO_OFF", "SIM_UNAVAILABLE", "INVALID_SMSC")) {
             assertFalse(
-                "${failure.persistable} cannot duplicate anything",
-                SmsFailurePresentation.forCode(failure.persistable).duplicateRisk
+                "$code cannot duplicate anything",
+                SmsFailurePresentation.forCode(code).duplicateRisk
             )
         }
     }
 
     @Test
     fun `transport failure and delivery failure read differently`() {
-        val transport = SmsFailurePresentation.forCode(SmsTransportFailure.NETWORK_REJECTED.persistable)
+        val transport = SmsFailurePresentation.forCode("NETWORK_REJECTED")
         val delivery = SmsFailurePresentation.deliveryFailedCopy(deliveryStatus = 0x40)
 
         assertTrue(transport.primary.contains("rejected", ignoreCase = true))
@@ -103,7 +108,7 @@ class SmsFailurePresentationTest {
 
     @Test
     fun `a missing delivery report is never presented as a failed send`() {
-        val copy = SmsFailurePresentation.forCode(SmsTransportFailure.DELIVERY_UNKNOWN.persistable)
+        val copy = SmsFailurePresentation.forCode("DELIVERY_UNKNOWN")
 
         assertEquals("Sent · Delivery unknown", copy.primary)
         assertTrue(copy.detail!!.contains("never confirmed delivery"))
@@ -113,7 +118,7 @@ class SmsFailurePresentationTest {
 
     @Test
     fun `a send timeout is presented as unknown, not as failure`() {
-        val copy = SmsFailurePresentation.forCode(SmsTransportFailure.SEND_CALLBACK_TIMEOUT.persistable)
+        val copy = SmsFailurePresentation.forCode("SEND_CALLBACK_TIMEOUT")
 
         assertEquals("Send result is unknown", copy.primary)
         assertTrue(copy.detail!!.contains("did not confirm"))
@@ -131,21 +136,43 @@ class SmsFailurePresentationTest {
     @Test
     fun `presentation can be derived straight from a verdict`() {
         val verdict = SmsTransportClassifier.classify(SmsManager.RESULT_RIL_REQUEST_RATE_LIMITED)
-        val copy = SmsFailurePresentation.forVerdict(verdict)
 
-        assertEquals("Too many SMS requests", copy!!.primary)
-        assertEquals(null, SmsFailurePresentation.forVerdict(SmsTransportClassifier.classify(android.app.Activity.RESULT_OK)))
+        assertEquals("Too many SMS requests", SmsFailurePresentation.forVerdict(verdict)!!.primary)
+        assertEquals(
+            null,
+            SmsFailurePresentation.forVerdict(SmsTransportClassifier.classify(android.app.Activity.RESULT_OK))
+        )
     }
 
     @Test
     fun `every transport failure has presentation copy`() {
-        for (failure in SmsTransportFailure.entries) {
-            val copy = SmsFailurePresentation.forCode(failure.persistable)
-            assertTrue("${failure.persistable} needs a primary line", copy.primary.isNotBlank())
+        for (code in PRESENTED_CODES) {
+            val copy = SmsFailurePresentation.forCode(code)
+            assertTrue("$code needs a primary line", copy.primary.isNotBlank())
             assertFalse(
-                "an explicit entry must not fall back to the generic sentence",
+                "$code fell back to the generic sentence",
                 copy.primary == "Message could not be sent"
             )
+        }
+    }
+
+    @Test
+    fun `the classifier's own codes all have copy`() {
+        for (code in listOf(
+            SmsManager.RESULT_ERROR_NO_SERVICE,
+            SmsManager.RESULT_ERROR_RADIO_OFF,
+            SmsManager.RESULT_ERROR_NULL_PDU,
+            SmsManager.RESULT_ERROR_GENERIC_FAILURE,
+            SmsManager.RESULT_ERROR_LIMIT_EXCEEDED,
+            SmsManager.RESULT_RIL_REQUEST_RATE_LIMITED,
+            SmsManager.RESULT_RIL_SMS_SEND_FAIL_RETRY,
+            SmsManager.RESULT_RIL_NETWORK_REJECT,
+            SmsManager.RESULT_RIL_NETWORK_NOT_READY,
+            SmsManager.RESULT_RIL_SIM_ABSENT,
+            SmsManager.RESULT_RIL_INVALID_SMSC_ADDRESS
+        )) {
+            val verdict = SmsTransportClassifier.classify(code)
+            assertNotNull("$code must have copy", SmsFailurePresentation.forVerdict(verdict))
         }
     }
 }

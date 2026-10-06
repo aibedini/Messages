@@ -32,7 +32,7 @@ class SmsTransportClassifierTest {
         val verdict = classify(android.app.Activity.RESULT_OK)
 
         assertTrue(verdict.isSuccess)
-        assertNull(verdict.failure)
+        assertNull(verdict.failureCode)
         assertEquals(SendEvidence.CONFIRMED, verdict.evidence)
         assertEquals(RetrySafety.NOT_APPLICABLE, verdict.retrySafety)
         assertFalse(verdict.shouldThrottle)
@@ -44,7 +44,7 @@ class SmsTransportClassifierTest {
     fun `queue limit exceeded is throttling, not a plain failure`() {
         val verdict = classify(SmsManager.RESULT_ERROR_LIMIT_EXCEEDED)
 
-        assertEquals(SmsTransportFailure.QUEUE_LIMIT_EXCEEDED, verdict.failure)
+        assertEquals("QUEUE_LIMIT_EXCEEDED", verdict.failureCode)
         assertTrue("the gate must open a cooldown", verdict.shouldThrottle)
         assertEquals(RetrySafety.WAIT, verdict.retrySafety)
         assertEquals(SendEvidence.REJECTED, verdict.evidence)
@@ -54,7 +54,7 @@ class SmsTransportClassifierTest {
     fun `RIL rate limited is throttling and keeps its symbolic name`() {
         val verdict = classify(SmsManager.RESULT_RIL_REQUEST_RATE_LIMITED, radioErrorCode = 42)
 
-        assertEquals(SmsTransportFailure.RIL_RATE_LIMITED, verdict.failure)
+        assertEquals("RIL_RATE_LIMITED", verdict.failureCode)
         assertTrue(verdict.shouldThrottle)
         assertEquals(RetrySafety.WAIT, verdict.retrySafety)
         assertEquals("RESULT_RIL_REQUEST_RATE_LIMITED", verdict.resultCodeName)
@@ -74,7 +74,7 @@ class SmsTransportClassifierTest {
     fun `RIL retry required is its own code, not a modem failure`() {
         val verdict = classify(SmsManager.RESULT_RIL_SMS_SEND_FAIL_RETRY)
 
-        assertEquals(SmsTransportFailure.RIL_RETRY_REQUIRED, verdict.failure)
+        assertEquals("RIL_RETRY_REQUIRED", verdict.failureCode)
         assertEquals(SendEvidence.REJECTED, verdict.evidence)
         assertEquals(RetrySafety.WAIT, verdict.retrySafety)
     }
@@ -83,9 +83,9 @@ class SmsTransportClassifierTest {
 
     @Test
     fun `no service, radio off and null pdu are definite failures`() {
-        assertEquals(SmsTransportFailure.NO_SERVICE, classify(SmsManager.RESULT_ERROR_NO_SERVICE).failure)
-        assertEquals(SmsTransportFailure.RADIO_OFF, classify(SmsManager.RESULT_ERROR_RADIO_OFF).failure)
-        assertEquals(SmsTransportFailure.NULL_PDU, classify(SmsManager.RESULT_ERROR_NULL_PDU).failure)
+        assertEquals("NO_SERVICE", classify(SmsManager.RESULT_ERROR_NO_SERVICE).failureCode)
+        assertEquals("RADIO_OFF", classify(SmsManager.RESULT_ERROR_RADIO_OFF).failureCode)
+        assertEquals("NULL_PDU", classify(SmsManager.RESULT_ERROR_NULL_PDU).failureCode)
         for (code in listOf(
             SmsManager.RESULT_ERROR_NO_SERVICE,
             SmsManager.RESULT_ERROR_RADIO_OFF,
@@ -98,18 +98,18 @@ class SmsTransportClassifierTest {
 
     @Test
     fun `SIM, smsc and FDN problems map to their own codes`() {
-        assertEquals(SmsTransportFailure.SIM_UNAVAILABLE, classify(SmsManager.RESULT_RIL_SIM_ABSENT).failure)
+        assertEquals("SIM_UNAVAILABLE", classify(SmsManager.RESULT_RIL_SIM_ABSENT).failureCode)
         assertEquals(
-            SmsTransportFailure.INVALID_SMSC,
-            classify(SmsManager.RESULT_RIL_INVALID_SMSC_ADDRESS).failure
+            "INVALID_SMSC",
+            classify(SmsManager.RESULT_RIL_INVALID_SMSC_ADDRESS).failureCode
         )
         assertEquals(
-            SmsTransportFailure.FDN_RESTRICTED,
-            classify(SmsManager.RESULT_ERROR_FDN_CHECK_FAILURE).failure
+            "FDN_RESTRICTED",
+            classify(SmsManager.RESULT_ERROR_FDN_CHECK_FAILURE).failureCode
         )
         assertEquals(
-            SmsTransportFailure.SHORT_CODE_NOT_ALLOWED,
-            classify(SmsManager.RESULT_ERROR_SHORT_CODE_NOT_ALLOWED).failure
+            "SHORT_CODE_NOT_ALLOWED",
+            classify(SmsManager.RESULT_ERROR_SHORT_CODE_NOT_ALLOWED).failureCode
         )
     }
 
@@ -118,12 +118,12 @@ class SmsTransportClassifierTest {
     @Test
     fun `network reject and network not ready are distinct and wait-worthy`() {
         assertEquals(
-            SmsTransportFailure.NETWORK_REJECTED,
-            classify(SmsManager.RESULT_RIL_NETWORK_REJECT).failure
+            "NETWORK_REJECTED",
+            classify(SmsManager.RESULT_RIL_NETWORK_REJECT).failureCode
         )
         assertEquals(
-            SmsTransportFailure.NETWORK_NOT_READY,
-            classify(SmsManager.RESULT_RIL_NETWORK_NOT_READY).failure
+            "NETWORK_NOT_READY",
+            classify(SmsManager.RESULT_RIL_NETWORK_NOT_READY).failureCode
         )
         assertEquals(RetrySafety.WAIT, classify(SmsManager.RESULT_RIL_NETWORK_REJECT).retrySafety)
     }
@@ -135,8 +135,8 @@ class SmsTransportClassifierTest {
             assertEquals(SendEvidence.AMBIGUOUS, verdict.evidence)
             assertEquals(RetrySafety.POSSIBLE_DUPLICATE, verdict.retrySafety)
         }
-        assertEquals(SmsTransportFailure.MODEM_ERROR, classify(SmsManager.RESULT_RIL_MODEM_ERR).failure)
-        assertEquals(SmsTransportFailure.NETWORK_ERROR, classify(SmsManager.RESULT_RIL_NETWORK_ERR).failure)
+        assertEquals("MODEM_FAILURE", classify(SmsManager.RESULT_RIL_MODEM_ERR).failureCode)
+        assertEquals("NETWORK_ERROR", classify(SmsManager.RESULT_RIL_NETWORK_ERR).failureCode)
     }
 
     // ── the generic result must never become a verdict we do not have ───────
@@ -145,7 +145,7 @@ class SmsTransportClassifierTest {
     fun `GENERIC_FAILURE is ambiguous carrier-unknown, never a definite failure`() {
         val verdict = classify(SmsManager.RESULT_ERROR_GENERIC_FAILURE, radioErrorCode = 34)
 
-        assertEquals(SmsTransportFailure.CARRIER_FAILURE_UNKNOWN, verdict.failure)
+        assertEquals("MODEM_FAILURE", verdict.failureCode)
         assertEquals(SendEvidence.AMBIGUOUS, verdict.evidence)
         assertEquals(RetrySafety.POSSIBLE_DUPLICATE, verdict.retrySafety)
         assertEquals(34, verdict.radioErrorCode)
@@ -155,7 +155,7 @@ class SmsTransportClassifierTest {
     fun `an unrecognised vendor code is ambiguous, not invented`() {
         val verdict = classify(9_999)
 
-        assertEquals(SmsTransportFailure.CARRIER_FAILURE_UNKNOWN, verdict.failure)
+        assertEquals("CARRIER_FAILURE_UNKNOWN", verdict.failureCode)
         assertEquals(SendEvidence.AMBIGUOUS, verdict.evidence)
         assertEquals("UNKNOWN_RESULT_9999", verdict.resultCodeName)
     }
@@ -191,12 +191,39 @@ class SmsTransportClassifierTest {
     }
 
     @Test
-    fun `every failure carries a persistable stable code`() {
-        val codes = SmsTransportFailure.entries.map { it.persistable }
+    fun `the canonical failure vocabulary is complete and stable`() {
+        // ONE taxonomy: the classifier hands back `SmsSendFailure` (SendState.kt), whose `code` is what
+        // the segment ledger persists. There is no second failure enum left to drift against.
+        assertEquals("RIL_RETRY_REQUIRED", classify(SmsManager.RESULT_RIL_SMS_SEND_FAIL_RETRY).failureCode)
+        assertEquals("SEND_CALLBACK_TIMEOUT", SmsSendFailure.SendCallbackTimeout.code)
+        assertEquals("DELIVERY_UNKNOWN", SmsSendFailure.DeliveryUnknown.code)
+        assertEquals("QUEUE_LIMIT_EXCEEDED", SmsSendFailure.QueueLimitExceeded.code)
+        assertEquals("RIL_RATE_LIMITED", SmsSendFailure.RilRateLimited.code)
+        assertEquals("NETWORK_REJECTED", SmsSendFailure.NetworkRejected.code)
+        assertEquals("INVALID_SMSC", SmsSendFailure.InvalidSmsc.code)
+        assertEquals("NO_SERVICE", SmsSendFailure.NoService.code)
+        assertEquals("MODEM_FAILURE", classify(SmsManager.RESULT_RIL_MODEM_ERR).failureCode)
+    }
 
-        assertEquals(codes.size, codes.toSet().size)
-        assertTrue(codes.all { it.isNotBlank() && it == it.uppercase() })
-        assertNotNull(SmsTransportFailure.SEND_CALLBACK_TIMEOUT.persistable)
-        assertNotNull(SmsTransportFailure.DELIVERY_UNKNOWN.persistable)
+    @Test
+    fun `the legacy policy and the classifier agree about every code they both judge`() {
+        for (code in listOf(
+            android.app.Activity.RESULT_OK,
+            SmsManager.RESULT_ERROR_NO_SERVICE,
+            SmsManager.RESULT_ERROR_RADIO_OFF,
+            SmsManager.RESULT_ERROR_NULL_PDU,
+            SmsManager.RESULT_ERROR_GENERIC_FAILURE,
+            SmsManager.RESULT_ERROR_LIMIT_EXCEEDED,
+            SmsManager.RESULT_RIL_REQUEST_RATE_LIMITED,
+            SmsManager.RESULT_RIL_SMS_SEND_FAIL_RETRY,
+            SmsManager.RESULT_RIL_SIM_ABSENT
+        )) {
+            val expected = when (classify(code).evidence) {
+                SendEvidence.CONFIRMED -> SentPartVerdict.CONFIRMED
+                SendEvidence.REJECTED -> SentPartVerdict.FAILED
+                SendEvidence.AMBIGUOUS -> SentPartVerdict.UNCONFIRMED
+            }
+            assertEquals("policy disagrees on $code", expected, SmsSendPolicy.classifySentResult(code))
+        }
     }
 }

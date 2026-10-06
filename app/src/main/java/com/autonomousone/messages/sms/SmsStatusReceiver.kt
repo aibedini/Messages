@@ -130,6 +130,22 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 SentPartVerdict.UNCONFIRMED -> SegmentCallbackState.AMBIGUOUS
                 SentPartVerdict.FAILED -> SegmentCallbackState.FAILED
             }
+            // ── the transport gate learns the truth from THIS callback ───────
+            //
+            // Not from "SmsManager did not throw". A rate limit opens the SIM's cooldown here; a
+            // confirmed success is the only thing that clears it. The radio's own errorCode is passed
+            // through so the durable log carries both numbers (see §9 of the mission).
+            SmsTransportGate.onSentCallback(
+                subscriptionId = subscriptionId,
+                verdict = SmsTransportClassifier.classify(
+                    callbackResultCode,
+                    intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
+                ),
+                rowId = rowId,
+                partIndex = partIndex,
+                partCount = partCount,
+                errorCode = intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
+            )
             // Only a stable CODE is persisted; user-facing text is generated at
             // render time, so no translated string is ever stored as state.
             val failureCode = when (verdict) {

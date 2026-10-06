@@ -60,6 +60,93 @@ sealed interface SmsSendFailure {
     /** Per-hour / per-window send limit enforced by telephony. */
     data object LimitExceeded : SmsSendFailure { override val code = "LIMIT_EXCEEDED" }
 
+    // ── the rate-limit family (the codes the reliability incident is made of) ──
+    //
+    // These already existed as raw ints and were logged as unknowns (`CUSTOM_106`). They are the
+    // difference between "the radio asked us to slow down" and "the carrier refused the message",
+    // which is the whole diagnosis this phone needed.
+
+    /** `RESULT_ERROR_LIMIT_EXCEEDED`: Android's own SMS queue refused the submit. */
+    data object QueueLimitExceeded : SmsSendFailure { override val code = "QUEUE_LIMIT_EXCEEDED" }
+
+    /** `RESULT_RIL_REQUEST_RATE_LIMITED`: the RADIO rejected the request as too frequent. */
+    data object RilRateLimited : SmsSendFailure { override val code = "RIL_RATE_LIMITED" }
+
+    /** `RESULT_RIL_SMS_SEND_FAIL_RETRY`: the radio explicitly asks for a retry. */
+    data object RilRetryRequired : SmsSendFailure { override val code = "RIL_RETRY_REQUIRED" }
+
+    // ── network / carrier level ──────────────────────────────────────────────
+
+    /** The network or carrier refused the message. NEVER inferred as a balance problem. */
+    data object NetworkRejected : SmsSendFailure { override val code = "NETWORK_REJECTED" }
+
+    /** The network is not registered/ready for SMS yet. */
+    data object NetworkNotReady : SmsSendFailure { override val code = "NETWORK_NOT_READY" }
+
+    /** A network-level error of unknown acceptance. */
+    data object NetworkError : SmsSendFailure { override val code = "NETWORK_ERROR" }
+
+    /** The carrier refused, with no portable Android code explaining why. */
+    data object CarrierRejected : SmsSendFailure { override val code = "CARRIER_REJECTED" }
+
+    /**
+     * A generic failure / vendor code: we cannot tell whether the SMSC took the message.
+     *
+     * Distinct from [CarrierRejected] because the retry advice differs — nothing here proves the
+     * message was refused, so a resend could duplicate it.
+     */
+    data object CarrierFailureUnknown : SmsSendFailure { override val code = "CARRIER_FAILURE_UNKNOWN" }
+
+    // ── radio / modem / system ──────────────────────────────────────────────
+
+    /** Radio present but not available to telephony right now. */
+    data object RadioUnavailable : SmsSendFailure { override val code = "RADIO_UNAVAILABLE" }
+
+    /** The modem is in a state that cannot accept a submit. */
+    data object ModemInvalidState : SmsSendFailure { override val code = "MODEM_INVALID_STATE" }
+
+    /** A phone-side system/internal failure while submitting. */
+    data object SystemError : SmsSendFailure { override val code = "SYSTEM_ERROR" }
+
+    /** Telephony ran out of memory/resources for the request. */
+    data object NoResources : SmsSendFailure { override val code = "NO_RESOURCES" }
+
+    // ── content / policy ────────────────────────────────────────────────────
+
+    /** The PDU format was rejected for this destination/network. */
+    data object InvalidSmsFormat : SmsSendFailure { override val code = "INVALID_SMS_FORMAT" }
+
+    /** The body could not be encoded for this network. */
+    data object EncodingError : SmsSendFailure { override val code = "ENCODING_ERROR" }
+
+    /** Short codes are not permitted on this SIM. */
+    data object ShortCodeNotAllowed : SmsSendFailure { override val code = "SHORT_CODE_NOT_ALLOWED" }
+
+    /** Telephony refused to perform the operation at all. */
+    data object OperationNotAllowed : SmsSendFailure { override val code = "OPERATION_NOT_ALLOWED" }
+
+    /** The carrier has barred this line from sending. */
+    data object AccessBarred : SmsSendFailure { override val code = "ACCESS_BARRED" }
+
+    /** The SIM cannot send SMS while a call is active. */
+    data object BlockedDueToCall : SmsSendFailure { override val code = "BLOCKED_DUE_TO_CALL" }
+
+    // ── evidence that never arrived ─────────────────────────────────────────
+
+    /**
+     * SUBMITTED but no SENT callback arrived in time.
+     *
+     * Deliberately NOT a failure: we cannot prove what happened, and a blind retry could duplicate a
+     * message that really left the phone.
+     */
+    data object SendCallbackTimeout : SmsSendFailure { override val code = "SEND_CALLBACK_TIMEOUT" }
+
+    /** SENT confirmed, but no delivery report arrived. Not a failure either. */
+    data object DeliveryReportTimeout : SmsSendFailure { override val code = "DELIVERY_REPORT_TIMEOUT" }
+
+    /** SENT confirmed, delivery evidence never became conclusive. */
+    data object DeliveryUnknown : SmsSendFailure { override val code = "DELIVERY_UNKNOWN" }
+
     /** The API call itself threw — nothing reached telephony. */
     data class DispatchRejected(val errorCode: Int?) : SmsSendFailure {
         override val code = "DISPATCH_REJECTED"
@@ -103,28 +190,27 @@ object SmsSendPolicy {
     const val RESULT_OK_CODE: Int = Activity.RESULT_OK
 
     fun classifySentResult(resultCode: Int, errorCode: Int? = null): SentPartVerdict =
-        when (resultCode) {
-            RESULT_OK_CODE -> SentPartVerdict.CONFIRMED
-            SmsManager.RESULT_ERROR_NO_SERVICE,
-            SmsManager.RESULT_ERROR_RADIO_OFF,
-            SmsManager.RESULT_ERROR_NULL_PDU -> SentPartVerdict.FAILED
-            else -> SentPartVerdict.UNCONFIRMED
+        when (SmsTransportClassifier.classify(resultCode, errorCode).evidence) {
+            SendEvidence.CONFIRMED -> SentPartVerdict.CONFIRMED
+            SendEvidence.REJECTED -> SentPartVerdict.FAILED
+            SendEvidence.AMBIGUOUS -> SentPartVerdict.UNCONFIRMED
         }
 
     /**
      * Typed reason for a part, or null when the part is confirmed (or merely
      * ambiguous — ambiguity is a STATE, not a failure reason).
+     *
+     * Single source: [SmsTransportClassifier] owns the result-code interpretation (including the whole
+     * API 30+ RIL family), so this cannot drift from what the diagnostics log and the transport gate
+     * believe about the same code.
      */
-    fun hardFailure(resultCode: Int, errorCode: Int? = null): SmsSendFailure? =
-        when (resultCode) {
-            RESULT_OK_CODE -> null
-            SmsManager.RESULT_ERROR_NO_SERVICE -> SmsSendFailure.NoService
-            SmsManager.RESULT_ERROR_RADIO_OFF -> SmsSendFailure.RadioOff
-            SmsManager.RESULT_ERROR_NULL_PDU -> SmsSendFailure.NullPdu
-            else -> null
-        }
+    fun hardFailure(resultCode: Int, errorCode: Int? = null): SmsSendFailure? {
+        val verdict = SmsTransportClassifier.classify(resultCode, errorCode)
+        return if (verdict.evidence == SendEvidence.REJECTED) verdict.failure else null
+    }
 
     /** Reason recorded for an ambiguous part, for diagnosis only. */
     fun ambiguousReason(resultCode: Int, errorCode: Int? = null): SmsSendFailure =
-        SmsSendFailure.ModemFailure(resultCode, errorCode)
+        SmsTransportClassifier.classify(resultCode, errorCode).failure
+            ?: SmsSendFailure.ModemFailure(resultCode, errorCode)
 }
