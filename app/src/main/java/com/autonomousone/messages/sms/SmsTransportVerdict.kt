@@ -65,6 +65,47 @@ data class SmsTransportVerdict(
 object SmsTransportClassifier {
 
     /**
+     * The inverse lookup: a PERSISTED [SmsSendFailure.code] back to what kind of evidence it was.
+     *
+     * Durable storage keeps the code, not the enum instance, and the UI/projection must be able to tell
+     * a definite rejection ("Not sent") from an ambiguous one ("Send status unknown") after a restart.
+     * Kept beside [classify] so the two cannot drift.
+     */
+    private val EVIDENCE_BY_CODE: Map<String, SendEvidence> = buildMap {
+        // definite, pre-acceptance refusals
+        for (failure in listOf(
+            SmsSendFailure.NoService, SmsSendFailure.RadioOff, SmsSendFailure.RadioUnavailable,
+            SmsSendFailure.NullPdu, SmsSendFailure.SimUnavailable,
+            SmsSendFailure.NoDefaultSubscription, SmsSendFailure.InvalidSmsc,
+            SmsSendFailure.InvalidDestination, SmsSendFailure.FdnRestricted,
+            SmsSendFailure.ShortCodeNotAllowed, SmsSendFailure.QueueLimitExceeded,
+            SmsSendFailure.RilRateLimited, SmsSendFailure.RilRetryRequired,
+            SmsSendFailure.OperationNotAllowed, SmsSendFailure.AccessBarred,
+            SmsSendFailure.BlockedDueToCall, SmsSendFailure.InvalidSmsFormat,
+            SmsSendFailure.EncodingError, SmsSendFailure.NoResources,
+            SmsSendFailure.CarrierRejected, SmsSendFailure.LimitExceeded,
+            SmsSendFailure.NetworkRejected, SmsSendFailure.NetworkNotReady
+        )) {
+            put(failure.code, SendEvidence.REJECTED)
+        }
+        // inconclusive: the message may have left the phone
+        for (failure in listOf(
+            SmsSendFailure.CarrierFailureUnknown, SmsSendFailure.NetworkError,
+            SmsSendFailure.ModemInvalidState, SmsSendFailure.SystemError,
+            SmsSendFailure.SendCallbackTimeout, SmsSendFailure.DeliveryReportTimeout,
+            SmsSendFailure.DeliveryUnknown
+        )) {
+            put(failure.code, SendEvidence.AMBIGUOUS)
+        }
+        // the parameterised modem failure keeps its pre-existing code
+        put(SmsSendFailure.ModemFailure(0, null).code, SendEvidence.AMBIGUOUS)
+        put(SmsSendFailure.DispatchRejected(null).code, SendEvidence.AMBIGUOUS)
+    }
+
+    /** What kind of evidence a persisted failure code represents, or null when unknown. */
+    fun evidenceForCode(code: String?): SendEvidence? = code?.let { EVIDENCE_BY_CODE[it] }
+
+    /**
      * Classify a SENT-callback result code, with the optional vendor `errorCode` the platform includes
      * for generic/RIL failures.
      *
