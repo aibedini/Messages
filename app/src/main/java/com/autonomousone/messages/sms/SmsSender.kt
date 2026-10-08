@@ -10,6 +10,7 @@ import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
 import android.widget.Toast
+import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.data.SegmentCallbackState
@@ -561,6 +562,10 @@ class SmsSender(
             // submission fact the Home counter reads; the SENT callback only
             // annotates the row and can never move or remove it.
             recordSegmentSubmissions(sentId, parts.size, recordedSubId)
+            // The submit reached the radio, so the honest durable verdict is "awaiting evidence".
+            // Written AFTER the native call, never before: a crash mid-submit must leave no fabricated
+            // outcome, and SENDING is exactly the state that says "we do not know yet".
+            recordSendState(sentId, SendTransportState.SENT_PENDING)
 
             Log.d(
                 TAG,
@@ -581,6 +586,14 @@ class SmsSender(
             // typed reason (and the provider STATUS_FAILED above) so the bubble
             // stays Failed across restarts instead of silently looking queued.
             recordDispatchRejection(sentId, attemptedParts, recordedSubId, SmsSendFailure.DispatchRejected(null), e)
+            // A synchronous throw means the API call itself failed, so the message did NOT leave the
+            // device. Recording that verdict is what keeps this bubble "Not sent" across a restart
+            // instead of degrading to "Sending…" the moment the process dies.
+            recordSendState(
+                sentId,
+                SendTransportState.NOT_SENT,
+                failureCode = SmsSendFailure.DispatchRejected(null).code
+            )
             if (showToast) {
                 Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
             }
@@ -613,6 +626,7 @@ class SmsSender(
         // One part is the floor for a ledger row: the message was never even split, so there is no
         // modem part count to record, and 0 would make the ledger write a no-op.
         recordDispatchRejection(sentId, 1, actualSubId, SmsSendFailure.SimUnavailable, null)
+        recordSendState(sentId, SendTransportState.NOT_SENT, failureCode = SmsSendFailure.SimUnavailable.code)
         DiagnosticLog.event(
             "SMS_SEND",
             "sim-mismatch-refused row=$sentId phone=${DiagnosticLog.phoneToken(phone)} " +
@@ -646,6 +660,11 @@ class SmsSender(
     private fun rejectForNoDefaultSubscription(sentId: Long, phone: String, showToast: Boolean): Boolean {
         updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
         recordDispatchRejection(sentId, 1, null, SmsSendFailure.NoDefaultSubscription, null)
+        recordSendState(
+            sentId,
+            SendTransportState.NOT_SENT,
+            failureCode = SmsSendFailure.NoDefaultSubscription.code
+        )
         DiagnosticLog.event(
             "SMS_SEND",
             "no-default-subscription-refused row=$sentId phone=${DiagnosticLog.phoneToken(phone)}"
@@ -873,6 +892,57 @@ class SmsSender(
             Log.d(TAG, "SMS status updated: id=$rowId status=$status")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to persist SMS status for id=$rowId", e)
+        }
+    }
+
+    /**
+     * Persists the APP-OWNED transport verdict for one outgoing message.
+     *
+     * ## Why this is not [updateStatus]
+     *
+     * [updateStatus] writes `Telephony.Sms.STATUS`, which is the provider's own delivery-state field —
+     * and it cannot express what actually happened. `STATUS_PENDING` (64) means BOTH "submitted, no
+     * callback yet" and "a callback came back ambiguous", so a restart cannot tell a message that is
+     * still in flight from one whose fate is genuinely unknown. This method records which of those it
+     * was, so the bubble survives process death telling the truth.
+     *
+     * Transport and delivery stay separate: this writes the SUBMIT half only, and the DELIVERY half
+     * remains `STATUS`/`dateSent`, where the provider is the authority.
+     *
+     * A missing mirror row is NOT an error. The provider row is inserted by the platform and reaches
+     * the local mirror through the sync engine, so a verdict recorded microseconds after submission
+     * can legitimately find no row yet; the `send_segments` ledger already holds the per-part evidence
+     * for exactly that window.
+     */
+    private fun recordSendState(
+        rowId: Long,
+        state: SendTransportState,
+        failureCode: String? = null,
+        resultCode: Int? = null,
+        radioErrorCode: Int? = null
+    ) {
+        if (rowId <= 0L) return
+        ledgerScope.launch {
+            try {
+                val updated = MessagesDatabase.get(context.applicationContext)
+                    .messageDao()
+                    .recordSendState(
+                        source = MessageEntity.SOURCE_SMS,
+                        providerId = rowId,
+                        state = state.name,
+                        failureCode = failureCode,
+                        resultCode = resultCode,
+                        radioErrorCode = radioErrorCode,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                DiagnosticLog.event(
+                    "SMS_STATE",
+                    "row=$rowId sendTransportState=${state.name} code=${failureCode ?: "none"} " +
+                        "mirrored=${updated > 0}"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "send-state write failed id=$rowId state=${state.name}", e)
+            }
         }
     }
 

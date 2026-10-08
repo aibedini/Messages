@@ -140,6 +140,15 @@ object SendSegmentSql {
         "SELECT `callbackState` FROM `send_segments` " +
             "WHERE `rowId` = :rowId ORDER BY `partIndex`"
 
+    /**
+     * Parts of this message with a real submission fact. `submittedAt` is written at most once, by the
+     * native path, and only when the API call was accepted — so this counts what actually reached the
+     * radio, never what was merely attempted.
+     */
+    const val COUNT_SUBMITTED_PARTS_FOR_ROW =
+        "SELECT COUNT(*) FROM `send_segments` " +
+            "WHERE `rowId` = :rowId AND `submittedAt` IS NOT NULL"
+
     /** The Home counter's source of truth: immutable submissions in the window. */
     const val COUNT_SUBMITTED_BETWEEN =
         "SELECT COUNT(*) FROM `send_segments` " +
@@ -209,6 +218,18 @@ interface SendSegmentDao {
     /** Per-part verdicts for one message, ordered by part index. */
     @Query(SendSegmentSql.CALLBACK_STATES_FOR_ROW)
     suspend fun callbackStatesForRow(rowId: Long): List<SegmentCallbackState>
+
+    /**
+     * How many parts of this message have a NON-NULL `submittedAt` — the immutable submission fact.
+     *
+     * This is what separates "the radio took it and no callback has arrived" from "the submit was
+     * refused and the refusal is recorded": both can present as a single PENDING part, and only the
+     * submission fact tells them apart. A callback-first row (submittedAt still null, its submission
+     * write not yet committed) counts as not-yet-submitted here, which is why the transport verdict
+     * treats "any callback reported" as stronger evidence than this count.
+     */
+    @Query(SendSegmentSql.COUNT_SUBMITTED_PARTS_FOR_ROW)
+    suspend fun submittedPartsForRow(rowId: Long): Int
 
     // ── Counter ─────────────────────────────────────────────────────────────
 

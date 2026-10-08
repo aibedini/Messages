@@ -88,7 +88,7 @@ import com.autonomousone.messages.BuildConfig
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
         PendingInboundSmsEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -569,10 +569,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 24
+        const val CURRENT_SCHEMA_VERSION = 25
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 23
+        const val PREVIOUS_SCHEMA_VERSION = 24
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -808,6 +808,64 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v24 -> v25: the sticky per-conversation SIM preference AND the durable app-owned send state.
+         *
+         * ONE migration for one release. A schema version is a property of the build, not of a task
+         * list: two migrations for one unreleased version would let an install sit at a version no
+         * build ever ran. (v25 was never pushed, tagged, released or run on a device — checked before
+         * this was written — so the honest fix is to complete it, not to add a 25 -> 26 on top.)
+         *
+         * Everything here is additive and nullable; no table is rebuilt and no row is rewritten.
+         *
+         * ── Sticky SIM (conversation-owned) ──
+         *
+         * `preferredSimRef` is nullable with NO default, which is what makes the upgrade honest: every
+         * existing conversation migrates to "no preference" and follows the phone's default line. The
+         * alternative — inferring a preference from the newest outbound message — would invent a user
+         * decision that was never made, and would then *pin* a conversation to a line the user never
+         * chose. A wrong sticky SIM sends silently on the wrong line, so guessing is worse than not
+         * knowing. The snapshot columns are UI-only and start null WITH the authority, so a migrated
+         * row can never render "SIM 1 · MCI" while having no actual preference.
+         *
+         * ── Durable send state (message-owned) ──
+         *
+         * Additive and nullable, so every message that already exists migrates to "no app-owned
+         * transport state" and renders exactly as it does today. A default would have to invent a
+         * verdict, and an invented "Sent" is the false-success bug these columns exist to end.
+         *
+         * These are separate columns ON PURPOSE and do NOT reuse the provider's `status`: Telephony's
+         * `STATUS_PENDING` means both "still collecting callbacks" and "an ambiguous result arrived",
+         * and collapsing those two across a restart is exactly the surviving-ambiguity bug mission §2
+         * requires fixed. Transport state and delivery state also stay separate — the delivery half
+         * continues to live in `status`/`dateSent`, where the provider is the authority.
+         *
+         * `conversations.lastMessageUiState` is the denormalized newest-message state so Home can
+         * render a whole list in one query instead of a per-row probe.
+         */
+        internal val UPGRADE_TO_V25_SQL: List<String> = listOf(
+            // Sticky per-conversation SIM (conversation-owned metadata).
+            "ALTER TABLE `conversation_preferences` ADD COLUMN `preferredSimRef` TEXT",
+            "ALTER TABLE `conversation_preferences` ADD COLUMN `preferredSimSlotIndex` INTEGER",
+            "ALTER TABLE `conversation_preferences` ADD COLUMN `preferredSimDisplayName` TEXT",
+            "ALTER TABLE `conversation_preferences` ADD COLUMN `preferredSimCarrierName` TEXT",
+            "ALTER TABLE `conversation_preferences` ADD COLUMN `preferredSimUpdatedAt` INTEGER NOT NULL DEFAULT 0",
+            // Durable app-owned send state (message-owned).
+            "ALTER TABLE `messages` ADD COLUMN `sendTransportState` TEXT",
+            "ALTER TABLE `messages` ADD COLUMN `sendFailureCode` TEXT",
+            "ALTER TABLE `messages` ADD COLUMN `sendResultCode` INTEGER",
+            "ALTER TABLE `messages` ADD COLUMN `sendRadioErrorCode` INTEGER",
+            "ALTER TABLE `messages` ADD COLUMN `sendStateUpdatedAt` INTEGER NOT NULL DEFAULT 0",
+            // Denormalized newest-message UI state (message-owned projection).
+            "ALTER TABLE `conversations` ADD COLUMN `lastMessageUiState` TEXT"
+        )
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V25_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -819,7 +877,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

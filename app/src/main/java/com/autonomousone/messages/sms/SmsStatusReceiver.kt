@@ -309,6 +309,20 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
         updateProvider(context, rowId, nextStatus, delivered && nextStatus == Telephony.Sms.STATUS_COMPLETE)
         DiagnosticLog.event("SMS_STATE", "row=$rowId providerStatus=$nextStatus evidence=$deliveryEvidence")
+        // ── APP-OWNED TRANSPORT VERDICT ─────────────────────────────────────
+        //
+        // The provider status above cannot carry this: STATUS_PENDING means both "still collecting
+        // callbacks" and "an ambiguous result arrived", and a restart that cannot tell them apart
+        // reports a possibly-sent message as still in progress (or worse, as sent). This is the write
+        // that makes an ambiguous outcome survive process death and reboot.
+        recordTransportState(
+            context = context,
+            ledgerDao = ledgerDao,
+            rowId = rowId,
+            partCount = partCount,
+            callbackResultCode = callbackResultCode,
+            radioErrorCode = intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
+        )
         // One line per callback, so the durable log shows the carrier evidence arriving even when it
         // does not (yet) complete the aggregate verdict — a missing DLR is otherwise invisible.
         DiagnosticLog.event(
@@ -325,6 +339,79 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 providerId = rowId
             )
         )
+    }
+
+    /**
+     * Persists the APP-OWNED transport verdict for this message from the durable ledger.
+     *
+     * Reads the same `send_segments` rows the provider-status derivation reads, plus the immutable
+     * submission fact, and then writes ONE verdict onto the mirror row. Doing it here — rather than
+     * deriving it inside each UI surface — is what keeps the bubble, the conversation list and the
+     * details screen telling the same story about the same message.
+     *
+     * Never throws: a status broadcast must not fail because a bookkeeping write did. A missing
+     * verdict leaves the previous one in place, which is the conservative direction — the ledger still
+     * holds the truth and the next callback (or the next read) re-derives it.
+     */
+    private suspend fun recordTransportState(
+        context: android.content.Context,
+        ledgerDao: com.autonomousone.messages.data.SendSegmentDao,
+        rowId: Long,
+        partCount: Int,
+        callbackResultCode: Int,
+        radioErrorCode: Int?
+    ) {
+        try {
+            val states = ledgerDao.callbackStatesForRow(rowId)
+            val submittedParts = ledgerDao.submittedPartsForRow(rowId)
+            val verdicts = states.map { state ->
+                when (state) {
+                    SegmentCallbackState.CONFIRMED -> SegmentCallbackVerdict.CONFIRMED
+                    SegmentCallbackState.AMBIGUOUS -> SegmentCallbackVerdict.AMBIGUOUS
+                    SegmentCallbackState.FAILED -> SegmentCallbackVerdict.FAILED
+                    SegmentCallbackState.PENDING -> SegmentCallbackVerdict.PENDING
+                }
+            }
+            // The most severe recorded cause, so the "Not sent" detail has a reason. A confirmed part
+            // contributes nothing; an ambiguous or failed one names why.
+            val failureCode = states.indices
+                .mapNotNull { index -> states[index] to index }
+                .firstOrNull { (state, _) ->
+                    state == SegmentCallbackState.FAILED || state == SegmentCallbackState.AMBIGUOUS
+                }
+                ?.let { (state, _) ->
+                    if (state == SegmentCallbackState.FAILED) {
+                        SmsSendPolicy.hardFailure(callbackResultCode)?.code
+                            ?: SmsSendFailure.CarrierRejected.code
+                    } else {
+                        SmsSendPolicy.ambiguousReason(callbackResultCode).code
+                    }
+                }
+            val transport = resolveSendTransportState(
+                callbackStates = verdicts,
+                submittedPartsCount = submittedParts,
+                partCount = partCount,
+                failureCode = failureCode
+            )
+            val updated = MessagesDatabase.get(context.applicationContext)
+                .messageDao()
+                .recordSendState(
+                    source = MessageEntity.SOURCE_SMS,
+                    providerId = rowId,
+                    state = transport.name,
+                    failureCode = failureCode,
+                    resultCode = callbackResultCode,
+                    radioErrorCode = radioErrorCode,
+                    updatedAt = System.currentTimeMillis()
+                )
+            DiagnosticLog.event(
+                "SMS_STATE",
+                "row=$rowId sendTransportState=${transport.name} code=${failureCode ?: "none"} " +
+                    "parts=${verdicts.size} submitted=$submittedParts mirrored=${updated > 0}"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "transport-state write failed row=$rowId", e)
+        }
     }
 
     /** Human-readable name for a SmsManager result code (diagnostics only). */

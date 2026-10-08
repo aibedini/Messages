@@ -1058,7 +1058,9 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     val transition = classifyTransition(old, entity)
                     if (transition == ProviderTransition.UNCHANGED) continue
 
-                    dao.upsertAll(listOf(entity))
+                    // App-owned send state must survive the mirror write: the provider stores no such
+                    // column, so this entity carries defaults that would otherwise erase a real outcome.
+                    MessageSendStatePreserver.upsertPreservingSendState(dao, listOf(entity))
                     touched += entity.threadId
                     transitions += transition to entity
                     // FEATURE 12: collected for classification AFTER the commit.

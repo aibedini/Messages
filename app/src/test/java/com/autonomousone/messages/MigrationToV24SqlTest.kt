@@ -108,11 +108,13 @@ class MigrationToV24SqlTest {
     // ── Structural pinning ───────────────────────────────────────────────────
 
     @Test
-    fun `migration declares the 23 to 24 boundary and is the current version`() {
+    fun `migration declares the 23 to 24 boundary`() {
         assertEquals(23, MessagesDatabase.MIGRATION_23_24.startVersion)
         assertEquals(24, MessagesDatabase.MIGRATION_23_24.endVersion)
-        assertEquals(24, MessagesDatabase.CURRENT_SCHEMA_VERSION)
-        assertEquals(23, MessagesDatabase.PREVIOUS_SCHEMA_VERSION)
+        // The GLOBAL `CURRENT_SCHEMA_VERSION` is deliberately NOT asserted here: it moves with every
+        // later migration (the same reasoning as MigrationToV19SqlTest). Pinning it in a historical
+        // migration's test makes that test fail for a reason that has nothing to do with v24 — the
+        // current version is owned by the newest migration's test.
     }
 
     @Test

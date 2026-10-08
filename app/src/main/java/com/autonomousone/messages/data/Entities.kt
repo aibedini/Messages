@@ -59,7 +59,41 @@ data class MessageEntity(
     val dateSent: Long = 0,
     val read: Boolean,
     /** Sync bookkeeping. */
-    val syncState: String = SYNC_STATE_SYNCED
+    val syncState: String = SYNC_STATE_SYNCED,
+    /**
+     * APP-OWNED transport verdict for an outgoing message — a [com.autonomousone.messages.sms
+     * .SendTransportState] name, or null for a row that never went through this app's transport path
+     * (inbound, or historical).
+     *
+     * Additive and NULLABLE on purpose: every message that already exists migrates to "no app-owned
+     * transport state", which the presentation mapper renders exactly as it does today. A default
+     * would have to invent a verdict, and an invented "Sent" is the false-success bug this field
+     * exists to end.
+     *
+     * DELIBERATELY SEPARATE from [status]: `Telephony.Sms.STATUS_PENDING` means both "still waiting"
+     * and "ambiguous result received", and those must stay distinguishable across a restart.
+     */
+    val sendTransportState: String? = null,
+    /**
+     * Stable [com.autonomousone.messages.sms.SmsSendFailure.code] for the verdict above, or null.
+     *
+     * A CODE, never translated UI text, so the reason survives process death, reboot and a locale
+     * change and is turned into copy at render time.
+     */
+    val sendFailureCode: String? = null,
+    /** Raw SENT-callback result code, for the diagnostics section. Diagnostic only. */
+    val sendResultCode: Int? = null,
+    /** Raw SENT-callback radio error code, for the diagnostics section. Diagnostic only. */
+    val sendRadioErrorCode: Int? = null,
+    /**
+     * Epoch millis at which [sendTransportState] last changed. 0 = never.
+     *
+     * `DEFAULT 0` is declared because the column is NOT NULL: adding a NOT NULL column to an existing
+     * table requires a default, and Room validates the on-disk default against this declaration, so
+     * the two must agree exactly or every upgraded install fails to open.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val sendStateUpdatedAt: Long = 0L
 ) {
     companion object {
         const val SOURCE_SMS = "sms"
@@ -122,7 +156,22 @@ data class ConversationEntity(
      *  render the "You:" marker without an O(N) probe. v6. */
     val lastMessageType: Int = 1,
     val pinned: Boolean = false,
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    /**
+     * The newest message's app-owned UI state, as a [com.autonomousone.messages.sms.SmsUiState] name,
+     * or null when it needs no attention (success states, inbound, or a row with no app state).
+     *
+     * Denormalized onto the conversation so Home can render "⚠ Not sent · snippet" for a whole list
+     * without a per-row probe into `send_segments` and `messages` — the N+1 shape this projection
+     * exists to avoid.
+     *
+     * MESSAGE-OWNED, not conversation-owned: it is recomputed from the newest message on every
+     * projection, exactly like [snippet] and [lastMessageDate]. It must therefore never be carried
+     * forward blindly by a rebuild — a stale "Not sent" after a newer incoming message would be a
+     * visible lie, and `conversationSummary` returns null for success states so a recovered send
+     * clears it.
+     */
+    val lastMessageUiState: String? = null
 )
 
 /**

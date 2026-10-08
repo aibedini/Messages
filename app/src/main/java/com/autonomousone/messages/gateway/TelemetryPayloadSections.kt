@@ -30,6 +30,19 @@ object TelemetryPayloadSections {
     /**
      * `smsSubscriptions`, from a FRESH discovery.
      *
+     * ## What a remote reader gets, and what it must never get
+     *
+     * Each line carries its opaque `simRef` — the only SIM identifier that may cross this boundary —
+     * plus display fields and liveness flags. **No ICCID, no IMSI and no SIM serial**, because those
+     * are privileged identifiers that this app neither needs nor asks for (mission §28).
+     *
+     * `subscriptionId` is deliberately **not** published either. It is Android-local authority: it is
+     * reassigned as SIMs are swapped, so a remote party holding one would be addressing a line by a
+     * number whose meaning changes — and it is a tiny enumerable domain. `simRef` is the stable,
+     * keyed replacement (see [com.autonomousone.messages.messaging.SimRef]). `defaultSubscriptionId`
+     * is kept only because it is pre-existing contract for the LOCAL default-line indicator, not a
+     * way to address a SIM.
+     *
      * @param discovery the result of a discovery performed for THIS report. Never a cached list: a
      *   web-requested refresh exists precisely because a cached one can be stale.
      */
@@ -44,7 +57,7 @@ object TelemetryPayloadSections {
         (discovery as? SimDiscoveryResult.Available)?.sims?.forEach { sim ->
             items.put(
                 JSONObject()
-                    .put("subscriptionId", sim.subscriptionId)
+                    .put("simRef", sim.simRef)
                     .put("slotIndex", sim.slotIndex)
                     .put("displayName", safeLabel(sim.displayName))
                     .put("carrierName", safeLabel(sim.carrierName))

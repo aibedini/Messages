@@ -231,6 +231,74 @@ interface MessageDao {
     @Upsert
     suspend fun upsertAll(messages: List<MessageEntity>)
 
+    // ── App-owned send state on a MIRROR row ────────────────────────────────
+    //
+    // `messages` is a mirror of the Telephony provider, and the sync engine rebuilds it with
+    // [upsertAll] — a full-column REPLACE. The durable send verdict is APP-OWNED: the provider stores
+    // no such column, so any entity the sync path constructs carries the Kotlin default (null), and a
+    // blind upsert would silently erase a message's real outcome every time the row was re-read.
+    //
+    // The established pattern in this codebase for app-owned state is a SEPARATE table
+    // (`send_segments`, `message_user_state`). These columns exist on `messages` because the send
+    // path needs them before the mirror row is guaranteed to exist, so instead of a separate table
+    // the mirror-write path is made to preserve them explicitly: read them first, upsert, write them
+    // back. Both halves are required — a preserve that only reads would still lose the value.
+
+    /** Reads the app-owned send state of one mirror row, or null when the row has none yet. */
+    @Query(
+        "SELECT sendTransportState, sendFailureCode, sendResultCode, sendRadioErrorCode, " +
+            "sendStateUpdatedAt FROM messages WHERE source = :source AND providerId = :providerId"
+    )
+    suspend fun sendStateOf(source: String, providerId: Long): MessageSendStateRow?
+
+    /**
+     * Writes back the app-owned send state after a mirror upsert.
+     *
+     * Guarded by the table being non-empty for this key: an UPDATE that matched nothing is a no-op,
+     * which is correct — the next mirror write carries the same defaults.
+     */
+    @Query(
+        "UPDATE messages SET sendTransportState = :state, sendFailureCode = :failureCode, " +
+            "sendResultCode = :resultCode, sendRadioErrorCode = :radioErrorCode, " +
+            "sendStateUpdatedAt = :updatedAt " +
+            "WHERE source = :source AND providerId = :providerId"
+    )
+    suspend fun restoreSendState(
+        source: String,
+        providerId: Long,
+        state: String?,
+        failureCode: String?,
+        resultCode: Int?,
+        radioErrorCode: Int?,
+        updatedAt: Long
+    )
+
+    /**
+     * Records the app-owned transport verdict for one outgoing message.
+     *
+     * An UPDATE rather than an upsert on purpose: the mirror row is created by the sync engine from
+     * the provider's own insert, and fabricating a partial `messages` row here would put a message in
+     * the read model that the provider has not confirmed. A send whose row is not mirrored yet simply
+     * has no row to annotate yet, and the verdict is re-derived from the `send_segments` ledger.
+     *
+     * @return rows updated (0 when the message is not mirrored yet).
+     */
+    @Query(
+        "UPDATE messages SET sendTransportState = :state, sendFailureCode = :failureCode, " +
+            "sendResultCode = :resultCode, sendRadioErrorCode = :radioErrorCode, " +
+            "sendStateUpdatedAt = :updatedAt " +
+            "WHERE source = :source AND providerId = :providerId"
+    )
+    suspend fun recordSendState(
+        source: String,
+        providerId: Long,
+        state: String,
+        failureCode: String?,
+        resultCode: Int?,
+        radioErrorCode: Int?,
+        updatedAt: Long
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOrIgnore(messages: List<MessageEntity>): List<Long>
 
@@ -409,6 +477,63 @@ interface MessageDao {
         """
     )
     suspend fun deleteBySourceAndId(source: String, providerId: Long)
+}
+
+/** Row shape for [MessageDao.sendStateOf] — the app-owned send verdict of one mirror row. */
+data class MessageSendStateRow(
+    val sendTransportState: String?,
+    val sendFailureCode: String?,
+    val sendResultCode: Int?,
+    val sendRadioErrorCode: Int?,
+    val sendStateUpdatedAt: Long
+)
+
+/**
+ * The ONE place that makes a mirror write safe for app-owned send state.
+ *
+ * ## The defect this exists for
+ *
+ * `messages` is a mirror of the Telephony provider, rebuilt with a full-column upsert. The durable
+ * send verdict is app-owned — the provider has no such column — so every entity the sync path builds
+ * carries the Kotlin default, and a blind `upsertAll` ERASES the real outcome of a message each time
+ * the row is re-read. The visible result is a message that showed "Not sent" quietly returning to
+ * "Sending…" after a background sync, with nothing in the logs to explain it.
+ *
+ * Reading the state and writing it back around the upsert is deliberately explicit rather than
+ * clever: an `ON CONFLICT DO UPDATE` that merely omitted these columns would look equivalent, but the
+ * sync path legitimately INSERTs new rows through the same statement, and that INSERT branch is
+ * exactly where a wrong default would become permanent.
+ */
+object MessageSendStatePreserver {
+
+    /**
+     * Upserts [entities], carrying each existing row's app-owned send state forward.
+     *
+     * @return the number of rows whose app-owned state was carried forward.
+     */
+    suspend fun upsertPreservingSendState(
+        dao: MessageDao,
+        entities: List<MessageEntity>
+    ): Int {
+        if (entities.isEmpty()) return 0
+        val preserved = entities.mapNotNull { entity ->
+            val existing = dao.sendStateOf(entity.source, entity.providerId) ?: return@mapNotNull null
+            Triple(entity.source, entity.providerId, existing)
+        }
+        dao.upsertAll(entities)
+        for ((source, providerId, state) in preserved) {
+            dao.restoreSendState(
+                source = source,
+                providerId = providerId,
+                state = state.sendTransportState,
+                failureCode = state.sendFailureCode,
+                resultCode = state.sendResultCode,
+                radioErrorCode = state.sendRadioErrorCode,
+                updatedAt = state.sendStateUpdatedAt
+            )
+        }
+        return preserved.size
+    }
 }
 
 @Dao

@@ -186,7 +186,70 @@ interface ConversationPreferenceDao {
         """
     )
     suspend fun clearSpam(threadId: Long, clearBlockProvenance: Boolean, now: Long)
+
+    // ── Sticky per-conversation SIM ──────────────────────────────────────────
+    //
+    // Same field-scoped discipline as the writers above: a SIM choice patches ONLY its own columns, so
+    // changing the sending line can never clear a mute, a category override or a spam report — and a
+    // mute can never clear which line the user chose to send from.
+    //
+    // `preferredSimRef = NULL` is a REAL value here, not "no update": it is how the user clears a
+    // sticky SIM back to the phone default. The snapshots are cleared with it because leaving a stale
+    // "SIM 1 · MCI" label behind a null authority would render a line that is no longer chosen.
+
+    /**
+     * Set (or clear) the sticky SIM for a conversation.
+     *
+     * @param simRef the chosen `simRef`, or null to clear back to the phone default.
+     * @param slotIndex the chosen line's slot at selection time — UI snapshot only, never authority.
+     */
+    @Query(
+        """
+        INSERT INTO conversation_preferences
+            (threadId, manualUnread, mutedUntil, customNotificationChannel,
+             categoryOverride, spam, spamReportedAt, spamBlockedByReport, updatedAt,
+             preferredSimRef, preferredSimSlotIndex, preferredSimDisplayName,
+             preferredSimCarrierName, preferredSimUpdatedAt)
+        VALUES (:threadId, 0, 0, 0, NULL, 0, 0, 0, :now,
+                :simRef, :slotIndex, :displayName, :carrierName, :now)
+        ON CONFLICT(threadId) DO UPDATE SET
+            preferredSimRef = excluded.preferredSimRef,
+            preferredSimSlotIndex = excluded.preferredSimSlotIndex,
+            preferredSimDisplayName = excluded.preferredSimDisplayName,
+            preferredSimCarrierName = excluded.preferredSimCarrierName,
+            preferredSimUpdatedAt = excluded.preferredSimUpdatedAt,
+            updatedAt = excluded.updatedAt
+        """
+    )
+    suspend fun setPreferredSim(
+        threadId: Long,
+        simRef: String?,
+        slotIndex: Int?,
+        displayName: String?,
+        carrierName: String?,
+        now: Long
+    )
+
+    /** The sticky SIM of one conversation, or null when the row (or the preference) is absent. */
+    @Query("SELECT preferredSimRef FROM conversation_preferences WHERE threadId = :threadId LIMIT 1")
+    suspend fun preferredSimRef(threadId: Long): String?
+
+    /**
+     * LIVE sticky-SIM choices for a set of threads, so a list screen resolves refs in ONE query
+     * instead of one per row (the N+1 this project forbids).
+     */
+    @Query(
+        "SELECT threadId, preferredSimRef FROM conversation_preferences " +
+            "WHERE threadId IN (:threadIds) AND preferredSimRef IS NOT NULL"
+    )
+    suspend fun preferredSimRefsFor(threadIds: List<Long>): List<ThreadPreferredSimRef>
 }
+
+/** Projection for a live sticky-SIM read; `preferredSimRef` is never null in these rows. */
+data class ThreadPreferredSimRef(
+    val threadId: Long,
+    val preferredSimRef: String
+)
 
 @Dao
 interface TrashedThreadDao {

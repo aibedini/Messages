@@ -1,5 +1,6 @@
 package com.autonomousone.messages.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -103,6 +104,43 @@ data class ConversationPreferenceEntity(
      * stay blocked when the spam report is undone.
      */
     val spamBlockedByReport: Boolean = false,
+
+    /**
+     * The user's chosen SIM for THIS conversation, as an opaque `simRef` — the AUTHORITY for routing.
+     *
+     * `null` means "no preference": the conversation follows the phone's default SMS line, which is a
+     * legitimate state and not a missing value. It is deliberately NOT `""`, because an empty string
+     * is not a valid ref and the two would then be indistinguishable at a `simRef` comparison.
+     *
+     * Keyed by `threadId` rather than by address or contact on purpose. A `simRef` identifies a
+     * subscription, and the user's intent is about the conversation they are looking at; keying by
+     * phone number would move the preference when a contact changes number, and keying by slot would
+     * move it onto a different card after a swap.
+     *
+     * This is **conversation-owned metadata**, exactly like pinned/archived. Every projection rebuild
+     * must carry it forward — reconstructing a conversation must never silently reset which line the
+     * user chose to send from.
+     */
+    val preferredSimRef: String? = null,
+
+    /**
+     * UI-ONLY snapshots of the chosen SIM at the time it was chosen: slot, display name, carrier.
+     *
+     * These exist so a conversation can render "SIM 1 · MCI" without a telephony round-trip, and they
+     * are **never** authority. After a card swap they describe a line that may no longer exist, which
+     * is precisely why routing re-resolves [preferredSimRef] against the live inventory instead of
+     * trusting these. A stale snapshot must never be able to select a SIM.
+     */
+    val preferredSimSlotIndex: Int? = null,
+    val preferredSimDisplayName: String? = null,
+    val preferredSimCarrierName: String? = null,
+    /**
+     * `DEFAULT 0` is declared because the column is NOT NULL: adding a NOT NULL column to an existing
+     * table requires a default, and Room validates the on-disk default against this declaration, so
+     * the two must agree exactly or every upgraded install fails to open.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val preferredSimUpdatedAt: Long = 0L,
 
     val updatedAt: Long = 0L
 ) {
