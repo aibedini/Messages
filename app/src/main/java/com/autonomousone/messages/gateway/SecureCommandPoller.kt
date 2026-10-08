@@ -3,6 +3,7 @@ package com.autonomousone.messages.gateway
 import android.content.Context
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.RemoteCommandEntity
 import com.autonomousone.messages.repository.GatewaySyncRepository
@@ -10,6 +11,8 @@ import com.autonomousone.messages.sms.GatewayOutgoingPipeline
 import com.autonomousone.messages.sync.CommandDrainPolicy
 import com.autonomousone.messages.sync.CommandRoute
 import com.autonomousone.messages.sync.CommandRouting
+import com.autonomousone.messages.sync.ConversationSimCommand
+import com.autonomousone.messages.sync.ConversationSimFailure
 import com.autonomousone.messages.sync.ThreadHistoryCommand
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.data.MessageEntity
@@ -85,7 +88,18 @@ class SecureCommandPoller(
         /** The encrypted command types this build can execute. Advertised in telemetry capabilities. */
         private val COMMAND_TYPES = CommandRouting.ADVERTISED_COMMAND_TYPES
 
-        internal val SUPPORTED_TYPES = COMMAND_TYPES.toSet()
+        /**
+         * What the poller will actually run.
+         *
+         * `SET_CONVERSATION_PREFERRED_SIM` is routed and executable here WITHOUT being advertised:
+         * advertisement is a claim to GMweb, and this build only makes that claim once the executor,
+         * the durable persistence and the canonical encrypted event all work together. Keeping the two
+         * sets separable is what makes "advertised but not executable" impossible to reach by accident
+         * while the feature is still being assembled — the drift test pins the invariant that the
+         * ADVERTISED set equals the EXECUTABLE set for everything the router accepts.
+         */
+        internal val SUPPORTED_TYPES: Set<String> =
+            COMMAND_TYPES.toSet() + CommandRouting.SET_CONVERSATION_PREFERRED_SIM
 
         /** Ask the phone for a fresh device/SIM telemetry report (GMweb → Android). */
         const val REFRESH_DEVICE_TELEMETRY = "REFRESH_DEVICE_TELEMETRY"
@@ -532,6 +546,9 @@ class SecureCommandPoller(
                         // On-demand history: ONE bounded page, published through the existing
                         // encrypted replication path. Never a plaintext list in the ack.
                         CommandRoute.THREAD_HISTORY -> executeFetchThreadHistory(cmd, plaintext, repo)
+                        // Sticky conversation SIM: persist, publish the canonical event, then ACK.
+                        CommandRoute.CONVERSATION_SIM ->
+                            executeSetConversationPreferredSim(cmd, plaintext, repo)
                         // SEND_SMS is the ONLY type that may enter the SMS pipeline.
                         CommandRoute.SMS_PIPELINE -> withContext(Dispatchers.IO) {
                             GatewayOutgoingPipeline.executeIngested(
@@ -811,6 +828,160 @@ class SecureCommandPoller(
                 RemoteCommandEntity.STATE_EXECUTING
             )
         )
+    }
+
+    /**
+     * `SET_CONVERSATION_PREFERRED_SIM` — persist which line a conversation sends on.
+     *
+     * ## Order is the contract (mission §6)
+     *
+     * ```text
+     * parse -> validate thread -> resolve simRef -> persist -> emit canonical event -> ACK
+     * ```
+     *
+     * The ACK happens only when the local state is already durable, because the alternative —
+     * acknowledging first and persisting afterwards — tells GMweb the user's choice was applied while
+     * the device may still be sending on the old line. A command whose persistence fails must FAIL.
+     *
+     * ## What each validation protects
+     *
+     *  - the THREAD must exist locally, or "set the preference for thread 123" would write a row for a
+     *    conversation this device does not have;
+     *  - a non-null `simRef` must resolve against the CURRENT active inventory, exactly. A slot is not
+     *    accepted as a fallback: the card in slot 0 today is not the card that was there yesterday;
+     *  - a `null` `simRef` is a real instruction (return to the phone default), not a missing value.
+     */
+    private suspend fun executeSetConversationPreferredSim(
+        cmd: RemoteCommandEntity,
+        plaintext: ByteArray,
+        repo: GatewaySyncRepository
+    ) {
+        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+
+        when (val parsed = ConversationSimCommand.parse(String(plaintext, Charsets.UTF_8))) {
+            is ConversationSimCommand.Parsed.Invalid ->
+                throw ConversationSimFailure.InvalidPayload(parsed.code)
+            is ConversationSimCommand.Parsed.Ok ->
+                persistConversationPreferredSim(cmd, parsed, repo)
+        }
+    }
+
+    private suspend fun persistConversationPreferredSim(
+        cmd: RemoteCommandEntity,
+        request: ConversationSimCommand.Parsed.Ok,
+        repo: GatewaySyncRepository
+    ) {
+        val threadId = request.androidThreadId
+
+        // 1. The thread must exist. A conversation is validated through the message mirror rather than
+        //    by creating a projection: writing a preference for a thread with no messages would invent
+        //    a conversation, and the preference would then belong to nothing.
+        val conversation = withContext(Dispatchers.IO) {
+            MessagesDatabase.get(context).conversationDao().byThread(threadId)
+        } ?: throw ConversationSimFailure.ThreadNotFound(threadId)
+
+        // 2. Resolve the reference against the LIVE inventory. Nothing here consults a slot, a carrier
+        //    name or a cached list.
+        val simManager = com.autonomousone.messages.messaging.SimManager(context)
+        val resolved = when (val reference = request.simRef) {
+            // Explicit clear. No SIM lookup at all: returning to the phone default is valid even with
+            // no SIMs present, and requiring a resolvable SIM here would make "clear" fail exactly when
+            // the user most needs it (the chosen SIM was removed).
+            null -> null
+            else -> when (val outcome = simManager.resolveActiveRef(reference)) {
+                is com.autonomousone.messages.messaging.SimRefResolution.Resolved -> outcome
+                is com.autonomousone.messages.messaging.SimRefResolution.Unavailable ->
+                    throw ConversationSimFailure.SimNotFound(reference)
+                com.autonomousone.messages.messaging.SimRefResolution.InventoryUnavailable ->
+                    throw ConversationSimFailure.InventoryUnavailable()
+            }
+        }
+
+        // 3. Snapshot the display fields for the UI. These are NEVER authority — routing re-resolves
+        //    the ref — but storing them lets the conversation render "SIM 1 · MCI" without a
+        //    telephony round-trip, and the snapshot must match the line the user actually chose.
+        val chosen = resolved?.let { active ->
+            simManager.getActiveSims().firstOrNull { it.subscriptionId == active.subscriptionId }
+        }
+
+        // 4. Persist. A failure here MUST NOT be ACKed as success.
+        try {
+            withContext(Dispatchers.IO) {
+                MessagesDatabase.get(context).conversationPreferenceDao().setPreferredSim(
+                    threadId = threadId,
+                    simRef = resolved?.reference?.value,
+                    slotIndex = chosen?.slotIndex,
+                    displayName = chosen?.displayName,
+                    carrierName = chosen?.carrierName,
+                    now = System.currentTimeMillis()
+                )
+            }
+        } catch (e: Exception) {
+            throw ConversationSimFailure.PersistFailed(e)
+        }
+
+        DiagnosticLog.event(
+            "GM_SIM_PREF",
+            "applied thread=$threadId action=${if (resolved == null) "CLEAR" else "SET"} " +
+                "sub=${resolved?.subscriptionId ?: -1}"
+        )
+
+        // 5. Emit the canonical encrypted conversation update BEFORE the ACK. GMweb must not have to
+        //    wait for the next message, a full sync or a restart to learn the preference — and it must
+        //    not be told the change succeeded while the event that carries it does not exist yet.
+        val emitted = withContext(Dispatchers.IO) {
+            TelephonySyncCoordinator.get(context).emitConversationUpsertForThread(
+                threadId = threadId,
+                conversationId = conversationIdForThread(threadId, conversation),
+                preferredSim = if (resolved == null) {
+                    GatewayEventFactory.PreferredSimPayload.Clear
+                } else {
+                    GatewayEventFactory.PreferredSimPayload.Set(
+                        simRef = resolved.reference.value,
+                        displayName = chosen?.displayName,
+                        carrierName = chosen?.carrierName,
+                        slotIndex = chosen?.slotIndex
+                    )
+                }
+            )
+        }
+        if (!emitted) {
+            // The preference IS durable, but the replication event is not. Reporting success would
+            // leave GMweb showing the old line indefinitely, so this must fail — with a code that
+            // says the PUBLISH failed, not that the user's choice was lost.
+            throw ConversationSimFailure.PublishFailed()
+        }
+
+        repo.finishCommandFrom(
+            commandId = cmd.commandId,
+            state = RemoteCommandEntity.STATE_COMPLETED,
+            errorCode = null,
+            fromStates = listOf(
+                RemoteCommandEntity.STATE_ACCEPTED,
+                RemoteCommandEntity.STATE_EXECUTING
+            )
+        )
+    }
+
+    /** The conversation id for a thread, from the mapping or freshly minted, exactly as sync does. */
+    private suspend fun conversationIdForThread(
+        threadId: Long,
+        existing: com.autonomousone.messages.data.ConversationEntity
+    ): String = withContext(Dispatchers.IO) {
+        val mapDao = MessagesDatabase.get(context).remoteConversationMapDao()
+        mapDao.getByThreadId(threadId)?.conversationId ?: run {
+            val uuid = java.util.UUID.randomUUID().toString()
+            mapDao.insertOrIgnore(
+                com.autonomousone.messages.data.RemoteConversationMapEntity(
+                    uuid, threadId, System.currentTimeMillis()
+                )
+            )
+            mapDao.getByThreadId(threadId)?.conversationId ?: uuid
+        }
     }
 
     /** Report lifecycle to GMweb (§58); failures are logged, never fatal. */

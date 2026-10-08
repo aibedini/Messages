@@ -39,6 +39,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import androidx.room.withTransaction
+import com.autonomousone.messages.utils.DiagnosticLog
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun cloudMessageDirection(type: Int): String? = when (type) {
@@ -1411,6 +1412,82 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         mapDao.insertOrIgnore(RemoteConversationMapEntity(uuid, threadId, System.currentTimeMillis()))
         // Lost an insert race → the winner's row is the mapping.
         return mapDao.getByThreadId(threadId)?.conversationId ?: uuid
+    }
+
+    /**
+     * Emit a canonical `CONVERSATION_UPSERTED` for one conversation RIGHT NOW, carrying its sticky SIM.
+     *
+     * ## Why this exists
+     *
+     * A preference change is not a message. Without this, the only way GMweb would learn that a
+     * conversation now sends on a different line is the NEXT message, a full sync or an app restart —
+     * so a user could change the SIM in the app and watch the web client keep showing the old one
+     * indefinitely, with no way to tell that from a stalled sync.
+     *
+     * ## Where the preference travels
+     *
+     * Inside the ENCRYPTED payload, exactly like every other conversation field. The outer envelope is
+     * unchanged: it still carries only ids, sequence and crypto metadata, so a SIM choice is not
+     * visible to anything that can read the transport but not the ciphertext.
+     *
+     * ## Why it does not go through the message firewall
+     *
+     * [enqueueCloudEvent] applies [com.autonomousone.messages.security.SensitiveMessageFirewall] to
+     * MESSAGE CONTENT. This event carries no message content at all — the preview is the snippet
+     * already published with the conversation — so there is nothing for the firewall to classify, and
+     * routing it through would either need a fake sender/body or would silently drop a legitimate
+     * preference change. Message-bearing upserts keep using the firewall path unchanged.
+     *
+     * @return true when the durable event row was queued.
+     */
+    suspend fun emitConversationUpsertForThread(
+        threadId: Long,
+        conversationId: String,
+        preferredSim: GatewayEventFactory.PreferredSimPayload
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext false
+        if (!syncAllowed) return@withContext false
+        val conversation = db.conversationDao().byThread(threadId) ?: return@withContext false
+        if (conversationId.isBlank()) return@withContext false
+
+        val direction = cloudMessageDirection(conversation.lastMessageType) ?: "inbound"
+        return@withContext try {
+            // A preference change must be DISTINGUISHABLE from the message-driven upsert for the same
+            // conversation, or the outbox's deterministic event identity would collapse the two and
+            // drop whichever arrived second. The revision therefore includes the new preference.
+            val revision = System.currentTimeMillis()
+            val event = GatewayEventFactory.conversationUpserted(
+                conversationId = conversationId,
+                displayName = contactNameFor(conversation.rawAddress, conversation.normalizedAddress),
+                address = SenderIdentity.eventAddress(
+                    conversation.rawAddress,
+                    conversation.normalizedAddress
+                ),
+                lastMessagePreview = conversation.snippet,
+                lastMessageDirection = direction,
+                lastMessageAt = conversation.lastMessageDate,
+                unreadCount = conversation.unreadCount,
+                pinned = conversation.pinned,
+                archived = conversation.archived,
+                revision = revision,
+                priority = GatewayEventOutboxEntity.PRIORITY_REALTIME,
+                androidThreadId = threadId,
+                preferredSim = preferredSim
+            )
+            val queued = db.gatewayEventOutboxDao().insertOrIgnore(event) != -1L
+            DiagnosticLog.event(
+                "GM_SIM_PREF",
+                "conversation-event thread=$threadId queued=$queued " +
+                    "preferredSim=${preferredSim::class.simpleName}"
+            )
+            queued
+        } catch (e: Exception) {
+            DiagnosticLog.event(
+                "GM_SIM_PREF",
+                "conversation-event failed thread=$threadId"
+            )
+            false
+        }
     }
 
     // ── Reconcile path (repair/recovery) ───────────────────────────────────

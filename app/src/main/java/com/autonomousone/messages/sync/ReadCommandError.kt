@@ -66,10 +66,16 @@ object ReadCommandError {
     /**
      * The code for a command type, so a read failure can never be recorded as a send failure.
      *
-     * `SEND_SMS` keeps its own code; only the read type is classified here.
+     * Three unrelated command families route here, and each needs its OWN vocabulary: a read, a send,
+     * and a conversation-preference change. Recording a preference failure as `SMS_SEND_FAILED` would
+     * tell GMweb a message failed when no message was involved, and would hide the fact that the
+     * user's chosen line was simply gone.
      */
-    fun classifyFor(commandType: String, error: Throwable): SyncErrorCode =
-        if (commandType == READ_COMMAND_TYPE) classify(error) else SyncErrorCode.SMS_SEND_FAILED
+    fun classifyFor(commandType: String, error: Throwable): SyncErrorCode = when {
+        commandType == READ_COMMAND_TYPE -> classify(error)
+        ConversationSimError.handles(commandType) -> ConversationSimError.classify(error)
+        else -> SyncErrorCode.SMS_SEND_FAILED
+    }
 
     const val READ_COMMAND_TYPE = "MARK_THREAD_READ"
 }

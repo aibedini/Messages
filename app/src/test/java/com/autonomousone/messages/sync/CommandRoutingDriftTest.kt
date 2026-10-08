@@ -34,10 +34,30 @@ class CommandRoutingDriftTest {
     }
 
     @Test
-    fun `the four required capabilities are advertised`() {
+    fun `the required capabilities plus the sticky-SIM command are advertised`() {
         assertEquals(
-            listOf("SEND_SMS", "MARK_THREAD_READ", "REFRESH_DEVICE_TELEMETRY", "FETCH_THREAD_HISTORY"),
+            listOf(
+                "SEND_SMS",
+                "MARK_THREAD_READ",
+                "REFRESH_DEVICE_TELEMETRY",
+                "FETCH_THREAD_HISTORY",
+                "SET_CONVERSATION_PREFERRED_SIM"
+            ),
             CommandRouting.ADVERTISED_COMMAND_TYPES
+        )
+    }
+
+    @Test
+    fun `the sticky-SIM command is advertised only because it is executable`() {
+        // The invariant that makes "advertised but not executable" unreachable: the ADVERTISED list is
+        // what the claim sends, and every entry in it must route to a real executor.
+        assertTrue(
+            "advertising a type the router cannot run would leave the sender's command spinning",
+            CommandRouting.SET_CONVERSATION_PREFERRED_SIM in CommandRouting.EXECUTABLE_COMMAND_TYPES
+        )
+        assertEquals(
+            CommandRoute.CONVERSATION_SIM,
+            CommandRouting.routeOf(CommandRouting.SET_CONVERSATION_PREFERRED_SIM)
         )
     }
 

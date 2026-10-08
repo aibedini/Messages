@@ -150,6 +150,28 @@ enum class SyncErrorCode {
     /** `READ_PHONE_STATE`/provider permission missing while applying a read. */
     READ_PERMISSION_DENIED,
 
+    // ── Conversation preference commands (SET_CONVERSATION_PREFERRED_SIM) ────
+    //
+    // A preference change is neither a send nor a read. Reporting its failures with
+    // [SMS_SEND_FAILED] would tell GMweb a message failed when none was ever involved, and would
+    // make "the user's chosen line is gone" indistinguishable from "the radio refused". Each of
+    // these names a different repair.
+
+    /** No conversation exists for the requested `androidThreadId` on this device. */
+    THREAD_NOT_FOUND,
+
+    /** The requested/current `simRef` matches no ACTIVE subscription. */
+    SIM_NOT_FOUND,
+
+    /** The requested subscription exists but is not active (removed, or not ready). */
+    SIM_INACTIVE,
+
+    /** The supplied `simRef` is not a well-formed reference this build understands. */
+    INVALID_SIM_REFERENCE,
+
+    /** The preference could not be durably persisted, so the change must not be ACKed as done. */
+    PREFERENCE_UPDATE_FAILED,
+
     // ── Command execution ────────────────────────────────────────────────────
 
     /**
@@ -200,6 +222,12 @@ enum class SyncErrorCode {
             READ_COMMAND_DECRYPT_FAILED, READ_INVALID_PAYLOAD, READ_MAPPING_MISSING,
             READ_UNKNOWN_CONVERSATION, READ_PROVIDER_WRITE_FAILED, READ_EVENT_PUBLISH_FAILED,
             READ_PERMISSION_DENIED,
+            // Preference commands: none of these heal by waiting. A missing thread, a SIM that is gone
+            // or inactive, and a malformed reference all need a human (or GMweb) to change something,
+            // and a persistence failure is a local fault rather than a transient one. Re-driving the
+            // SAME request unchanged would produce the same answer.
+            THREAD_NOT_FOUND, SIM_NOT_FOUND, SIM_INACTIVE, INVALID_SIM_REFERENCE,
+            PREFERENCE_UPDATE_FAILED,
             COMMAND_INTERRUPTED_AFTER_SUBMIT, COMMAND_EXPIRED_BEFORE_CLAIM,
             UNKNOWN -> false
         }

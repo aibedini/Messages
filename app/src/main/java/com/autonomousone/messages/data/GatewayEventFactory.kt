@@ -387,6 +387,8 @@ object GatewayEventFactory {
         priority: String = GatewayEventOutboxEntity.PRIORITY_REALTIME,
         /** The exact Telephony thread id this conversation maps to — inside the ciphertext. */
         androidThreadId: Long = 0L,
+        /** The sticky SIM, three-state. Defaults to "this event says nothing about it". */
+        preferredSim: PreferredSimPayload = PreferredSimPayload.Absent,
     ): GatewayEventOutboxEntity {
         val payload = conversationUpsertedPayload(
             conversationId = conversationId,
@@ -398,7 +400,8 @@ object GatewayEventFactory {
             unreadCount = unreadCount,
             pinned = pinned,
             archived = archived,
-            androidThreadId = androidThreadId
+            androidThreadId = androidThreadId,
+            preferredSim = preferredSim
         )
         return outboxRow(
             UUID.nameUUIDFromBytes("conversation:$conversationId:$revision".toByteArray()).toString(),
@@ -420,7 +423,23 @@ object GatewayEventFactory {
         unreadCount: Int,
         pinned: Boolean,
         archived: Boolean,
-        androidThreadId: Long
+        androidThreadId: Long,
+        /**
+         * The conversation's sticky SIM, as a THREE-state value.
+         *
+         * JSON alone cannot express this and the three cases mean different things to a replica:
+         *
+         * ```text
+         * Absent  => this event says nothing about the preference; keep what you have
+         * Clear   => `preferredSim: null` — authoritative "back to the phone default"
+         * Set     => `preferredSim: {...}` — authoritative choice
+         * ```
+         *
+         * The default is [PreferredSimPayload.Absent] so every pre-existing caller keeps its exact
+         * previous wire behaviour: an ordinary message upsert must NOT be able to clear a preference
+         * as a side effect of not mentioning it.
+         */
+        preferredSim: PreferredSimPayload = PreferredSimPayload.Absent
     ): JSONObject {
         val payload = JSONObject()
             .put("conversationId", conversationId)
@@ -433,7 +452,42 @@ object GatewayEventFactory {
             .put("pinned", pinned)
             .put("archived", archived)
         if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
+        when (preferredSim) {
+            PreferredSimPayload.Absent -> Unit
+            PreferredSimPayload.Clear -> payload.put("preferredSim", JSONObject.NULL)
+            is PreferredSimPayload.Set -> payload.put(
+                "preferredSim",
+                JSONObject()
+                    .put("simRef", preferredSim.simRef)
+                    .put("displayName", preferredSim.displayName ?: JSONObject.NULL)
+                    .put("carrierName", preferredSim.carrierName ?: JSONObject.NULL)
+                    .put("slotIndex", preferredSim.slotIndex ?: JSONObject.NULL)
+            )
+        }
         return payload
+    }
+
+    /**
+     * The three states of the `preferredSim` field inside the ENCRYPTED conversation payload.
+     *
+     * Deliberately not a nullable [JSONObject]: Kotlin `null` cannot distinguish "absent" from
+     * "explicitly null", and collapsing them is how a message-driven upsert would silently unpin a
+     * conversation the user had chosen a line for.
+     */
+    sealed interface PreferredSimPayload {
+        /** Legacy / no-update: the field is omitted entirely. */
+        data object Absent : PreferredSimPayload
+
+        /** Authoritative clear: the field is present and `null`. */
+        data object Clear : PreferredSimPayload
+
+        /** Authoritative set. [simRef] is the opaque cross-system identity, never a subscription id. */
+        data class Set(
+            val simRef: String,
+            val displayName: String? = null,
+            val carrierName: String? = null,
+            val slotIndex: Int? = null
+        ) : PreferredSimPayload
     }
 
     fun conversationDeleted(conversationId: String, revision: Long = System.currentTimeMillis()) =

@@ -172,11 +172,21 @@ class SyncErrorCodeTest {
             SyncErrorCode.READ_UNKNOWN_CONVERSATION,
             SyncErrorCode.READ_PROVIDER_WRITE_FAILED,
             SyncErrorCode.READ_EVENT_PUBLISH_FAILED,
-            SyncErrorCode.READ_PERMISSION_DENIED
+            SyncErrorCode.READ_PERMISSION_DENIED,
+            // The conversation-preference family (SET_CONVERSATION_PREFERRED_SIM). A preference change
+            // is neither a send nor a read, so reporting its failures with SMS_SEND_FAILED would tell
+            // GMweb a message failed when none was involved — and "the chosen line is gone",
+            // "the line is not active", "the reference is malformed" and "the write did not commit"
+            // have four different remedies.
+            SyncErrorCode.THREAD_NOT_FOUND,
+            SyncErrorCode.SIM_NOT_FOUND,
+            SyncErrorCode.SIM_INACTIVE,
+            SyncErrorCode.INVALID_SIM_REFERENCE,
+            SyncErrorCode.PREFERENCE_UPDATE_FAILED
         )
         assertEquals(
-            "the mission's minimum codes plus 11 that had no honest minimum equivalent",
-            31,
+            "the mission's minimum codes plus 16 that had no honest minimum equivalent",
+            36,
             SyncErrorCode.entries.size
         )
         assertEquals(

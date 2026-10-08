@@ -91,7 +91,12 @@ object CommandDrainPolicy {
         // A telemetry refresh is executable and idempotent (re-reporting is harmless), but it is
         // deliberately NOT in RE_DRIVABLE_TYPES: an abandoned refresh has no side effect worth
         // re-running, and leaving it to the fail-safe default keeps the re-drive set minimal.
-        "REFRESH_DEVICE_TELEMETRY"
+        "REFRESH_DEVICE_TELEMETRY",
+        // Sticky conversation SIM. Executable, and deliberately NOT re-drivable: re-running is
+        // *idempotent* (it sets the same value), but an abandoned attempt would be re-applied against a
+        // SIM inventory that may have changed since, which is how a stale instruction turns into a
+        // preference the user never chose. The fail-safe default — never re-run — is the right one.
+        "SET_CONVERSATION_PREFERRED_SIM"
     )
 
     /**

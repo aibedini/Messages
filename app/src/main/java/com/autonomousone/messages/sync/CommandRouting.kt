@@ -25,6 +25,15 @@ enum class CommandRoute {
     /** `FETCH_THREAD_HISTORY`: one bounded, keyset-paged history publication. */
     THREAD_HISTORY,
 
+    /**
+     * `SET_CONVERSATION_PREFERRED_SIM`: persist which line this conversation sends on.
+     *
+     * Its own route rather than reusing [READ_THREAD], because the two failures mean opposite things:
+     * a read failing leaves the user's unread state alone, while a preference failing leaves the
+     * conversation sending on a line the user did not choose.
+     */
+    CONVERSATION_SIM,
+
     /** Not implemented by this build: must reach a durable terminal failure. */
     UNSUPPORTED
 }
@@ -37,17 +46,33 @@ object CommandRouting {
     const val FETCH_THREAD_HISTORY = ThreadHistoryCommand.TYPE
 
     /**
+     * `SET_CONVERSATION_PREFERRED_SIM` — the sticky per-conversation SIM (Phase 5A).
+     *
+     * Named here as a constant before it is ADVERTISED: the executor and the advertisement are
+     * deliberately separable, so the routing table can name the type while
+     * [ADVERTISED_COMMAND_TYPES] still omits it. Advertising is a claim to another system, and this
+     * build only makes that claim once the executor, the persistence and the canonical event all work.
+     */
+    const val SET_CONVERSATION_PREFERRED_SIM = "SET_CONVERSATION_PREFERRED_SIM"
+
+    /**
      * THE single source of truth for what this build can execute.
      *
      * It is used for two things that must never disagree: the `runtime.commandTypes` array advertised in
      * the command claim, and the set the router accepts. A second hand-maintained list is exactly how a
      * command came to be advertised but unroutable (or routable but never advertised).
+     *
+     * `SET_CONVERSATION_PREFERRED_SIM` is advertised NOW because all three halves are in place and
+     * tested together: the executor persists the preference, it resolves the reference against the live
+     * inventory with no slot fallback, and it queues the canonical encrypted conversation event before
+     * ACKing. Advertising any earlier would have claimed a capability the device could not honour.
      */
     val ADVERTISED_COMMAND_TYPES: List<String> = listOf(
         SEND_SMS,
         MARK_THREAD_READ,
         REFRESH_DEVICE_TELEMETRY,
-        FETCH_THREAD_HISTORY
+        FETCH_THREAD_HISTORY,
+        SET_CONVERSATION_PREFERRED_SIM
     )
 
     /** Types this build can actually route to an executor. Derived, never typed twice. */
@@ -59,6 +84,7 @@ object CommandRouting {
         MARK_THREAD_READ -> CommandRoute.READ_THREAD
         REFRESH_DEVICE_TELEMETRY -> CommandRoute.TELEMETRY_REFRESH
         FETCH_THREAD_HISTORY -> CommandRoute.THREAD_HISTORY
+        SET_CONVERSATION_PREFERRED_SIM -> CommandRoute.CONVERSATION_SIM
         else -> CommandRoute.UNSUPPORTED
     }
 }
