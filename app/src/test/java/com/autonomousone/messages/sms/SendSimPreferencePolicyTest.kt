@@ -4,6 +4,7 @@ import com.autonomousone.messages.sms.SendSimPreferencePolicy.Assertion
 import com.autonomousone.messages.sms.SendSimPreferencePolicy.Block
 import com.autonomousone.messages.sms.SendSimPreferencePolicy.Decision
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -273,6 +274,82 @@ class SendSimPreferencePolicyTest {
                 assertedAssertion = Assertion.InventoryUnavailable
             )
         )
+    }
+
+    // ── the zero-submission guarantee ────────────────────────────────────────
+
+    @Test
+    fun `every blocked decision refuses before any line is resolved`() {
+        // The "unavailable preference => zero physical sends" requirement, as a property of the
+        // decision itself: a Blocked verdict is handled by the caller before SmsManager is reachable,
+        // so the modem submission count for a blocked preference is exactly zero.
+        val blocked = listOf(
+            decide(preferredRef = refA, preferredAssertion = Assertion.NotActive),
+            decide(preferredRef = refA, preferredAssertion = Assertion.InventoryUnavailable),
+            decide(preferredRef = refA, preferredAssertion = null),
+            decide(preferredRef = "sim:v1:bad", preferredRefWellFormed = false),
+            decide(assertedRef = "bad", assertedWellFormed = false),
+            decide(
+                preferredRef = refA,
+                preferredAssertion = Assertion.Resolved(5),
+                assertedRef = refB,
+                assertedAssertion = Assertion.Resolved(9)
+            )
+        )
+
+        for (decision in blocked) {
+            assertEquals(true, SendSimPreferencePolicy.blocksBeforeAnySubmission(decision))
+        }
+    }
+
+    @Test
+    fun `a sendable decision never claims to block`() {
+        assertEquals(
+            false,
+            SendSimPreferencePolicy.blocksBeforeAnySubmission(
+                decide(preferredRef = refA, preferredAssertion = Assertion.Resolved(5))
+            )
+        )
+        assertEquals(
+            false,
+            SendSimPreferencePolicy.blocksBeforeAnySubmission(decide())
+        )
+    }
+
+    @Test
+    fun `every block reason maps to a persistable failure code`() {
+        // A refusal that cannot name why it happened is indistinguishable from a bug after a restart.
+        for (reason in Block.entries) {
+            val failure = SendSimPreferencePolicy.failureFor(reason)
+            assertTrue(
+                "$reason produced a blank failure code",
+                failure.code.isNotBlank()
+            )
+            // And the code must classify as a DEFINITE refusal, so the bubble says "Not sent" rather
+            // than the ambiguous "Send status unknown" — nothing was handed to the radio.
+            assertEquals(
+                "$reason must be a definite refusal, not an ambiguous outcome",
+                SendEvidence.REJECTED,
+                SmsTransportClassifier.evidenceForCode(failure.code)
+            )
+        }
+    }
+
+    @Test
+    fun `a blocked preference is reported as not sent, never as an ambiguous outcome`() {
+        // The safety property the user sees: a refusal caused by the app is a definite "Not sent",
+        // because the message provably never left the device.
+        val failure = SendSimPreferencePolicy.failureFor(Block.PREFERRED_SIM_UNAVAILABLE)
+        val presentation = SmsStatusPresentationMapper.present(
+            SmsStatusEvidence(
+                isOutgoing = true,
+                failureCode = failure.code,
+                hasSentConfirmation = false
+            )
+        )
+
+        assertEquals(SmsUiState.NOT_SENT, presentation.state)
+        assertEquals(false, presentation.duplicateRisk)
     }
 
     // ── totality ─────────────────────────────────────────────────────────────

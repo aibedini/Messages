@@ -159,6 +159,20 @@ object GatewayOutgoingPipeline {
         val subId = if (payload.has("subscriptionId") && !payload.isNull("subscriptionId")) {
             payload.optInt("subscriptionId")
         } else null
+        // ── The cross-system routing assertion (mission §17/§18) ─────────────
+        //
+        // `simRef` is preferred over `subscriptionId`: a subscription id means something different
+        // tomorrow and is enumerable, while the opaque ref is resolved against the LIVE inventory at
+        // execution time. Absent means "this request asserts nothing" — which is NOT the same as
+        // "override the conversation's stored preference", and never authorises one.
+        val assertedSimRef = if (payload.has("simRef") && !payload.isNull("simRef")) {
+            payload.optString("simRef").takeIf { it.isNotBlank() }
+        } else null
+        // An override is claimed EXPLICITLY by the sender, never inferred from a differing value.
+        val oneShotOverride = payload.optBoolean("oneShotSimOverride", false)
+        val threadId = payload.optLong("androidThreadId", 0L).takeIf { it > 0L }
+            ?: payload.optLong("threadId", 0L).takeIf { it > 0L }
+            ?: 0L
         require(phone.isNotBlank() && body.isNotBlank()) {
             "SEND_SMS payload missing phone/body (${cmd.commandId})"
         }
@@ -195,6 +209,11 @@ object GatewayOutgoingPipeline {
             subscriptionIdOverride = subId,
             smscOverride = null,
             showToast = false,
+            // The conversation the send belongs to: without it the device cannot enforce its own
+            // stored preference, and a client that omitted the field would bypass it by omission.
+            threadId = threadId,
+            assertedSimRef = assertedSimRef,
+            oneShotOverride = oneShotOverride,
             originCommandId = cmd.commandId,
             clientMessageId = bubbleKey,
         )

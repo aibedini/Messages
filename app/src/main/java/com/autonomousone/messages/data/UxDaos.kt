@@ -235,6 +235,19 @@ interface ConversationPreferenceDao {
     suspend fun preferredSimRef(threadId: Long): String?
 
     /**
+     * BLOCKING read of the sticky SIM, for the send path only.
+     *
+     * [SmsSender.dispatch] is a synchronous function on a worker thread (the whole send funnel below
+     * it is synchronous), so it cannot suspend to fetch the preference. Same contract as
+     * [getBlocking]: NEVER call this from the main thread.
+     *
+     * @return the stored ref, or null when the conversation has no preference. A SQL NULL and "no row"
+     *   are the same answer here on purpose: both mean "follow the phone's default line".
+     */
+    @Query("SELECT preferredSimRef FROM conversation_preferences WHERE threadId = :threadId LIMIT 1")
+    fun preferredSimRefBlocking(threadId: Long): String?
+
+    /**
      * LIVE sticky-SIM choices for a set of threads, so a list screen resolves refs in ONE query
      * instead of one per row (the N+1 this project forbids).
      */

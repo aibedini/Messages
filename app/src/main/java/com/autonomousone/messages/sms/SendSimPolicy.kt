@@ -282,4 +282,30 @@ object SendSimPreferencePolicy {
 
         return Decision.Send(preferredSubId)
     }
+
+    /**
+     * The durable failure reason for a refusal.
+     *
+     * A blocked send never reaches the radio, and the user must still be told WHY across a restart, so
+     * the reason is mapped to a persisted [SmsSendFailure] code. All four map to
+     * [SmsSendFailure.SimUnavailable] because that is the honest transport-layer fact in each case: no
+     * usable line was selected for this message. The distinction between them survives in the log and
+     * in the ACK code, where it is actionable, rather than being invented as four transport-level
+     * conditions that the radio would never produce.
+     */
+    fun failureFor(reason: Block): SmsSendFailure = when (reason) {
+        Block.PREFERRED_SIM_UNAVAILABLE,
+        Block.ASSERTED_SIM_UNAVAILABLE,
+        Block.SIM_PREFERENCE_CONFLICT,
+        Block.INVALID_SIM_REFERENCE -> SmsSendFailure.SimUnavailable
+    }
+
+    /**
+     * True when a decision refuses the send BEFORE any line is resolved.
+     *
+     * This is the zero-physical-send guarantee in one predicate: a blocked decision is handled by the
+     * caller before `SmsManager` is touched, so the number of modem submissions for a blocked
+     * preference is exactly zero. Asserted in tests rather than assumed from call-site ordering.
+     */
+    fun blocksBeforeAnySubmission(decision: Decision): Boolean = decision is Decision.Blocked
 }

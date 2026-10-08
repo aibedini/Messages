@@ -1415,6 +1415,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     /**
+     * The stable conversation id for a thread, minting and persisting the mapping when absent.
+     *
+     * Exposed for the LOCAL sticky-SIM path, which must address the same conversation id the sync
+     * engine uses — minting a second id for the same thread would split one conversation into two on
+     * GMweb and send the preference to a conversation nobody is looking at.
+     */
+    suspend fun conversationIdForThreadForPreference(threadId: Long): String =
+        conversationIdFor(threadId)
+
+    /**
      * Emit a canonical `CONVERSATION_UPSERTED` for one conversation RIGHT NOW, carrying its sticky SIM.
      *
      * ## Why this exists

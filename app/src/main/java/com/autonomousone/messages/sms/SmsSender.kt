@@ -19,6 +19,9 @@ import com.autonomousone.messages.event.SmsEventBus
 import com.autonomousone.messages.gateway.GatewayDeliveryReports
 import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.messaging.SimManager
+import com.autonomousone.messages.messaging.SimRefFormat
+import com.autonomousone.messages.messaging.SimRefProvider
+import com.autonomousone.messages.messaging.SimRefResolution
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +89,29 @@ class SmsSender(
         originCommandId: String? = null,
         clientMessageId: String? = null,
         gatewayRequestId: String? = null,
+        /**
+         * The conversation this send belongs to, when the caller knows it.
+         *
+         * This is what lets the sticky per-conversation SIM be enforced ON THE DEVICE rather than
+         * trusted to the caller: a client that forgot to send the reference, or an older client that
+         * has never heard of it, must not be able to bypass the user's stored choice by omission.
+         */
+        threadId: Long = 0L,
+        /**
+         * A `simRef` carried as a ROUTING ASSERTION by the request, or null when it asserts nothing.
+         *
+         * An assertion is a claim about which line this message should use; it is NOT permission to
+         * overrule the conversation's stored preference, and a mismatch is a typed conflict rather
+         * than a silent pick.
+         */
+        assertedSimRef: String? = null,
+        /**
+         * True only when the caller EXPLICITLY marks this send a one-message override.
+         *
+         * Never inferred from the presence of a differing value: inferring it is exactly how a stale
+         * client would silently send on the wrong line while claiming to have been authorised.
+         */
+        oneShotOverride: Boolean = false,
     ): SendOutcome {
         val sentId = persistToSent(phone, text)
         // Bind carrier callbacks to the durable GMweb task before the radio can
@@ -100,13 +126,23 @@ class SmsSender(
         // exactly once per executed command (every funnel path runs through
         // here exactly once).
         SmsEventBus.emitOutgoingSent(
-            threadId = 0L, // resolved by Home via phone match
+            threadId = threadId,
             phone = phone,
             message = text,
             date = System.currentTimeMillis(),
             providerRowId = sentId
         )
-        val dispatched = dispatch(sentId, phone, text, subscriptionIdOverride, smscOverride, showToast)
+        val dispatched = dispatch(
+            sentId = sentId,
+            phone = phone,
+            text = text,
+            subscriptionIdOverride = subscriptionIdOverride,
+            smscOverride = smscOverride,
+            showToast = showToast,
+            threadId = threadId,
+            assertedSimRef = assertedSimRef,
+            oneShotOverride = oneShotOverride
+        )
         return if (dispatched) {
             SendOutcome.Accepted(rowId = sentId)
         } else {
@@ -137,11 +173,36 @@ class SmsSender(
         originCommandId: String? = null,
         clientMessageId: String? = null,
         gatewayRequestId: String? = null,
+        /**
+         * A `simRef` the REQUEST asserts for this message, or null when it asserts nothing.
+         *
+         * An assertion is checked against the conversation's stored preference: if both name a line
+         * and they disagree, the send is refused with a typed conflict rather than silently choosing.
+         */
+        assertedSimRef: String? = null,
+        /**
+         * True only when the caller EXPLICITLY claims a one-message override.
+         *
+         * Never inferred from a differing `subscriptionId`: inferring it is how a stale or confused
+         * client would send on a line the user did not choose while appearing authorised. The stored
+         * preference is never modified by an override.
+         */
+        oneShotOverride: Boolean = false,
     ): SendOutcome {
         requireOffMainThread()
         return directSend(
-            phone, text, subscriptionIdOverride, smscOverride, showToast,
-            originCommandId, clientMessageId, gatewayRequestId
+            phone = phone,
+            text = text,
+            subscriptionIdOverride = subscriptionIdOverride,
+            smscOverride = smscOverride,
+            showToast = showToast,
+            originCommandId = originCommandId,
+            clientMessageId = clientMessageId,
+            gatewayRequestId = gatewayRequestId,
+            // The conversation is what makes the sticky SIM enforceable on this device.
+            threadId = threadId,
+            assertedSimRef = assertedSimRef,
+            oneShotOverride = oneShotOverride
         )
     }
 
@@ -165,8 +226,14 @@ class SmsSender(
     ): SendOutcome = withContext(Dispatchers.IO) {
         if (!GatewayOutgoingPipeline.ENQUEUE_ALL_SENDS) {
             return@withContext directSend(
-                phone, text, subscriptionIdOverride, smscOverride, showToast,
-                originCommandId, clientMessageId
+                phone = phone,
+                text = text,
+                subscriptionIdOverride = subscriptionIdOverride,
+                smscOverride = smscOverride,
+                showToast = showToast,
+                originCommandId = originCommandId,
+                clientMessageId = clientMessageId,
+                threadId = threadId
             )
         }
         // ── Durable path: remote_commands row → execute → mark ─────────────
@@ -187,8 +254,14 @@ class SmsSender(
             )
             if (repo.markCommandAcceptedIfReceived(plan.commandId)) {
                 val outcome = directSend(
-                    phone, text, subscriptionIdOverride, smscOverride, showToast,
-                    plan.commandId, idempotencyKey
+                    phone = phone,
+                    text = text,
+                    subscriptionIdOverride = subscriptionIdOverride,
+                    smscOverride = smscOverride,
+                    showToast = showToast,
+                    originCommandId = plan.commandId,
+                    clientMessageId = idempotencyKey,
+                    threadId = threadId
                 )
                 repo.finishCommandFrom(
                     commandId = plan.commandId,
@@ -297,8 +370,14 @@ class SmsSender(
                 return@withContext IdempotentSendOutcome.AlreadySent
             }
             val outcome = directSend(
-                phone, text, subscriptionIdOverride, smscOverride, showToast,
-                plan.commandId, clientMessageId
+                phone = phone,
+                text = text,
+                subscriptionIdOverride = subscriptionIdOverride,
+                smscOverride = smscOverride,
+                showToast = showToast,
+                originCommandId = plan.commandId,
+                clientMessageId = clientMessageId,
+                threadId = threadId
             )
             repo.finishCommandFrom(
                 commandId = plan.commandId,
@@ -423,6 +502,125 @@ class SmsSender(
             is SendOutcome.Rejected -> null
         }
 
+    /**
+     * The FIRST stage of a send: decide which line it may use, or refuse it.
+     *
+     * Split out so the physical-submit body exists exactly ONCE. The alternative — a second copy of
+     * the submit block for the "policy chose the line" case — is how two send paths drift apart, and a
+     * drifted send path is one that skips the SIM read-back or the delivery-report forcing.
+     */
+    private sealed interface SimChoice {
+        /** Send on exactly [subscriptionId]; [chosenByPreference] records why, for diagnostics. */
+        data class Send(val subscriptionId: Int, val chosenByPreference: Boolean) : SimChoice
+
+        /** Do not reach the radio at all. */
+        data class Blocked(val reason: SendSimPreferencePolicy.Block) : SimChoice
+
+        /** Nothing pinned this send or the request named a line: the existing MODE A/B path decides. */
+        data object UseRequestOrDefault : SimChoice
+    }
+
+    /**
+     * Resolve the sticky conversation SIM for this send.
+     *
+     * Reads the LIVE preference and the LIVE inventory at execution time (never a snapshot), then
+     * hands both to the pure policy. Returns [SimChoice.UseRequestOrDefault] when the conversation has
+     * no preference and the request asserts nothing, which is every un-pinned conversation — those
+     * must keep sending exactly as they did before this feature existed.
+     */
+    private fun chooseSim(
+        threadId: Long,
+        subscriptionIdOverride: Int?,
+        assertedSimRef: String?,
+        oneShotOverride: Boolean
+    ): SimChoice {
+        if (threadId <= 0L) return SimChoice.UseRequestOrDefault
+        val preference = runCatching {
+            MessagesDatabase.get(context.applicationContext)
+                .conversationPreferenceDao()
+                .preferredSimRefBlocking(threadId)
+        }.getOrNull()
+
+        if (preference == null && assertedSimRef == null) return SimChoice.UseRequestOrDefault
+
+        val resolution = resolveSimEvidence(preference, assertedSimRef)
+        return when (
+            val decision = SendSimPreferencePolicy.decide(
+                conversationPreferredRef = preference,
+                preferredAssertion = resolution.preferred,
+                preferredRefWellFormed = resolution.preferredWellFormed,
+                // A one-shot override is only an override when the caller SAID so. An ordinary send
+                // that merely carries a subscriptionId is not authorised to overrule the user.
+                oneShotOverride = subscriptionIdOverride.takeIf { oneShotOverride },
+                assertedRef = assertedSimRef,
+                assertedAssertion = resolution.asserted,
+                assertedRefWellFormed = resolution.assertedWellFormed
+            )
+        ) {
+            is SendSimPreferencePolicy.Decision.Blocked -> SimChoice.Blocked(decision.reason)
+            is SendSimPreferencePolicy.Decision.Send ->
+                SimChoice.Send(decision.subscriptionId, chosenByPreference = true)
+            SendSimPreferencePolicy.Decision.UsePlatformDefault -> SimChoice.UseRequestOrDefault
+        }
+    }
+
+    /**
+     * What a stored preference and a request assertion mean on THIS device, right now.
+     *
+     * Resolution is by exact `simRef` against the current active inventory, with NO slot or positional
+     * fallback: the card in slot 0 today is not the card that was there yesterday, so any fallback
+     * would silently send on a line the user did not choose.
+     */
+    private data class SimEvidence(
+        val preferred: SendSimPreferencePolicy.Assertion?,
+        val asserted: SendSimPreferencePolicy.Assertion?,
+        val preferredWellFormed: Boolean,
+        val assertedWellFormed: Boolean
+    )
+
+    private fun resolveSimEvidence(preference: String?, asserted: String?): SimEvidence {
+        val provider = SimRefProvider()
+        // ONE inventory read for both references: reading it twice could see two different sets (a SIM
+        // can be removed between the calls), and the two verdicts would then describe different worlds.
+        val simManager = SimManager(context)
+        val active = runCatching { simManager.getActiveSims().map { it.subscriptionId } }
+            .getOrDefault(emptyList())
+        val readable = runCatching { simManager.hasReadPhoneState() }.getOrDefault(false)
+
+        fun assertionFor(reference: String?): Pair<SendSimPreferencePolicy.Assertion?, Boolean> {
+            if (reference == null) return null to true
+            if (!SimRefFormat.isValid(reference)) return null to false
+            // An unreadable inventory is NOT "the SIM is gone": the device could not answer, and the
+            // policy treats that as unprovable rather than as proof of absence.
+            if (!readable) {
+                return SendSimPreferencePolicy.Assertion.InventoryUnavailable to true
+            }
+            return when (
+                val resolved = provider.resolveSubscriptionId(
+                    reference = reference,
+                    activeSubscriptionIds = active,
+                    inventoryReadable = true
+                )
+            ) {
+                is SimRefResolution.Resolved ->
+                    SendSimPreferencePolicy.Assertion.Resolved(resolved.subscriptionId) to true
+                is SimRefResolution.Unavailable ->
+                    SendSimPreferencePolicy.Assertion.NotActive to true
+                SimRefResolution.InventoryUnavailable ->
+                    SendSimPreferencePolicy.Assertion.InventoryUnavailable to true
+            }
+        }
+
+        val (preferredAssertion, preferredOk) = assertionFor(preference)
+        val (assertedAssertion, assertedOk) = assertionFor(asserted)
+        return SimEvidence(
+            preferred = preferredAssertion,
+            asserted = assertedAssertion,
+            preferredWellFormed = preferredOk,
+            assertedWellFormed = assertedOk
+        )
+    }
+
     /** Dispatches via the selected SIM/SMSC; updates STATUS on failure. */
     private fun dispatch(
         sentId: Long,
@@ -430,15 +628,35 @@ class SmsSender(
         text: String,
         subscriptionIdOverride: Int?,
         smscOverride: String?,
-        showToast: Boolean
+        showToast: Boolean,
+        threadId: Long = 0L,
+        assertedSimRef: String? = null,
+        oneShotOverride: Boolean = false,
     ): Boolean {
+        // ── THE STICKY CONVERSATION SIM (mission §13/§14/§15/§19/§20/§31) ───
+        //
+        // Resolved BEFORE any line is chosen, because a pinned conversation that cannot be honoured
+        // must refuse the send rather than quietly leaving on the platform default. The rule lives in
+        // SendSimPreferencePolicy (pure and exhaustively tested); this is the wiring that feeds it real
+        // device state and obeys the verdict.
+        var requestedSimId: Int? = null
+        when (val choice = chooseSim(threadId, subscriptionIdOverride, assertedSimRef, oneShotOverride)) {
+            is SimChoice.Blocked ->
+                // NOTHING has been handed to the radio, and nothing will be: the physical submission
+                // count for a blocked preference is ZERO by construction.
+                return rejectForSimPreference(sentId, phone, choice.reason, showToast)
+            is SimChoice.Send -> requestedSimId = choice.subscriptionId
+            SimChoice.UseRequestOrDefault -> Unit
+        }
+
         // ── MODE A / MODE B, resolved at EXECUTION time (mission §25/§26) ────
         //
         // MODE B: an explicit line was named (per message, or as the user's Messaging preference).
         // MODE A: nothing was named, so the CURRENT system default SMS subscription decides — read
         //         now, not from any cached telemetry, and never guessed.
-        val explicitSubId = subscriptionIdOverride ?: prefs.sendSubscriptionId
-            .takeIf { it != MessagingPreferences.SUBSCRIPTION_UNSET }
+        val explicitSubId = requestedSimId
+            ?: subscriptionIdOverride
+            ?: prefs.sendSubscriptionId.takeIf { it != MessagingPreferences.SUBSCRIPTION_UNSET }
         val defaultResolution = if (explicitSubId == null) {
             SendSimPolicy.resolveDefault(platformDefaultSmsSubscriptionId())
         } else {
@@ -640,6 +858,57 @@ class SmsSender(
             Toast.makeText(
                 context,
                 "Selected SIM is unavailable — message not sent. Check the SIM setting.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        return false
+    }
+
+    /**
+     * Refuse a send the conversation's own sticky SIM forbids (mission §14/§31).
+     *
+     * **This is the zero-physical-send path.** It is reached BEFORE any line is resolved, before
+     * `SmsManager` is touched and before any segment is recorded as submitted, so a blocked preference
+     * cannot produce a single modem submission.
+     *
+     * The distinction it preserves is the one that matters most in this feature:
+     *
+     * ```text
+     * no preference            -> the platform default is allowed (never reaches here)
+     * preference, unresolvable -> refuse, and say which line is missing
+     * ```
+     *
+     * Falling back to the default here would put a private message on a line the user did not choose,
+     * and an SMS cannot be recalled. The message is left visibly "Not sent" with a typed reason, so the
+     * user can reselect the line.
+     */
+    private fun rejectForSimPreference(
+        sentId: Long,
+        phone: String,
+        reason: SendSimPreferencePolicy.Block,
+        showToast: Boolean
+    ): Boolean {
+        val failure = SendSimPreferencePolicy.failureFor(reason)
+        updateStatus(sentId, Telephony.Sms.STATUS_FAILED)
+        recordDispatchRejection(sentId, 1, null, failure, null)
+        recordSendState(sentId, SendTransportState.NOT_SENT, failureCode = failure.code)
+        DiagnosticLog.event(
+            "SMS_SEND",
+            "sim-preference-refused row=$sentId phone=${DiagnosticLog.phoneToken(phone)} " +
+                "reason=${reason.name} mutations=0"
+        )
+        Log.w(TAG, "Refusing to send: conversation SIM preference not satisfied (${reason.name})")
+        if (showToast) {
+            Toast.makeText(
+                context,
+                when (reason) {
+                    SendSimPreferencePolicy.Block.SIM_PREFERENCE_CONFLICT ->
+                        "This conversation is set to a different SIM — message not sent."
+                    SendSimPreferencePolicy.Block.INVALID_SIM_REFERENCE ->
+                        "This conversation's SIM setting is invalid — reselect a SIM."
+                    else ->
+                        "Selected SIM is unavailable — message not sent. Reselect a SIM for this conversation."
+                },
                 Toast.LENGTH_LONG
             ).show()
         }
