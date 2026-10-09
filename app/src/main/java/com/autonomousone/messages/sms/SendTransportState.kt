@@ -205,3 +205,64 @@ fun resolveSendTransportState(
  * and forgotten in the other fails there rather than silently becoming a PENDING verdict.
  */
 enum class SegmentCallbackVerdict { PENDING, CONFIRMED, AMBIGUOUS, FAILED }
+
+/**
+ * How strong a piece of DELIVERY evidence is, so a later callback cannot destroy a better answer.
+ *
+ * ## Why this has to be an explicit order
+ *
+ * Delivery callbacks are independent, asynchronous writers and they arrive out of order, more than
+ * once, and sometimes malformed. Four rules have to hold, and all four are the same rule:
+ *
+ * ```text
+ * DELIVERED must not be downgraded by a late UNKNOWN callback
+ * a definite negative report must not be erased by a late malformed report
+ * a duplicate callback must not change the stored answer
+ * a late SENT result must not erase stronger delivery evidence
+ * ```
+ *
+ * Writing "last callback wins" would satisfy none of them: a single duplicated or truncated report
+ * would silently turn "Delivered" into "unknown" on a message the carrier already confirmed, and the
+ * user would be told the opposite of what happened. The store therefore applies a MONOTONIC rule —
+ * evidence may only be replaced by evidence at least as strong — and this enum is that order.
+ *
+ * It is persisted as an integer rank so the comparison happens inside the UPDATE statement, which is
+ * what makes it hold under concurrency rather than only between two sequential reads.
+ *
+ * Rank choice: [DELIVERED] is strongest because it is the only positive confirmation; the two failure
+ * categories outrank UNKNOWN because a definite answer beats no answer; and [TEMPORARY] sits below a
+ * permanent failure because a temporary condition carries less information about the outcome.
+ */
+enum class DeliveryEvidenceRank {
+    /** No report has ever been parsed. The starting state for every message. */
+    NONE,
+
+    /** 3GPP "temporary" family: the network is still trying. Not an outcome. */
+    TEMPORARY,
+
+    /** Unparseable, absent, or vendor report: the app genuinely cannot say. */
+    UNKNOWN,
+
+    /** A definite negative report (permanent failure family). */
+    FAILED,
+
+    /** A positive final delivery report. */
+    DELIVERED;
+
+    companion object {
+        /**
+         * Rank for a [com.autonomousone.messages.sms.SmsStatusPolicy.DeliveryEvidence] name.
+         *
+         * An unrecognised or absent name is [NONE], not [UNKNOWN]: "we have never recorded anything"
+         * and "we recorded that we do not know" are different states, and collapsing them would let a
+         * first-ever UNKNOWN report overwrite nothing while looking like it had recorded something.
+         */
+        fun fromEvidenceName(name: String?): DeliveryEvidenceRank = when (name) {
+            "DELIVERED" -> DELIVERED
+            "FAILED" -> FAILED
+            "TEMPORARY" -> TEMPORARY
+            "UNKNOWN" -> UNKNOWN
+            else -> NONE
+        }
+    }
+}

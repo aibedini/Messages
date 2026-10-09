@@ -71,11 +71,12 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // poisons the shared provider and makes every SMS app show a false
         // "Not delivered". SmsSender still marks synchronous dispatch
         // exceptions as real failures before any callback exists.
-        val deliveryEvidence = if (phase == SmsStatusPolicy.Phase.DELIVERED) {
+        val deliveryParse = if (phase == SmsStatusPolicy.Phase.DELIVERED) {
             parseDeliveryEvidence(intent, ok)
         } else {
-            SmsStatusPolicy.DeliveryEvidence.UNKNOWN
+            null
         }
+        val deliveryEvidence = deliveryParse?.evidence ?: SmsStatusPolicy.DeliveryEvidence.UNKNOWN
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         DiagnosticLog.event(
             "SMS_CALLBACK",
@@ -323,6 +324,23 @@ class SmsStatusReceiver : BroadcastReceiver() {
             callbackResultCode = callbackResultCode,
             radioErrorCode = intent.getIntExtra("errorCode", 0).takeIf { it != 0 }
         )
+
+        // ── APP-OWNED DELIVERY EVIDENCE ─────────────────────────────────────
+        //
+        // The provider's STATUS cannot carry this: it is the handset's own delivery field, it holds no
+        // TP-Status, and a negative report and a missing report can look alike. Before this write, the
+        // carrier's verdict reached only logcat and `GatewayDeliveryReports` (gateway sends only), so a
+        // LOCAL message the carrier reported as undelivered could not be explained after a restart —
+        // the app knew at callback time and forgot.
+        if (phase == SmsStatusPolicy.Phase.DELIVERED && deliveryParse != null) {
+            recordDeliveryEvidence(
+                context = context,
+                rowId = rowId,
+                tpStatus = deliveryParse.tpStatus,
+                evidence = deliveryParse.evidence,
+                resultCode = callbackResultCode
+            )
+        }
         // One line per callback, so the durable log shows the carrier evidence arriving even when it
         // does not (yet) complete the aggregate verdict — a missing DLR is otherwise invisible.
         DiagnosticLog.event(
@@ -415,6 +433,65 @@ class SmsStatusReceiver : BroadcastReceiver() {
     }
 
     /**
+     * Persists the carrier's DELIVERY evidence durably.
+     *
+     * ## What is stored, and why all of it
+     *
+     * The raw TP-Status, its classification, the callback result code and the timestamp, plus a
+     * monotonic rank. A user asking "why was this not delivered?" needs the exact number the network
+     * sent, not a re-derivation from evidence that may no longer exist — and a classification alone
+     * cannot be re-examined if the interpretation turns out to be wrong.
+     *
+     * ## Monotonicity
+     *
+     * The rank is enforced inside the UPDATE (see [MessageDao.recordDeliveryEvidence]), so a late or
+     * duplicate UNKNOWN report cannot overwrite a confirmed DELIVERED one. That ordering is the whole
+     * point: without it, one duplicated report turns a delivered message into "unknown" and the user
+     * is told the opposite of what the carrier said.
+     *
+     * Never throws: a status broadcast must not fail because a bookkeeping write did. The previous
+     * evidence stays in place, which is the conservative direction.
+     */
+    private suspend fun recordDeliveryEvidence(
+        context: android.content.Context,
+        rowId: Long,
+        tpStatus: Int?,
+        evidence: SmsStatusPolicy.DeliveryEvidence,
+        resultCode: Int
+    ) {
+        try {
+            val rank = when (evidence) {
+                SmsStatusPolicy.DeliveryEvidence.DELIVERED ->
+                    DeliveryEvidenceRank.DELIVERED
+                SmsStatusPolicy.DeliveryEvidence.FAILED ->
+                    DeliveryEvidenceRank.FAILED
+                SmsStatusPolicy.DeliveryEvidence.TEMPORARY ->
+                    DeliveryEvidenceRank.TEMPORARY
+                SmsStatusPolicy.DeliveryEvidence.UNKNOWN ->
+                    DeliveryEvidenceRank.UNKNOWN
+            }
+            val updated = MessagesDatabase.get(context.applicationContext)
+                .messageDao()
+                .recordDeliveryEvidence(
+                    source = MessageEntity.SOURCE_SMS,
+                    providerId = rowId,
+                    at = System.currentTimeMillis(),
+                    tpStatus = tpStatus,
+                    evidence = evidence.name,
+                    resultCode = resultCode,
+                    rank = rank.ordinal
+                )
+            DiagnosticLog.event(
+                "SMS_DELIVERY_EVIDENCE",
+                "row=$rowId evidence=${evidence.name} tpStatus=${tpStatus ?: "none"} " +
+                    "rank=${rank.ordinal} mirrored=${updated > 0}"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "delivery-evidence write failed row=$rowId", e)
+        }
+    }
+
+    /**
      * Human-readable name for a SmsManager result code (diagnostics only).
      *
      * Delegates to [SmsResultCodes], the ONE canonical mapping. This file used to carry its own
@@ -435,7 +512,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
     private fun parseDeliveryEvidence(
         intent: Intent,
         callbackOk: Boolean
-    ): SmsStatusPolicy.DeliveryEvidence {
+    ): DeliveryParse {
         val pdu = intent.getByteArrayExtra("pdu")
         val declaredFormat = intent.getStringExtra("format")
         if (pdu != null && pdu.isNotEmpty()) {
@@ -456,13 +533,37 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         "SMS_DELIVERY_PDU",
                         "format=$format tpStatus=${report.status} evidence=$evidence bytes=${pdu.size}"
                     )
-                    return evidence
+                    // The RAW TP-Status travels out with the classification. It is the carrier's own
+                    // statement, and a user inspecting a failed delivery needs the exact number the
+                    // network sent — not only the app's broad reading of it. The PDU bytes themselves
+                    // are deliberately NOT persisted: bulky, sensitive, and unnecessary once parsed.
+                    return DeliveryParse(evidence = evidence, tpStatus = report.status)
                 }
             }
         }
-        return if (callbackOk) SmsStatusPolicy.DeliveryEvidence.DELIVERED
-        else SmsStatusPolicy.DeliveryEvidence.UNKNOWN
+        return DeliveryParse(
+            evidence = if (callbackOk) {
+                SmsStatusPolicy.DeliveryEvidence.DELIVERED
+            } else {
+                SmsStatusPolicy.DeliveryEvidence.UNKNOWN
+            },
+            // No parseable report: null, NOT zero. Zero is a real 3GPP "delivered" code, so writing
+            // it here would fabricate the strongest possible evidence out of a missing report.
+            tpStatus = null
+        )
     }
+
+    /**
+     * A parsed delivery callback: the classification AND the raw evidence behind it.
+     *
+     * Returned together because they must be persisted together — a stored classification with no raw
+     * code cannot be re-examined, and a raw code with no classification forces every reader to
+     * re-interpret it.
+     */
+    private data class DeliveryParse(
+        val evidence: SmsStatusPolicy.DeliveryEvidence,
+        val tpStatus: Int?
+    )
 
     private fun updateProvider(context: Context, rowId: Long, status: Int, delivered: Boolean) {
         try {

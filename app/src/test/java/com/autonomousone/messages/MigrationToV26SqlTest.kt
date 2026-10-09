@@ -114,11 +114,13 @@ class MigrationToV26SqlTest {
     // ── boundary ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `this migration owns the current schema version boundary`() {
+    fun `this migration declares its own 25 to 26 boundary`() {
+        // The GLOBAL version constants are deliberately NOT asserted here: they move with every later
+        // migration, and pinning them in a historical migration's test makes that test fail for a
+        // reason that has nothing to do with v26. They belong to the NEWEST migration's test — the same
+        // reasoning MigrationToV19SqlTest, MigrationToV24SqlTest and MigrationToV25SqlTest record.
         assertEquals(25, MessagesDatabase.MIGRATION_25_26.startVersion)
         assertEquals(26, MessagesDatabase.MIGRATION_25_26.endVersion)
-        assertEquals(26, MessagesDatabase.CURRENT_SCHEMA_VERSION)
-        assertEquals(25, MessagesDatabase.PREVIOUS_SCHEMA_VERSION)
     }
 
     @Test

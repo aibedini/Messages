@@ -88,7 +88,7 @@ import com.autonomousone.messages.BuildConfig
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
         PendingInboundSmsEntity::class
     ],
-    version = 26,
+    version = 27,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -569,10 +569,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 26
+        const val CURRENT_SCHEMA_VERSION = 27
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 25
+        const val PREVIOUS_SCHEMA_VERSION = 26
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -903,6 +903,35 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v26 -> v27: the monotonic strength of recorded delivery evidence.
+         *
+         * ## Why this was unavoidable rather than a schema change for convenience
+         *
+         * v26 added the delivery columns but nothing wrote them, so no data depends on their shape —
+         * yet the monotonic rule still cannot be implemented without one extra column. Delivery
+         * callbacks are independent asynchronous writers that arrive out of order and more than once.
+         * "Never downgrade a better answer" has to be evaluated INSIDE the UPDATE statement, or a late
+         * UNKNOWN report that read the row before a DELIVERED report wrote it will overwrite the
+         * confirmed delivery — turning a delivered message into "unknown" and telling the user the
+         * opposite of what the carrier said. Comparing a persisted rank in SQL is what makes the rule
+         * hold under that race; a Kotlin read-then-write cannot.
+         *
+         * Additive and defaulted, so every existing row migrates to rank 0 ("nothing recorded"), which
+         * is exactly true for them: v26 shipped no writer.
+         *
+         * The published 25 -> 26 migration is NOT touched.
+         */
+        internal val UPGRADE_TO_V27_SQL: List<String> = listOf(
+            "ALTER TABLE `messages` ADD COLUMN `deliveryEvidenceRank` INTEGER NOT NULL DEFAULT 0"
+        )
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V27_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -914,7 +943,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

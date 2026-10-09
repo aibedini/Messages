@@ -125,7 +125,18 @@ data class MessageEntity(
      * DIAGNOSTIC ONLY. A negative delivery report is never a send failure — it is the carrier saying
      * the message was not delivered, which is a different fact from the handset failing to submit it.
      */
-    val deliveryResultCode: Int? = null
+    val deliveryResultCode: Int? = null,
+    /**
+     * Monotonic strength of the delivery evidence above, as a
+     * [com.autonomousone.messages.sms.DeliveryEvidenceRank] ordinal. 0 = nothing recorded.
+     *
+     * Stored so the "never downgrade a better answer" rule can be enforced INSIDE the UPDATE
+     * statement, which is what makes it hold when two delivery callbacks race — a read-then-write in
+     * Kotlin would let a late UNKNOWN report overwrite a DELIVERED one between the read and the write,
+     * turning a confirmed delivery into "unknown" with nothing to show for it.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val deliveryEvidenceRank: Int = 0
 ) {
     companion object {
         const val SOURCE_SMS = "sms"

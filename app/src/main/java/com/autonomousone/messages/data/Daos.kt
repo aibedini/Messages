@@ -244,10 +244,68 @@ interface MessageDao {
     // the mirror-write path is made to preserve them explicitly: read them first, upsert, write them
     // back. Both halves are required — a preserve that only reads would still lose the value.
 
-    /** Reads the app-owned send state of one mirror row, or null when the row has none yet. */
+    /**
+     * Records DELIVERY evidence monotonically.
+     *
+     * ## The rule, enforced in SQL rather than in Kotlin
+     *
+     * Delivery callbacks are independent, asynchronous writers: they arrive out of order, more than
+     * once, and sometimes malformed. Four required properties are really one:
+     *
+     * ```text
+     * DELIVERED must not be downgraded by a late UNKNOWN callback
+     * a definite negative report must not be erased by a late malformed report
+     * a duplicate callback must not change the stored answer
+     * a late SENT result must not erase stronger delivery evidence
+     * ```
+     *
+     * Every DIAGNOSTIC column is therefore written only when the incoming rank is at least as strong
+     * as the rank already stored. Doing this in the statement is what makes it hold under concurrency
+     * — a Kotlin read-compare-then-write has a window in which a late UNKNOWN report can overwrite a
+     * confirmed DELIVERED one, and the user would then be told the opposite of what the carrier said.
+     *
+     * `deliveryCallbackAt` additionally uses a STRICT `>`: a redelivered broadcast carries the same
+     * evidence again, and letting it rewrite the clock would make the "delivered at" time shown to the
+     * user drift forward on every duplicate. "When did this become true" is a fact about the first
+     * report that established it, not about the most recent copy of it.
+     *
+     * `CASE WHEN :rank >= deliveryEvidenceRank` is true when nothing was recorded (rank 0), so the
+     * first report always lands.
+     *
+     * @return rows updated (0 when the message is not mirrored yet, or when weaker evidence arrived).
+     */
+    @Query(
+        """
+        UPDATE messages SET
+            deliveryCallbackAt = CASE WHEN :rank > deliveryEvidenceRank THEN :at ELSE deliveryCallbackAt END,
+            deliveryTpStatus = CASE WHEN :rank >= deliveryEvidenceRank THEN :tpStatus ELSE deliveryTpStatus END,
+            deliveryEvidence = CASE WHEN :rank >= deliveryEvidenceRank THEN :evidence ELSE deliveryEvidence END,
+            deliveryResultCode = CASE WHEN :rank >= deliveryEvidenceRank THEN :resultCode ELSE deliveryResultCode END,
+            deliveryEvidenceRank = CASE WHEN :rank >= deliveryEvidenceRank THEN :rank ELSE deliveryEvidenceRank END
+        WHERE source = :source AND providerId = :providerId
+        """
+    )
+    suspend fun recordDeliveryEvidence(
+        source: String,
+        providerId: Long,
+        at: Long,
+        tpStatus: Int?,
+        evidence: String?,
+        resultCode: Int?,
+        rank: Int
+    ): Int
+
+    /**
+     * Reads the app-owned send state of one mirror row, or null when the row has none yet.
+     *
+     * Includes the delivery half so a mirror write can carry ALL app-owned diagnostic evidence
+     * forward, not just the transport verdict.
+     */
     @Query(
         "SELECT sendTransportState, sendFailureCode, sendResultCode, sendRadioErrorCode, " +
-            "sendStateUpdatedAt FROM messages WHERE source = :source AND providerId = :providerId"
+            "sendStateUpdatedAt, deliveryCallbackAt, deliveryTpStatus, deliveryEvidence, " +
+            "deliveryResultCode, deliveryEvidenceRank FROM messages " +
+            "WHERE source = :source AND providerId = :providerId"
     )
     suspend fun sendStateOf(source: String, providerId: Long): MessageSendStateRow?
 
@@ -260,7 +318,10 @@ interface MessageDao {
     @Query(
         "UPDATE messages SET sendTransportState = :state, sendFailureCode = :failureCode, " +
             "sendResultCode = :resultCode, sendRadioErrorCode = :radioErrorCode, " +
-            "sendStateUpdatedAt = :updatedAt " +
+            "sendStateUpdatedAt = :updatedAt, " +
+            "deliveryCallbackAt = :deliveryCallbackAt, deliveryTpStatus = :deliveryTpStatus, " +
+            "deliveryEvidence = :deliveryEvidence, deliveryResultCode = :deliveryResultCode, " +
+            "deliveryEvidenceRank = :deliveryEvidenceRank " +
             "WHERE source = :source AND providerId = :providerId"
     )
     suspend fun restoreSendState(
@@ -270,7 +331,12 @@ interface MessageDao {
         failureCode: String?,
         resultCode: Int?,
         radioErrorCode: Int?,
-        updatedAt: Long
+        updatedAt: Long,
+        deliveryCallbackAt: Long,
+        deliveryTpStatus: Int?,
+        deliveryEvidence: String?,
+        deliveryResultCode: Int?,
+        deliveryEvidenceRank: Int
     )
 
     /**
@@ -479,13 +545,18 @@ interface MessageDao {
     suspend fun deleteBySourceAndId(source: String, providerId: Long)
 }
 
-/** Row shape for [MessageDao.sendStateOf] — the app-owned send verdict of one mirror row. */
+/** Row shape for [MessageDao.sendStateOf] — the app-owned send AND delivery evidence of one row. */
 data class MessageSendStateRow(
     val sendTransportState: String?,
     val sendFailureCode: String?,
     val sendResultCode: Int?,
     val sendRadioErrorCode: Int?,
-    val sendStateUpdatedAt: Long
+    val sendStateUpdatedAt: Long,
+    val deliveryCallbackAt: Long,
+    val deliveryTpStatus: Int?,
+    val deliveryEvidence: String?,
+    val deliveryResultCode: Int?,
+    val deliveryEvidenceRank: Int
 )
 
 /**
@@ -529,7 +600,16 @@ object MessageSendStatePreserver {
                 failureCode = state.sendFailureCode,
                 resultCode = state.sendResultCode,
                 radioErrorCode = state.sendRadioErrorCode,
-                updatedAt = state.sendStateUpdatedAt
+                updatedAt = state.sendStateUpdatedAt,
+                // The DELIVERY half travels with the transport half. A provider row is not
+                // authoritative over either: neither the SENT verdict nor the carrier's own
+                // TP-Status exists in the provider at all, so a re-sync that carried only the send
+                // state forward would silently erase the evidence a user needs to explain a failure.
+                deliveryCallbackAt = state.deliveryCallbackAt,
+                deliveryTpStatus = state.deliveryTpStatus,
+                deliveryEvidence = state.deliveryEvidence,
+                deliveryResultCode = state.deliveryResultCode,
+                deliveryEvidenceRank = state.deliveryEvidenceRank
             )
         }
         return preserved.size
