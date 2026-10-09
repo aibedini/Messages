@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -72,7 +73,18 @@ import com.autonomousone.messages.utils.formatFullTimestamp
 import com.autonomousone.messages.utils.formatMessageTime
 
 /** Status icon + accessibility label for outgoing bubbles. */
-private data class StatusVisual(val icon: ImageVector, val label: String)
+private data class StatusVisual(
+    val icon: ImageVector,
+    val label: String,
+    /**
+     * True when the message did NOT reach the recipient by any evidence we have.
+     *
+     * A flag rather than comparing icons at the call site: "is this a failure" is a fact about the
+     * state, and deriving it from which glyph was chosen would silently break the moment two states
+     * shared an icon.
+     */
+    val isFailure: Boolean = false
+)
 
 /** A tappable entity (link or phone number) inside a message body. */
 internal data class MessageEntity(val text: String, val start: Int, val end: Int, val isUrl: Boolean)
@@ -416,11 +428,20 @@ fun ChatBubble(
 
                             if (!incoming) {
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val visual = statusVisualFor(sms.status)
+                                // The tick reads the APP-OWNED verdict, never the raw provider status.
+                                //
+                                // `statusVisualFor(sms.status)` could only see Telephony.Sms.STATUS_*,
+                                // which cannot express the two cases that matter most: an AMBIGUOUS
+                                // transport result (the message may have left the phone) and a negative
+                                // CARRIER report (it left, the network refused it). Both used to fall
+                                // through to the "Sent" / "Delivered" branches and show a success tick
+                                // for a message that failed — the precise defect this state model exists
+                                // to end.
+                                val visual = statusVisualForState(sms.uiState, sms.status)
                                 Icon(
                                     imageVector = visual.icon,
                                     contentDescription = visual.label,
-                                    tint = if (sms.status == Telephony.Sms.STATUS_FAILED) {
+                                    tint = if (visual.isFailure) {
                                         FailedTint
                                     } else {
                                         contentColor.copy(alpha = 0.8f)
@@ -470,20 +491,22 @@ fun ChatBubble(
                     }
                 }
 
-                // Detail line: when it was sent and (when reported) delivered.
+                // Detail line: when it was sent, and the ACTUAL evidence about what happened.
+                //
+                // This used to be built from `sms.status` and could therefore only ever say three
+                // things: "Not delivered" for STATUS_FAILED, "Delivered <time>" once dateSent filled
+                // in, or "Sending…". It could not name a reason, could not distinguish an ambiguous
+                // result from a pending one, and never mentioned the carrier's own report — so the
+                // user could see that something failed but never WHY.
                 AnimatedVisibility(visible = showDetails && !incoming) {
+                    val presentation = statusPresentationFor(sms)
                     val detail = buildString {
-                        append("Sent ")
+                        append(presentation.label.ifBlank { "Sent" })
+                        append(" · ")
                         append(formatFullTimestamp(sms.date))
-                        when {
-                            sms.status == Telephony.Sms.STATUS_FAILED ->
-                                append(" · Not delivered")
-                            sms.dateSent > 0 -> {
-                                append(" · Delivered ")
-                                append(formatFullTimestamp(sms.dateSent))
-                            }
-                            sms.status == Telephony.Sms.STATUS_PENDING ->
-                                append(" · Sending…")
+                        presentation.detail?.let { append(" · ").append(it) }
+                        if (presentation.duplicateRisk) {
+                            append(" · Retrying may send it twice")
                         }
                     }
                     Text(
@@ -498,9 +521,99 @@ fun ChatBubble(
         }
 }
 
+/**
+ * The full presentation for one outgoing message, from the app-owned state where it exists.
+ *
+ * Falls back to a provider-status-only presentation for historical rows that have no app-owned
+ * evidence, so an old message keeps rendering exactly as it did before the state model existed.
+ */
+private fun statusPresentationFor(sms: com.autonomousone.messages.model.Sms):
+    com.autonomousone.messages.sms.SmsStatusPresentation {
+    val state = com.autonomousone.messages.sms.SmsUiState.from(sms.uiState)
+    if (state != null) {
+        return com.autonomousone.messages.sms.SmsStatusPresentation(
+            state = state,
+            label = when (state) {
+                com.autonomousone.messages.sms.SmsUiState.SENDING -> "Sending…"
+                com.autonomousone.messages.sms.SmsUiState.SENT -> "Sent"
+                com.autonomousone.messages.sms.SmsUiState.DELIVERED -> "Delivered"
+                com.autonomousone.messages.sms.SmsUiState.NOT_SENT -> "Not sent"
+                com.autonomousone.messages.sms.SmsUiState.NOT_DELIVERED -> "Not delivered"
+                com.autonomousone.messages.sms.SmsUiState.SEND_STATUS_UNKNOWN -> "Send status unknown"
+                com.autonomousone.messages.sms.SmsUiState.DELIVERY_UNKNOWN -> "Delivery unknown"
+            },
+            detail = when (state) {
+                // The one place the user is warned that a retry could duplicate the message. A blind
+                // resend of an ambiguous send is the failure this wording exists to prevent.
+                com.autonomousone.messages.sms.SmsUiState.SEND_STATUS_UNKNOWN ->
+                    com.autonomousone.messages.sms.SmsStatusPresentationMapper.AMBIGUOUS_DETAIL
+                // A missing delivery report is NOT a failure, so this says exactly that and no more.
+                com.autonomousone.messages.sms.SmsUiState.DELIVERY_UNKNOWN ->
+                    "No conclusive delivery report was received"
+                else -> null
+            },
+            canRetry = state == com.autonomousone.messages.sms.SmsUiState.NOT_SENT ||
+                state == com.autonomousone.messages.sms.SmsUiState.NOT_DELIVERED ||
+                state == com.autonomousone.messages.sms.SmsUiState.SEND_STATUS_UNKNOWN,
+            duplicateRisk = state == com.autonomousone.messages.sms.SmsUiState.SEND_STATUS_UNKNOWN
+        )
+    }
+    // Historical row: no app-owned state, so the provider field is the only evidence there is.
+    return com.autonomousone.messages.sms.SmsStatusPresentation(
+        state = com.autonomousone.messages.sms.SmsUiState.SENT,
+        label = if (sms.status == Telephony.Sms.STATUS_FAILED) "Not delivered" else "Sent",
+        detail = if (sms.dateSent > 0) {
+            "Delivered " + formatFullTimestamp(sms.dateSent)
+        } else {
+            null
+        },
+        canRetry = false,
+        duplicateRisk = false
+    )
+}
+
 private fun statusVisualFor(status: Int): StatusVisual = when (status) {
     Telephony.Sms.STATUS_FAILED -> StatusVisual(Icons.Default.Error, "Failed")
     Telephony.Sms.STATUS_COMPLETE -> StatusVisual(Icons.Default.DoneAll, "Delivered")
     Telephony.Sms.STATUS_PENDING -> StatusVisual(Icons.Default.Schedule, "Sending")
     else -> StatusVisual(Icons.Default.Check, "Sent")
+}
+
+/**
+ * The tick for one outgoing message, from the app-owned state where it exists.
+ *
+ * ## Why the provider status is only a fallback
+ *
+ * `Telephony.Sms.STATUS_*` is a delivery field with four values and no room for the distinctions that
+ * matter: it cannot say "the result is genuinely ambiguous" (distinct from "still waiting"), and it
+ * cannot say "the carrier reported a delivery failure" (distinct from "the phone never sent it").
+ * Before this, both collapsed into a success tick — a message the network refused rendered identically
+ * to one that was delivered.
+ *
+ * `SMS status unknown` deliberately uses a warning glyph rather than a tick, because a tick asserts
+ * the message left the phone and an ambiguous result does not prove that.
+ *
+ * The fallback keeps every historical row — which has no app-owned state at all — rendering exactly as
+ * it did before this change.
+ */
+private fun statusVisualForState(uiState: String?, providerStatus: Int): StatusVisual {
+    val state = com.autonomousone.messages.sms.SmsUiState.from(uiState)
+    return when (state) {
+        com.autonomousone.messages.sms.SmsUiState.SENDING ->
+            StatusVisual(Icons.Default.Schedule, "Sending")
+        com.autonomousone.messages.sms.SmsUiState.SENT ->
+            StatusVisual(Icons.Default.Check, "Sent")
+        com.autonomousone.messages.sms.SmsUiState.DELIVERED ->
+            StatusVisual(Icons.Default.DoneAll, "Delivered")
+        com.autonomousone.messages.sms.SmsUiState.NOT_SENT ->
+            StatusVisual(Icons.Default.Error, "Not sent", isFailure = true)
+        com.autonomousone.messages.sms.SmsUiState.NOT_DELIVERED ->
+            StatusVisual(Icons.Default.Error, "Not delivered", isFailure = true)
+        com.autonomousone.messages.sms.SmsUiState.SEND_STATUS_UNKNOWN ->
+            StatusVisual(Icons.Default.Warning, "Send status unknown", isFailure = true)
+        com.autonomousone.messages.sms.SmsUiState.DELIVERY_UNKNOWN ->
+            StatusVisual(Icons.Default.Schedule, "Delivery unknown")
+        // No app-owned state (historical or inbound): the provider status is all there is.
+        null -> statusVisualFor(providerStatus)
+    }
 }

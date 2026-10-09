@@ -164,22 +164,24 @@ data class MessageEntity(
         type = type,
         status = status,
         dateSent = dateSent,
-        // The chat bubble reads its own verdict from here rather than re-deriving from [status],
-        // which cannot distinguish "still waiting" from "ambiguous" and holds no carrier TP-Status.
-        // Derived by the SAME mapper the conversation list uses, so the two cannot disagree.
-        uiState = com.autonomousone.messages.sms.SendStateDerivation
-            .evidenceFromPersisted(
-                message = this,
-                isOutgoing = type == android.provider.Telephony.Sms.MESSAGE_TYPE_SENT
-            )
-            .let { com.autonomousone.messages.sms.SmsStatusPresentationMapper.present(it) }
-            .state
-            .takeIf {
-                it.needsAttention ||
-                    it == com.autonomousone.messages.sms.SmsUiState.DELIVERED ||
-                    it == com.autonomousone.messages.sms.SmsUiState.DELIVERY_UNKNOWN
-            }
-            ?.name
+        // The app-owned verdict, derived by the SAME mapper every other surface uses so the bubble,
+        // the list and the details screen cannot disagree about one message. Derived from the persisted
+        // transport verdict AND the persisted delivery evidence: a surface that read only `status`
+        // could not tell "still waiting" from "ambiguous", and could not see the carrier's own
+        // negative report at all.
+        //
+        // Carried for EVERY outgoing state, not only the ones that need attention, because the bubble
+        // must render a tick for Sent and a double tick for Delivered just as much as it must render a
+        // warning for a failure.
+        uiState = if (type != android.provider.Telephony.Sms.MESSAGE_TYPE_SENT) {
+            null
+        } else {
+            com.autonomousone.messages.sms.SendStateDerivation
+                .evidenceFromPersisted(message = this, isOutgoing = true)
+                .let { com.autonomousone.messages.sms.SmsStatusPresentationMapper.present(it) }
+                .state
+                .name
+        }
     )
 }
 
