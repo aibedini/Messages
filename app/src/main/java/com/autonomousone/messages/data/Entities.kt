@@ -93,7 +93,39 @@ data class MessageEntity(
      * the two must agree exactly or every upgraded install fails to open.
      */
     @ColumnInfo(defaultValue = "0")
-    val sendStateUpdatedAt: Long = 0L
+    val sendStateUpdatedAt: Long = 0L,
+    /**
+     * Epoch millis of the last DELIVERY callback, or 0 when none arrived.
+     *
+     * Kept SEPARATE from [sendStateUpdatedAt] on purpose: a delivery report and a send verdict are two
+     * different pieces of evidence about the same message, and overwriting one timestamp with the
+     * other destroys the ability to say which happened when.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val deliveryCallbackAt: Long = 0L,
+    /**
+     * Raw 3GPP/3GPP2 TP-Status from the SMS-STATUS-REPORT, or null when there was no parseable report.
+     *
+     * Persisted raw and un-interpreted so a user can inspect the exact carrier value after a restart,
+     * and so a future interpretation change does not require re-collecting the evidence. It is never
+     * invented: null means "no report was parsed", not "status zero".
+     */
+    val deliveryTpStatus: Int? = null,
+    /**
+     * The classification [com.autonomousone.messages.sms.SmsStatusPolicy.DeliveryEvidence] name for
+     * [deliveryTpStatus] — DELIVERED / TEMPORARY / FAILED / UNKNOWN — or null when no report arrived.
+     *
+     * Stored beside the raw code rather than instead of it: the classification is the app's reading,
+     * the TP-Status is the carrier's own statement, and a diagnostic screen must be able to show both.
+     */
+    val deliveryEvidence: String? = null,
+    /**
+     * The raw delivery callback result code, for the technical details section.
+     *
+     * DIAGNOSTIC ONLY. A negative delivery report is never a send failure — it is the carrier saying
+     * the message was not delivered, which is a different fact from the handset failing to submit it.
+     */
+    val deliveryResultCode: Int? = null
 ) {
     companion object {
         const val SOURCE_SMS = "sms"

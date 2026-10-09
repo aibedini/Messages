@@ -40,7 +40,121 @@ jobs:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        
+
+    # ── THE GATE ────────────────────────────────────────────────────────────
+    #
+    # v3.5.0 shipped a release whose APK still identified itself as 3.4.30 (137) while its tag said
+    # v3.5.0. Nothing compared the tag to the artifact, Gradle exited 0 either way, and the workflow
+    # reported SUCCESS — so the mismatch stayed invisible until someone installed the APK.
+    #
+    # Every check below reads the ACTUAL built APK with SDK tooling rather than grepping
+    # build.gradle.kts: the source text is not the artifact, and the whole point of this step is to
+    # catch the case where the two disagree.
+    - name: Verify APK metadata and signing
+      run: |
+        set -euo pipefail
+
+        APK="app/build/outputs/apk/release/app-release.apk"
+        TAG="${GITHUB_REF_NAME}"
+        EXPECTED_VERSION="${TAG#v}"
+        EXPECTED_PACKAGE="com.autonomousone.messages"
+        EXPECTED_CODE="138"
+
+        if [ ! -f "$APK" ]; then
+          echo "::error::Release APK was not produced at $APK"
+          exit 1
+        fi
+
+        # aapt/apksigner live in the SDK build-tools.
+        BUILD_TOOLS="$(ls -d "${ANDROID_HOME}"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)"
+        if [ -z "$BUILD_TOOLS" ]; then
+          echo "::error::No Android SDK build-tools directory found under ${ANDROID_HOME}"
+          exit 1
+        fi
+        AAPT="$(command -v aapt || echo "$BUILD_TOOLS/aapt")"
+        APKSIGNER="$(command -v apksigner || echo "$BUILD_TOOLS/apksigner")"
+        echo "Using build-tools: $BUILD_TOOLS"
+
+        # ── 1. Read the REAL metadata out of the APK ────────────────────────
+        BADGING="$("$AAPT" dump badging "$APK")"
+        PKG_LINE="$(printf '%s\n' "$BADGING" | grep -m1 '^package:')"
+        echo "package line: $PKG_LINE"
+
+        ACTUAL_PACKAGE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*name='\([^']*\)'.*/\1/p")"
+        ACTUAL_VERSION="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+        ACTUAL_CODE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+
+        echo "tag=$TAG"
+        echo "expected versionName=$EXPECTED_VERSION versionCode=$EXPECTED_CODE package=$EXPECTED_PACKAGE"
+        echo "actual   versionName=$ACTUAL_VERSION versionCode=$ACTUAL_CODE package=$ACTUAL_PACKAGE"
+
+        # ── 2. Fail closed on ANY mismatch ─────────────────────────────────
+        FAILED=0
+        if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+          echo "::error::APK versionName '$ACTUAL_VERSION' does not match tag '$TAG' (expected '$EXPECTED_VERSION')"
+          FAILED=1
+        fi
+        if [ "$ACTUAL_CODE" != "$EXPECTED_CODE" ]; then
+          echo "::error::APK versionCode '$ACTUAL_CODE' does not match the expected '$EXPECTED_CODE'"
+          FAILED=1
+        fi
+        if [ "$ACTUAL_PACKAGE" != "$EXPECTED_PACKAGE" ]; then
+          echo "::error::APK package '$ACTUAL_PACKAGE' != '$EXPECTED_PACKAGE' — an upgrade would install a second app"
+          FAILED=1
+        fi
+        if [ "$FAILED" -ne 0 ]; then
+          echo "Refusing to publish a release whose APK does not match its tag."
+          exit 1
+        fi
+
+        # ── 3. The APK must be SIGNED, by a stable identity ────────────────
+        if ! "$APKSIGNER" verify --print-certs "$APK" > /tmp/certs.txt 2>&1; then
+          echo "::error::apksigner could not verify the release APK"
+          cat /tmp/certs.txt
+          exit 1
+        fi
+        "$APKSIGNER" verify --verbose "$APK" | tee /tmp/verify.txt
+        # v2 OR v3 is required for an in-place upgrade over an already-installed app. The published
+        # v3.5.0 APK is v2-only, so demanding v3 here would fail a perfectly upgradeable build.
+        if ! grep -qiE 'Verified using v[23] scheme.*: true' /tmp/verify.txt; then
+          echo "::error::Release APK is not signed with an upgrade-capable (v2/v3) scheme"
+          exit 1
+        fi
+
+        SIGNER_SHA256="$(sed -n 's/.*certificate SHA-256 digest: *//p' /tmp/certs.txt | head -1 | tr -d ':' | tr 'A-Z' 'a-z')"
+        echo "signer SHA-256: $SIGNER_SHA256"
+
+        # A published APK must remain installable OVER the previously released one, which needs the
+        # SAME signing identity. When the baseline is configured we enforce it; when it is not, we say
+        # so loudly rather than implying a check that never ran.
+        EXPECTED_SIGNER="${{ vars.EXPECTED_SIGNER_SHA256 }}"
+        if [ -z "$EXPECTED_SIGNER" ]; then
+          echo "::warning::EXPECTED_SIGNER_SHA256 repo variable is unset — signing IDENTITY was NOT compared against the previous release. Set it to make this check real."
+        else
+          NORMALISED_EXPECTED="$(printf '%s' "$EXPECTED_SIGNER" | tr -d ':' | tr 'A-Z' 'a-z')"
+          if [ "$SIGNER_SHA256" != "$NORMALISED_EXPECTED" ]; then
+            echo "::error::Signing identity CHANGED. An APK signed by a different key cannot upgrade an installed app without an uninstall."
+            echo "::error::expected=$NORMALISED_EXPECTED actual=$SIGNER_SHA256"
+            exit 1
+          fi
+          echo "Signing identity matches the configured baseline."
+        fi
+
+        # ── 4. Record verifiable facts on the run ──────────────────────────
+        {
+          echo "### Release verification"
+          echo ""
+          echo "| field | value |"
+          echo "| --- | --- |"
+          echo "| tag | \`$TAG\` |"
+          echo "| package | \`$ACTUAL_PACKAGE\` |"
+          echo "| versionName | \`$ACTUAL_VERSION\` |"
+          echo "| versionCode | \`$ACTUAL_CODE\` |"
+          echo "| signer SHA-256 | \`$SIGNER_SHA256\` |"
+          echo "| sha256 | \`$(sha256sum "$APK" | cut -d' ' -f1)\` |"
+          echo "| size | \`$(stat -c%s "$APK")\` bytes |"
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:

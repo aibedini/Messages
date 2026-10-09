@@ -88,7 +88,7 @@ import com.autonomousone.messages.BuildConfig
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
         PendingInboundSmsEntity::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -569,10 +569,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 25
+        const val CURRENT_SCHEMA_VERSION = 26
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 24
+        const val PREVIOUS_SCHEMA_VERSION = 25
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -866,6 +866,43 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v25 -> v26: durable DELIVERY evidence, so a specific message can be explained after a restart.
+         *
+         * ## Why a NEW migration instead of editing v25
+         *
+         * v25 was released (tag `v3.5.0`, APK published). Editing a shipped migration would mean two
+         * different on-disk shapes both claiming version 25, and an install that already migrated could
+         * never be repaired. The previous migration is therefore left exactly as it shipped and this one
+         * is purely additive on top of it.
+         *
+         * ## Why these columns are needed
+         *
+         * The send verdict already persists, but a delivery callback carried its evidence only into
+         * logcat and into `GatewayDeliveryReports` (which is for gateway-originated sends only). So a
+         * LOCAL message that the carrier reported as undelivered could not be explained after a
+         * restart: the app knew at callback time and forgot. A user asking "why did this fail?" needs
+         * the carrier's own TP-Status, not a re-derivation that may no longer be possible.
+         *
+         * All four are nullable/defaulted, so every existing row migrates to "no delivery report was
+         * recorded" — the honest state, and never a fabricated delivery verdict.
+         *
+         * Not stored: raw PDU bytes (the parsed TP-Status is the fact that matters and the bytes are
+         * both bulky and sensitive), and never any SMS body or recipient.
+         */
+        internal val UPGRADE_TO_V26_SQL: List<String> = listOf(
+            "ALTER TABLE `messages` ADD COLUMN `deliveryCallbackAt` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `messages` ADD COLUMN `deliveryTpStatus` INTEGER",
+            "ALTER TABLE `messages` ADD COLUMN `deliveryEvidence` TEXT",
+            "ALTER TABLE `messages` ADD COLUMN `deliveryResultCode` INTEGER"
+        )
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V26_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -877,7 +914,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

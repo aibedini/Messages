@@ -414,15 +414,17 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
     }
 
-    /** Human-readable name for a SmsManager result code (diagnostics only). */
-    private fun resultCodeName(code: Int): String = when (code) {
-        Activity.RESULT_OK -> "RESULT_OK"
-        SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "RESULT_ERROR_GENERIC_FAILURE"
-        SmsManager.RESULT_ERROR_NO_SERVICE -> "RESULT_ERROR_NO_SERVICE"
-        SmsManager.RESULT_ERROR_NULL_PDU -> "RESULT_ERROR_NULL_PDU"
-        SmsManager.RESULT_ERROR_RADIO_OFF -> "RESULT_ERROR_RADIO_OFF"
-        else -> "CUSTOM_$code"
-    }
+    /**
+     * Human-readable name for a SmsManager result code (diagnostics only).
+     *
+     * Delegates to [SmsResultCodes], the ONE canonical mapping. This file used to carry its own
+     * five-constant copy that fell through to `CUSTOM_<code>`, so `106`
+     * (`RESULT_RIL_REQUEST_RATE_LIMITED` — "the radio refused because requests were too frequent")
+     * was printed as an unknown vendor value. A rate limit that reads as "CUSTOM_106" is invisible,
+     * and invisible is how it gets mistaken for a carrier or balance problem. Two mappers over the
+     * same code is how the diagnostics screen and the transport classifier come to disagree.
+     */
+    private fun resultCodeName(code: Int): String = SmsResultCodes.name(code)
 
     /**
      * deliveryIntent carries the raw SMS-STATUS-REPORT PDU. Parse TP-Status;
