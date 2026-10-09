@@ -14,16 +14,27 @@ package com.autonomousone.messages.sms
  * SENDING             the logical send has not reached terminal SENT evidence
  * SENT                every required SENT part confirmed  (NOT delivered)
  * DELIVERED           positive delivery report evidence
- * NOT_SENT            a definite transport rejection
+ * NOT_SENT            a definite TRANSPORT rejection — the phone never got it out
+ * NOT_DELIVERED       a definite NEGATIVE carrier report — the phone sent it, the network did not deliver
  * SEND_STATUS_UNKNOWN ambiguous transport outcome — the SMS may have left the phone
  * DELIVERY_UNKNOWN    send confirmed, delivery evidence never became conclusive
  * ```
+ *
+ * ## Why [NOT_SENT] and [NOT_DELIVERED] are two states and not one
+ *
+ * They are the same sentence to a reader and opposite facts to a user. "Not sent" means the handset
+ * never handed the message to the network — the fix might be service, a bad number, or a rate limit.
+ * "Not delivered" means the handset DID send it and the carrier reported it could not be delivered —
+ * the fix is on the network or the recipient's side, and the user may have been billed. Collapsing them
+ * into one state tells the user the wrong thing about what happened and what to do next, so they get
+ * separate states, separate glyphs and separate copy.
  */
 enum class SmsUiState {
     SENDING,
     SENT,
     DELIVERED,
     NOT_SENT,
+    NOT_DELIVERED,
     SEND_STATUS_UNKNOWN,
     DELIVERY_UNKNOWN;
 
@@ -35,7 +46,21 @@ enum class SmsUiState {
      * every row shouts "Sent" is noise.
      */
     val needsAttention: Boolean
-        get() = this == NOT_SENT || this == SEND_STATUS_UNKNOWN || this == SENDING
+        get() = this == NOT_SENT || this == NOT_DELIVERED ||
+            this == SEND_STATUS_UNKNOWN || this == SENDING
+
+    companion object {
+        /**
+         * Parse a persisted name, degrading an unknown or NEWER value instead of throwing.
+         *
+         * v26 stored delivery failures as `NOT_SENT` because there was no separate state. Those rows
+         * are NOT reinterpreted: a stored `NOT_SENT` stays a transport failure, which is what it meant
+         * when it was written. Guessing that an old value "probably meant" delivery would retroactively
+         * rewrite history the app never recorded.
+         */
+        fun from(raw: String?): SmsUiState? =
+            entries.firstOrNull { it.name == raw }
+    }
 }
 
 /**
@@ -95,7 +120,7 @@ object SmsStatusPresentationMapper {
         if (evidence.hasDeliveryFailure) {
             val copy = SmsFailurePresentation.deliveryFailedCopy(null)
             return SmsStatusPresentation(
-                state = SmsUiState.NOT_SENT,
+                state = SmsUiState.NOT_DELIVERED,
                 label = "Not delivered",
                 detail = copy.detail,
                 canRetry = true,
@@ -198,6 +223,38 @@ object SmsStatusPresentationMapper {
             // Success stays quiet in the list.
             else -> null
         }
+
+    /**
+     * A compact leading marker for a conversation row, or null when the row should read normally.
+     *
+     * Separate from [conversationSummary] because the two answer different questions:
+     *
+     * ```text
+     * conversationSummary -> the WORDS describing the state ("Not sent")
+     * rowMarker           -> the GLYPH and words in a list row ("⚠ Not sent ·")
+     * ```
+     *
+     * The glyph matters: a list where every row is text-only makes a failure indistinguishable from a
+     * snippet at a glance. "Not sent" and "Not delivered" get DIFFERENT glyphs from "Sending", because
+     * a failure the user must act on and a send in progress are not the same kind of information.
+     *
+     * A success state returns null, so a recovered conversation stops shouting on its own.
+     */
+    fun rowMarker(presentation: SmsStatusPresentation, isOutgoing: Boolean): String? {
+        if (!isOutgoing) return null
+        return when (presentation.state) {
+            // A send in progress: a clock, not a warning. Nothing is wrong yet.
+            SmsUiState.SENDING -> "◷ Sending"
+            SmsUiState.NOT_SENT -> "⚠ Not sent"
+            // Distinct from NOT_SENT on purpose: the carrier reported a delivery failure, which is a
+            // different fact and a different remedy from the phone failing to send at all.
+            SmsUiState.NOT_DELIVERED -> "⚠ Not delivered"
+            SmsUiState.SEND_STATUS_UNKNOWN -> "⚠ Send status unknown"
+            SmsUiState.DELIVERY_UNKNOWN -> "Delivery unknown"
+            // Success stays quiet.
+            else -> null
+        }
+    }
 
     const val AMBIGUOUS_DETAIL: String =
         "The mobile network did not confirm whether this message was sent. " +

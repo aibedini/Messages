@@ -2,6 +2,7 @@ package com.autonomousone.messages.sms
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -123,9 +124,28 @@ class SmsStatusPresentationMapperTest {
     fun `negative delivery evidence is reported as a delivery failure`() {
         val presentation = SmsStatusPresentationMapper.present(outgoing(sent = true, deliveryFailed = true))
 
-        assertEquals(SmsUiState.NOT_SENT, presentation.state)
+        // NOT_DELIVERED, deliberately distinct from NOT_SENT. "The phone never got it out" and "the
+        // carrier reported it could not be delivered" need different words: the first points at
+        // service, the number or a rate limit; the second points at the network or the recipient, and
+        // the user may already have been billed. Collapsing them tells the user the wrong thing about
+        // both what happened and what to do next.
+        assertEquals(SmsUiState.NOT_DELIVERED, presentation.state)
         assertEquals("Not delivered", presentation.label)
         assertTrue(presentation.causeLabel!!.contains("delivery failed", ignoreCase = true))
+    }
+
+    @Test
+    fun `Not sent and Not delivered are different states with different words`() {
+        // The distinction the user sees. If these ever collapse again, this fails.
+        val transport = SmsStatusPresentationMapper.present(outgoing(failureCode = "NO_SERVICE"))
+        val delivery = SmsStatusPresentationMapper.present(outgoing(sent = true, deliveryFailed = true))
+
+        assertNotEquals(transport.state, delivery.state)
+        assertEquals("Not sent", transport.label)
+        assertEquals("Not delivered", delivery.label)
+        // Both need attention; neither is a success.
+        assertTrue(transport.state.needsAttention)
+        assertTrue(delivery.state.needsAttention)
     }
 
     // ── transport vs delivery must stay separate ────────────────────────────

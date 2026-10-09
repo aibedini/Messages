@@ -163,7 +163,23 @@ data class MessageEntity(
         unread = !read,
         type = type,
         status = status,
-        dateSent = dateSent
+        dateSent = dateSent,
+        // The chat bubble reads its own verdict from here rather than re-deriving from [status],
+        // which cannot distinguish "still waiting" from "ambiguous" and holds no carrier TP-Status.
+        // Derived by the SAME mapper the conversation list uses, so the two cannot disagree.
+        uiState = com.autonomousone.messages.sms.SendStateDerivation
+            .evidenceFromPersisted(
+                message = this,
+                isOutgoing = type == android.provider.Telephony.Sms.MESSAGE_TYPE_SENT
+            )
+            .let { com.autonomousone.messages.sms.SmsStatusPresentationMapper.present(it) }
+            .state
+            .takeIf {
+                it.needsAttention ||
+                    it == com.autonomousone.messages.sms.SmsUiState.DELIVERED ||
+                    it == com.autonomousone.messages.sms.SmsUiState.DELIVERY_UNKNOWN
+            }
+            ?.name
     )
 }
 

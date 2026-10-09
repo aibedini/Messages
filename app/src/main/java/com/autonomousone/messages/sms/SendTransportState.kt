@@ -125,6 +125,38 @@ object SendStateDerivation {
             deliveryUnknown = deliveryUnknown
         )
     }
+
+    /**
+     * The evidence for one message, reading the DURABLE delivery columns as well as the send verdict.
+     *
+     * ## Why this exists separately from [evidenceFor]
+     *
+     * [evidenceFor]'s delivery inputs default to false, which is right for a caller that has no
+     * delivery information to hand. But the delivery evidence IS persisted now, and a surface that
+     * ignored it would show "Sent" for a message the carrier explicitly reported as undelivered — the
+     * exact opposite of the truth, with the evidence sitting unread in the same row.
+     *
+     * Derived rather than stored so the two halves cannot drift: the persisted `deliveryEvidence` name
+     * is interpreted by the SAME [SmsStatusPolicy] classifier that produced it, and any change to that
+     * interpretation applies everywhere at once instead of only to newly written rows.
+     */
+    fun evidenceFromPersisted(message: MessageEntity, isOutgoing: Boolean): SmsStatusEvidence {
+        val delivery = message.deliveryEvidence?.let { name ->
+            runCatching { SmsStatusPolicy.DeliveryEvidence.valueOf(name) }.getOrNull()
+        }
+        return evidenceFor(
+            message = message,
+            isOutgoing = isOutgoing,
+            hasDeliveryConfirmation = delivery == SmsStatusPolicy.DeliveryEvidence.DELIVERED,
+            // A DEFINITE negative report is delivery failure, which is not the same fact as a transport
+            // failure and must not be folded into one: "the carrier says it was not delivered" and "the
+            // phone never sent it" need different words and different remedies.
+            hasDeliveryFailure = delivery == SmsStatusPolicy.DeliveryEvidence.FAILED,
+            // TEMPORARY/UNKNOWN/null all mean "no conclusive outcome yet", which is NOT a failure. A
+            // missing delivery report can never prove the recipient did not receive the message.
+            deliveryUnknown = false
+        )
+    }
 }
 
 /**

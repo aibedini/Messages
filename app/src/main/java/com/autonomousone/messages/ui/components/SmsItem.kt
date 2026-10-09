@@ -326,18 +326,61 @@ fun SmsItem(
                                     )
                                 }
                             } else {
-                                Text(
-                                    text = sms.message,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (sms.unread) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (sms.unread) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                // The newest outgoing message's verdict, when it needs attention.
+                                //
+                                // The prefix answers "is something wrong with this conversation?" at a
+                                // glance, which a snippet alone cannot: without it a failed send and an
+                                // ordinary message look identical in the list. A success state yields
+                                // null, so a recovered conversation stops shouting on its own.
+                                //
+                                // Drafts keep precedence (the branch above), because a draft is the
+                                // user's own unsent text and matters more than the last sent message.
+                                val stateMarker = sms.uiState
+                                    ?.let { com.autonomousone.messages.sms.SmsUiState.from(it) }
+                                    ?.let { state ->
+                                        com.autonomousone.messages.sms.SmsStatusPresentationMapper
+                                            .rowMarker(
+                                                com.autonomousone.messages.sms.SmsStatusPresentation(
+                                                    state = state,
+                                                    label = "",
+                                                    detail = null,
+                                                    canRetry = false,
+                                                    duplicateRisk = false
+                                                ),
+                                                isOutgoing = sms.type == 2
+                                            )
+                                    }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (stateMarker != null) {
+                                        Text(
+                                            text = "$stateMarker · ",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (
+                                                sms.uiState ==
+                                                com.autonomousone.messages.sms.SmsUiState.SENDING.name
+                                            ) {
+                                                // A send in progress is not an error, so it is not red.
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            } else {
+                                                MaterialTheme.colorScheme.error
+                                            },
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Text(
+                                        text = sms.message,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (sms.unread) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (sms.unread) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
 

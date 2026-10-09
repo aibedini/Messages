@@ -728,11 +728,11 @@ interface ConversationDao {
         """
         INSERT INTO conversations (
             threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
-            lastMessageType, pinned, archived
+            lastMessageType, pinned, archived, lastMessageUiState
         )
         VALUES (
             :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
-            :lastMessageType, :pinnedOnInsert, :archivedOnInsert
+            :lastMessageType, :pinnedOnInsert, :archivedOnInsert, :lastMessageUiState
         )
         ON CONFLICT(threadId) DO UPDATE SET
             normalizedAddress = excluded.normalizedAddress,
@@ -746,6 +746,10 @@ interface ConversationDao {
                 WHEN excluded.lastMessageDate >= conversations.lastMessageDate
                     THEN excluded.lastMessageType
                 ELSE conversations.lastMessageType END,
+            lastMessageUiState = CASE
+                WHEN excluded.lastMessageDate >= conversations.lastMessageDate
+                    THEN excluded.lastMessageUiState
+                ELSE conversations.lastMessageUiState END,
             unreadCount = excluded.unreadCount
         """
     )
@@ -767,7 +771,16 @@ interface ConversationDao {
          */
         pinnedOnInsert: Boolean,
         archivedOnInsert: Boolean,
-        lastMessageType: Int = 1
+        lastMessageType: Int = 1,
+        /**
+         * The newest message's app-owned UI state, or null when it needs no attention.
+         *
+         * Advanced with the snippet and under the SAME `lastMessageDate` guard, because it is a
+         * MESSAGE-OWNED field describing the newest message. If it were written unconditionally, an
+         * older failure badge would overwrite a newer success; if it were never advanced, a recovered
+         * conversation would keep showing "Not sent" for ever.
+         */
+        lastMessageUiState: String? = null
     )
 
     /**
@@ -791,11 +804,11 @@ interface ConversationDao {
         """
         INSERT INTO conversations (
             threadId, normalizedAddress, rawAddress, snippet, lastMessageDate, unreadCount,
-            lastMessageType, pinned, archived
+            lastMessageType, pinned, archived, lastMessageUiState
         )
         VALUES (
             :threadId, :normalizedAddress, :rawAddress, :snippet, :lastMessageDate, :unreadCount,
-            :lastMessageType, :pinnedOnInsert, :archivedOnInsert
+            :lastMessageType, :pinnedOnInsert, :archivedOnInsert, :lastMessageUiState
         )
         ON CONFLICT(threadId) DO UPDATE SET
             normalizedAddress = excluded.normalizedAddress,
@@ -803,6 +816,7 @@ interface ConversationDao {
             snippet = excluded.snippet,
             lastMessageDate = excluded.lastMessageDate,
             lastMessageType = excluded.lastMessageType,
+            lastMessageUiState = excluded.lastMessageUiState,
             unreadCount = excluded.unreadCount
         """
     )
@@ -816,7 +830,15 @@ interface ConversationDao {
         /** See [upsertPreservingFlags]: NOT NULL, no SQL default, insert-only. */
         pinnedOnInsert: Boolean,
         archivedOnInsert: Boolean,
-        lastMessageType: Int = 1
+        lastMessageType: Int = 1,
+        /**
+         * Recomputed unconditionally here, exactly like the snippet.
+         *
+         * This is the REBUILD path, whose whole purpose is that a projection may move BACKWARDS when
+         * the newest message is deleted. Carrying a failure badge forward through a rebuild would leave
+         * "Not sent" attached to a conversation whose failing message no longer exists.
+         */
+        lastMessageUiState: String? = null
     )
 
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")

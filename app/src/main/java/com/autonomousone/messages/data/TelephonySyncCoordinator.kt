@@ -920,7 +920,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         unreadCount = dao.countActiveUnread(threadId),
                         pinnedOnInsert = existing?.pinned ?: (threadId in pinRepositoryIds()),
                         archivedOnInsert = existing?.archived ?: (threadId in archivedRepositoryIds()),
-                        lastMessageType = newest.type
+                        lastMessageType = newest.type,
+                        lastMessageUiState = lastMessageUiStateOf(newest)
                     )
 
                     val direction = cloudMessageDirection(newest.type)
@@ -1189,7 +1190,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                             unreadCount = unread,
                             pinnedOnInsert = pinned,
                             archivedOnInsert = archived,
-                            lastMessageType = newest.type
+                            lastMessageType = newest.type,
+                            lastMessageUiState = lastMessageUiStateOf(newest)
                         )
                         if (projectionChanged &&
                             mode != DiscoveryMode.HISTORY_BACKFILL &&
@@ -2716,7 +2718,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // genuine first insert.
                     pinnedOnInsert = existingForInsert?.pinned ?: (threadId in pinRepositoryIds()),
                     archivedOnInsert = existingForInsert?.archived ?: (threadId in archivedRepositoryIds()),
-                    lastMessageType = newest.type
+                    lastMessageType = newest.type,
+                    lastMessageUiState = lastMessageUiStateOf(newest)
                 )
             } else {
                 val existing = convDao.byThread(threadId)
@@ -2730,7 +2733,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         unreadCount = unread,
                         lastMessageType = newest.type,
                         pinned = existing?.pinned ?: (threadId in pinRepositoryIds()),
-                        archived = existing?.archived ?: (threadId in archivedRepositoryIds())
+                        archived = existing?.archived ?: (threadId in archivedRepositoryIds()),
+                        lastMessageUiState = lastMessageUiStateOf(newest)
                     )
                 )
             }
@@ -2818,7 +2822,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         unreadCount = unreadByThread[m.threadId] ?: 0,
                         pinnedOnInsert = existing?.pinned ?: (m.threadId in pinnedIds),
                         archivedOnInsert = existing?.archived ?: (m.threadId in archivedIds),
-                        lastMessageType = m.type
+                        lastMessageType = m.type,
+                        lastMessageUiState = lastMessageUiStateOf(m)
                     )
                 }
             }
@@ -2826,9 +2831,42 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
     }
 
+    /**
+     * The `lastMessageUiState` value for a conversation whose newest message is [newest].
+     *
+     * ## Why this is derived here rather than in each surface
+     *
+     * The conversation list must show "⚠ Not sent · snippet" for the newest message. Deriving that in
+     * Compose would mean the list and the chat bubble interpret the same row independently, which is
+     * how one screen says "Not sent" while another says "Sent" about one message. So the state is
+     * computed ONCE, from the same [SmsStatusPresentationMapper] the bubble uses, and denormalized onto
+     * the conversation row — which is also what lets Home render a whole list in one query instead of a
+     * per-row probe.
+     *
+     * @return the [com.autonomousone.messages.sms.SmsUiState] name when the newest message needs
+     *   attention, or null when it does not. Null is the quiet case — an inbound message, a delivered
+     *   message, a historical row with no app-owned evidence — and [SmsStatusPresentationMapper
+     *   .conversationSummary] is the single place that decides which states are worth surfacing.
+     */
+    private fun lastMessageUiStateOf(newest: MessageEntity): String? {
+        val isOutgoing = newest.type == Telephony.Sms.MESSAGE_TYPE_SENT
+        val evidence = com.autonomousone.messages.sms.SendStateDerivation.evidenceFromPersisted(
+            message = newest,
+            isOutgoing = isOutgoing
+        )
+        val presentation = com.autonomousone.messages.sms.SmsStatusPresentationMapper.present(evidence)
+        return if (
+            com.autonomousone.messages.sms.SmsStatusPresentationMapper
+                .conversationSummary(presentation, isOutgoing) != null
+        ) {
+            presentation.state.name
+        } else {
+            null
+        }
+    }
+
     private suspend fun pinRepositoryIds(): Set<Long> =
         com.autonomousone.messages.repository.PinRepository(appContext).getPinnedIds()
-
     private suspend fun archivedRepositoryIds(): Set<Long> =
         com.autonomousone.messages.repository.ArchiveRepository(appContext).getArchivedIds()
 

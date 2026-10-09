@@ -870,7 +870,12 @@ class HomeViewModel(
         message = snippet,
         date = lastMessageDate,
         unread = unreadCount > 0,
-        type = lastMessageType
+        type = lastMessageType,
+        // The newest message's app-owned verdict, denormalized onto the conversation by the sync
+        // engine. Read straight from the row so Home renders a whole list in ONE query — deriving it
+        // here would mean a per-conversation probe into messages plus the ledger, the N+1 shape this
+        // projection exists to avoid.
+        uiState = lastMessageUiState
     )
 
     private fun applySwap(target: MutableList<Sms>, source: List<Sms>) {

@@ -295,7 +295,7 @@ class SendTransportStateTest {
     }
 
     @Test
-    fun `a delivery failure on a confirmed send is NOT_SENT`() {
+    fun `a delivery failure on a confirmed send is NOT_DELIVERED`() {
         val after = SmsStatusPresentationMapper.present(
             SendStateDerivation.evidenceFor(
                 message(SendTransportState.SENT_CONFIRMED),
@@ -304,7 +304,9 @@ class SendTransportStateTest {
             )
         )
 
-        assertEquals(SmsUiState.NOT_SENT, after.state)
+        // The transport half succeeded and the DELIVERY half did not. Reporting that as NOT_SENT would
+        // tell the user the phone failed to send a message the network actually received.
+        assertEquals(SmsUiState.NOT_DELIVERED, after.state)
     }
 
     @Test
@@ -331,7 +333,7 @@ class SendTransportStateTest {
             )
         )
 
-        assertEquals(SmsUiState.NOT_SENT, failedDelivery.state)
+        assertEquals(SmsUiState.NOT_DELIVERED, failedDelivery.state)
         assertFalse(
             "an ambiguous transport verdict must not become a delivery claim",
             SendStateDerivation.evidenceFor(
