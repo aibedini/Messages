@@ -80,9 +80,13 @@ jobs:
         PKG_LINE="$(printf '%s\n' "$BADGING" | grep -m1 '^package:')"
         echo "package line: $PKG_LINE"
 
-        ACTUAL_PACKAGE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*name='\([^']*\)'.*/\1/p")"
-        ACTUAL_VERSION="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
-        ACTUAL_CODE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+        # Anchored extraction. The package line carries SEVERAL name='...' attributes (notably
+        # platformBuildVersionName='16'), and a greedy `s/.*name=.../\1/p` binds to the LAST one, so a
+        # naive match reported the platform build version as the package name. Each value is therefore
+        # matched by its own full attribute name, and the package by the leading `package: name=`.
+        ACTUAL_PACKAGE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+        ACTUAL_VERSION="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+        ACTUAL_CODE="$(printf '%s\n' "$PKG_LINE" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
 
         echo "tag=$TAG"
         echo "expected versionName=$EXPECTED_VERSION versionCode=$EXPECTED_CODE package=$EXPECTED_PACKAGE"
