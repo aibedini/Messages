@@ -173,4 +173,35 @@ sealed class Screen(val route: String) {
      *     }
      */
     object Trash : Screen("trash")
+
+    /**
+     * Message Details — the send and delivery evidence of ONE message.
+     *
+     * `source` + `providerId` rather than a bare id: SMS `_id` 100 and MMS `_id` 100 are different
+     * messages, and opening the wrong one would show a confident, wrong answer about someone's message.
+     * `body`, `recipient` and `sender` are carried as query arguments because the conversation the user
+     * came from already holds them, which lets this screen render immediately without re-reading the
+     * provider.
+     *
+     * [encode] on the text arguments, read back with [cleanArg]: a leaked route PATTERN must never be
+     * rendered as a message body.
+     */
+    object MessageDetails :
+        Screen(
+            "message_details/{threadId}?source={source}&providerId={providerId}" +
+                "&body={body}&recipient={recipient}&sender={sender}"
+        ) {
+
+        fun createRoute(
+            threadId: Long,
+            source: String,
+            providerId: Long,
+            body: String = "",
+            recipient: String = "",
+            sender: String = ""
+        ): String =
+            "message_details/$threadId" +
+                "?source=${encode(source)}&providerId=$providerId" +
+                "&body=${encode(body)}&recipient=${encode(recipient)}&sender=${encode(sender)}"
+    }
 }

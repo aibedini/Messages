@@ -143,6 +143,14 @@ fun ChatBubble(
     /** v2.6.12: invoked with the original body when the user taps Resend. */
     onResend: ((String) -> Unit)? = null,
     /**
+     * Opens the full Message Details destination for THIS message.
+     *
+     * A callback rather than an inline dialog so Details is a real destination: scrollable, surviving
+     * configuration change, and returning to this conversation on Back. Null hides the action rather
+     * than opening something degraded.
+     */
+    onOpenDetails: ((Sms) -> Unit)? = null,
+    /**
      * FEATURE 9: multi-select is active for this list. Taps toggle the bubble's
      * membership and a selected bubble is painted with a distinct container and
      * an outline, so the selection is legible at a glance.
@@ -181,9 +189,6 @@ fun ChatBubble(
     // Long-press opens the action menu (copy / forward / link / details).
     var menuOpen by remember(sms.id) { mutableStateOf(false) }
     var showDetails by remember(sms.id) { mutableStateOf(false) }
-    // The real Details screen, opened from the action menu. Separate from [showDetails], which is the
-    // inline one-line summary inside the bubble.
-    var detailsOpen by remember(sms.id) { mutableStateOf(false) }
     // Needed for the on-demand technical-details read, which touches Room and therefore cannot run on
     // the composition thread.
     val copyScope = rememberCoroutineScope()
@@ -492,11 +497,10 @@ fun ChatBubble(
                                 text = { Text(stringResource(R.string.conv_menu_message_details)) },
                                 onClick = {
                                     menuOpen = false
-                                    // Opens the real details screen, which reads the persisted
-                                    // evidence itself. The bubble's own detail LINE stays as a quick
-                                    // glance; this is the answer to "why, and what does the phone
-                                    // know?", which needs room for the codes.
-                                    detailsOpen = true
+                                    // Real destination, not an inline expansion: it needs to scroll,
+                                    // it must survive a configuration change, and Back has to return to
+                                    // this conversation.
+                                    onOpenDetails?.invoke(sms)
                                 }
                             )
                             DropdownMenuItem(
@@ -549,16 +553,6 @@ fun ChatBubble(
                     )
                 }
             }
-        }
-
-        // The full Details screen, reachable from the action menu. It re-reads the persisted row so it
-        // can only ever describe THIS message.
-        if (detailsOpen) {
-            com.autonomousone.messages.ui.conversation.MessageDetailsDialog(
-                sms = sms,
-                onDismiss = { detailsOpen = false },
-                onCopy = { text -> copyToClipboard("technical details", text) }
-            )
         }
 }
 

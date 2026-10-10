@@ -149,6 +149,15 @@ object SendSegmentSql {
         "SELECT COUNT(*) FROM `send_segments` " +
             "WHERE `rowId` = :rowId AND `submittedAt` IS NOT NULL"
 
+    /**
+     * The full per-part ledger for ONE message, ordered by part index.
+     *
+     * Indexed by the composite primary key `(rowId, partIndex)`, so this is a keyed lookup and never a
+     * scan. Used by Message Details for the send-time SIM and the per-part breakdown.
+     */
+    const val SEGMENTS_FOR_ROW =
+        "SELECT * FROM `send_segments` WHERE `rowId` = :rowId ORDER BY `partIndex`"
+
     /** The Home counter's source of truth: immutable submissions in the window. */
     const val COUNT_SUBMITTED_BETWEEN =
         "SELECT COUNT(*) FROM `send_segments` " +
@@ -230,6 +239,17 @@ interface SendSegmentDao {
      */
     @Query(SendSegmentSql.COUNT_SUBMITTED_PARTS_FOR_ROW)
     suspend fun submittedPartsForRow(rowId: Long): Int
+
+    /**
+     * The full ledger for one message, keyed by its primary key.
+     *
+     * This is where the SEND-TIME SIM lives. The `messages` row is a mirror of the provider's own
+     * columns and carries no subscription, so the only trustworthy answer to "which line sent this?" is
+     * the ledger row written at submit time — never a re-read of the current default, which describes
+     * today's SIM rather than the one that carried a message sent yesterday.
+     */
+    @Query(SendSegmentSql.SEGMENTS_FOR_ROW)
+    suspend fun segmentsForRow(rowId: Long): List<SendSegmentEntity>
 
     // ── Counter ─────────────────────────────────────────────────────────────
 

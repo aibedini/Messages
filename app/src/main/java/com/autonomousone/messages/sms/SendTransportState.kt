@@ -144,6 +144,8 @@ object SendStateDerivation {
         val delivery = message.deliveryEvidence?.let { name ->
             runCatching { SmsStatusPolicy.DeliveryEvidence.valueOf(name) }.getOrNull()
         }
+        val sentConfirmed =
+            SendTransportState.from(message.sendTransportState) == SendTransportState.SENT_CONFIRMED
         return evidenceFor(
             message = message,
             isOutgoing = isOutgoing,
@@ -152,9 +154,18 @@ object SendStateDerivation {
             // failure and must not be folded into one: "the carrier says it was not delivered" and "the
             // phone never sent it" need different words and different remedies.
             hasDeliveryFailure = delivery == SmsStatusPolicy.DeliveryEvidence.FAILED,
-            // TEMPORARY/UNKNOWN/null all mean "no conclusive outcome yet", which is NOT a failure. A
-            // missing delivery report can never prove the recipient did not receive the message.
-            deliveryUnknown = false
+            // The send is confirmed and NO delivery outcome was recorded at all.
+            //
+            // This is the common real-world case the details screen exists for: the handset submitted
+            // the message, the SMSC acknowledged it, and no delivery report ever arrived. Reporting that
+            // as plain "Sent" would be a quiet overstatement — the user asked whether it arrived, and the
+            // honest answer is "we do not know". It is NOT reported as a failure either: a missing report
+            // cannot prove the recipient did not receive it.
+            //
+            // A recorded TEMPORARY outcome is excluded, because the network is still trying and the
+            // state is genuinely "in progress" rather than unresolved.
+            deliveryUnknown = sentConfirmed &&
+                delivery != SmsStatusPolicy.DeliveryEvidence.TEMPORARY
         )
     }
 }

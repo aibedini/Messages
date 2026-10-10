@@ -71,6 +71,8 @@ fun MessageList(
     onForward: (String) -> Unit,
     onPhoneClick: (String) -> Unit,
     onResend: (String) -> Unit,
+    /** Opens the full Message Details destination for the tapped message. */
+    onOpenDetails: (Sms) -> Unit = {},
     /** FEATURE 9: multi-select is on for this list. */
     selectionActive: Boolean = false,
     /**
@@ -174,6 +176,7 @@ fun MessageList(
                                     onForward = onForward,
                                     onPhoneClick = onPhoneClick,
                                     onResend = onResend,
+                    onOpenDetails = onOpenDetails,
                                     selectionActive = selectionActive,
                                     selected = MessageIdentity.keyOf(sms.id) in selectedKeys,
                                     onEnterSelection = { onEnterSelection(sms) },

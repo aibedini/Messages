@@ -7,8 +7,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -287,6 +291,47 @@ fun AppNavigation(
             )
         }
 
+        // Message Details. A REAL destination rather than an inline expansion, so it can be scrolled,
+        // survives configuration change, and returns to the same conversation on Back.
+        //
+        // source + providerId identify the message; the body/recipient/sender the conversation already
+        // holds are carried so the screen paints immediately without re-reading the provider. Every text
+        // argument is read through Screen.cleanArg, so a leaked route PATTERN can never render as a body.
+        composable(
+            route = Screen.MessageDetails.route,
+            arguments = listOf(
+                navArgument("threadId") { type = NavType.LongType },
+                navArgument("source") {
+                    type = NavType.StringType
+                    defaultValue = "sms"
+                },
+                navArgument("providerId") { type = NavType.LongType },
+                navArgument("body") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("recipient") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("sender") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            MessageDetailsRoute(
+                threadId = args?.getLong("threadId") ?: 0L,
+                source = Screen.cleanArg(args?.getString("source")).ifBlank { "sms" },
+                providerId = args?.getLong("providerId") ?: 0L,
+                body = Screen.cleanArg(args?.getString("body")),
+                recipient = Screen.cleanArg(args?.getString("recipient")),
+                sender = Screen.cleanArg(args?.getString("sender")),
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Starred inside ONE conversation (FEATURE 7). A separate route from the
         // global list on purpose: a wired argument cannot be optional, so a lost
         // thread id can never silently show every conversation's stars under one
@@ -436,4 +481,62 @@ fun AppNavigation(
             )
         }
     }
+}
+
+/**
+ * Message Details, wired to its ViewModel.
+ *
+ * The ViewModel is created with the composite identity and the already-known text, so the screen reads
+ * no provider data and no conversation window: opening Details costs one keyed message lookup plus one
+ * keyed ledger lookup.
+ */
+@Composable
+private fun MessageDetailsRoute(
+    threadId: Long,
+    source: String,
+    providerId: Long,
+    body: String,
+    recipient: String,
+    sender: String,
+    onBack: () -> Unit
+) {
+    val application = androidx.compose.ui.platform.LocalContext.current.applicationContext
+        as android.app.Application
+    val viewModel: com.autonomousone.messages.ui.details.MessageDetailsViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel(
+            key = "message_details_${source}_$providerId",
+            factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                    @Suppress("UNCHECKED_CAST")
+                    return com.autonomousone.messages.ui.details.MessageDetailsViewModel(
+                        application = application,
+                        threadId = threadId,
+                        source = source,
+                        providerId = providerId,
+                        body = body,
+                        recipient = recipient,
+                        sender = sender
+                    ) as T
+                }
+            }
+        )
+    val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    com.autonomousone.messages.ui.details.MessageDetailsScreen(
+        state = state,
+        onBack = onBack,
+        onCopyTechnicalDetails = {
+            scope.launch {
+                viewModel.technicalText()?.let { text ->
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(
+                        android.content.ClipData.newPlainText("technical details", text)
+                    )
+                }
+            }
+        }
+    )
 }

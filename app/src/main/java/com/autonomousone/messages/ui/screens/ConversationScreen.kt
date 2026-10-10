@@ -963,6 +963,22 @@ fun ConversationScreen(
                     // would make a resend an explicit one-shot override and let a stale id win over the
                     // durable preference.
                     onResend = { body -> viewModel.sendMessage(threadId, recipientPhone, body, null) },
+                    // Opens the full Message Details destination, carrying the composite identity plus
+                    // the text this screen already has, so the details screen paints immediately
+                    // without re-reading the provider.
+                    onOpenDetails = { tapped ->
+                        val isMms = tapped.id < 0
+                        navController.navigate(
+                            com.autonomousone.messages.navigation.Screen.MessageDetails.createRoute(
+                                threadId = threadId,
+                                source = if (isMms) "mms" else "sms",
+                                providerId = kotlin.math.abs(tapped.id),
+                                body = tapped.message,
+                                recipient = recipientPhone,
+                                sender = tapped.sender
+                            )
+                        )
+                    },
                     // FEATURE 9/10: long-press a bubble → selection mode; taps
                     // toggle; a long-press INSIDE selection mode still opens the
                     // legacy copy/forward/details menu.
