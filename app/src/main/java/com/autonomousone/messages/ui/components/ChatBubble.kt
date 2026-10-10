@@ -181,6 +181,9 @@ fun ChatBubble(
     // Long-press opens the action menu (copy / forward / link / details).
     var menuOpen by remember(sms.id) { mutableStateOf(false) }
     var showDetails by remember(sms.id) { mutableStateOf(false) }
+    // The real Details screen, opened from the action menu. Separate from [showDetails], which is the
+    // inline one-line summary inside the bubble.
+    var detailsOpen by remember(sms.id) { mutableStateOf(false) }
     // Needed for the on-demand technical-details read, which touches Room and therefore cannot run on
     // the composition thread.
     val copyScope = rememberCoroutineScope()
@@ -486,10 +489,14 @@ fun ChatBubble(
                         }
                         if (!incoming) {
                             DropdownMenuItem(
-                                text = { Text(if (showDetails) stringResource(R.string.conv_menu_hide_details) else stringResource(R.string.conv_menu_message_details)) },
+                                text = { Text(stringResource(R.string.conv_menu_message_details)) },
                                 onClick = {
                                     menuOpen = false
-                                    showDetails = !showDetails
+                                    // Opens the real details screen, which reads the persisted
+                                    // evidence itself. The bubble's own detail LINE stays as a quick
+                                    // glance; this is the answer to "why, and what does the phone
+                                    // know?", which needs room for the codes.
+                                    detailsOpen = true
                                 }
                             )
                             DropdownMenuItem(
@@ -542,6 +549,16 @@ fun ChatBubble(
                     )
                 }
             }
+        }
+
+        // The full Details screen, reachable from the action menu. It re-reads the persisted row so it
+        // can only ever describe THIS message.
+        if (detailsOpen) {
+            com.autonomousone.messages.ui.conversation.MessageDetailsDialog(
+                sms = sms,
+                onDismiss = { detailsOpen = false },
+                onCopy = { text -> copyToClipboard("technical details", text) }
+            )
         }
 }
 
