@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -179,6 +181,9 @@ fun ChatBubble(
     // Long-press opens the action menu (copy / forward / link / details).
     var menuOpen by remember(sms.id) { mutableStateOf(false) }
     var showDetails by remember(sms.id) { mutableStateOf(false) }
+    // Needed for the on-demand technical-details read, which touches Room and therefore cannot run on
+    // the composition thread.
+    val copyScope = rememberCoroutineScope()
 
     fun copyToClipboard(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -485,6 +490,25 @@ fun ChatBubble(
                                 onClick = {
                                     menuOpen = false
                                     showDetails = !showDetails
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.conv_copy_technical_details)) },
+                                onClick = {
+                                    menuOpen = false
+                                    // Read the PERSISTED row for THIS message, on demand. The bubble
+                                    // holds a projection, so the diagnostics have to be fetched — and
+                                    // fetching them by (source, providerId) is what guarantees the
+                                    // copied text belongs to the message the user opened rather than
+                                    // to whichever row rendered last.
+                                    copyScope.launch {
+                                        val technical = com.autonomousone.messages.sms.TechnicalDetailsText
+                                            .buildFromDao(
+                                                sms = sms,
+                                                appVersion = com.autonomousone.messages.BuildConfig.APP_VERSION
+                                            ) ?: return@launch
+                                        copyToClipboard("technical details", technical)
+                                    }
                                 }
                             )
                         }

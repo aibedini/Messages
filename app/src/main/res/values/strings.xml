@@ -157,6 +157,14 @@
     <string name="sim_switch">Switch SIM</string>
     <string name="sim_system_default">Default (system)</string>
     <string name="sim_slot_fmt">SIM %1$d</string>
+    <!--
+      Shown when this conversation has a saved SIM the device can no longer resolve. It is a deliberate
+      statement that something is wrong, not a default: the send is blocked rather than quietly moving
+      to another line, so the user must be told why.
+    -->
+    <string name="sim_unavailable_label">Selected SIM unavailable</string>
+    <!-- Copies the PERSISTED send/delivery evidence for the selected message only. -->
+    <string name="conv_copy_technical_details">Copy technical details</string>
 
     <!-- Schedule send -->
     <string name="sched_dialog_title">Send later</string>

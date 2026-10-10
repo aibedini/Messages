@@ -91,6 +91,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +105,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -870,17 +872,41 @@ fun ConversationScreen(
             // v2.6.12: per-conversation SIM override is hoisted here (was
             // composer-local) so the bubble Resend action reuses the exact
             // SIM selection the composer chip would pick.
+            // ── Sticky per-conversation SIM (the AUTHORITY) ──────────────────
+            //
+            // This used to key the choice by CONTACT NUMBER (`simRules.ruleFor(phone)`) and write the
+            // GLOBAL `messagingPrefs.sendSubscriptionId` on every pick. That is a different model from
+            // the one the send path enforces, and the two disagreed: a per-conversation choice leaked
+            // into every other conversation through the global preference, and the durable per-thread
+            // `preferredSimRef` — which the sender actually reads — was never written by this screen at
+            // all. So the selector could show one line while the message left on another.
             val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
-            val messagingPrefs = remember { com.autonomousone.messages.messaging.MessagingPreferences(context) }
-            val simRules = remember { com.autonomousone.messages.repository.SimRulesRepository.get(context) }
-            var selectedSubId by remember {
-                mutableStateOf(
-                    simRules.ruleFor(if (phone.isNotBlank()) phone else "")
-                        ?: messagingPrefs.sendSubscriptionId.takeIf {
-                            it != com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
-                        }
+            val conversationPrefs = remember {
+                com.autonomousone.messages.repository.ConversationPreferenceRepository(context)
+            }
+            val simRefProvider = remember { com.autonomousone.messages.messaging.SimRefProvider() }
+            // Room Flow: the selector reflects a preference change from ANY source, including the
+            // authenticated GMweb command, with no reopen.
+            val storedSimRef by conversationPrefs.observe(threadId)
+                .map { it?.preferredSimRef }
+                .collectAsState(initial = null)
+            // LIVE inventory: a cached one-shot list would keep offering an ejected card.
+            val liveActiveSims by remember(threadId) {
+                com.autonomousone.messages.messaging.ActiveSimsFlow.observe(context)
+            }.collectAsState(initial = emptyList())
+            val inventoryReadable = remember(context) { simManager.hasReadPhoneState() }
+            val simState = remember(storedSimRef, liveActiveSims, inventoryReadable) {
+                com.autonomousone.messages.ui.conversation.ConversationSimState.of(
+                    preferredSimRef = storedSimRef,
+                    activeSims = liveActiveSims,
+                    inventoryReadable = inventoryReadable,
+                    simRefProvider = simRefProvider
                 )
             }
+            // The composer's only local state: a transient selection made before the thread exists.
+            // Once threadId is real, the DURABLE preference is the truth and this stays null.
+            var pendingFirstSendSubId by remember(threadId) { mutableStateOf<Int?>(null) }
+            val simSelectionScope = rememberCoroutineScope()
             // v2.6.9 first-paint: never "blank → POP". While the first
             // Room page is in flight, the last bubble Home already showed
             // is kept on screen via ConversationLaunchStore; cold/no-snapshot
@@ -932,7 +958,11 @@ fun ConversationScreen(
                     onEntryAnimationFinished = { id -> viewModel.consumeEntryAnimation(id) },
                     onForward = { text -> navController.navigate(Screen.NewConversation.createForwardRoute(text)) },
                     onPhoneClick = { number -> phoneActionNumber = number },
-                    onResend = { body -> viewModel.sendMessage(threadId, recipientPhone, body, selectedSubId) },
+                    // Resend goes out on the conversation's STORED line, resolved by the sender at
+                    // execution time — not on the chip's last rendered value. Passing the chip's value
+                    // would make a resend an explicit one-shot override and let a stale id win over the
+                    // durable preference.
+                    onResend = { body -> viewModel.sendMessage(threadId, recipientPhone, body, null) },
                     // FEATURE 9/10: long-press a bubble → selection mode; taps
                     // toggle; a long-press INSIDE selection mode still opens the
                     // legacy copy/forward/details menu.
@@ -1082,20 +1112,32 @@ fun ConversationScreen(
                 }
             }
 
-            // ── SIM selector chip (only when 2+ SIMs are active) ────────────
-            // v2.6.12: state hoisted to the screen level (selectedSubId above)
-            // so the bubble Resend action shares this exact SIM selection.
-            val activeSims = remember { simManager.getActiveSims() }
-            if (activeSims.size >= 2) {
-                val current = activeSims.firstOrNull { it.subscriptionId == selectedSubId }
+            // ── Sticky SIM selector chip ────────────────────────────────────
+            //
+            // Shown whenever there is anything to say: two or more active SIMs to choose between, OR a
+            // stored preference that cannot currently be resolved. The old `activeSims.size >= 2` gate
+            // hid the chip exactly when it mattered most — a saved SIM was removed and the user was
+            // never told, because with one SIM left there was no chip at all and the send silently
+            // blocked with nothing on screen explaining why.
+            val showSimChip = simState.activeSims.size >= 2 || simState.preferenceUnavailable
+            if (showSimChip) {
                 var simMenuOpen by remember { mutableStateOf(false) }
                 Box {
                     androidx.compose.material3.AssistChip(
                         onClick = { simMenuOpen = true },
                         label = {
                             Text(
-                                text = current?.let { stringResource(R.string.sim_slot_fmt, it.slotIndex + 1) }
-                                    ?: stringResource(R.string.sim_default_label),
+                                text = when {
+                                    // An unresolvable preference says so, and offers no other line.
+                                    simState.preferenceUnavailable ->
+                                        stringResource(R.string.sim_unavailable_label)
+                                    simState.selectedSim != null ->
+                                        stringResource(
+                                            R.string.sim_slot_fmt,
+                                            simState.selectedSim!!.slotIndex + 1
+                                        )
+                                    else -> stringResource(R.string.sim_default_label)
+                                },
                                 style = MaterialTheme.typography.labelMedium
                             )
                         },
@@ -1112,27 +1154,39 @@ fun ConversationScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.sim_system_default)) },
                             onClick = {
-                                selectedSubId = null
-                                messagingPrefs.sendSubscriptionId =
-                                    com.autonomousone.messages.messaging.MessagingPreferences.SUBSCRIPTION_UNSET
-                                simRules.setRule(phone, null)
                                 simMenuOpen = false
+                                pendingFirstSendSubId = null
+                                // Persist the CLEAR through the same authority the sender reads. The
+                                // global `sendSubscriptionId` is deliberately NOT touched: a
+                                // per-conversation choice must not become every conversation's choice.
+                                simSelectionScope.launch {
+                                    conversationPrefs.setPreferredSim(
+                                        threadId = threadId,
+                                        simRef = null,
+                                        requestedSubscriptionId = null,
+                                        now = System.currentTimeMillis()
+                                    )
+                                }
                             }
                         )
-                        activeSims.forEach { sim ->
+                        simState.activeSims.forEach { sim ->
                             DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "${simManager.labelFor(sim)}" +
-                                                if (sim.number.isNotBlank()) " · ${sim.number}" else ""
-                                    )
-                                },
+                                text = { Text(simManager.labelFor(sim)) },
                                 onClick = {
-                                    selectedSubId = sim.subscriptionId
-                                    messagingPrefs.sendSubscriptionId = sim.subscriptionId
-                                    // Pin this line to this contact as well.
-                                    simRules.setRule(phone, sim.subscriptionId)
                                     simMenuOpen = false
+                                    val ref = com.autonomousone.messages.ui.conversation
+                                        .ConversationSimState.refForSelection(sim, simRefProvider)
+                                    pendingFirstSendSubId = sim.subscriptionId
+                                    simSelectionScope.launch {
+                                        // Persist FIRST: the durable preference is what the send path
+                                        // enforces, and publishing it is part of the same call.
+                                        conversationPrefs.setPreferredSim(
+                                            threadId = threadId,
+                                            simRef = ref,
+                                            requestedSubscriptionId = sim.subscriptionId,
+                                            now = System.currentTimeMillis()
+                                        )
+                                    }
                                 }
                             )
                         }
@@ -1339,7 +1393,20 @@ fun ConversationScreen(
                                             threadId = threadId,
                                             phone = destination,
                                             message = msgToSend,
-                                            subscriptionOverride = selectedSubId
+                                            // Deliberately NOT the chip's value.
+                                            //
+                                            // Passing the selected line here would make every normal
+                                            // send an EXPLICIT one-shot override, which takes precedence
+                                            // over the stored preference — so the send path's own
+                                            // enforcement would be bypassed on the exact path the user
+                                            // types into, and a preference that no longer resolves could
+                                            // be silently replaced by a stale id.
+                                            //
+                                            // The durable preference IS the instruction, and the sender
+                                            // reads it by threadId at execution time. This argument is
+                                            // only for a first send into a thread that does not exist
+                                            // yet, where there is no threadId to store it against.
+                                            subscriptionOverride = pendingFirstSendSubId
                                         )
                                     }
 

@@ -409,8 +409,17 @@ class ConversationViewModel(
     private val delayedSend: com.autonomousone.messages.messaging.DelayedSendCoordinator by lazy {
         com.autonomousone.messages.messaging.DelayedSendCoordinator(
             context = application,
-            sink = com.autonomousone.messages.sms.DelayedSendSink { phone, body, subscriptionId ->
-                smsSender.sendForResult(phone, body, subscriptionId)
+            sink = com.autonomousone.messages.sms.DelayedSendSink { phone, body, subscriptionId, threadId ->
+                // threadId carries the conversation across the process boundary a delayed send
+                // crosses, so the sticky SIM is enforced identically whether the message left
+                // immediately or after the hold.
+                smsSender.sendForResult(
+                    phone = phone,
+                    text = body,
+                    subscriptionIdOverride = subscriptionId,
+                    clientMessageId = null,
+                    threadId = threadId
+                )
             }
         )
     }
@@ -430,7 +439,17 @@ class ConversationViewModel(
             routeSend = { request -> routeComposerSend(request) },
             ledgerHolds = { intentId -> delayedSend.exists(intentId) },
             directSend = { request ->
-                smsSender.send(request.phone, request.body, request.subscriptionId, null)
+                // threadId travels with the send so the conversation's sticky SIM is enforced on the
+                // composer path. Without it this call would fall back to the platform default and
+                // silently ignore the line the user chose for this conversation — while the selector
+                // went on showing that line.
+                smsSender.send(
+                    phone = request.phone,
+                    text = request.body,
+                    subscriptionIdOverride = request.subscriptionId,
+                    smscOverride = null,
+                    threadId = request.threadId
+                )
             }
         )
     }

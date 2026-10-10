@@ -950,10 +950,27 @@ class SecureCommandPoller(
             )
         }
         if (!emitted) {
-            // The preference IS durable, but the replication event is not. Reporting success would
-            // leave GMweb showing the old line indefinitely, so this must fail — with a code that
-            // says the PUBLISH failed, not that the user's choice was lost.
-            throw ConversationSimFailure.PublishFailed()
+            // The preference IS durable; only the replication event is missing. Reporting FAILED would
+            // tell GMweb the user's choice was lost when it was saved, and would make the sender retry a
+            // change that has already been applied. Reporting COMPLETED would claim the replica is
+            // up to date when it is not. Acknowledged as PARTIAL with an explicit code, so the sender
+            // knows to re-read the conversation state instead of re-issuing the command.
+            DiagnosticLog.event(
+                "GM_SIM_PREF",
+                "replication-owed thread=$threadId command=${cmd.commandId.take(8)}"
+            )
+            repo.finishCommandFrom(
+                commandId = cmd.commandId,
+                state = RemoteCommandEntity.STATE_COMPLETED,
+                errorCode = SyncErrorCode.READ_EVENT_PUBLISH_FAILED.name,
+                fromStates = listOf(
+                    RemoteCommandEntity.STATE_ACCEPTED,
+                    RemoteCommandEntity.STATE_EXECUTING
+                )
+            )
+            // ackIfTerminal reports the durable state, so the ACK carries the same partial code
+            // rather than a bare success.
+            return
         }
 
         repo.finishCommandFrom(

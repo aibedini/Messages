@@ -108,6 +108,34 @@ class ConversationPreferenceRepository(context: Context) {
     }
 
     /**
+     * Outcome of a sticky-SIM change, as THREE facts rather than a boolean.
+     *
+     * ## The defect this replaces
+     *
+     * The previous signature returned one `Boolean`, and returned `false` for two unrelated
+     * situations: "the preference was not saved" and "the preference WAS saved but the replication
+     * event could not be queued". A caller treating `false` as "nothing happened" would either undo a
+     * change the user had already made, or report a failure for a change that is durably on the device.
+     * The two need different words, so they are different values.
+     */
+    enum class PreferenceUpdateResult {
+        /** Durable on the device AND the canonical encrypted event is queued. */
+        PERSISTED_AND_QUEUED,
+
+        /**
+         * Durable on the device, event NOT queued.
+         *
+         * The local truth is correct and must NOT be reverted — reverting would discard a choice the
+         * user actually made. Replication is owed, and the durable outbox is what will carry it, so the
+         * honest report is "saved, not yet replicated" rather than a failure.
+         */
+        PERSISTED_PENDING_REPLICATION,
+
+        /** The write itself failed; nothing changed. */
+        NOT_PERSISTED
+    }
+
+    /**
      * Set (or clear) this conversation's sticky SIM — the LOCAL user path.
      *
      * ## Why this is one method and not two
@@ -121,17 +149,19 @@ class ConversationPreferenceRepository(context: Context) {
      * It does not send anything. Choosing a line is a preference, not a message: sending here would
      * put an unintended SMS on the wire the moment a user tapped a selector.
      *
+     * It also performs no remote I/O. The event is written to the durable outbox with one local insert
+     * and uploaded later by the existing pipeline, so no HTTP call can sit inside a database write.
+     *
      * @param simRef the chosen line, or null to return to the phone's default line.
      * @param requestedSubscriptionId the Android subscription id behind [simRef], used ONLY to snapshot
      *   the display fields. It is never stored as authority — routing re-resolves the ref.
-     * @return true when the preference was persisted AND the canonical event was queued.
      */
     suspend fun setPreferredSim(
         threadId: Long,
         simRef: String?,
         requestedSubscriptionId: Int?,
         now: Long
-    ): Boolean {
+    ): PreferenceUpdateResult {
         val simManager = com.autonomousone.messages.messaging.SimManager(appContext)
         // Snapshot the display fields from the LIVE inventory. A snapshot for a line we cannot see is
         // absent rather than guessed, because a wrong label on a routing control is worse than none.
@@ -149,7 +179,7 @@ class ConversationPreferenceRepository(context: Context) {
             )
         } catch (e: Exception) {
             DiagnosticLog.event("SMS_SIM_PREF", "persist-failed thread=$threadId")
-            return false
+            return PreferenceUpdateResult.NOT_PERSISTED
         }
         DiagnosticLog.event(
             "SMS_SIM_PREF",
@@ -158,13 +188,22 @@ class ConversationPreferenceRepository(context: Context) {
 
         // Publish the canonical encrypted update immediately: GMweb must not wait for the next
         // message, a full sync or an app restart to learn which line this conversation uses.
+        //
+        // Everything from here on is a REPLICATION concern. A failure is not a persistence failure,
+        // and the local change stays exactly as the user set it.
         val conversationId = runCatching {
             com.autonomousone.messages.data.TelephonySyncCoordinator.get(appContext)
                 .conversationIdForThreadForPreference(threadId)
-        }.getOrNull() ?: return false
-        if (conversationId.isBlank()) return false
+        }.getOrNull()
+        if (conversationId.isNullOrBlank()) {
+            DiagnosticLog.event(
+                "SMS_SIM_PREF",
+                "replication-owed thread=$threadId reason=no-conversation-id"
+            )
+            return PreferenceUpdateResult.PERSISTED_PENDING_REPLICATION
+        }
 
-        return runCatching {
+        val queued = runCatching {
             com.autonomousone.messages.data.TelephonySyncCoordinator.get(appContext)
                 .emitConversationUpsertForThread(
                     threadId = threadId,
@@ -181,6 +220,17 @@ class ConversationPreferenceRepository(context: Context) {
                     }
                 )
         }.getOrDefault(false)
+
+        if (!queued) {
+            // The event row is not durable, so replication is OWED. Reported distinctly rather than as
+            // a failure, and the local preference is left exactly as the user set it.
+            DiagnosticLog.event(
+                "SMS_SIM_PREF",
+                "replication-owed thread=$threadId reason=event-not-queued"
+            )
+            return PreferenceUpdateResult.PERSISTED_PENDING_REPLICATION
+        }
+        return PreferenceUpdateResult.PERSISTED_AND_QUEUED
     }
 
     /** The stored sticky SIM of one conversation, or null when it has none. */

@@ -296,6 +296,21 @@ interface MessageDao {
     ): Int
 
     /**
+     * The persisted DIAGNOSTIC evidence of one message, for the "Copy technical details" action.
+     *
+     * Deliberately does NOT select `body` or any address: the copied text must never be able to contain
+     * message content or a recipient, and leaving those columns out of the statement is a stronger
+     * guarantee than remembering not to append them.
+     */
+    @Query(
+        "SELECT source, providerId, threadId, type, date, dateSent, " +
+            "sendTransportState, sendFailureCode, sendResultCode, sendRadioErrorCode, " +
+            "sendStateUpdatedAt, deliveryEvidence, deliveryTpStatus, deliveryResultCode, " +
+            "deliveryCallbackAt FROM messages WHERE source = :source AND providerId = :providerId"
+    )
+    suspend fun technicalEvidenceOf(source: String, providerId: Long): MessageTechnicalEvidence?
+
+    /**
      * Reads the app-owned send state of one mirror row, or null when the row has none yet.
      *
      * Includes the delivery half so a mirror write can carry ALL app-owned diagnostic evidence
@@ -544,6 +559,25 @@ interface MessageDao {
     )
     suspend fun deleteBySourceAndId(source: String, providerId: Long)
 }
+
+/** Row shape for [MessageDao.technicalEvidenceOf] — diagnostics only, never message content. */
+data class MessageTechnicalEvidence(
+    val source: String,
+    val providerId: Long,
+    val threadId: Long,
+    val type: Int,
+    val date: Long,
+    val dateSent: Long,
+    val sendTransportState: String?,
+    val sendFailureCode: String?,
+    val sendResultCode: Int?,
+    val sendRadioErrorCode: Int?,
+    val sendStateUpdatedAt: Long,
+    val deliveryEvidence: String?,
+    val deliveryTpStatus: Int?,
+    val deliveryResultCode: Int?,
+    val deliveryCallbackAt: Long
+)
 
 /** Row shape for [MessageDao.sendStateOf] — the app-owned send AND delivery evidence of one row. */
 data class MessageSendStateRow(

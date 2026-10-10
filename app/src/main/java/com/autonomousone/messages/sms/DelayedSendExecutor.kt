@@ -116,7 +116,10 @@ class DelayedSendExecutor(
         // An empty body would be a corrupt row; the sink refuses it anyway.
         val body = row.body
         return try {
-            val sentRowId = sink.send(phone, body, subscriptionId)
+            // The row's own threadId is the conversation this message belongs to, read from the durable
+            // ledger rather than passed in — which is what makes the sticky SIM survive the process
+            // boundary a delayed send crosses.
+            val sentRowId = sink.send(phone, body, subscriptionId, row.threadId)
             if (sentRowId == null) {
                 dao.markFailed(intentId, "DISPATCH_REJECTED")
                 DiagnosticLog.event("SEND_DELAY", "failed id=$intentId code=DISPATCH_REJECTED")
@@ -237,11 +240,16 @@ fun interface DelayedSendSink {
      * Hands the message to telephony.
      *
      * @param subscriptionId explicit SIM for this message, or null for the
-     *        user's global Messaging preference.
+     *        conversation's stored preference, then the platform default.
+     * @param threadId the conversation this message belongs to, so the sticky SIM is
+     *        enforced here exactly as on the immediate path. A delayed message is
+     *        dispatched in a NEW process, so this is the only thing that carries the
+     *        conversation across that boundary — without it the user's chosen line would
+     *        be honoured for an immediate send and silently ignored for a delayed one.
      * @return the persisted provider row id, or null when telephony REFUSED the
      *         submit. Throwing is also allowed for a hard failure.
      */
-    suspend fun send(phone: String, body: String, subscriptionId: Int?): Long?
+    suspend fun send(phone: String, body: String, subscriptionId: Int?, threadId: Long): Long?
 
     /** Stable failure code carried out of a throwing send. */
     class SendRejectedException(val code: String, cause: Throwable? = null) :
@@ -250,8 +258,18 @@ fun interface DelayedSendSink {
 
 /** The production sink: the SAME [SmsSender] pipeline every other send uses. */
 class SmsSenderDelayedSendSink(private val context: Context) : DelayedSendSink {
-    override suspend fun send(phone: String, body: String, subscriptionId: Int?): Long? =
-        SmsSender(context).sendForResult(phone, body, subscriptionId)
+    override suspend fun send(
+        phone: String,
+        body: String,
+        subscriptionId: Int?,
+        threadId: Long
+    ): Long? = SmsSender(context).sendForResult(
+        phone = phone,
+        text = body,
+        subscriptionIdOverride = subscriptionId,
+        clientMessageId = null,
+        threadId = threadId
+    )
 }
 
 // ── Mapping helpers ──────────────────────────────────────────────────────────

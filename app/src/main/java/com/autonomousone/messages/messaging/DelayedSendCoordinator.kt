@@ -87,7 +87,7 @@ class DelayedSendCoordinator(
             is DelayPlan.Immediate -> {
                 // The unchanged path. A message that is not delayed must not
                 // create ANY delay state, or "OFF" would still leave a trace.
-                SendResult.SentNow(sink.send(phone, body, subscriptionId))
+                SendResult.SentNow(sink.send(phone, body, subscriptionId, threadId))
             }
 
             is DelayPlan.Delayed -> {

@@ -325,7 +325,7 @@ class DelayedSendPersistenceTest {
         insert(intentId = "dly_throw", dueAt = now - 1)
         val sink = object : DelayedSendSink {
             var calls = 0
-            override suspend fun send(phone: String, body: String, subscriptionId: Int?): Long? {
+            override suspend fun send(phone: String, body: String, subscriptionId: Int?, threadId: Long): Long? {
                 calls++
                 throw DelayedSendSink.SendRejectedException("SIM_UNAVAILABLE")
             }
@@ -610,7 +610,7 @@ class DelayedSendPersistenceTest {
 
         val sends = mutableListOf<Sent>()
 
-        override suspend fun send(phone: String, body: String, subscriptionId: Int?): Long? {
+        override suspend fun send(phone: String, body: String, subscriptionId: Int?, threadId: Long): Long? {
             sends.add(Sent(phone, body, subscriptionId))
             return if (refuse) null else 900L + sends.size
         }

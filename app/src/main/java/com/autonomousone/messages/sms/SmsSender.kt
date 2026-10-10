@@ -65,15 +65,45 @@ class SmsSender(
      * PR-03: delegates to [sendWithOutcome] — the single funnel — so every
      * send source shares one pipeline; the row id (or fallback timestamp) is
      * recovered from the outcome.
+     *
+     * `threadId = 0` by default, which means "this caller does not know the
+     * conversation". The composer must use the overload below and pass its thread, or a
+     * conversation's sticky SIM would be skipped on exactly the path the user types into.
      */
-    fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long {
+    fun send(phone: String, text: String, subscriptionIdOverride: Int?, smscOverride: String?): Long =
+        send(phone, text, subscriptionIdOverride, smscOverride, threadId = 0L)
+
+    /**
+     * The same send, knowing WHICH conversation it belongs to.
+     *
+     * [threadId] is what lets the device enforce the conversation's stored sticky SIM. Without it the
+     * send falls back to the platform default, so a normal composer send would silently ignore the
+     * line the user chose for that conversation — and the UI would keep showing the chosen line while
+     * the message left on another.
+     */
+    fun send(
+        phone: String,
+        text: String,
+        subscriptionIdOverride: Int?,
+        smscOverride: String?,
+        threadId: Long
+    ): Long {
         // NOTE: the old `SendRateLimiter` was removed here.
         //
         // It had three defects this gate does not: it only guarded THIS legacy path (so GMweb/EVE
         // sends bypassed it entirely), `acquireSlot` handed several concurrent callers the same wait
         // so they woke together, and it slept the calling thread. Physical submission is now
         // serialized per SIM in [SmsTransportGate], which every path reaches through [dispatch].
-        return when (val outcome = sendWithOutcome(phone, text, subscriptionIdOverride, smscOverride, showToast = true)) {
+        return when (
+            val outcome = sendWithOutcome(
+                phone = phone,
+                text = text,
+                subscriptionIdOverride = subscriptionIdOverride,
+                smscOverride = smscOverride,
+                showToast = true,
+                threadId = threadId
+            )
+        ) {
             is SendOutcome.Accepted -> outcome.rowId
             is SendOutcome.Rejected -> outcome.rowId ?: -1L
         }
@@ -490,12 +520,25 @@ class SmsSender(
         text: String,
         subscriptionIdOverride: Int?,
         clientMessageId: String?,
-        gatewayRequestId: String? = null
+        gatewayRequestId: String? = null,
+        /**
+         * The conversation this send belongs to, when the caller knows it.
+         *
+         * Carried so the sticky SIM is enforced on the DELAYED and headless paths too. A message held
+         * for N seconds is dispatched in a NEW process, so without this the user's chosen line would be
+         * honoured for an immediate send and silently ignored for a delayed one — the same message
+         * behaving differently depending on a delay toggle.
+         */
+        threadId: Long = 0L
     ): Long? =
         when (
             val outcome = sendWithOutcome(
-                phone, text, subscriptionIdOverride, clientMessageId = clientMessageId,
-                gatewayRequestId = gatewayRequestId
+                phone = phone,
+                text = text,
+                subscriptionIdOverride = subscriptionIdOverride,
+                clientMessageId = clientMessageId,
+                gatewayRequestId = gatewayRequestId,
+                threadId = threadId
             )
         ) {
             is SendOutcome.Accepted -> outcome.rowId
