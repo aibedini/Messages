@@ -319,12 +319,6 @@ data class MessageDetailsUiState(
                 SmsUiState.NOT_SENT -> StatusStep(
                     StatusStep.Kind.SKIPPED, "Delivery", "The message never reached the network."
                 )
-                // The transport stage already reported the failure; nothing was delivered and there is
-                // no carrier evidence to add, so the delivery stage is explicitly not attempted rather
-                // than repeated as a second failure.
-                SmsUiState.NOT_DELIVERED -> StatusStep(
-                    StatusStep.Kind.SKIPPED, "Delivery"
-                )
                 else -> StatusStep(StatusStep.Kind.UNKNOWN, "Delivery not confirmed")
             }
             return steps
