@@ -968,7 +968,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
 
             is MessageMutation.MarkThreadRead -> {
-                applyMarkThreadRead(m.threadId)
+                applyMarkThreadRead(m.threadId, m.upToProviderId)
             }
 
             is MessageMutation.DeleteThread -> {
@@ -2302,21 +2302,18 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         rebuildConversationProjection(threadId, preserveFlags = true)
     }
 
-    /**
-     * Marks a thread read in Room.
-     *
-     * PHASE 10.2: ONE transaction. The per-message read flags and the
-     * conversation unread counter are two views of the same fact; if they diverge,
-     * Home can show a cleared badge over messages that are still unread (or the
-     * reverse), and the divergence survives until the next repair.
-     */
-    suspend fun markThreadReadInShadow(threadId: Long) = withContext(Dispatchers.IO) {
-        if (threadId <= 0L) return@withContext
-        db.withTransaction {
-            db.messageDao().markThreadRead(threadId)
-            db.conversationDao().markRead(threadId)
-        }
-    }
+    // PHASE 10.2 originally exposed `markThreadReadInShadow(threadId)` here: ONE transaction marking the
+    // per-message read flags and the conversation unread counter together, because those are two views of
+    // the same fact and a divergence lets Home clear a badge over messages that are still unread.
+    //
+    // It is DELETED rather than kept, because it had no callers and it was an UNBOUNDED read with no
+    // authorization: `UPDATE messages SET read = 1 WHERE threadId = ? AND read = 0` marks every unread
+    // message of the thread, including ones that arrived after the user last looked at it. Leaving an
+    // unguarded whole-thread mutation reachable from anywhere is how the read bug would come back — the
+    // next caller would have to remember to re-derive the authority that the read path already owns.
+    //
+    // The transaction itself was the right idea and it still exists, now carrying an explicit cause and
+    // read horizon: `applyMarkThreadRead(threadId, upToProviderId)`.
 
     /**
      * Marks EVERY conversation read in Room, in ONE transaction.
@@ -2349,8 +2346,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
-    suspend fun markThreadReadAndPublish(threadId: Long) {
-        if (threadId > 0L) applyMutation(MessageMutation.MarkThreadRead(threadId))
+    suspend fun markThreadReadAndPublish(threadId: Long, upToProviderId: Long? = null) {
+        if (threadId > 0L) {
+            applyMutation(MessageMutation.MarkThreadRead(threadId, upToProviderId))
+        }
+    }
+
+    /**
+     * The highest mirrored provider id for a thread, or null when none can be established.
+     *
+     * Used as the READ HORIZON for a screen-authorised read: it is read before the mutation so the
+     * boundary describes the past, and null tells the caller "this read cannot be bounded" rather than
+     * silently permitting an unbounded one.
+     */
+    suspend fun readHorizonForThread(threadId: Long): Long? {
+        if (threadId <= 0L) return null
+        return runCatching { db.messageDao().highestProviderIdForThread(threadId) }.getOrNull()
     }
 
     /**
@@ -2382,11 +2393,30 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * gate must be VISIBLE to the caller rather than silently turning a refused publish into a
      * completed read command.
      */
-    internal suspend fun applyMarkThreadRead(threadId: Long): ThreadReadOutcome {
+    internal suspend fun applyMarkThreadRead(threadId: Long): ThreadReadOutcome =
+        applyMarkThreadRead(threadId, upToProviderId = null)
+
+    /**
+     * Apply a read bounded to [upToProviderId] when the caller has one.
+     *
+     * [upToProviderId] is the highest provider row id that existed when the read was AUTHORISED. Passing
+     * it makes the mutation describe the conversation as it was at that moment, so a message that
+     * arrived after the user left is not consumed; null keeps the previous whole-thread behaviour, which
+     * is correct for an explicit user or remote command ("mark this conversation read" is a decision
+     * about the conversation, not about a snapshot of it).
+     */
+    internal suspend fun applyMarkThreadRead(
+        threadId: Long,
+        upToProviderId: Long?
+    ): ThreadReadOutcome {
         if (threadId <= 0L) return ThreadReadOutcome.Failed
         var published: EnqueueAttempt = EnqueueAttempt.SKIPPED_SYNC_OFF
         db.withTransaction {
-            db.messageDao().markThreadRead(threadId)
+            if (upToProviderId != null) {
+                db.messageDao().markThreadReadUpTo(threadId, upToProviderId)
+            } else {
+                db.messageDao().markThreadRead(threadId)
+            }
             db.conversationDao().markRead(threadId)
             // Thread-read carries no message content — but if the
             // thread CONTAINS a LOCAL_ONLY message, its very existence

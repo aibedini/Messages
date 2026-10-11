@@ -396,6 +396,45 @@ interface MessageDao {
     suspend fun markThreadRead(threadId: Long)
 
     /**
+     * The BOUNDED form: mark read only messages that already existed when the user's read was
+     * authorised.
+     *
+     * ## The race this closes
+     *
+     * ```text
+     * t=0  the user is looking at conversation A
+     * t=1  a mark-read is scheduled
+     * t=2  the user leaves A
+     * t=3  a new SMS arrives in A
+     * t=4  the scheduled mark-read runs
+     * ```
+     *
+     * The unbounded `WHERE threadId = ? AND read = 0` runs at t=4 and swallows the message from t=3 —
+     * one nobody ever saw, marked read by a decision taken before it existed. Bounding by
+     * [upToProviderId] (the highest provider row id that existed at t=1) makes the operation describe
+     * the conversation as it WAS when the user authorised it, which is the only thing they can be
+     * taken to have read.
+     *
+     * A row id is the right boundary: the provider's `_id` is monotonic per table, so "at or below this
+     * id" is exactly "existed then".
+     */
+    @Query(
+        "UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0 " +
+            "AND providerId <= :upToProviderId"
+    )
+    suspend fun markThreadReadUpTo(threadId: Long, upToProviderId: Long)
+
+    /**
+     * The highest mirrored provider id for a thread, or null when the thread has no rows.
+     *
+     * Read BEFORE the mutation so the boundary describes the past rather than whatever exists when the
+     * write lands. Null means "no boundary could be established", which the caller must treat as
+     * "cannot bound this read" rather than as "unbounded is fine".
+     */
+    @Query("SELECT MAX(providerId) FROM messages WHERE threadId = :threadId")
+    suspend fun highestProviderIdForThread(threadId: Long): Long?
+
+    /**
      * Marks EVERY unread message read, in one statement.
      *
      * "Mark all read" is a whole-table fact, not a property of the rows a

@@ -34,9 +34,18 @@ sealed interface MessageMutation {
         val providerId: Long
     ) : MessageMutation
 
-    /** Mark all messages in a thread as read. */
+    /**
+     * Mark messages in a thread as read.
+     *
+     * [upToProviderId] is the READ HORIZON: only messages whose provider row id is at or below it are
+     * affected. Null marks the whole thread, which is correct for an explicit user action or an
+     * authenticated remote command — those are decisions about the conversation itself. A
+     * SCREEN-authorised read supplies the horizon so a message that arrived after the user left stays
+     * unread instead of being consumed by a decision taken before it existed.
+     */
     data class MarkThreadRead(
-        val threadId: Long
+        val threadId: Long,
+        val upToProviderId: Long? = null
     ) : MessageMutation
 
     /** Delete all messages in a thread. */

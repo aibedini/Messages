@@ -688,7 +688,9 @@ class UseCaseBulkThreadReader(context: Context) : BulkThreadReader {
         if (threadId <= 0L) return false
         // The use case isolates its own provider failure (typed diagnostic +
         // narrow repair); a thrown error here really is a batch failure.
-        useCase.markRead(threadId, "")
+        // USER_MARK_READ: an explicit user action from Home (Mark read, or the selection menu). It does
+        // not need the conversation on screen — only the screen-dependent causes do.
+        useCase.markRead(threadId, "", com.autonomousone.messages.messaging.ReadCause.USER_MARK_READ)
         return true
     }
 }

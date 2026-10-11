@@ -38,31 +38,47 @@ class ReadHorizonSelectionTest {
     }
 
     @Test
-    fun `without a horizon it degrades to the previous thread-scoped behaviour`() {
+    fun `without a horizon an unbounded read is REFUSED by default`() {
+        // This is the P0 rule. A read with no established boundary must not fall back to the whole
+        // thread, because the message it would swallow is one that arrived after the user left the
+        // conversation — nobody saw it, so marking it read is the same class of bug as the visibility
+        // one.
         val (selection, args) = readHorizonSelection(threadColumn, readColumn, idColumn, 5L, null)
+
+        assertEquals("1 = 0", selection)
+        assertTrue("no row may be touched", args.isEmpty())
+    }
+
+    @Test
+    fun `an explicit user or remote action may still read the whole thread`() {
+        // "Mark this conversation read" is a decision about the CONVERSATION, not about a snapshot of
+        // it, so it keeps the unbounded form — but only when the caller says so explicitly, never as a
+        // silent fallback.
+        val (selection, args) =
+            readHorizonSelection(threadColumn, readColumn, idColumn, 5L, null, allowUnbounded = true)
 
         assertEquals("thread_id = ? AND read = 0", selection)
         assertEquals(listOf("5"), args.toList())
     }
 
     @Test
-    fun `a non-positive horizon is treated as no horizon, never as a zero bound`() {
+    fun `a non-positive horizon never authorises an unbounded read`() {
         for (bad in listOf(0L, -1L, Long.MIN_VALUE)) {
             val (selection, _) = readHorizonSelection(threadColumn, readColumn, idColumn, 5L, bad)
             assertEquals(
-                "horizon $bad must not bound the update to nothing",
-                "thread_id = ? AND read = 0",
+                "horizon $bad must not become an unbounded read",
+                "1 = 0",
                 selection
             )
         }
     }
 
     @Test
-    fun `the read filter is always part of the selection`() {
+    fun `the read filter is always part of a bounded selection`() {
         // Marking an already-read row again is harmless but must never be the reason a row is touched.
-        for (horizon in listOf(null, 10L)) {
-            val (selection, _) = readHorizonSelection(threadColumn, readColumn, idColumn, 5L, horizon)
-            assertTrue(selection.contains("$readColumn = 0"))
-        }
+        // The refused form touches nothing at all, so the filter is only meaningful when a bound exists.
+        val (selection, _) = readHorizonSelection(threadColumn, readColumn, idColumn, 5L, 10L)
+        assertTrue(selection.contains("$readColumn = 0"))
+        assertEquals("1 = 0", readHorizonSelection(threadColumn, readColumn, idColumn, 5L, null).first)
     }
 }

@@ -996,7 +996,14 @@ class ConversationViewModel(
                         // for THIS conversation only. A non-empty window is what
                         // makes it authoritative: an empty one proves nothing.
                         load.onRoomShadow(roomRows.size)
-                        markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
+                        // Deliberately NO mark-read here.
+                        //
+                        // Loading a conversation's data is not evidence that the user saw it. This path
+                        // runs for a warm re-open, a process-death restore and a background prefetch
+                        // alike, and it used to mark the whole thread read — including messages that
+                        // arrived AFTER the user had already left. Read authority belongs to the
+                        // screen's RESUMED lifecycle (onConversationScreenResumed), which the tracker
+                        // validates at execution time.
                     }
                 }
             }
@@ -1050,7 +1057,9 @@ class ConversationViewModel(
                             cachePhone
                         )
                     }
-                    markReadAndNotify(targetOf(cacheKeyThread, phone), phoneIfBlank(phone))
+                    // Deliberately NO mark-read here either. A cache hit is even weaker evidence than a
+                    // Room hit: it is an in-memory snapshot that may predate navigation, and completing a
+                    // load is not a user action. The RESUMED screen is the only screen-based authority.
                     DiagnosticLog.event(
                         "INITIAL_LOAD",
                         "thread=$threadId source=${load.source} rows=${load.paintedRows} " +
@@ -1155,11 +1164,14 @@ class ConversationViewModel(
                             ).also { it.loadLatest() } // align consumed cursors
                         }
                     }
-                    // Push the read state into the Home list immediately via
-                    // the shared event bus (no ViewModel-to-ViewModel coupling).
-                    if (currentThreadId != 0L || currentPhone.isNotBlank()) {
-                        SmsEventBus.emitThreadRead(currentThreadId, currentPhone)
-                    }
+                    // Deliberately NO thread-read event here.
+                    //
+                    // This page was LOADED. Publishing "read" from a load is how Home's unread badge
+                    // disappeared for a conversation the user had not opened: the event drove
+                    // markConversationReadLocally, which applied an optimistic overlay over a durable
+                    // state that still said unread. The one authorised source of this event is the read
+                    // path itself (MarkConversationReadUseCase), which emits it only after a local write
+                    // genuinely succeeded.
                     recordFirstPaintIfNeeded()
                 }
                 load.onProviderResult(readMessages.size)
@@ -1631,19 +1643,10 @@ class ConversationViewModel(
         }
     }
 
-    private fun markReadAndNotify(threadId: Long, phone: String) {
-        if (threadId == 0L && phone.isBlank()) return
-        // Read state is a UI-level overlay (Home badge); do NOT invalidate the
-        // thread cache for it — messages themselves didn't change, and
-        // invalidating here is what causes "Reading messages…" on re-open.
-        //
-        // The use case owns the order: local Room read FIRST (immediate), the
-        // optimistic SmsEventBus signal second, the provider ContentResolver
-        // write last (eventual, off the UI thread).
-        viewModelScope.launch(Dispatchers.IO) {
-            markReadUseCase.markRead(threadId, phone)
-        }
-    }
+    // `markReadAndNotify` used to live here and was called from the Room and cache LOAD paths. It is
+    // deleted rather than guarded: a load is not visibility, and leaving a helper whose only purpose
+    // was to mark read from a load would invite the same call back. Every read now goes through the
+    // cause-validated use case, invoked from the RESUMED lifecycle or an explicit user/remote action.
 
     private fun observeIncomingSms() {
         viewModelScope.launch {
@@ -1701,7 +1704,7 @@ class ConversationViewModel(
                         beforeRead = true
                     )
                     viewModelScope.launch(Dispatchers.IO) {
-                        markReadUseCase.markRead(thread, phone)
+                        markReadUseCase.markRead(thread, phone, ReadCause.INCOMING_WHILE_VISIBLE)
                     }
                 } else {
                     // NO authority: the message keeps the unread state it arrived with. The bubble
@@ -1796,7 +1799,7 @@ class ConversationViewModel(
                 source = "sms",
                 beforeRead = true
             )
-            markReadUseCase.markRead(currentThreadId, currentPhone)
+            markReadUseCase.markRead(currentThreadId, currentPhone, ReadCause.USER_OPEN_RESUMED)
         } else if (currentThreadId != 0L) {
             ConversationReadAudit.skipped(
                 reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
@@ -2516,7 +2519,7 @@ class ConversationViewModel(
         )
         val phone = currentPhone
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { markReadUseCase.markRead(threadId, phone) }
+            runCatching { markReadUseCase.markRead(threadId, phone, ReadCause.USER_OPEN_RESUMED) }
         }
     }
 

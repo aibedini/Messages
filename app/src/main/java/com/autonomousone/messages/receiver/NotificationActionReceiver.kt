@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import com.autonomousone.messages.R
 import com.autonomousone.messages.repository.ArchiveRepository
+import com.autonomousone.messages.messaging.ReadCause
 import com.autonomousone.messages.repository.MarkConversationReadUseCase
 import com.autonomousone.messages.sms.SmsSender
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -81,8 +82,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
                             ACTION_MARK_READ -> {
                                 // Same unified read path as opening the chat:
                                 // local Room read first, provider write eventual.
+                                //
+                                // USER_MARK_READ: this is the user pressing "Mark as read", which is an
+                                // explicit command and therefore does NOT require the conversation to be
+                                // on screen. Distinct from merely receiving or displaying the
+                                // notification, neither of which is read authority.
                                 MarkConversationReadUseCase.get(appContext)
-                                    .markRead(threadId, phone)
+                                    .markRead(threadId, phone, ReadCause.USER_MARK_READ)
                                 if (notificationId != 0) {
                                     NotificationManagerCompat.from(appContext).cancel(notificationId)
                                 }

@@ -900,10 +900,18 @@ class HomeViewModel(
     fun markConversationReadLocally(threadId: Long, phone: String) {
         var changed = false
         if (threadId != 0L) {
+            // AUTHORITATIVE identity. When the event names a thread, ONLY that thread is affected.
+            //
+            // The address search used to run as well, "just in case", which cleared the unread badge on
+            // every conversation whose sender merely NORMALISED similarly — short codes, branded or
+            // alphanumeric senders, and the same number written with and without a country code. A read
+            // of one conversation therefore presented several others as read.
             overlay.recordMarkRead(threadId)
             changed = true
-        }
-        if (phone.isNotBlank()) {
+        } else if (phone.isNotBlank()) {
+            // Legacy fallback ONLY: no thread id at all, so the address is the sole available identity.
+            // This is the case the address matching exists for, and it cannot clear an unrelated thread
+            // that DOES have its own id, because a non-zero threadId never reaches here.
             val matches = LinkedHashSet<Long>()
             roomConversationsState.forEach {
                 if (ContactRepository.sameConversation(it.sender, phone)) matches.add(it.threadId)

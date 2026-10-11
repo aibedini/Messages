@@ -1228,7 +1228,19 @@ class SmsRepository(
      * whole SMS table by phone. Address is only a fallback when the thread
      * id is unknown (threadId == 0).
      */
-    fun markThreadAsReadStrict(threadId: Long, phone: String = ""): MarkReadProviderResult {
+    fun markThreadAsReadStrict(
+        threadId: Long,
+        phone: String = "",
+        /**
+         * Whether an absent horizon may fall back to reading the whole thread.
+         *
+         * True only for an EXPLICIT user action or an authenticated remote command: those are
+         * decisions about the conversation itself. A screen-authorised read passes false, so that an
+         * unknown boundary refuses the write instead of swallowing messages that arrived after the
+         * user left.
+         */
+        allowUnbounded: Boolean = false
+    ): MarkReadProviderResult {
         // ── READ HORIZON ─────────────────────────────────────────────────────
         //
         // A bulk `UPDATE ... WHERE thread = ? AND read = 0` runs as one statement but is not
@@ -1249,7 +1261,8 @@ class SmsRepository(
                         readColumn = Telephony.Sms.READ,
                         idColumn = Telephony.Sms._ID,
                         threadId = threadId,
-                        horizonId = smsHorizon
+                        horizonId = smsHorizon,
+                        allowUnbounded = allowUnbounded
                     )
                     context.contentResolver.update(
                         Telephony.Sms.CONTENT_URI,
@@ -1284,7 +1297,8 @@ class SmsRepository(
                     readColumn = Telephony.Mms.READ,
                     idColumn = Telephony.Mms._ID,
                     threadId = threadId,
-                    horizonId = mmsHorizon
+                    horizonId = mmsHorizon,
+                    allowUnbounded = allowUnbounded
                 )
                 SourceWriteResult.Success(
                     context.contentResolver.update(
@@ -1604,10 +1618,26 @@ internal fun readHorizonSelection(
     readColumn: String,
     idColumn: String,
     threadId: Long,
-    horizonId: Long?
+    horizonId: Long?,
+    /**
+     * Whether a read with NO established boundary may fall back to the whole thread.
+     *
+     * Defaults to false, and that default is the point: an unbounded automatic read can consume a
+     * message that arrived after the user left the conversation, which is indistinguishable from the
+     * bug this horizon exists to prevent. Only an EXPLICIT user action or an authenticated remote
+     * command — decisions about the conversation itself rather than about a snapshot of it — may pass
+     * true.
+     *
+     * Returning a selection that matches nothing is deliberate for the false case: the read simply does
+     * not happen, and the conversation stays unread, which is the recoverable direction.
+     */
+    allowUnbounded: Boolean = false
 ): Pair<String, Array<String>> = if (horizonId != null && horizonId > 0L) {
     "$threadColumn = ? AND $readColumn = 0 AND $idColumn <= ?" to
         arrayOf(threadId.toString(), horizonId.toString())
-} else {
+} else if (allowUnbounded) {
     "$threadColumn = ? AND $readColumn = 0" to arrayOf(threadId.toString())
+} else {
+    // Bound to nothing rather than to everything: a 1 = 0 predicate cannot mark a row read.
+    "1 = 0" to emptyArray()
 }
