@@ -4,6 +4,7 @@ import android.content.Context
 import com.autonomousone.messages.data.ConversationPreferenceDao
 import com.autonomousone.messages.data.ConversationPreferenceEntity
 import com.autonomousone.messages.data.MessagesDatabase
+import com.autonomousone.messages.messaging.ConversationReadAudit
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.flow.Flow
 
@@ -70,7 +71,15 @@ class ConversationPreferenceRepository(context: Context) {
 
     suspend fun setManualUnread(threadId: Long, unread: Boolean, now: Long) {
         dao.setManualUnread(threadId, unread, now)
-        DiagnosticLog.event("MARK_UNREAD", "thread=$threadId unread=$unread")
+        // Privacy-safe audit at the canonical mutation point for this bookmark. The previous line here
+        // logged the RAW thread id, which is a stable conversation identifier and must not reach the
+        // log; the audit hashes it and records the direction, so the bookmark's origin is traceable
+        // without leaking the identity.
+        if (unread) {
+            ConversationReadAudit.manualUnreadSet(threadId, source = "user_mark_unread")
+        } else {
+            ConversationReadAudit.manualUnreadCleared(threadId, source = "explicit_clear")
+        }
     }
 
     suspend fun setMutedUntil(threadId: Long, mutedUntil: Long, now: Long) {

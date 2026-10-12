@@ -114,6 +114,34 @@ interface ConversationPreferenceDao {
     )
     suspend fun setManualUnread(threadId: Long, manualUnread: Boolean, now: Long)
 
+    /**
+     * Clears the `manualUnread` bookmark for one thread, and touches NOTHING else.
+     *
+     * ## Why this is a plain UPDATE and not [setManualUnread]
+     *
+     * [setManualUnread] is an INSERT ... ON CONFLICT, so calling it to CLEAR a bookmark would CREATE a
+     * preferences row for a thread that never had one. A read of an ordinary conversation — the common
+     * case by far — would then leave a full row of defaults behind, one per conversation the user ever
+     * opened. This UPDATE has no such side effect: no row, no write.
+     *
+     * It also patches exactly one column, so it cannot disturb `preferredSimRef`, `mutedUntil`,
+     * `categoryOverride`, `spam`, `customNotificationChannel`, or any spam-report field. Replacing the
+     * whole entity with defaults would silently unmute and un-spam the conversation.
+     *
+     * The `manualUnread = 1` guard keeps it idempotent and keeps `updatedAt` from churning on every
+     * ordinary read of a thread that was never bookmarked.
+     *
+     * @return the number of rows changed: 0 when there was no bookmark to clear.
+     */
+    @Query(
+        """
+        UPDATE conversation_preferences
+        SET manualUnread = 0, updatedAt = :now
+        WHERE threadId = :threadId AND manualUnread = 1
+        """
+    )
+    suspend fun clearManualUnread(threadId: Long, now: Long): Int
+
     @Query(
         """
         INSERT INTO conversation_preferences

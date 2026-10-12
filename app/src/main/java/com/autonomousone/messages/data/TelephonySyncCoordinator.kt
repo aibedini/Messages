@@ -2365,6 +2365,17 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     /**
+     * The conversation's durable unread count, or -1 when it cannot be read.
+     *
+     * Diagnostics only: it exists so a read can report the state it actually left behind, rather than
+     * asserting success. -1 means "unknown", never "zero".
+     */
+    suspend fun conversationUnreadCount(threadId: Long): Int {
+        if (threadId <= 0L) return -1
+        return runCatching { db.conversationDao().byThread(threadId)?.unreadCount ?: -1 }.getOrDefault(-1)
+    }
+
+    /**
      * What actually happened when a read was applied — the FACT, not an assumption.
      *
      * The old path returned nothing, so a caller could not tell "the provider was updated and GMweb
@@ -2411,13 +2422,52 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     ): ThreadReadOutcome {
         if (threadId <= 0L) return ThreadReadOutcome.Failed
         var published: EnqueueAttempt = EnqueueAttempt.SKIPPED_SYNC_OFF
+        // What the conversation's unread counter was set to. Carried out of the transaction so the
+        // published cloud event reports the same number the local projection holds.
+        var remainingUnread = 0
         db.withTransaction {
             if (upToProviderId != null) {
                 db.messageDao().markThreadReadUpTo(threadId, upToProviderId)
             } else {
                 db.messageDao().markThreadRead(threadId)
             }
-            db.conversationDao().markRead(threadId)
+            // ── THE CONVERSATION PROJECTION ──────────────────────────────────
+            //
+            // Only an UNBOUNDED read may zero the counter. After a bounded read a message newer than
+            // the horizon is still unread, and setting 0 would show a false "all read" until the next
+            // full reconcile — Room's own rows would disagree with the badge the user is looking at.
+            remainingUnread = ConversationReadProjection.remainingUnreadAfter(
+                bounded = upToProviderId != null,
+                unreadIncomingInThread = { db.messageDao().unreadIncomingCountForThread(threadId) }
+            )
+            if (upToProviderId != null) {
+                db.conversationDao().setUnreadCount(threadId, remainingUnread)
+            } else {
+                db.conversationDao().markRead(threadId)
+            }
+            // ── THE MANUAL-UNREAD BOOKMARK ───────────────────────────────────
+            //
+            // Home renders `unread = realUnread OR manualUnread`, so a conversation the user once
+            // bookmarked unread can NEVER clear its badge by being opened: the real read happens, the
+            // bookmark survives, and the row stays highlighted forever. The explicit bulk mark-read
+            // already cleared the bookmark; opening the conversation did not, and that asymmetry is the
+            // bug.
+            //
+            // Cleared INSIDE this transaction and AFTER the message read, so the bookmark is not
+            // released merely because a read was REQUESTED. If the read fails the transaction aborts and
+            // the bookmark stays — which is the honest outcome, since Home would otherwise show read
+            // over messages that are still unread.
+            //
+            // A plain UPDATE, so reading a conversation that was never bookmarked creates no row.
+            val clearedBookmark = db.conversationPreferenceDao()
+                .clearManualUnread(threadId, now = System.currentTimeMillis())
+            if (clearedBookmark > 0) {
+                // MANUAL_UNREAD_CLEARED: the durable bookmark was released by a real read. Without this
+                // line a cleared-but-stale badge has no explanation anywhere.
+                ConversationReadAudit.manualUnreadCleared(threadId, source = "local_read")
+            }
+            // Captured inside the transaction so the published event and the local projection describe
+            // the SAME state. The unbounded path reads everything, so its answer is 0 by definition.
             // Thread-read carries no message content — but if the
             // thread CONTAINS a LOCAL_ONLY message, its very existence
             // must stay untraceable. Gate on the latest message of the
@@ -2451,7 +2501,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                             lastMessagePreview = latest.body,
                             lastMessageDirection = direction,
                             lastMessageAt = latest.date,
-                            unreadCount = 0,
+                            // The TRUE remaining count, not a blanket 0. After a bounded read a message
+                            // newer than the horizon is still unread, and telling GMweb "0" would clear
+                            // its unread badge for a message it should still be showing as unread.
+                            unreadCount = remainingUnread,
                             pinned = conversation.pinned,
                             archived = conversation.archived,
                         )

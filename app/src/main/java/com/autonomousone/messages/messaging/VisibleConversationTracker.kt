@@ -229,6 +229,69 @@ object ConversationReadAudit {
         )
     }
 
+    /**
+     * The durable `manualUnread` bookmark was set by the user.
+     *
+     * Recorded because the bookmark is the one unread source that is NOT the provider's READ column, so
+     * "why is this conversation still highlighted" is unanswerable from message rows alone.
+     */
+    fun manualUnreadSet(threadId: Long, source: String) {
+        DiagnosticLog.event(CATEGORY, "MANUAL_UNREAD_SET thread=${token(threadId)} source=$source")
+    }
+
+    /**
+     * The durable `manualUnread` bookmark was RELEASED by a real read.
+     *
+     * Distinct from [manualUnreadSet] so a badge that clears — or stubbornly does not — is explainable
+     * from the log rather than inferred.
+     */
+    fun manualUnreadCleared(threadId: Long, source: String) {
+        DiagnosticLog.event(CATEGORY, "MANUAL_UNREAD_CLEARED thread=${token(threadId)} source=$source")
+    }
+
+    /**
+     * The local read committed, with the projection it left behind.
+     *
+     * [remainingUnread] is what the conversation's unread counter was set to, so a bounded read that
+     * correctly left a newer message unread is visible here instead of looking like a failure.
+     */
+    fun readApplied(cause: ReadCause, threadId: Long, remainingUnread: Int, bounded: Boolean) {
+        DiagnosticLog.event(
+            CATEGORY,
+            "READ_APPLIED cause=${cause.name} thread=${token(threadId)} bounded=$bounded " +
+                "remainingUnread=$remainingUnread"
+        )
+    }
+
+    /** The read was refused. [detail] must never contain a phone number or a body. */
+    fun readSkipped(threadId: Long, reason: ReadSkipReason, detail: String) {
+        DiagnosticLog.event(
+            CATEGORY,
+            "READ_SKIPPED thread=${token(threadId)} reason=${reason.name} detail=$detail"
+        )
+    }
+
+    /**
+     * No read horizon could be established, so a screen-authorised read refused to run unbounded.
+     *
+     * Its own event because the outcome ("the conversation the user just opened is still unread") looks
+     * like a failure of the read itself, and this is the only thing that explains it.
+     */
+    fun readHorizonUnavailable(threadId: Long, cause: ReadCause, detail: String) {
+        DiagnosticLog.event(
+            CATEGORY,
+            "READ_HORIZON_UNAVAILABLE cause=${cause.name} thread=${token(threadId)} detail=$detail"
+        )
+    }
+
+    /** The conversation projection was reconciled to match the message rows. */
+    fun readProjectionReconciled(threadId: Long, unreadCount: Int, source: String) {
+        DiagnosticLog.event(
+            CATEGORY,
+            "READ_PROJECTION_RECONCILED thread=${token(threadId)} unreadCount=$unreadCount source=$source"
+        )
+    }
+
     /** Non-reversible, short reference to a thread id. Never the id itself. */
     internal fun token(threadId: Long): String {
         val bytes = MessageDigest.getInstance("SHA-256")

@@ -559,16 +559,17 @@ class HomeViewModel(
     }
 
     /**
-     * FEATURE 9/10: Home unread = real unread OR the user's `manualUnread`
-     * bookmark. Applied at render time (never written into the durable row), so
-     * the bookmark and the provider's READ column can never fight.
+     * FEATURE 9/10: Home unread = real unread OR the user's `manualUnread` bookmark.
+     *
+     * Applied at render time (never written into the durable row), so the bookmark and the provider's
+     * READ column can never fight.
+     *
+     * Pure and internal so the rule can be tested directly. This rule is exactly why the bookmark must
+     * be CLEARED by a real read: while it is set, no amount of correct reading by the user can remove
+     * the badge, because the OR re-adds it on every render.
      */
-    private fun List<Sms>.withManualUnread(): List<Sms> {
-        if (manuallyUnreadIds.isEmpty()) return this
-        return map { row ->
-            if (!row.unread && row.threadId in manuallyUnreadIds) row.copy(unread = true) else row
-        }
-    }
+    private fun List<Sms>.withManualUnread(): List<Sms> =
+        HomeUnreadRule.applyManualUnread(this, manuallyUnreadIds)
 
     /** Every thread id Home is currently rendering (both tabs). */
     private fun visibleThreadIds(): Set<Long> {

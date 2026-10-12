@@ -79,6 +79,16 @@ fun interface ReadHorizonProvider {
 }
 
 /**
+ * Reads back a conversation's durable unread count, for diagnostics only.
+ *
+ * A seam so the audit can report what the projection ACTUALLY holds rather than what the read intended:
+ * if the projection update silently did nothing, the log shows it instead of claiming success.
+ */
+fun interface ConversationUnreadReader {
+    suspend fun unreadCountFor(threadId: Long): Int
+}
+
+/**
  * The ONE entry point for "this conversation is now read".
  *
  * Every path funnels here — Home open, search open, deep link, notification
@@ -110,6 +120,8 @@ class MarkConversationReadUseCase(
      * a whole-thread read, it turns into a no-op that stays unread.
      */
     private val readHorizon: ReadHorizonProvider = ReadHorizonProvider { null },
+    /** Diagnostics-only read-back of the durable count. Defaults to "unknown" (-1). */
+    private val conversationUnread: ConversationUnreadReader = ConversationUnreadReader { -1 },
     private val onLocalReadApplied: (threadId: Long, phone: String) -> Unit = { _, _ -> }
 ) {
 
@@ -143,10 +155,9 @@ class MarkConversationReadUseCase(
         // the chat was visible can run after the user navigated away, and a new SMS may have arrived in
         // between — marking that one read would be indistinguishable from the bug this fixes.
         if (requiresVisibleScreen(cause) && !isScreenAuthorised(threadId, phone)) {
-            ConversationReadAudit.skipped(
-                reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
+            ConversationReadAudit.readSkipped(
                 threadId = threadId,
-                source = "read_path",
+                reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
                 detail = "cause=${cause.name} revalidated_at_execution"
             )
             // Also through the INJECTED sink, so the refusal is observable where the operation is
@@ -180,12 +191,7 @@ class MarkConversationReadUseCase(
             // No boundary could be established, so the read cannot be bounded. Skipping is the safe
             // direction: the alternative is an unbounded write that may consume messages the user never
             // saw, and the conversation simply stays unread until a real user action clears it.
-            ConversationReadAudit.skipped(
-                reason = ReadSkipReason.NO_USER_EVIDENCE,
-                threadId = threadId,
-                source = "read_path",
-                detail = "cause=${cause.name} no_read_horizon"
-            )
+            ConversationReadAudit.readHorizonUnavailable(threadId, cause, detail = "screen_authorised")
             diagnostics.event(
                 CATEGORY,
                 "skip=${ReadSkipReason.NO_USER_EVIDENCE.name} thread=$threadId " +
@@ -210,7 +216,31 @@ class MarkConversationReadUseCase(
                 "read-pending-recovery thread=$threadId provider-write-attempted=true cause=${cause.name}",
                 null
             )
+        } else {
+            // READ_APPLIED is recorded only NOW, after the durable local write genuinely committed.
+            // The earlier `allowed()` line says the read was AUTHORISED; this one says it happened, and
+            // the two must never be conflated — a badge that stays set is otherwise unexplained.
+            ConversationReadAudit.readApplied(
+                cause = cause,
+                threadId = threadId,
+                remainingUnread = remainingUnreadFor(threadId),
+                bounded = upToProviderId != null
+            )
         }
+    }
+
+    /**
+     * The conversation's unread count after the read, read back from the projection.
+     *
+     * Read back rather than passed in, so the audit reports what the durable state ACTUALLY holds rather
+     * than what this call intended — if the projection update silently did nothing, that shows up here.
+     */
+    private suspend fun remainingUnreadFor(threadId: Long): Int = try {
+        if (threadId > 0L) conversationUnread.unreadCountFor(threadId) else 0
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        -1
     }
 
     /** True for the causes whose authority is "this chat is on screen". */
@@ -354,6 +384,9 @@ class MarkConversationReadUseCase(
                     // The boundary comes from the same source of truth the mutation writes to.
                     readHorizon = ReadHorizonProvider { threadId ->
                         TelephonySyncCoordinator.get(appContext).readHorizonForThread(threadId)
+                    },
+                    conversationUnread = ConversationUnreadReader { threadId ->
+                        TelephonySyncCoordinator.get(appContext).conversationUnreadCount(threadId)
                     },
                     onLocalReadApplied = { threadId, phone ->
                         // (b) optimistic UI/list observation; never a DB read.

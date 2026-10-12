@@ -435,6 +435,22 @@ interface MessageDao {
     suspend fun highestProviderIdForThread(threadId: Long): Long?
 
     /**
+     * Unread INCOMING messages remaining in ONE thread.
+     *
+     * The predicate is identical to [countUnread] and [unreadCountsByThread] on purpose: three
+     * definitions of "unread" would drift, and the whole point of this query is that the conversation
+     * projection and the message rows cannot disagree.
+     *
+     * This exists because a BOUNDED read must not zero the conversation's unread count. After a read
+     * that stopped at a horizon, a message newer than that boundary is still unread, and resetting the
+     * count to 0 would present a false "all read" until the next full reconcile.
+     *
+     * One indexed count for a single thread — not a table scan.
+     */
+    @Query("SELECT COUNT(*) FROM messages WHERE threadId = :threadId AND read = 0 AND type = 1")
+    suspend fun unreadIncomingCountForThread(threadId: Long): Int
+
+    /**
      * Marks EVERY unread message read, in one statement.
      *
      * "Mark all read" is a whole-table fact, not a property of the rows a
@@ -916,6 +932,16 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET unreadCount = 0 WHERE threadId = :threadId")
     suspend fun markRead(threadId: Long)
+
+    /**
+     * Sets a conversation's unread counter to an EXACT value.
+     *
+     * Used after a BOUNDED read, where the truthful count is "unread incoming messages still inside the
+     * mirror", not 0. [markRead] is only correct when the read was unbounded — an explicit user action or
+     * an authenticated remote command — because only then is every message in the thread read.
+     */
+    @Query("UPDATE conversations SET unreadCount = :unreadCount WHERE threadId = :threadId")
+    suspend fun setUnreadCount(threadId: Long, unreadCount: Int)
 
     /**
      * Clears every conversation's unread counter in one statement.
