@@ -131,19 +131,30 @@ data class MessageDetailsUiState(
             }
             val isOutgoing = evidence.type == android.provider.Telephony.Sms.MESSAGE_TYPE_SENT
 
+            // Derived from the REAL direction, never hardcoded. This previously passed `true`
+            // unconditionally, which happened to be harmless only because [presentation] is gated on a
+            // non-null [uiState] and incoming messages have none — a latent trap where a later change
+            // letting an incoming message carry a state would silently offer "Retry" on a RECEIVED
+            // message.
+            val evidenceForPresentation = SendStateDerivation.evidenceFromPersisted(
+                message = mirrorStub(evidence),
+                isOutgoing = isOutgoing
+            )
+
             // The state is derived from the SAME evidence mapper every other surface uses, so the
             // details screen cannot disagree with the bubble or the list about this message.
+            //
+            // A RECEIVED message has no send story, so it has no state: null is what keeps [headline]
+            // on "Received" and makes [stepsFor] return nothing, instead of inventing a transport
+            // timeline for a message this phone never sent.
             val uiState = if (!isOutgoing) {
                 null
             } else {
-                SendStateDerivation.evidenceFromPersisted(
-                    message = mirrorStub(evidence),
-                    isOutgoing = true
-                ).let { SmsStatusPresentationMapper.present(it) }.state
+                SmsStatusPresentationMapper.present(evidenceForPresentation).state
             }
-            val presentation = uiState?.let { SmsStatusPresentationMapper.present(
-                SendStateDerivation.evidenceFromPersisted(mirrorStub(evidence), true)
-            ) }
+            val presentation = uiState?.let {
+                SmsStatusPresentationMapper.present(evidenceForPresentation)
+            }
 
             val submittedAt = segments.mapNotNull { it.submittedAt }.minOrNull()
             val partCount = segments.map { it.partCount }.maxOrNull()?.takeIf { it > 0 }
