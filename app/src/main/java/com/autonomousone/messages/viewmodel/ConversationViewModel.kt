@@ -2473,6 +2473,32 @@ class ConversationViewModel(
         return messages.firstOrNull { MessageIdentity.keyOf(it.id) in keys }?.message
     }
 
+    /**
+     * The ONE selected message, or null when the selection is not exactly one row.
+     *
+     * ## Why the whole [Sms] and not just its text
+     *
+     * Message Details needs the composite identity (`source` + `providerId`) to re-read persisted
+     * evidence for the RIGHT message. Reconstructing that identity from the selected text would be a
+     * guess — two messages can share a body — and a wrong guess opens Details for a different message,
+     * which is worse than not opening it.
+     *
+     * ## Which window is searched
+     *
+     * The rows the user can actually SEE. While parked on a search hit the list paints a separate
+     * bounded window, so resolving against `messages` alone would return null for a row that is plainly
+     * on screen. The displayed window is therefore `searchJumpWindow.rows` when present, falling back to
+     * the conversation window. Both are already in memory: no provider read, no conversation scan.
+     *
+     * Returns null (rather than the first selected row) for a multi-selection, and null when the
+     * selected row has vanished from the window — a deleted row must not resolve to its neighbour.
+     */
+    fun selectedSingleMessage(): Sms? =
+        com.autonomousone.messages.ui.selection.MessageSelectionResolver.resolveSingle(
+            selectedKeys = messageSelection.keys,
+            displayedRows = searchJumpWindow?.rows ?: messages
+        )
+
     /** Called by the screen after a successful copy. */
     fun onSelectionCopied(count: Int) {
         if (count > 0) messageSelection = messageSelection.clear()

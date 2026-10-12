@@ -792,6 +792,35 @@ fun ConversationScreen(
         }
     }
 
+    /**
+     * The ONE way into Message Details, used by BOTH the selection toolbar's Info action and the
+     * bubble's context menu.
+     *
+     * Two entry points that each built the route would be two contracts to keep in step, and the
+     * failure mode of them drifting is opening Details for the wrong message — the exact class of bug
+     * the composite identity exists to prevent.
+     *
+     * Identity comes from [MessageIdentity], never from `sms.id` arithmetic: an SMS and an MMS can share
+     * a numeric `_id`, and only the (source, providerId) pair distinguishes them.
+     *
+     * Selection is deliberately NOT cleared here. The long-press selection is ViewModel state keyed to
+     * this conversation and is already released when this screen is disposed, so clearing it on the way
+     * out would only throw away the user's selection for a trip they may want to back out of.
+     */
+    fun openMessageDetails(sms: Sms) {
+        val key = MessageIdentity.keyOf(sms.id)
+        navController.navigate(
+            com.autonomousone.messages.navigation.Screen.MessageDetails.createRoute(
+                threadId = threadId,
+                source = key.source,
+                providerId = key.providerId,
+                body = sms.message,
+                recipient = recipientPhone,
+                sender = sms.sender
+            )
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -809,7 +838,12 @@ fun ConversationScreen(
                     onUnstar = { viewModel.starSelection(false) },
                     onCopyText = { copySelectedText() },
                     onForward = { forwardSelectedText() },
-                    onTrash = { viewModel.trashSelection() }
+                    onTrash = { viewModel.trashSelection() },
+                    // ONE long-press, ONE tap: the resolver returns the exact selected message or null,
+                    // and a null is simply ignored rather than falling back to a neighbouring row.
+                    onDetails = {
+                        viewModel.selectedSingleMessage()?.let { openMessageDetails(it) }
+                    }
                 )
             } else if (viewModel.isSearchActive) {
                 // v3.4.0 FEATURE 1: [←] [Search messages…] [3 of 14] [↑] [↓] [X]
@@ -966,19 +1000,7 @@ fun ConversationScreen(
                     // Opens the full Message Details destination, carrying the composite identity plus
                     // the text this screen already has, so the details screen paints immediately
                     // without re-reading the provider.
-                    onOpenDetails = { tapped ->
-                        val isMms = tapped.id < 0
-                        navController.navigate(
-                            com.autonomousone.messages.navigation.Screen.MessageDetails.createRoute(
-                                threadId = threadId,
-                                source = if (isMms) "mms" else "sms",
-                                providerId = kotlin.math.abs(tapped.id),
-                                body = tapped.message,
-                                recipient = recipientPhone,
-                                sender = tapped.sender
-                            )
-                        )
-                    },
+                    onOpenDetails = { tapped -> openMessageDetails(tapped) },
                     // FEATURE 9/10: long-press a bubble → selection mode; taps
                     // toggle; a long-press INSIDE selection mode still opens the
                     // legacy copy/forward/details menu.

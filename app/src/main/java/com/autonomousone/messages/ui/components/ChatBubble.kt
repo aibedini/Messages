@@ -492,7 +492,14 @@ fun ChatBubble(
                                 }
                             )
                         }
-                        if (!incoming) {
+                        // Message Details is offered for EVERY message, incoming or outgoing.
+                        //
+                        // It used to be outgoing-only, which meant a received SMS — the case where a
+                        // user most often wonders where a message came from — had no route to the
+                        // screen at all. Received time, sender and read state are real evidence for an
+                        // incoming message; the screen simply must not invent SENT/DELIVERED callbacks
+                        // for one, and it does not.
+                        if (onOpenDetails != null) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.conv_menu_message_details)) },
                                 onClick = {
@@ -500,13 +507,20 @@ fun ChatBubble(
                                     // Real destination, not an inline expansion: it needs to scroll,
                                     // it must survive a configuration change, and Back has to return to
                                     // this conversation.
-                                    onOpenDetails?.invoke(sms)
+                                    onOpenDetails.invoke(sms)
                                 }
                             )
+                        }
+                        if (!incoming) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.conv_copy_technical_details)) },
                                 onClick = {
                                     menuOpen = false
+                                    // OUTGOING ONLY. The export is a send diagnostic — transport state,
+                                    // SENT result, radio error, delivery report. None of those exist for
+                                    // a received message, so offering it would produce a report full of
+                                    // blanks that reads like a failure.
+                                    //
                                     // Read the PERSISTED row for THIS message, on demand. The bubble
                                     // holds a projection, so the diagnostics have to be fetched — and
                                     // fetching them by (source, providerId) is what guarantees the

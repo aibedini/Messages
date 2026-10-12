@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,10 @@ import com.autonomousone.messages.R
  * the real starred state of the current selection, and Forward appears only when
  * exactly one message is selected — forwarding stays a single-message workflow,
  * it is never silently applied to a multi-selection.
+ *
+ * [onDetails] is the same rule for the same reason: Details describes ONE message, so the action is
+ * shown only for a one-message selection and is ABSENT otherwise. An inert or multi-target Details
+ * button would either do nothing or silently pick a message the user did not mean.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +53,7 @@ fun ConversationSelectionTopBar(
     onCopyText: () -> Unit,
     onForward: () -> Unit,
     onTrash: () -> Unit,
+    onDetails: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val enabled = !busy && selectedCount > 0
@@ -73,6 +79,21 @@ fun ConversationSelectionTopBar(
         },
         actions = {
             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                // Details sits FIRST, before Star/Copy, because the actions row scrolls
+                // horizontally on a narrow phone: the discoverable way into Message Details must never
+                // be the thing that falls off the right edge. It is also the only action here that
+                // answers "what happened to this message", which is what the user long-pressed for.
+                //
+                // ONE-message only. It is not rendered at all for a multi-selection, so there is no
+                // inert button and no silently-chosen "first" message.
+                if (selectedCount == 1 && !busy) {
+                    IconButton(onClick = onDetails) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = stringResource(R.string.message_details)
+                        )
+                    }
+                }
                 // Progress indicator: starring / trashing a large selection is a
                 // real Room + provider round-trip, never a frozen bar.
                 if (busy) {

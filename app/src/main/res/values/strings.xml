@@ -113,6 +113,10 @@
     <string name="conv_send_sms_action">Send SMS</string>
     <string name="conv_menu_copy_link_or_number">Copy link/number</string>
     <string name="conv_menu_message_details">Message details</string>
+    <!-- Selection-toolbar Info action: the accessible name for the same destination. Kept as its own
+         resource (rather than reusing the menu label) because it is announced as a button in the
+         toolbar, where "Message details" alone does not say what tapping it does. -->
+    <string name="message_details">Message details</string>
     <string name="conv_menu_hide_details">Hide details</string>
     <string name="conv_clear_conversation">Clear conversation</string>
     <string name="conv_search_in_chat">Search in chat</string>
