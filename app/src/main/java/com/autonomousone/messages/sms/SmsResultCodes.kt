@@ -22,6 +22,17 @@ object SmsResultCodes {
 
     private val NAMES: Map<Int, String> = buildMap {
         put(android.app.Activity.RESULT_OK, "RESULT_OK")
+        // ── code 0 ──────────────────────────────────────────────────────────
+        //
+        // `Activity.RESULT_CANCELED` IS 0, so printing `UNKNOWN_RESULT_0` claimed the platform constant
+        // was an unexplained vendor value. The name deliberately does NOT say "the user cancelled":
+        // on the SMS path a 0 result is what arrives when the callback carries no positive verdict
+        // (a vendor that omits the result extra, or a callback resolved without one), so asserting
+        // cancellation would fabricate a cause the app cannot see.
+        //
+        // Naming it does NOT make it a success. `SmsTransportClassifier` still treats 0 as AMBIGUOUS
+        // with POSSIBLE_DUPLICATE risk, so it can never become CONFIRMED on the strength of this label.
+        put(0, "RESULT_CANCELED_OR_UNSET")
         put(SmsManager.RESULT_ERROR_GENERIC_FAILURE, "RESULT_ERROR_GENERIC_FAILURE")
         put(SmsManager.RESULT_ERROR_NO_SERVICE, "RESULT_ERROR_NO_SERVICE")
         put(SmsManager.RESULT_ERROR_NULL_PDU, "RESULT_ERROR_NULL_PDU")

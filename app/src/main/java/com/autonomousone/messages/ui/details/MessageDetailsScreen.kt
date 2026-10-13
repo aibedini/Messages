@@ -1,4 +1,4 @@
-package com.autonomousone.messages.ui.details
+﻿package com.autonomousone.messages.ui.details
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autonomousone.messages.sms.SmsTpStatus
 import com.autonomousone.messages.sms.SmsUiState
 import java.text.DateFormat
 import java.util.Date
@@ -366,9 +367,22 @@ private fun failureCopy(state: MessageDetailsUiState): Pair<String, String>? = w
                 "SIM service, balance, or carrier restrictions."
         }
     }
-    SmsUiState.NOT_DELIVERED ->
-        "Carrier delivery failure" to
-            "The carrier returned a negative delivery status report for this message."
+    SmsUiState.NOT_DELIVERED -> {
+        // The carrier's own answer, decoded from the raw TP-Status, is the reason. The previous copy
+        // was a generic "the carrier returned a negative report", which told the user nothing they
+        // could act on and gave no clue that the network had stopped trying.
+        val tp = state.deliveryTpStatus?.let { SmsTpStatus.decode(it) }
+        val reason = tp?.reason
+            ?: "The mobile network reported that this message was not delivered."
+        "Not delivered" to buildString {
+            append("The SMS service centre reported that delivery could not be completed.")
+            append("\n\n")
+            append(reason)
+            if (tp != null && !tp.carrierStillRetrying) {
+                append("\n\nNo further delivery attempts will be made for this message.")
+            }
+        }
+    }
     SmsUiState.SEND_STATUS_UNKNOWN ->
         "Send status unknown" to
             "The radio returned an ambiguous result. The SMS may still have been accepted, which is why " +
@@ -399,6 +413,16 @@ private fun TechnicalDetailsCard(
         state.deliveryTpStatus?.let { tp ->
             DetailRow("TP-Status", "$tp")
             DetailRow("TP-Status (hex)", "0x${Integer.toHexString(tp)}")
+            // The decoded meaning, from the SAME decoder the app classifies with. A bare 0x63 is
+            // unreadable without the standard, and this section exists to be read.
+            val decoded = SmsTpStatus.decode(tp)
+            DetailRow("TP-Status meaning", decoded.symbolicName)
+            DetailRow("TP-Status explanation", decoded.reason)
+            DetailRow("Delivery retry", if (decoded.carrierStillRetrying) "Network may still retry" else "No further attempts")
+            if (decoded.carrierSpecific) {
+                DetailRow("TP-Status scope", "Specific to this carrier")
+            }
+            DetailRow("Standard", decoded.standardReference)
         }
         state.deliveryEvidence?.let { DetailRow("Delivery evidence", it) }
         state.deliveryCallbackAt?.let { DetailRow("Delivery evidence at", formatTime(it)) }

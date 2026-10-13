@@ -154,16 +154,21 @@ object SendStateDerivation {
             // failure and must not be folded into one: "the carrier says it was not delivered" and "the
             // phone never sent it" need different words and different remedies.
             hasDeliveryFailure = delivery == SmsStatusPolicy.DeliveryEvidence.FAILED,
-            // The send is confirmed and NO delivery outcome was recorded at all.
+            // The send is confirmed and the delivery outcome is unresolved.
             //
             // This is the common real-world case the details screen exists for: the handset submitted
-            // the message, the SMSC acknowledged it, and no delivery report ever arrived. Reporting that
-            // as plain "Sent" would be a quiet overstatement — the user asked whether it arrived, and the
-            // honest answer is "we do not know". It is NOT reported as a failure either: a missing report
-            // cannot prove the recipient did not receive it.
+            // the message, the SMSC acknowledged it, and no definitive delivery report ever arrived.
+            // Reporting that as plain "Sent" would be a quiet overstatement — the user asked whether it
+            // arrived, and the honest answer is "we do not know". It is NOT reported as a failure either:
+            // a missing report cannot prove the recipient did not receive it.
             //
-            // A recorded TEMPORARY outcome is excluded, because the network is still trying and the
-            // state is genuinely "in progress" rather than unresolved.
+            // A recorded TEMPORARY outcome is excluded, because the network is still trying and the state
+            // is genuinely "in progress" rather than unresolved.
+            //
+            // A NOT_CONFIRMED outcome (0x01/0x02) is INCLUDED, and that is deliberate: the network has
+            // given its final answer and that answer is "not confirmed". Leaving it out would show the
+            // message as still awaiting a report that will never come. It is still not a FAILURE, so
+            // hasDeliveryFailure stays false.
             deliveryUnknown = sentConfirmed &&
                 delivery != SmsStatusPolicy.DeliveryEvidence.TEMPORARY
         )
@@ -286,6 +291,16 @@ enum class DeliveryEvidenceRank {
     /** Unparseable, absent, or vendor report: the app genuinely cannot say. */
     UNKNOWN,
 
+    /**
+     * A definite report that delivery was NOT confirmed (`0x01` forwarded-but-unconfirmed, `0x02`
+     * replaced by the SC).
+     *
+     * Ranked ABOVE [UNKNOWN] because it is real, recorded evidence and a later UNKNOWN must not erase
+     * it; ranked BELOW [FAILED] because the network never said the message failed. Its position is what
+     * keeps "we were told it is unconfirmed" from decaying into "we know nothing".
+     */
+    NOT_CONFIRMED,
+
     /** A definite negative report (permanent failure family). */
     FAILED,
 
@@ -303,6 +318,9 @@ enum class DeliveryEvidenceRank {
         fun fromEvidenceName(name: String?): DeliveryEvidenceRank = when (name) {
             "DELIVERED" -> DELIVERED
             "FAILED" -> FAILED
+            // Absent from this mapping would silently rank a 0x01/0x02 report as NONE, i.e. as if
+            // the carrier had said nothing at all - losing the very evidence this class exists to keep.
+            "NOT_CONFIRMED" -> NOT_CONFIRMED
             "TEMPORARY" -> TEMPORARY
             "UNKNOWN" -> UNKNOWN
             else -> NONE
