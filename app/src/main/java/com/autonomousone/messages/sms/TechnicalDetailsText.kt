@@ -101,6 +101,17 @@ object TechnicalDetailsText {
             // Hex as well as decimal: TP-Status is specified in hex in 3GPP, and a support engineer
             // comparing against the spec needs the value in the form the spec uses.
             lines += "deliveryTpStatus: $it (0x${Integer.toHexString(it)})"
+            // The DECODED meaning travels with the raw number. A raw 0x63 is unreadable without the
+            // standard, and the whole point of the delivery diagnostics is that a support engineer — or
+            // the user — can tell what the network actually said. The symbolic name and the plain reason
+            // come from the SAME decoder the app classifies with, so the export cannot disagree with the
+            // screen.
+            val decoded = SmsTpStatus.decode(it)
+            lines += "tpStatusMeaning: ${decoded.symbolicName} — ${decoded.reason}"
+            lines += "tpStatusTerminal: ${decoded.isTerminal}" +
+                " carrierStillRetrying: ${decoded.carrierStillRetrying}" +
+                if (decoded.carrierSpecific) " carrierSpecific: true" else ""
+            lines += "tpStatusReference: ${decoded.standardReference}"
         }
         evidence.deliveryResultCode?.let { lines += "deliveryResultCode: $it" }
         if (evidence.deliveryCallbackAt > 0) lines += "deliveryCallbackAt: ${evidence.deliveryCallbackAt}"

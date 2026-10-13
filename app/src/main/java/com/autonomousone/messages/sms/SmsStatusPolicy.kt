@@ -28,19 +28,31 @@ import android.provider.Telephony
 object SmsStatusPolicy {
 
     enum class Phase { SENT, DELIVERED }
-    enum class DeliveryEvidence { DELIVERED, TEMPORARY, FAILED, UNKNOWN }
+
+    /**
+     * The evidence classes the persistence and projection layers act on.
+     *
+     * [NOT_CONFIRMED] was added because the old four values could not express the truth about
+     * TP-Status `0x01`/`0x02`. The network accepted the message and then declined to confirm delivery;
+     * calling that DELIVERED is a false success, and calling it FAILED tells the user something the
+     * network never said. A distinct class is the only honest option, and it is genuinely necessary
+     * rather than convenient.
+     */
+    enum class DeliveryEvidence { DELIVERED, NOT_CONFIRMED, TEMPORARY, FAILED, UNKNOWN }
 
     /**
      * Maps the TP-Status from a 3GPP SMS-STATUS-REPORT (TS 23.040 §9.2.3.15).
-     * The two high group bits define completed, temporary, permanent, and
-     * temporary-but-no-longer-retrying states. Unknown/vendor values remain
-     * UNKNOWN instead of inventing a delivery verdict.
+     *
+     * Delegates to [SmsTpStatus], the single decoder, so this and every other surface agree. The
+     * previous implementation treated all of `0x00..0x1F` as delivered, which reported confirmed
+     * delivery for `0x01` ("forwarded, delivery unconfirmed") and `0x02` ("replaced by the SC").
      */
-    fun classify3gppTpStatus(status: Int): DeliveryEvidence = when (status) {
-        in 0x00..0x1f -> DeliveryEvidence.DELIVERED
-        in 0x20..0x3f -> DeliveryEvidence.TEMPORARY
-        in 0x40..0x7f -> DeliveryEvidence.FAILED
-        else -> DeliveryEvidence.UNKNOWN
+    fun classify3gppTpStatus(status: Int): DeliveryEvidence = when (SmsTpStatus.decode(status).evidence) {
+        SmsTpStatus.Evidence.DELIVERED -> DeliveryEvidence.DELIVERED
+        SmsTpStatus.Evidence.NOT_CONFIRMED -> DeliveryEvidence.NOT_CONFIRMED
+        SmsTpStatus.Evidence.TEMPORARY -> DeliveryEvidence.TEMPORARY
+        SmsTpStatus.Evidence.FAILED -> DeliveryEvidence.FAILED
+        SmsTpStatus.Evidence.UNKNOWN -> DeliveryEvidence.UNKNOWN
     }
 
     /** Android documents 2 << 16 as the CDMA "received" status. */
@@ -64,7 +76,15 @@ object SmsStatusPolicy {
         dlvPartsDone: Int,
         dlvPartsPending: Int,
         dlvPartsFailed: Int,
-        partCount: Int
+        partCount: Int,
+        /**
+         * Parts the network explicitly reported as NOT CONFIRMED (`0x01`/`0x02`).
+         *
+         * Defaults to 0 so callers that predate this evidence keep compiling, but a caller that HAS this
+         * evidence must pass it: without it those parts look unreported and the message stays PENDING,
+         * waiting for a report the carrier has already sent its last word on.
+         */
+        dlvPartsNotConfirmed: Int = 0
     ): Int {
         val sentSeen = sentConfirmedParts + sentUnconfirmedParts + sentFailedParts
         return when {
@@ -83,8 +103,12 @@ object SmsStatusPolicy {
 
             dlvPartsPending > 0 -> Telephony.Sms.STATUS_PENDING
 
-            // Partial positive evidence cannot claim whole-message delivery.
-            dlvPartsDone > 0 -> Telephony.Sms.STATUS_NONE
+            // ── the network's final word is "not confirmed" ──
+            // A terminal answer, so the message is no longer waiting on anything. It is deliberately NOT
+            // STATUS_FAILED (the network never said the message failed) and NOT STATUS_COMPLETE (nothing
+            // confirmed it arrived). STATUS_NONE is the provider's own "no positive delivery report",
+            // which is exactly what this is.
+            dlvPartsDone > 0 || dlvPartsNotConfirmed > 0 -> Telephony.Sms.STATUS_NONE
 
             // ── still collecting multipart SENT callbacks ──
             sentSeen < partCount -> Telephony.Sms.STATUS_PENDING

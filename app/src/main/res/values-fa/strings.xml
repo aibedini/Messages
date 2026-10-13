@@ -113,6 +113,9 @@
     <string name="conv_send_sms_action">ارسال پیامک</string>
     <string name="conv_menu_copy_link_or_number">کپی لینک/شماره</string>
     <string name="conv_menu_message_details">جزئیات پیام</string>
+    <!-- نام دسترسپذیر دکمهٔ Info در نوار انتخاب. ترجمه هم باید بگوید این دکمه چه میکند،
+         نه فقط نام صفحه را. -->
+    <string name="message_details">جزئیات پیام</string>
     <string name="conv_menu_hide_details">پنهان کردن جزئیات</string>
     <string name="conv_clear_conversation">پاک‌سازی گفتگو</string>
     <string name="conv_search_in_chat">جستجو در گفتگو</string>
@@ -463,6 +466,9 @@
     <string name="bulk_star">ستاره‌دار کردن</string>
     <string name="bulk_unstar">حذف ستاره</string>
     <string name="bulk_copy_text">کپی متن</string>
+    <!-- فقط شواهد ذخیره‌شدهٔ همین پیام را کپی می‌کند. -->
+    <string name="conv_copy_technical_details">کپی جزئیات فنی</string>
+    <string name="sim_unavailable_label">سیم‌کارت انتخاب‌شده در دسترس نیست</string>
     <string name="bulk_updated_fmt">%1$d مورد به‌روزرسانی شد</string>
     <string name="bulk_updated_partial_fmt">%1$d مورد به‌روزرسانی شد، %2$d مورد انجام نشد</string>
     <string name="bulk_failed_fmt">%1$d مورد به‌روزرسانی نشد</string>

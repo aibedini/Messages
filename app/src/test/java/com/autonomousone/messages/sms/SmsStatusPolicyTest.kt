@@ -3,6 +3,7 @@ package com.autonomousone.messages.sms
 import android.provider.Telephony
 import android.telephony.SmsManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
@@ -29,9 +30,27 @@ class SmsStatusPolicyTest {
         partCount = parts
     )
 
-    @Test fun `3gpp completed statuses are delivered`() {
+    @Test fun `only 0x00 in the completed range is a confirmed delivery`() {
+        // 0x00 alone means "received by the SME". The rest of 0x00..0x1F does NOT: 0x01 is "forwarded,
+        // delivery unconfirmed" and 0x02 is "replaced by the SC", and 0x03..0x1F are reserved or
+        // carrier-specific. The previous implementation treated the whole range as delivered, which
+        // reported a confirmed delivery for two codes that explicitly deny one.
         assertEquals(SmsStatusPolicy.DeliveryEvidence.DELIVERED, SmsStatusPolicy.classify3gppTpStatus(0x00))
-        assertEquals(SmsStatusPolicy.DeliveryEvidence.DELIVERED, SmsStatusPolicy.classify3gppTpStatus(0x1f))
+        assertNotEquals(
+            "0x01 must never be reported as delivered",
+            SmsStatusPolicy.DeliveryEvidence.DELIVERED,
+            SmsStatusPolicy.classify3gppTpStatus(0x01)
+        )
+        assertNotEquals(
+            "0x02 must never be reported as delivered",
+            SmsStatusPolicy.DeliveryEvidence.DELIVERED,
+            SmsStatusPolicy.classify3gppTpStatus(0x02)
+        )
+        assertNotEquals(
+            "a reserved/carrier-specific completed code is not evidence of delivery",
+            SmsStatusPolicy.DeliveryEvidence.DELIVERED,
+            SmsStatusPolicy.classify3gppTpStatus(0x1f)
+        )
     }
 
     @Test fun `3gpp temporary statuses remain pending`() {

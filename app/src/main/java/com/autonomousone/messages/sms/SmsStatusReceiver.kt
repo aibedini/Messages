@@ -226,6 +226,9 @@ class SmsStatusReceiver : BroadcastReceiver() {
             val dlvDoneKey = "v2617_${rowId}_dlv_parts"
             val dlvPendingKey = "v2617_${rowId}_dlv_pending"
             val dlvFailedKey = "v2617_${rowId}_dlv_failed"
+        // Its own key, so a NOT_CONFIRMED part is never miscounted as failed or done. Adding a key is
+        // additive: an in-flight ledger written by an older build simply starts this set empty.
+        val dlvUnconfirmedKey = "v2617_${rowId}_dlv_unconfirmed"
             val edit = prefs.edit()
 
             if (phase == SmsStatusPolicy.Phase.DELIVERED && !ok) {
@@ -240,6 +243,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvPending = prefs.getStringSet(dlvPendingKey, emptySet()).orEmpty().toMutableSet()
             val dlvFailed = prefs.getStringSet(dlvFailedKey, emptySet()).orEmpty().toMutableSet()
+            val dlvUnconfirmed = prefs.getStringSet(dlvUnconfirmedKey, emptySet()).orEmpty().toMutableSet()
             // Per-part delivery evidence is monotonic: DELIVERED is strongest
             // and can never be downgraded by a duplicate/stale report; TEMPORARY
             // may advance to FAILED or DELIVERED; UNKNOWN leaves prior evidence
@@ -256,6 +260,16 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         dlvPending.remove(part)
                         dlvFailed += part
                     }
+                    SmsStatusPolicy.DeliveryEvidence.NOT_CONFIRMED ->
+                        // The network's FINAL answer is "delivery not confirmed" (0x01 forwarded but
+                        // unconfirmed, 0x02 replaced by the SC). That is not a success and not a failure,
+                        // so the part leaves the pending set without joining the failed set — recording it
+                        // as failed would tell the user the message was rejected, which the network did
+                        // not say.
+                        if (part !in dlvDone && part !in dlvFailed) {
+                            dlvPending.remove(part)
+                            dlvUnconfirmed += part
+                        }
                     SmsStatusPolicy.DeliveryEvidence.TEMPORARY ->
                         if (part !in dlvDone && part !in dlvFailed) dlvPending += part
                     SmsStatusPolicy.DeliveryEvidence.UNKNOWN -> Unit
@@ -264,6 +278,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             edit.putStringSet(dlvDoneKey, dlvDone)
                 .putStringSet(dlvPendingKey, dlvPending)
                 .putStringSet(dlvFailedKey, dlvFailed)
+                .putStringSet(dlvUnconfirmedKey, dlvUnconfirmed)
             if (delivered) edit.commit() else edit.apply()
 
             SmsStatusPolicy.nextStatus(
@@ -273,6 +288,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 dlvPartsDone = dlvDone.size,
                 dlvPartsPending = dlvPending.size,
                 dlvPartsFailed = dlvFailed.size,
+                dlvPartsNotConfirmed = dlvUnconfirmed.size,
                 partCount = partCount
             )
         }
@@ -465,6 +481,8 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     DeliveryEvidenceRank.DELIVERED
                 SmsStatusPolicy.DeliveryEvidence.FAILED ->
                     DeliveryEvidenceRank.FAILED
+                SmsStatusPolicy.DeliveryEvidence.NOT_CONFIRMED ->
+                    DeliveryEvidenceRank.NOT_CONFIRMED
                 SmsStatusPolicy.DeliveryEvidence.TEMPORARY ->
                     DeliveryEvidenceRank.TEMPORARY
                 SmsStatusPolicy.DeliveryEvidence.UNKNOWN ->

@@ -921,9 +921,16 @@ fun ConversationScreen(
             val simRefProvider = remember { com.autonomousone.messages.messaging.SimRefProvider() }
             // Room Flow: the selector reflects a preference change from ANY source, including the
             // authenticated GMweb command, with no reopen.
-            val storedSimRef by conversationPrefs.observe(threadId)
-                .map { it?.preferredSimRef }
-                .collectAsState(initial = null)
+            //
+            // The `.map` MUST be inside `remember`. Called directly in composition it builds a NEW Flow on
+            // every recomposition, which resets `collectAsState` back to its initial value each time —
+            // so the selector would flicker to "no preference" while the user is looking at it, and
+            // would never hold a value long enough to act on. Keyed on the thread so switching
+            // conversations re-subscribes.
+            val storedSimRefFlow = remember(threadId, conversationPrefs) {
+                conversationPrefs.observe(threadId).map { it?.preferredSimRef }
+            }
+            val storedSimRef by storedSimRefFlow.collectAsState(initial = null)
             // LIVE inventory: a cached one-shot list would keep offering an ejected card.
             val liveActiveSims by remember(threadId) {
                 com.autonomousone.messages.messaging.ActiveSimsFlow.observe(context)
