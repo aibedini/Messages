@@ -243,7 +243,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
             val dlvDone = prefs.getStringSet(dlvDoneKey, emptySet()).orEmpty().toMutableSet()
             val dlvPending = prefs.getStringSet(dlvPendingKey, emptySet()).orEmpty().toMutableSet()
             val dlvFailed = prefs.getStringSet(dlvFailedKey, emptySet()).orEmpty().toMutableSet()
-        val dlvUnconfirmed = prefs.getStringSet(dlvUnconfirmedKey, emptySet()).orEmpty().toMutableSet()
+            val dlvUnconfirmed = prefs.getStringSet(dlvUnconfirmedKey, emptySet()).orEmpty().toMutableSet()
             // Per-part delivery evidence is monotonic: DELIVERED is strongest
             // and can never be downgraded by a duplicate/stale report; TEMPORARY
             // may advance to FAILED or DELIVERED; UNKNOWN leaves prior evidence
