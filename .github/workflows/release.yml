@@ -33,6 +33,22 @@ jobs:
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         
+    # ── THE PROJECT'S OWN GATES, BEFORE THE ARTIFACT EXISTS ─────────────────
+    #
+    # v3.5.2 and v3.5.3 were both tagged and published while `lintDebug` was FAILING on master with
+    # four errors. Nothing hid them: this workflow simply never ran lint. It ran `assembleRelease`,
+    # which compiles but does not lint, so a red gate was invisible to every release and the failure
+    # only surfaced when the separate Final Realtime Gate workflow happened to run.
+    #
+    # A release must not be the one place the project's own checks do not apply. These run before the
+    # APK is built, so a tag whose tree cannot pass lint or its tests produces no artifact and no
+    # GitHub Release at all.
+    - name: Unit tests
+      run: ./gradlew testDebugUnitTest
+
+    - name: Lint
+      run: ./gradlew lintDebug
+
     - name: Build Release APK
       run: ./gradlew assembleRelease
       env:
@@ -58,7 +74,7 @@ jobs:
         TAG="${GITHUB_REF_NAME}"
         EXPECTED_VERSION="${TAG#v}"
         EXPECTED_PACKAGE="com.autonomousone.messages"
-        EXPECTED_CODE="140"
+        EXPECTED_CODE="141"
 
         if [ ! -f "$APK" ]; then
           echo "::error::Release APK was not produced at $APK"
