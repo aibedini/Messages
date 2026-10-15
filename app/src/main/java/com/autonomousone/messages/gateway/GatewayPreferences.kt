@@ -109,7 +109,7 @@ class GatewayPreferences(context: Context) {
             }
             return generateNewApiKey()
         }
-        set(value) = storeEncrypted(KEY_API_KEY, value)
+        set(value) = storeEncrypted(KEY_API_KEY, value.replace(Regex("[\\r\\n]"), ""))
 
     var webhookUrl: String
         get() = prefs.getString(KEY_WEBHOOK_URL, "") ?: ""

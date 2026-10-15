@@ -1,5 +1,6 @@
 package com.autonomousone.messages.gateway
 
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Log
@@ -108,16 +109,27 @@ object DeviceIdentity {
      * EC P-256 key pair usable for BOTH ES256 signing and (via agreement) X
      * ECDH; setDigests both families so one generator serves all three roles.
      */
+    private fun signingPurposes(): Int {
+        var p = KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            p = p or KeyProperties.PURPOSE_AGREE_KEY
+        }
+        return p
+    }
+
+    private fun agreementPurposes(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            KeyProperties.PURPOSE_AGREE_KEY
+        } else {
+            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+        }
+
     private fun getOrCreateEcdhCapableSigningKey(alias: String, strongBox: Boolean): ECPublicKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry)?.let {
             return it.certificate.publicKey as ECPublicKey
         }
-        val builder = KeyGenParameterSpec.Builder(
-            alias,
-            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY or
-                KeyProperties.PURPOSE_AGREE_KEY
-        )
+        val builder = KeyGenParameterSpec.Builder(alias, signingPurposes())
             .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
             .setDigests(KeyProperties.DIGEST_SHA256)
         return generate(alias, builder, strongBox) as ECPublicKey
@@ -129,10 +141,7 @@ object DeviceIdentity {
         (keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry)?.let {
             return it.certificate.publicKey as ECPublicKey
         }
-        val builder = KeyGenParameterSpec.Builder(
-            alias,
-            KeyProperties.PURPOSE_AGREE_KEY
-        )
+        val builder = KeyGenParameterSpec.Builder(alias, agreementPurposes())
             .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
             .setDigests(KeyProperties.DIGEST_SHA256)
         return generate(alias, builder, strongBox) as ECPublicKey

@@ -591,7 +591,7 @@ class GatewayViewModel(
      * share the same secret without copy-pasting in both directions.
      */
     fun updateApiKey(newKey: String) {
-        val v = newKey.trim()
+        val v = newKey.replace(Regex("[\\r\\n]+"), " ").trim().split("\\s+".toRegex()).last()
         if (v.isBlank()) {
             Toast.makeText(getApplication(), "API key cannot be empty", Toast.LENGTH_LONG).show()
             return
