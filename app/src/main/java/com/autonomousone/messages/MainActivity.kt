@@ -132,8 +132,12 @@ class MainActivity : AppCompatActivity() {
                         LockScreen(
                             onUnlock = { isLockedState.value = false },
                             onDisableLock = {
-                                appLockPreferences.isEnabled = false
-                                isLockedState.value = false
+                                requestUnlock(
+                                    onUnlocked = {
+                                        appLockPreferences.isEnabled = false
+                                        isLockedState.value = false
+                                    }
+                                )
                             }
                         )
                     } else if (step != OnboardingStep.COMPLETE) {

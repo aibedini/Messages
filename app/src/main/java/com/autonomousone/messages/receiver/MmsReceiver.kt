@@ -40,7 +40,7 @@ class MmsReceiver : MmsReceivedReceiver() {
                 Log.w(TAG, "Could not read persisted MMS row $uri")
                 return
             }
-            Log.d(TAG, "MMS received id=${sms.id} threadId=${sms.threadId} from ${sms.sender}")
+            Log.d(TAG, "MMS received id=${sms.id} threadId=${sms.threadId}")
             IncomingMessageDispatcher.dispatch(
                 context, sms, source = com.autonomousone.messages.data.MessageEntity.SOURCE_MMS
             )

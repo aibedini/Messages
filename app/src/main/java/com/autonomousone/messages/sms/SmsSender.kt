@@ -6,6 +6,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
@@ -395,8 +397,12 @@ class SmsSender(
                 )
             )
             if (!repo.markCommandAcceptedIfReceived(plan.commandId)) {
-                // The key is already known: either it was sent, or it is in flight, or it failed. In
-                // every case THIS call must not hand anything to the radio.
+                val existing = repo.getCommand(plan.commandId)
+                if (existing?.state == com.autonomousone.messages.data.RemoteCommandEntity.STATE_FAILED) {
+                    return@withContext IdempotentSendOutcome.Rejected(
+                        "previous attempt with this idempotency key failed: ${existing.lastErrorCode ?: "unknown"}"
+                    )
+                }
                 return@withContext IdempotentSendOutcome.AlreadySent
             }
             val outcome = directSend(
@@ -830,7 +836,7 @@ class SmsSender(
 
             Log.d(
                 TAG,
-                "SMS queued to $phone (id=$sentId, subId=$recordedSubId, " +
+                "SMS queued (id=$sentId, subId=$recordedSubId, " +
                     "smsc=${if (scAddress != null) "custom" else "network"}, reports=$wantReports)"
             )
             DiagnosticLog.event("SMS_SEND", "accepted row=$sentId parts=${parts.size}")
@@ -856,7 +862,9 @@ class SmsSender(
                 failureCode = SmsSendFailure.DispatchRejected(null).code
             )
             if (showToast) {
-                Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, e.message ?: "Failed to send SMS", Toast.LENGTH_LONG).show()
+                }
             }
             return false
         }
@@ -898,11 +906,13 @@ class SmsSender(
             "Refusing to send on SIM $actualSubId when the user selected $requestedSubId (mission §50)"
         )
         if (showToast) {
-            Toast.makeText(
-                context,
-                "Selected SIM is unavailable — message not sent. Check the SIM setting.",
-                Toast.LENGTH_LONG
-            ).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(
+                    context,
+                    "Selected SIM is unavailable — message not sent. Check the SIM setting.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
         return false
     }
@@ -942,18 +952,20 @@ class SmsSender(
         )
         Log.w(TAG, "Refusing to send: conversation SIM preference not satisfied (${reason.name})")
         if (showToast) {
-            Toast.makeText(
-                context,
-                when (reason) {
-                    SendSimPreferencePolicy.Block.SIM_PREFERENCE_CONFLICT ->
-                        "This conversation is set to a different SIM — message not sent."
-                    SendSimPreferencePolicy.Block.INVALID_SIM_REFERENCE ->
-                        "This conversation's SIM setting is invalid — reselect a SIM."
-                    else ->
-                        "Selected SIM is unavailable — message not sent. Reselect a SIM for this conversation."
-                },
-                Toast.LENGTH_LONG
-            ).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(
+                    context,
+                    when (reason) {
+                        SendSimPreferencePolicy.Block.SIM_PREFERENCE_CONFLICT ->
+                            "This conversation is set to a different SIM — message not sent."
+                        SendSimPreferencePolicy.Block.INVALID_SIM_REFERENCE ->
+                            "This conversation's SIM setting is invalid — reselect a SIM."
+                        else ->
+                            "Selected SIM is unavailable — message not sent. Reselect a SIM for this conversation."
+                    },
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
         return false
     }
@@ -983,11 +995,13 @@ class SmsSender(
         )
         Log.w(TAG, "Refusing to send: no system default SMS subscription is set (mission §25)")
         if (showToast) {
-            Toast.makeText(
-                context,
-                "No default SIM for SMS — message not sent. Set a default line in Android settings.",
-                Toast.LENGTH_LONG
-            ).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(
+                    context,
+                    "No default SIM for SMS — message not sent. Set a default line in Android settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
         return false
     }

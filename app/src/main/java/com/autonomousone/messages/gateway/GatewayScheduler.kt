@@ -163,7 +163,12 @@ object GatewayScheduler {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val arr = org.json.JSONArray()
             var encryptionFailed = false
-            index.values.sortedByDescending { it.createdAt }.take(100).forEach { e ->
+            val terminal = setOf("sent", "failed", "cancelled")
+            val pending = index.values.filter { it.status !in terminal }
+            val finished = index.values.filter { it.status in terminal }
+                .sortedByDescending { it.createdAt }
+                .take((100 - pending.size).coerceAtLeast(0))
+            (pending + finished).forEach { e ->
                 val phoneC = SecureStore.encrypt(e.phone)
                 val messageC = SecureStore.encrypt(e.message)
                 if (phoneC == null || messageC == null) {

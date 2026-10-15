@@ -229,6 +229,7 @@ object EveSmsQueue {
     interface Store {
         fun load(): Pair<List<Record>, Map<String, String>>
         fun save(records: List<Record>, idempotency: Map<String, String>)
+        fun saveSync(records: List<Record>, idempotency: Map<String, String>) = save(records, idempotency)
     }
 
     class MemoryStore : Store {
@@ -269,17 +270,34 @@ object EveSmsQueue {
         }
 
         override fun save(records: List<Record>, idempotency: Map<String, String>) {
+            persist(records, idempotency, synchronous = false)
+        }
+
+        override fun saveSync(records: List<Record>, idempotency: Map<String, String>) {
+            persist(records, idempotency, synchronous = true)
+        }
+
+        private fun persist(records: List<Record>, idempotency: Map<String, String>, synchronous: Boolean) {
             try {
                 val arr = JSONArray()
-                records.takeLast(MAX_PERSISTED_RECORDS).forEach { r ->
+                val terminal = setOf(Status.SENT, Status.FAILED, Status.CANCELLED)
+                val pending = records.filter { it.status !in terminal }
+                val finished = records.filter { it.status in terminal }
+                    .takeLast((MAX_PERSISTED_RECORDS - pending.size).coerceAtLeast(0))
+                (pending + finished).forEach { r ->
                     arr.put(EveQueueCodec.encode(r))
                 }
                 val idemObj = JSONObject()
                 idempotency.forEach { (k, v) -> idemObj.put(k, v) }
-                prefs.edit()
+                val editor = prefs.edit()
                     .putString(KEY_RECORDS, arr.toString())
                     .putString(KEY_IDEM, idemObj.toString())
-                    .apply()
+                if (synchronous) {
+                    @Suppress("ApplySharedPref")
+                    editor.commit()
+                } else {
+                    editor.apply()
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to persist EVE queue state", e)
             }
@@ -708,7 +726,7 @@ object EveSmsQueue {
                 nativeSubmitStartedAt = submitAt
             )
             records[job.requestId] = updated
-            persistAsync()
+            persistSync()
             updated
         }
         emit("NATIVE_SUBMIT_STARTED", active, mapOf("nativeSubmitStartedAt" to submitAt))
@@ -915,6 +933,12 @@ object EveSmsQueue {
         val target = store
         val snapshot = synchronized(records) { records.values.toList() to idempotency.toMap() }
         persistExecutor.execute { target.save(snapshot.first, snapshot.second) }
+    }
+
+    private fun persistSync() {
+        val target = store
+        val snapshot = synchronized(records) { records.values.toList() to idempotency.toMap() }
+        target.saveSync(snapshot.first, snapshot.second)
     }
 
     /**

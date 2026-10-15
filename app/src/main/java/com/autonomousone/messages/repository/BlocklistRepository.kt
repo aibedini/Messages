@@ -106,6 +106,7 @@ class BlocklistRepository(private val context: Context) {
          */
         fun normalize(address: String): String {
             val digits = address.filter { it.isDigit() }
+            if (digits.isEmpty()) return address.trim().lowercase()
             return if (digits.length > 10 && digits.startsWith("98")) {
                 digits.drop(2).let { if (it.startsWith("9")) "0$it" else it }
             } else digits

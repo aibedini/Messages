@@ -82,11 +82,11 @@ class SmsReceiver : BroadcastReceiver() {
             for (msg in pdus) msg.messageBody?.let { append(it) }
         }
         if (body.isBlank()) {
-            Log.w(TAG, "incoming_sms_received from=$sender length=0 — blank multipart body, ignoring")
+            Log.w(TAG, "incoming_sms_received from=${DiagnosticLog.phoneToken(sender)} length=0 — blank multipart body, ignoring")
             return
         }
 
-        Log.i(TAG, "incoming_sms_received from=$sender length=${body.length} action=${intent.action}")
+        Log.i(TAG, "incoming_sms_received from=${DiagnosticLog.phoneToken(sender)} length=${body.length} action=${intent.action}")
         DiagnosticLog.event(
             "INCOMING_DEDUP",
             "broadcast action=${intent.action} pdu=$pduFingerprint " +

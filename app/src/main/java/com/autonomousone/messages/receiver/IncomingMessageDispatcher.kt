@@ -89,7 +89,7 @@ object IncomingMessageDispatcher {
 
         // Blocked sender: no bus event, no webhook, no notification (silent).
         if (BlocklistRepository.isBlocked(context, sms.sender)) {
-            Log.d(TAG, "Message from blocked sender ${sms.sender} — silent handling")
+            Log.d(TAG, "Message from blocked sender — silent handling")
             return
         }
 

@@ -361,7 +361,10 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                 }
 
                 cleanPath == "/api/v1/sms/send" && method == "POST" -> {
-                    val json = JSONObject(body)
+                    val json = try { JSONObject(body) } catch (_: org.json.JSONException) {
+                        sendResponse(output, 400, JSONObject().put("error", "invalid JSON"))
+                        return
+                    }
                     val phone = com.autonomousone.messages.utils.DigitNormalizer
                         .toAsciiDigits(json.optString("phone", "").trim())
                     // The body is CONTENT, not metadata. It used to be read as
@@ -488,8 +491,12 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                     }
                 }
                 cleanPath == "/api/v1/mms/send" && method == "POST" -> {
-                    val json = JSONObject(body)
-                    val phone = json.optString("phone", "").trim()
+                    val json = try { JSONObject(body) } catch (_: org.json.JSONException) {
+                        sendResponse(output, 400, JSONObject().put("error", "invalid JSON"))
+                        return
+                    }
+                    val phone = com.autonomousone.messages.utils.DigitNormalizer
+                        .toAsciiDigits(json.optString("phone", "").trim())
                     val imageUrl = json.optString("imageUrl", "").trim()
 
                     if (phone.isBlank() || imageUrl.isBlank()) {
@@ -505,9 +512,11 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                             // reads it: a refusal still reports "failed" with a 500. What is new is
                             // `reason` — the caller used to get a bare failure with no way to tell an
                             // oversize photo from an unreadable one.
-                            val result = mmsSender.sendImage(phone, imageUri)
-                            // §43: the recipient is logged as a token, never raw. This line escaped the
-                            // existing guard because that guard pinned one exact string, not the rule.
+                            val result = try {
+                                mmsSender.sendImage(phone, imageUri)
+                            } finally {
+                                cleanupCacheFile(imageUri)
+                            }
                             onRequestLog?.invoke(
                                 "🖼 POST /api/v1/mms/send -> ${PhoneToken.of(phone)} " +
                                     "(queued=${result.queued})"
@@ -1133,6 +1142,16 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun cleanupCacheFile(uri: Uri) {
+        try {
+            val path = uri.path ?: return
+            val file = java.io.File(path)
+            if (file.parentFile == context.cacheDir && file.name.startsWith("mms_")) {
+                file.delete()
+            }
+        } catch (_: Exception) {}
     }
 
     private fun parseQueryParams(path: String): Map<String, String> {

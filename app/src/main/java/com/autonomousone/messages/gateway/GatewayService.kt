@@ -515,8 +515,13 @@ class GatewayService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            // Fallback for devices without type restriction
-            startForeground(NOTIFICATION_ID, notification)
+            try {
+                startForeground(NOTIFICATION_ID, notification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "startForeground failed even without type — stopping self", e2)
+                stopSelf()
+                return
+            }
         }
     }
 

@@ -383,6 +383,29 @@ class ConnectionSupervisor private constructor(
             return
         }
 
+        // ── LAN server: (re)bind when down or stale ────────────────────────
+        // Bind BEFORE the online check: the LAN server must work on Wi-Fi
+        // networks without validated internet (e.g. a local-only AP).
+        val currentIp = if (prefs.bindAllInterfaces) "0.0.0.0" else GatewayServer.getLocalIpAddress()
+        notePhase("LAN_ADDRESS_LOOKUP")
+        val s = server
+        val needsBind = s?.isRunning() != true || (boundIp != "0.0.0.0" && currentIp != "127.0.0.1" && boundIp != currentIp)
+        if (needsBind) {
+            if (s != null && s.isRunning()) {
+                onLog("🔁 LAN address changed ($boundIp → $currentIp) — rebinding server")
+            }
+            s?.stop()
+            val fresh = newServer()
+            fresh.start()
+            if (!fresh.isRunning()) {
+                throw IllegalStateException("bind failed on port ${prefs.port}")
+            }
+            server = fresh
+            boundIp = currentIp
+            onLog("🚀 Gateway server on http://$currentIp:${prefs.port}")
+        }
+        notePhase("LAN_BIND")
+
         val online = networkMonitor.isOnline()
         notePhase("NETWORK_SNAPSHOT")
         if (!online) {
@@ -394,37 +417,12 @@ class ConnectionSupervisor private constructor(
                 onLog("📴 Gateway waiting for network…")
             }
             _stateFlow.value = State.WAITING_FOR_NETWORK
-            // Publish BEFORE returning. This branch used to skip publishHealthContext(), which is
-            // only reached at the end of the online path, so the health registry kept the last
-            // online reading and a diagnostic could report "Internet: validated" while the device
-            // had no network at all.
             publishHealthContext()
             return
         }
 
         val wasDegraded = _stateFlow.value in setOf(State.RECONNECTING, State.ERROR, State.WAITING_FOR_NETWORK)
         if (wasDegraded) _stateFlow.value = State.RECONNECTING
-
-        // ── LAN server: (re)bind when down or stale ────────────────────────
-        val currentIp = if (prefs.bindAllInterfaces) "0.0.0.0" else GatewayServer.getLocalIpAddress()
-        notePhase("LAN_ADDRESS_LOOKUP")
-        val s = server
-        val needsBind = s?.isRunning() != true || (boundIp != "0.0.0.0" && currentIp != "127.0.0.1" && boundIp != currentIp)
-        if (needsBind) {
-            if (s != null && s.isRunning()) {
-                onLog("🔁 LAN address changed ($boundIp → $currentIp) — rebinding server")
-            }
-            s?.stop()
-            val fresh = newServer()
-            fresh.start() // GatewayServer.start is non-throwing; it logs internally
-            if (!fresh.isRunning()) {
-                throw IllegalStateException("bind failed on port ${prefs.port}")
-            }
-            server = fresh
-            boundIp = currentIp
-            onLog("🚀 Gateway server on http://$currentIp:${prefs.port}")
-        }
-        notePhase("LAN_BIND")
 
         // ── Cloud + GMweb + shadow sync (idempotent starts) ────────────────
         // These are the prime suspect for a slow first start: each one may touch the

@@ -113,7 +113,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
                                 if (replyText.isNotBlank() && phone.isNotBlank()) {
                                     // SmsSender persists + emits OutgoingSent itself.
-                                    SmsSender(appContext).send(phone, replyText)
+                                    SmsSender(appContext).send(phone, replyText, null, null, threadId)
 
                                     if (notificationId != 0) {
                                         NotificationManagerCompat.from(appContext).cancel(notificationId)
