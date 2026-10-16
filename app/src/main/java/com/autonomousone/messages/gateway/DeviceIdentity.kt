@@ -148,26 +148,24 @@ object DeviceIdentity {
     }
 
     private fun generate(alias: String, builder: KeyGenParameterSpec.Builder, strongBox: Boolean): java.security.PublicKey {
-        var spec = builder.build()
+        val baseSpec = builder.build()
         val generator = KeyPairGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_EC, ANDROID_KEYSTORE
         )
-        if (strongBox && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        if (strongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                // Rebuild the spec with StrongBox backing (setIsStrongBoxBacked
-                // must be set before build(); there is no copy constructor).
-                spec = KeyGenParameterSpec.Builder(alias, spec.purposes)
+                val sbSpec = KeyGenParameterSpec.Builder(alias, baseSpec.purposes)
                     .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
-                    .setDigests(*spec.digests)
+                    .setDigests(*baseSpec.digests)
                     .setIsStrongBoxBacked(true)
                     .build()
-                generator.initialize(spec)
+                generator.initialize(sbSpec)
                 return generator.generateKeyPair().public
             } catch (e: Exception) {
                 Log.w(TAG, "StrongBox unavailable for $alias — falling back to TEE", e)
             }
         }
-        generator.initialize(spec)
+        generator.initialize(baseSpec)
         return generator.generateKeyPair().public
     }
 
