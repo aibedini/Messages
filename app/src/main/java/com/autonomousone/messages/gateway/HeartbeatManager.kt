@@ -56,6 +56,7 @@ class HeartbeatManager(
 
     private var heartbeatJob: Job? = null
     private var backoffMs = INITIAL_BACKOFF_MS
+    @Volatile private var lastFailureWasServerError = false
 
     /** One place for the battery/network facts a liveness request carries. */
     private val deviceFacts = AgentDeviceFacts(context)
@@ -82,7 +83,9 @@ class HeartbeatManager(
      * exponential ladder (up to 5 minutes) before the next heartbeat attempt.
      */
     fun retryNow() {
-        backoffMs = INITIAL_BACKOFF_MS
+        if (!lastFailureWasServerError) {
+            backoffMs = INITIAL_BACKOFF_MS
+        }
         wake.trySend(Unit)
     }
 
@@ -164,6 +167,7 @@ class HeartbeatManager(
 
         return when (result) {
             is BackendClient.Result.Success -> {
+                lastFailureWasServerError = false
                 prefs.lastHeartbeatAt = System.currentTimeMillis()
                 onLog("💓 Heartbeat OK")
                 // ── v3.4.x P0: this IS the AUTH dimension's producer ─────────────
@@ -182,6 +186,7 @@ class HeartbeatManager(
                 true
             }
             is BackendClient.Result.Failure -> {
+                lastFailureWasServerError = result.httpStatus != null
                 // ── 401 and 403 are different facts, and only 401 licenses a re-enrollment ──────
                 //
                 // This used to branch on `result.isAuthError`, which is `401 || 403`, and then

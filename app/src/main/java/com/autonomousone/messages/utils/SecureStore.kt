@@ -5,6 +5,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -25,13 +26,22 @@ object SecureStore {
     private const val GCM_IV_BYTES = 12
     private const val GCM_TAG_BITS = 128
 
+    // Cipher.init triggers a binder IPC to KeyStoreSecurityLevel.createOperation.
+    // When multiple threads (heartbeat, poller, Room) read encrypted prefs on the
+    // shared arch_disk_io pool, those binder calls serialise and starve Room,
+    // causing ANR + "room-not-ready" provider fallback. Caching the plaintext
+    // avoids the Keystore round-trip on repeated reads.
+    private val decryptCache = ConcurrentHashMap<String, String>()
+
     /** Encrypt [plainText]; returns Base64(iv || ciphertext) or null on failure. */
     fun encrypt(plainText: String): String? = try {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val iv = cipher.iv
         val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
-        Base64.encodeToString(iv + cipherText, Base64.NO_WRAP)
+        val encoded = Base64.encodeToString(iv + cipherText, Base64.NO_WRAP)
+        decryptCache[encoded] = plainText
+        encoded
     } catch (e: Exception) {
         android.util.Log.e("SecureStore", "Encryption failed", e)
         null
@@ -39,6 +49,7 @@ object SecureStore {
 
     /** Decrypt a payload produced by [encrypt]; returns null on any failure. */
     fun decrypt(encoded: String): String? {
+        decryptCache[encoded]?.let { return it }
         return try {
             val data = Base64.decode(encoded, Base64.NO_WRAP)
             if (data.size <= GCM_IV_BYTES) {
@@ -48,7 +59,9 @@ object SecureStore {
                 val cipherText = data.copyOfRange(GCM_IV_BYTES, data.size)
                 val cipher = Cipher.getInstance(TRANSFORMATION)
                 cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
-                String(cipher.doFinal(cipherText), Charsets.UTF_8)
+                val plain = String(cipher.doFinal(cipherText), Charsets.UTF_8)
+                decryptCache[encoded] = plain
+                plain
             }
         } catch (e: Exception) {
             android.util.Log.e("SecureStore", "Decryption failed", e)

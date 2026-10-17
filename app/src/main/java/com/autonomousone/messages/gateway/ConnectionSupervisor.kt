@@ -325,7 +325,7 @@ class ConnectionSupervisor private constructor(
             } }
             // A LAN IPv4 change is what a network switch looks like locally;
             // the compare against boundIp inside reconcile() IS the rebind.
-            launch { while (isActive) { delay(10_000); reconcileNow() } }
+            launch { while (isActive) { delay(60_000); reconcileNow() } }
             for (nudge in reconciles) {
                 try {
                     reconcile()
