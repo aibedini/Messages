@@ -2425,17 +2425,21 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         // What the conversation's unread counter was set to. Carried out of the transaction so the
         // published cloud event reports the same number the local projection holds.
         var remainingUnread = 0
+        // Split into two phases: the essential DB mutations in a short transaction,
+        // then cloud event enqueuing outside so arch_disk_io is not held during
+        // firewall classification and outbox INSERTs.
+        data class ReadSnapshot(
+            val latest: MessageEntity?,
+            val conversationId: String,
+            val conversation: ConversationEntity?
+        )
+        var snapshot: ReadSnapshot? = null
         db.withTransaction {
             if (upToProviderId != null) {
                 db.messageDao().markThreadReadUpTo(threadId, upToProviderId)
             } else {
                 db.messageDao().markThreadRead(threadId)
             }
-            // ── THE CONVERSATION PROJECTION ──────────────────────────────────
-            //
-            // Only an UNBOUNDED read may zero the counter. After a bounded read a message newer than
-            // the horizon is still unread, and setting 0 would show a false "all read" until the next
-            // full reconcile — Room's own rows would disagree with the badge the user is looking at.
             remainingUnread = ConversationReadProjection.remainingUnreadAfter(
                 bounded = upToProviderId != null,
                 unreadIncomingInThread = { db.messageDao().unreadIncomingCountForThread(threadId) }
@@ -2445,68 +2449,52 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             } else {
                 db.conversationDao().markRead(threadId)
             }
-            // ── THE MANUAL-UNREAD BOOKMARK ───────────────────────────────────
-            //
-            // Home renders `unread = realUnread OR manualUnread`, so a conversation the user once
-            // bookmarked unread can NEVER clear its badge by being opened: the real read happens, the
-            // bookmark survives, and the row stays highlighted forever. The explicit bulk mark-read
-            // already cleared the bookmark; opening the conversation did not, and that asymmetry is the
-            // bug.
-            //
-            // Cleared INSIDE this transaction and AFTER the message read, so the bookmark is not
-            // released merely because a read was REQUESTED. If the read fails the transaction aborts and
-            // the bookmark stays — which is the honest outcome, since Home would otherwise show read
-            // over messages that are still unread.
-            //
-            // A plain UPDATE, so reading a conversation that was never bookmarked creates no row.
             val clearedBookmark = db.conversationPreferenceDao()
                 .clearManualUnread(threadId, now = System.currentTimeMillis())
             if (clearedBookmark > 0) {
-                // MANUAL_UNREAD_CLEARED: the durable bookmark was released by a real read. Without this
-                // line a cleared-but-stale badge has no explanation anywhere.
                 ConversationReadAudit.manualUnreadCleared(threadId, source = "local_read")
             }
-            // Captured inside the transaction so the published event and the local projection describe
-            // the SAME state. The unbounded path reads everything, so its answer is 0 by definition.
-            // Thread-read carries no message content — but if the
-            // thread CONTAINS a LOCAL_ONLY message, its very existence
-            // must stay untraceable. Gate on the latest message of the
-            // thread; content never leaves the device either way.
             val latest = db.messageDao().newestWindowForThread(threadId, 1).firstOrNull()
+            snapshot = ReadSnapshot(
+                latest = latest,
+                conversationId = conversationIdFor(threadId),
+                conversation = db.conversationDao().byThread(threadId)
+            )
+        }
+        // Cloud event enqueuing runs OUTSIDE the transaction so arch_disk_io threads
+        // are freed for Room queries (isShadowReady, UI reads) while this proceeds.
+        val snap = snapshot
+        if (snap != null) {
             published = enqueueCloudEvent(
                 source = "sms",
-                providerId = latest?.providerId ?: 0L,
-                sender = SenderIdentity.eventAddress(latest?.rawAddress, latest?.normalizedAddress),
-                body = latest?.body ?: ""
+                providerId = snap.latest?.providerId ?: 0L,
+                sender = SenderIdentity.eventAddress(snap.latest?.rawAddress, snap.latest?.normalizedAddress),
+                body = snap.latest?.body ?: ""
             ) {
                 GatewayEventFactory.threadRead(
-                    conversationId = conversationIdFor(threadId),
-                    revisionKey = latest?.let { "${it.source}:${it.providerId}:${it.date}" } ?: "empty"
+                    conversationId = snap.conversationId,
+                    revisionKey = snap.latest?.let { "${it.source}:${it.providerId}:${it.date}" } ?: "empty"
                 )
             }
-            if (latest != null) {
-                val conversation = db.conversationDao().byThread(threadId)
-                val direction = cloudMessageDirection(latest.type)
-                if (conversation != null && direction != null) {
+            if (snap.latest != null && snap.conversation != null) {
+                val direction = cloudMessageDirection(snap.latest.type)
+                if (direction != null) {
                     enqueueCloudEvent(
-                        source = latest.source,
-                        providerId = latest.providerId,
-                        sender = latest.normalizedAddress,
-                        body = latest.body,
+                        source = snap.latest.source,
+                        providerId = snap.latest.providerId,
+                        sender = snap.latest.normalizedAddress,
+                        body = snap.latest.body,
                     ) {
                         GatewayEventFactory.conversationUpserted(
-                            conversationId = conversationIdFor(threadId),
-                            displayName = contactNameFor(latest.normalizedAddress),
-                            address = latest.normalizedAddress,
-                            lastMessagePreview = latest.body,
+                            conversationId = snap.conversationId,
+                            displayName = contactNameFor(snap.latest.normalizedAddress),
+                            address = snap.latest.normalizedAddress,
+                            lastMessagePreview = snap.latest.body,
                             lastMessageDirection = direction,
-                            lastMessageAt = latest.date,
-                            // The TRUE remaining count, not a blanket 0. After a bounded read a message
-                            // newer than the horizon is still unread, and telling GMweb "0" would clear
-                            // its unread badge for a message it should still be showing as unread.
+                            lastMessageAt = snap.latest.date,
                             unreadCount = remainingUnread,
-                            pinned = conversation.pinned,
-                            archived = conversation.archived,
+                            pinned = snap.conversation.pinned,
+                            archived = snap.conversation.archived,
                         )
                     }
                 }

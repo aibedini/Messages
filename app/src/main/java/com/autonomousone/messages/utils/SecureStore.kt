@@ -6,6 +6,8 @@ import android.util.Base64
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -27,10 +29,12 @@ object SecureStore {
     private const val GCM_TAG_BITS = 128
 
     // Cipher.init triggers a binder IPC to KeyStoreSecurityLevel.createOperation.
-    // When multiple threads (heartbeat, poller, Room) read encrypted prefs on the
-    // shared arch_disk_io pool, those binder calls serialise and starve Room,
-    // causing ANR + "room-not-ready" provider fallback. Caching the plaintext
-    // avoids the Keystore round-trip on repeated reads.
+    // A dedicated single thread keeps these binder calls OFF the shared arch_disk_io
+    // pool that Room depends on, preventing ANR and "room-not-ready" starvation.
+    private val keystoreExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "keystore-crypto").apply { isDaemon = true }
+    }
+
     private val decryptCache = ConcurrentHashMap<String, String>()
 
     /** Encrypt [plainText]; returns Base64(iv || ciphertext) or null on failure. */
@@ -46,6 +50,13 @@ object SecureStore {
         android.util.Log.e("SecureStore", "Encryption failed", e)
         null
     }
+
+    /**
+     * Encrypt on the dedicated keystore thread. Returns the ciphertext or null.
+     * Never blocks arch_disk_io.
+     */
+    fun encryptAsync(plainText: String): Future<String?> =
+        keystoreExecutor.submit<String?> { encrypt(plainText) }
 
     /** Decrypt a payload produced by [encrypt]; returns null on any failure. */
     fun decrypt(encoded: String): String? {
@@ -67,6 +78,16 @@ object SecureStore {
             android.util.Log.e("SecureStore", "Decryption failed", e)
             null
         }
+    }
+
+    /**
+     * Decrypt on the dedicated keystore thread. Never blocks arch_disk_io.
+     */
+    fun decryptAsync(encoded: String): Future<String?> {
+        decryptCache[encoded]?.let {
+            return keystoreExecutor.submit<String?> { it }
+        }
+        return keystoreExecutor.submit<String?> { decrypt(encoded) }
     }
 
     /** Cryptographically strong random hex string of [byteCount] bytes (2x hex chars). */

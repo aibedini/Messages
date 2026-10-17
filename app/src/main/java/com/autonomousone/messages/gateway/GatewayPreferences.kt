@@ -478,17 +478,23 @@ class GatewayPreferences(context: Context) {
     // ── Encryption helpers ──
 
     private fun storeEncrypted(key: String, plainValue: String) {
-        val enc = SecureStore.encrypt(plainValue)
-        // v2.6.10 fail-closed: secrets (API key, webhook secret, bearer token,
-        // registration secret) must NEVER degrade to plaintext when the
-        // Keystore is unavailable — that converts a crypto incident into a
-        // data-at-rest incident. If encryption fails, the secret is not
-        // persisted; the accessor re-encrypts any legacy plaintext values it
-        // finds on read, and callers see an empty/blank value until the
-        // Keystore recovers or the secret is re-issued (fail closed).
-        checkNotNull(enc) {
-            "SecureStore (Android Keystore) unavailable — refusing to persist $key as plaintext"
-        }
-        prefs.edit().putString(key, ENC_PREFIX + enc).apply()
+        // Encrypt on the dedicated keystore thread so Cipher.init binder IPC
+        // never blocks arch_disk_io (which Room needs). The in-memory @Volatile
+        // cache in each property setter ensures callers get the value immediately.
+        val future = SecureStore.encryptAsync(plainValue)
+        Thread {
+            try {
+                val enc = future.get()
+                if (enc != null) {
+                    prefs.edit().putString(key, ENC_PREFIX + enc).apply()
+                } else {
+                    android.util.Log.e("GatewayPrefs",
+                        "SecureStore unavailable — $key not persisted (fail closed)")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GatewayPrefs",
+                    "Encrypt failed for $key: ${e.message}")
+            }
+        }.start()
     }
 }
