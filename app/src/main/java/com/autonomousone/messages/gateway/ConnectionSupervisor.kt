@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -319,8 +320,10 @@ class ConnectionSupervisor private constructor(
     private fun ensureLoop() {
         if (loopJob?.isActive == true) return
         loopJob = scope.launch {
-            // Network transitions nudge the same conflated reconcile.
-            launch { networkMonitor.onlineFlow().collect { online ->
+            // Debounced: rapid connectivity changes (WiFi toggle, cell handoff)
+            // collapse into one reconcile after 3 seconds of stability.
+            launch { networkMonitor.onlineFlow().collectLatest { online ->
+                delay(3_000)
                 if (online && desiredEnabled) retryNow() else reconcileNow()
             } }
             // A LAN IPv4 change is what a network switch looks like locally;

@@ -67,11 +67,17 @@ object AgentLivenessRequest {
         networkType: String,
         timestamp: Long,
         sourceDeviceId: String
-    ): JSONObject = JSONObject()
-        .put(KEY_APP_VERSION, appVersion)
-        .put(KEY_BATTERY_LEVEL, batteryLevel)
-        .put(KEY_NETWORK_TYPE, networkType)
-        .put(KEY_TIMESTAMP, timestamp)
-        .put(KEY_EVENTS, JSONArray())
-        .put(KEY_SOURCE_DEVICE_ID, sourceDeviceId)
+    ): JSONObject {
+        val livenessEvent = JSONObject()
+            .put("type", "heartbeat")
+            .put("timestamp", timestamp)
+            .put("sourceDeviceId", sourceDeviceId)
+        return JSONObject()
+            .put(KEY_APP_VERSION, appVersion)
+            .put(KEY_BATTERY_LEVEL, batteryLevel)
+            .put(KEY_NETWORK_TYPE, networkType)
+            .put(KEY_TIMESTAMP, timestamp)
+            .put(KEY_EVENTS, JSONArray().put(livenessEvent))
+            .put(KEY_SOURCE_DEVICE_ID, sourceDeviceId)
+    }
 }

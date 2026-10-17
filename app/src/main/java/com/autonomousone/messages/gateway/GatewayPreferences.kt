@@ -10,6 +10,11 @@ class GatewayPreferences(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
+    @Volatile private var _apiKey: String? = null
+    @Volatile private var _webhookSecret: String? = null
+    @Volatile private var _gatewayToken: String? = null
+    @Volatile private var _registrationSecret: String? = null
+
     companion object {
         private const val PREF_NAME = "sms_gateway_prefs"
         // Marker prefix identifying values encrypted with the Android Keystore.
@@ -98,18 +103,25 @@ class GatewayPreferences(context: Context) {
      */
     var apiKey: String
         get() {
+            _apiKey?.let { return it }
             val stored = prefs.getString(KEY_API_KEY, null)
             if (!stored.isNullOrBlank()) {
-                return if (stored.startsWith(ENC_PREFIX)) {
+                val v = if (stored.startsWith(ENC_PREFIX)) {
                     SecureStore.decrypt(stored.removePrefix(ENC_PREFIX)) ?: generateNewApiKey()
                 } else {
                     storeEncrypted(KEY_API_KEY, stored)
                     stored
                 }
+                _apiKey = v
+                return v
             }
             return generateNewApiKey()
         }
-        set(value) = storeEncrypted(KEY_API_KEY, value.replace(Regex("[\\r\\n]"), ""))
+        set(value) {
+            val clean = value.replace(Regex("[\\r\\n]"), "")
+            _apiKey = clean
+            storeEncrypted(KEY_API_KEY, clean)
+        }
 
     var webhookUrl: String
         get() = prefs.getString(KEY_WEBHOOK_URL, "") ?: ""
@@ -121,16 +133,23 @@ class GatewayPreferences(context: Context) {
      */
     var webhookSecret: String
         get() {
+            _webhookSecret?.let { return it }
             val stored = prefs.getString(KEY_WEBHOOK_SECRET, null)
             if (stored.isNullOrBlank()) return ""
-            return if (stored.startsWith(ENC_PREFIX)) {
+            val v = if (stored.startsWith(ENC_PREFIX)) {
                 SecureStore.decrypt(stored.removePrefix(ENC_PREFIX)) ?: ""
             } else {
                 storeEncrypted(KEY_WEBHOOK_SECRET, stored)
                 stored
             }
+            _webhookSecret = v
+            return v
         }
-        set(value) = storeEncrypted(KEY_WEBHOOK_SECRET, value.trim())
+        set(value) {
+            val clean = value.trim()
+            _webhookSecret = clean
+            storeEncrypted(KEY_WEBHOOK_SECRET, clean)
+        }
 
     var autoStartOnBoot: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START, false)
@@ -340,16 +359,23 @@ class GatewayPreferences(context: Context) {
     /** Bearer token issued by the backend. Encrypted at rest with the Android Keystore. */
     var gatewayToken: String
         get() {
+            _gatewayToken?.let { return it }
             val stored = prefs.getString(KEY_GATEWAY_TOKEN, null)
             if (stored.isNullOrBlank()) return ""
-            return if (stored.startsWith(ENC_PREFIX)) {
+            val v = if (stored.startsWith(ENC_PREFIX)) {
                 SecureStore.decrypt(stored.removePrefix(ENC_PREFIX)) ?: ""
             } else {
                 storeEncrypted(KEY_GATEWAY_TOKEN, stored)
                 stored
             }
+            _gatewayToken = v
+            return v
         }
-        set(value) = storeEncrypted(KEY_GATEWAY_TOKEN, value.trim())
+        set(value) {
+            val clean = value.trim()
+            _gatewayToken = clean
+            storeEncrypted(KEY_GATEWAY_TOKEN, clean)
+        }
 
     var lastHeartbeatAt: Long
         get() = prefs.getLong(KEY_LAST_HEARTBEAT, 0L)
@@ -377,18 +403,26 @@ class GatewayPreferences(context: Context) {
      */
     var registrationSecret: String
         get() {
+            _registrationSecret?.let { return it }
             val stored = prefs.getString(KEY_REGISTRATION_SECRET, null)
             if (stored.isNullOrBlank()) return ""
-            return if (stored.startsWith(ENC_PREFIX)) {
+            val v = if (stored.startsWith(ENC_PREFIX)) {
                 SecureStore.decrypt(stored.removePrefix(ENC_PREFIX)) ?: ""
             } else {
                 storeEncrypted(KEY_REGISTRATION_SECRET, stored)
                 stored
             }
+            _registrationSecret = v
+            return v
         }
-        set(value) = storeEncrypted(KEY_REGISTRATION_SECRET, value.trim())
+        set(value) {
+            val clean = value.trim()
+            _registrationSecret = clean
+            storeEncrypted(KEY_REGISTRATION_SECRET, clean)
+        }
 
     fun clearCloudCredentials() {
+        _gatewayToken = null
         prefs.edit()
             .remove(KEY_GATEWAY_ID)
             .remove(KEY_GATEWAY_TOKEN)

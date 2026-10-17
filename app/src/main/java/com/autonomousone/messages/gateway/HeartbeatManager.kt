@@ -57,6 +57,7 @@ class HeartbeatManager(
     private var heartbeatJob: Job? = null
     private var backoffMs = INITIAL_BACKOFF_MS
     @Volatile private var lastFailureWasServerError = false
+    @Volatile private var lastHeartbeatAttemptMs = 0L
 
     /** One place for the battery/network facts a liveness request carries. */
     private val deviceFacts = AgentDeviceFacts(context)
@@ -132,6 +133,13 @@ class HeartbeatManager(
 
     private suspend fun sendHeartbeat(): Boolean {
         if (!GatewayAccessPolicy.canTransmit(prefs.hasGatewayConsent, prefs.isEnabled)) return false
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastHeartbeatAttemptMs
+        if (elapsed < 5_000 && lastHeartbeatAttemptMs > 0) {
+            Log.d(TAG, "Heartbeat throttled: ${elapsed}ms since last attempt")
+            return true
+        }
+        lastHeartbeatAttemptMs = now
         if (!prefs.isRegistered || (prefs.gatewayToken.isBlank() && !prefs.identityRegistered)) {
             Log.w(TAG, "Not registered — attempting registration before heartbeat")
             val registered = registrationManager.ensureRegistered()

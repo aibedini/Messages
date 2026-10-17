@@ -70,7 +70,8 @@ class OutboxPoller(
     companion object {
         private const val TAG = "OUTBOX_POLLER"
         private const val LONG_POLL_MS = 25_000L     // server hold when queue empty
-        private const val ERROR_RETRY_MS = 5_000L    // backoff after a failed cycle
+        private const val INITIAL_RETRY_MS = 5_000L   // first backoff after a failed cycle
+        private const val MAX_RETRY_MS = 120_000L    // cap at 2 minutes
         private const val ACK_TIMEOUT_MS = 15_000L
         private const val PULL_TIMEOUT_MS = 40_000L   // long-poll + margin
         private const val DRAIN_TIMEOUT_MS = 120_000L
@@ -322,6 +323,7 @@ class OutboxPoller(
     @Volatile private var requestInFlight = false
     @Volatile private var backingOff = false
     @Volatile private var waitingForNetwork = false
+    @Volatile private var errorRetryMs = INITIAL_RETRY_MS
 
     /** What the bridge is actually doing right now. See [PollStatePolicy] for the precedence. */
     fun pollState(now: Long = System.currentTimeMillis()): PollState =
@@ -358,6 +360,7 @@ class OutboxPoller(
      * existing loop.
      */
     fun retryNow() {
+        errorRetryMs = INITIAL_RETRY_MS
         wake.trySend(Unit)
         GatewayHealthRecorder.setPollerState(_stateFlow.value.name)
     }
@@ -449,6 +452,7 @@ class OutboxPoller(
                     requestInFlight = true
                     publishPollState()
                     cycle()
+                    errorRetryMs = INITIAL_RETRY_MS
                     _stateFlow.value = State.POLLING
                     publishPollState()
                 } finally {
@@ -458,13 +462,12 @@ class OutboxPoller(
                 }
             } catch (e: Exception) {
                 _stateFlow.value = State.ERROR
-                // The backoff below is a legitimate silence, and it gets its OWN label so a reader
-                // does not have to read the last error to know why nothing is being requested.
                 backingOff = true
                 publishPollState()
-                onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (ERROR_RETRY_MS / 1000) + "s")
-                // Interruptible: a manual reconnect must not wait out the backoff.
-                withTimeoutOrNull(ERROR_RETRY_MS) { wake.receive() }
+                val retryMs = errorRetryMs
+                onLog("⚠️ Pull failed: " + (e.message ?: "network error") + " — retry in " + (retryMs / 1000) + "s")
+                withTimeoutOrNull(retryMs) { wake.receive() }
+                errorRetryMs = (errorRetryMs * 2).coerceAtMost(MAX_RETRY_MS)
                 backingOff = false
                 publishPollState()
             }
@@ -700,7 +703,7 @@ class OutboxPoller(
                 kind = failure.kind,
                 httpStatus = failure.httpStatus,
                 safeDetail = failure.safeDetail,
-                retryInMs = ERROR_RETRY_MS
+                retryInMs = errorRetryMs
             )
             logPullFailure(failure.kind, failure.httpStatus, failure.safeDetail)
             throw failure
@@ -713,7 +716,7 @@ class OutboxPoller(
             GatewayHealthRecorder.onPullFailure(
                 kind = kind,
                 safeDetail = detail,
-                retryInMs = ERROR_RETRY_MS
+                retryInMs = errorRetryMs
             )
             logPullFailure(kind, null, detail)
             throw error

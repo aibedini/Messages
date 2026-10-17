@@ -53,12 +53,12 @@ class AgentLivenessRequestTest {
     }
 
     @Test
-    fun `theLivenessBodyEnqueuesNothing`() {
+    fun `theLivenessBodyCarriesOneHeartbeatEvent`() {
         val json = body()
+        val events = json.getJSONArray(AgentLivenessRequest.KEY_EVENTS)
 
-        // An EMPTY events array is what makes this a pure liveness ping: the server ingests it
-        // as {accepted:[],duplicates:0} without touching a sequence.
-        assertEquals(0, json.getJSONArray(AgentLivenessRequest.KEY_EVENTS).length())
+        assertEquals(1, events.length())
+        assertEquals("heartbeat", events.getJSONObject(0).getString("type"))
     }
 
     @Test
