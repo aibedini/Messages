@@ -1039,6 +1039,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     val autoRead = !providerEntity.read &&
                         providerEntity.threadId > 0L &&
                         VisibleConversationTracker.isVisible(providerEntity.threadId)
+                    val entity = if (autoRead ||
+                        (old?.read == true && !providerEntity.read)
+                    ) providerEntity.copy(read = true) else providerEntity
+                    val transition = classifyTransition(old, entity)
+                    if (transition == ProviderTransition.UNCHANGED) continue
+                    // Audited only for rows actually written: logging every unchanged unread row on
+                    // each rescan flooded the log and did file I/O inside this transaction.
                     if (autoRead) {
                         ConversationReadAudit.allowed(
                             cause = ReadCause.INCOMING_WHILE_VISIBLE,
@@ -1046,7 +1053,7 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                             source = source,
                             beforeRead = false
                         )
-                    } else if (!providerEntity.read && providerEntity.threadId > 0L) {
+                    } else if (!providerEntity.read && providerEntity.threadId > 0L && old == null) {
                         ConversationReadAudit.skipped(
                             reason = ReadSkipReason.SCREEN_NOT_VISIBLE,
                             threadId = providerEntity.threadId,
@@ -1054,11 +1061,6 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                             detail = "provider_unread"
                         )
                     }
-                    val entity = if (autoRead ||
-                        (old?.read == true && !providerEntity.read)
-                    ) providerEntity.copy(read = true) else providerEntity
-                    val transition = classifyTransition(old, entity)
-                    if (transition == ProviderTransition.UNCHANGED) continue
 
                     // App-owned send state must survive the mirror write: the provider stores no such
                     // column, so this entity carries defaults that would otherwise erase a real outcome.

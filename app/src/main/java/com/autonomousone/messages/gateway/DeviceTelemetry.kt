@@ -237,7 +237,9 @@ class DeviceTelemetry(
                     nextPeriodicAt = System.currentTimeMillis() + INTERVAL_MS
                 }
                 // Idle: wait for a trigger, or until the periodic heartbeat is due.
-                val waitMs = (nextPeriodicAt - System.currentTimeMillis()).coerceAtLeast(0L)
+                // Floor of 1s: when a report is due but another run holds wakeState, a 0ms wait
+                // turned this loop into a CPU spin (hundreds of CPU-seconds on one worker).
+                val waitMs = (nextPeriodicAt - System.currentTimeMillis()).coerceAtLeast(1_000L)
                 val signalled = withTimeoutOrNull(waitMs) { wake.receive() } != null
                 if (signalled) {
                     // Let a burst settle (an eSIM toggle fires several callbacks) so the report

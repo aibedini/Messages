@@ -192,7 +192,7 @@ class AndroidGatewayProbeIo(
                 sourceDeviceId = deviceId
             )
             val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
-            val connection = URL(base + AgentLivenessRequest.EVENTS_PATH)
+            val connection = URL(base + AgentLivenessRequest.PATH)
                 .openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
@@ -210,7 +210,7 @@ class AndroidGatewayProbeIo(
                 if (!AgentAuth.sign(
                         connection,
                         deviceId,
-                        AgentLivenessRequest.EVENTS_PATH,
+                        AgentLivenessRequest.PATH,
                         "POST",
                         bodyBytes
                     )

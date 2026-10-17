@@ -160,10 +160,10 @@ class HeartbeatManager(
         // GMweb requires X-Agent-Auth once the deviceId has enrolled; sign the
         // exact body about to be sent (fail closed when the Keystore is down).
         val sign: (java.net.HttpURLConnection, ByteArray) -> Boolean = { conn, bodyBytes ->
-            AgentAuth.sign(conn, deviceId, AgentLivenessRequest.EVENTS_PATH, "POST", bodyBytes)
+            AgentAuth.sign(conn, deviceId, AgentLivenessRequest.PATH, "POST", bodyBytes)
         }
         val result = client.post(
-            AgentLivenessRequest.EVENTS_PATH,
+            AgentLivenessRequest.PATH,
             payload,
             authenticated = false,
             extraHeaders = mapOf(

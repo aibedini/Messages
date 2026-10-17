@@ -41,12 +41,24 @@ class SmsStatusReceiver : BroadcastReceiver() {
         // keep the broadcast alive until provider + ledger persistence finish.
         val pendingResult = goAsync()
         val callbackResultCode = resultCode
-        appScope.launch {
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val finishOnce = { if (finished.compareAndSet(false, true)) pendingResult.finish() }
+        val work = appScope.launch {
             try {
                 processStatusIntent(context.applicationContext, intent, callbackResultCode)
             } finally {
-                pendingResult.finish()
+                finishOnce()
             }
+        }
+        // The system kills the process with an ANR if the broadcast is not finished in time. A
+        // stalled DB writer must never cost the whole app: release the broadcast at the deadline and
+        // let the work complete in the background.
+        appScope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(BROADCAST_DEADLINE_MS) { work.join() }
+            if (work.isActive) {
+                DiagnosticLog.event("SMS_CALLBACK", "broadcast_deadline_released action=${intent.action}")
+            }
+            finishOnce()
         }
     }
 
@@ -612,6 +624,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
         const val EXTRA_SEND_ATTEMPT_ID = "send_attempt_id"
 
         private const val PREFS = "sms_status_callbacks"
+        private const val BROADCAST_DEADLINE_MS = 8_000L
         private const val TAG = "SMS_STATUS"
         private val LOCK = Any()
 

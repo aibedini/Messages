@@ -29,8 +29,12 @@ import org.json.JSONObject
  */
 object AgentLivenessRequest {
 
-    /** The control-plane liveness route. Same path for heartbeat and for the diagnostic check. */
-    const val EVENTS_PATH = "/api/v1/agent/events/batch"
+    /**
+     * The control-plane liveness route. Same path for heartbeat and for the diagnostic check.
+     * GMweb's dedicated credential probe: events/batch now rejects an empty batch (events_required)
+     * and any non-empty one would be stored as real replication data.
+     */
+    const val PATH = "/api/v1/agent/ping"
 
     const val KEY_APP_VERSION = "appVersion"
     const val KEY_BATTERY_LEVEL = "batteryLevel"
@@ -67,17 +71,11 @@ object AgentLivenessRequest {
         networkType: String,
         timestamp: Long,
         sourceDeviceId: String
-    ): JSONObject {
-        val livenessEvent = JSONObject()
-            .put("type", "heartbeat")
-            .put("timestamp", timestamp)
-            .put("sourceDeviceId", sourceDeviceId)
-        return JSONObject()
-            .put(KEY_APP_VERSION, appVersion)
-            .put(KEY_BATTERY_LEVEL, batteryLevel)
-            .put(KEY_NETWORK_TYPE, networkType)
-            .put(KEY_TIMESTAMP, timestamp)
-            .put(KEY_EVENTS, JSONArray().put(livenessEvent))
-            .put(KEY_SOURCE_DEVICE_ID, sourceDeviceId)
-    }
+    ): JSONObject = JSONObject()
+        .put(KEY_APP_VERSION, appVersion)
+        .put(KEY_BATTERY_LEVEL, batteryLevel)
+        .put(KEY_NETWORK_TYPE, networkType)
+        .put(KEY_TIMESTAMP, timestamp)
+        .put(KEY_EVENTS, JSONArray())
+        .put(KEY_SOURCE_DEVICE_ID, sourceDeviceId)
 }

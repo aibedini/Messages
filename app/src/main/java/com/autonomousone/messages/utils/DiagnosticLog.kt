@@ -223,7 +223,10 @@ object DiagnosticLog {
     private class MainThreadWatchdog {
         @Volatile private var pong = false
 
-        fun isMainThreadBlocked(): Boolean = try {
+        // Called from the main thread (the export button) it would wait on itself and always
+        // report "blocked"; the fact that we are running there proves it is responsive.
+        fun isMainThreadBlocked(): Boolean =
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) false else try {
             pong = false
             android.os.Handler(android.os.Looper.getMainLooper()).post { pong = true }
             Thread.sleep(100)

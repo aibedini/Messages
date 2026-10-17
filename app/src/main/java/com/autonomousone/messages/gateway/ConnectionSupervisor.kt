@@ -197,6 +197,8 @@ class ConnectionSupervisor private constructor(
     private var server: GatewayServer? = null
     private var boundIp: String? = null
     private var backoffMs = 5_000L
+    @Volatile private var firstReconcileLogged = false
+    private val SLOW_PHASE_MS = 1_000L
     @Volatile private var lastError: String? = null
 
     /** When the last post-reconnect reconciliation was requested. Throttles the tick. */
@@ -360,12 +362,18 @@ class ConnectionSupervisor private constructor(
         // start instead of being an opaque hang.
         val reconcileStart = System.currentTimeMillis()
         var phaseStart = reconcileStart
+        // Steady-state reconciles run every minute; logging all nine phases each time buried real
+        // errors. Phases are logged for the first reconcile of the process and for any slow one.
+        val verbose = !firstReconcileLogged
+        firstReconcileLogged = true
         fun notePhase(phase: String) {
             val now = System.currentTimeMillis()
-            com.autonomousone.messages.utils.DiagnosticLog.event(
-                "GATEWAY_START",
-                "phase=$phase durationMs=${now - phaseStart} totalMs=${now - reconcileStart}"
-            )
+            if (verbose || now - phaseStart > SLOW_PHASE_MS) {
+                com.autonomousone.messages.utils.DiagnosticLog.event(
+                    "GATEWAY_START",
+                    "phase=$phase durationMs=${now - phaseStart} totalMs=${now - reconcileStart}"
+                )
+            }
             phaseStart = now
         }
 

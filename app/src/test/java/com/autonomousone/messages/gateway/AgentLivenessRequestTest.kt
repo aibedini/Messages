@@ -53,12 +53,9 @@ class AgentLivenessRequestTest {
     }
 
     @Test
-    fun `theLivenessBodyCarriesOneHeartbeatEvent`() {
-        val json = body()
-        val events = json.getJSONArray(AgentLivenessRequest.KEY_EVENTS)
-
-        assertEquals(1, events.length())
-        assertEquals("heartbeat", events.getJSONObject(0).getString("type"))
+    fun `theLivenessBodyEnqueuesNothing`() {
+        assertEquals(0, body().getJSONArray(AgentLivenessRequest.KEY_EVENTS).length())
+        assertEquals("/api/v1/agent/ping", AgentLivenessRequest.PATH)
     }
 
     @Test
