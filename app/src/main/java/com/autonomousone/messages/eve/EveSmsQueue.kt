@@ -46,6 +46,15 @@ object EveSmsQueue {
     private const val MAX_PERSISTED_RECORDS = 300
 
     /**
+     * Longest the sender worker sleeps with nothing runnable.
+     *
+     * It is a BACKSTOP, not the normal latency: [offer] signals the worker, so a new message is
+     * drained immediately. The bound only exists so a missed signal cannot park work for ever.
+     * The previous fixed 400 ms poll was 216 000 wake-ups a day doing nothing.
+     */
+    internal const val IDLE_WAIT_MS = 60_000L
+
+    /**
      * Fail-closed backoff ladder for the final validation gate. Bounded on
      * purpose: an unbounded fast retry would hammer GMweb during an outage,
      * and a deferred record must never silently become SENT.
@@ -320,6 +329,16 @@ object EveSmsQueue {
     private val queue = PriorityQueue<Job>(11, compareBy({ it.level }, { it.seq }))
     private var seq = 0L
 
+    /**
+     * Monitor for the sender worker's idle wait.
+     *
+     * Deliberately NOT [records]: that lock is held by many short critical sections, and waiting on it
+     * would turn every mutation into a spurious wake-up. [workPending] closes the lost-wakeup race
+     * between "drain found nothing" and "start waiting".
+     */
+    private val workSignal = Object()
+    @Volatile private var workPending = false
+
     private lateinit var store: Store
     @Volatile private var senderFn: ((Record) -> Boolean)? = null
     @Volatile private var validatorFn: FinalValidator? = null
@@ -445,10 +464,23 @@ object EveSmsQueue {
         worker = Thread {
             while (running) {
                 try {
-                    if (!drainOne()) {
-                        // Never busy-loop on deferred records: only re-offer the
-                        // ones whose backoff has actually elapsed.
-                        if (sweepDeferred() == 0) Thread.sleep(400)
+                    if (drainOne()) continue
+                    // Never busy-loop on deferred records: only re-offer the
+                    // ones whose backoff has actually elapsed.
+                    if (sweepDeferred() > 0) continue
+                    // Nothing runnable. Sleep on the work signal instead of polling: the old fixed
+                    // 400 ms sleep woke this thread 2.5 times a second for the life of the process
+                    // (216 000 wake-ups/day) doing nothing. The wait is bounded by the NEAREST
+                    // deferred deadline, so a deferred record is still picked up on time, and by
+                    // IDLE_WAIT_MS as a backstop against a missed signal.
+                    val waitMs = nextDeferredDueInMs() ?: IDLE_WAIT_MS
+                    synchronized(workSignal) {
+                        // Re-checked under the signal lock: an offer between the drain and this wait
+                        // must never be lost.
+                        if (!workPending) {
+                            workSignal.wait(waitMs.coerceIn(50L, IDLE_WAIT_MS))
+                        }
+                        workPending = false
                     }
                 } catch (_: InterruptedException) {
                     break
@@ -467,9 +499,15 @@ object EveSmsQueue {
     @Synchronized
     fun stop() {
         running = false
+        // The worker may be inside workSignal.wait(): wake it rather than relying on interrupt
+        // delivery alone, so shutdown cannot depend on one mechanism.
+        synchronized(workSignal) { workSignal.notifyAll() }
         worker?.interrupt()
         worker = null
     }
+
+    /** Test hook: the sender worker thread, so a test can prove it really exits on stop(). */
+    internal fun workerThreadForTest(): Thread? = worker
 
     /**
      * Accepts a send request. When [idempotencyKey] was seen before, returns
@@ -916,6 +954,30 @@ object EveSmsQueue {
     private fun offer(requestId: String, level: Int) {
         seq += 1
         queue.offer(Job(requestId, level, seq))
+        signalWork()
+    }
+
+    /** Wakes the sender worker: a job just became runnable. */
+    private fun signalWork() = synchronized(workSignal) {
+        workPending = true
+        workSignal.notifyAll()
+    }
+
+    /**
+     * Milliseconds until the earliest DEFERRED record becomes runnable, or `null` when none is
+     * waiting.
+     *
+     * The worker waits exactly this long instead of polling every 400 ms, so a deferred record is
+     * still swept on time without a timer for it. Overdue deferred records are not included: the
+     * caller's [sweepDeferred] pass already re-offers those.
+     */
+    internal fun nextDeferredDueInMs(nowMs: Long = now()): Long? = synchronized(records) {
+        records.values
+            .asSequence()
+            .filter { it.status == Status.DEFERRED }
+            .map { it.deferredUntil - nowMs }
+            .filter { it > 0L }
+            .minOrNull()
     }
 
     private fun trimIdempotency() {
