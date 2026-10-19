@@ -183,7 +183,17 @@ class EveSmsQueuePreSendValidationTest {
 
         // 5-6: the worker resumes from persistent storage and validates the old request.
         boot(superseded("renewed"))
-        EveSmsQueue.drainOne()
+        // DETERMINISTIC: boot() starts a worker and immediately stops it, so either the worker or
+        // this test may dequeue the persisted row. Drive drainOne until the record settles instead
+        // of racing the worker for the single drain and asserting whichever state won the race —
+        // that race made this test fail ~23/100 runs (measured on master and on Stage 1).
+        val deadline = System.currentTimeMillis() + 2_000
+        while (EveSmsQueue.status(rec.requestId)?.status != EveSmsQueue.Status.SUPERSEDED &&
+            System.currentTimeMillis() < deadline
+        ) {
+            EveSmsQueue.drainOne()
+            Thread.sleep(5)
+        }
 
         // 7-8: GMweb says superseded -> the local sender is NOT called.
         assertTrue("native sender must never be invoked after restart", sent.isEmpty())
