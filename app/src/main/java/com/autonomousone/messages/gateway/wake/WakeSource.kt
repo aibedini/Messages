@@ -33,6 +33,12 @@ enum class WakeMode {
     }
 }
 
+/** Live state of the WebSocket transport. Counts and enums only. */
+enum class WakeSocketState { CLOSED, CONNECTING, OPEN }
+
+/** Whether this client is pinning the server certificate, and whether a pin ever mismatched. */
+enum class WakePinning { DISABLED, ENABLED, MISMATCH }
+
 /** Why a [WakeSource] is not usable right now. Reported, never inferred. */
 enum class WakeUnavailable {
     /** No server origin, no token. */
@@ -63,7 +69,19 @@ data class WakeHealth(
     val lastAttemptAt: Long = 0L,
     val consecutiveFailures: Int = 0,
     /** Wake-ups delivered since start. Counts only — no ids, no recipients. */
-    val wakeCount: Long = 0L
+    val wakeCount: Long = 0L,
+    // ── WebSocket detail (STAGE-4 §5). Enums, counts and timestamps only. ──
+    val socketState: WakeSocketState = WakeSocketState.CLOSED,
+    val lastSocketChangeAt: Long = 0L,
+    val reconnectCount: Int = 0,
+    /** Frames the one-second wake floor suppressed. */
+    val suppressedWakes: Long = 0L,
+    /** Frames that were not `{"t":"wake"}`. Counted, never parsed for other fields. */
+    val unknownFrames: Long = 0L,
+    val activity: WakeActivity = WakeActivity.IDLE,
+    val activityReason: WakeActivityReason = WakeActivityReason.NONE,
+    val pinning: WakePinning = WakePinning.DISABLED,
+    val pingIntervalMs: Long = 0L
 )
 
 /**

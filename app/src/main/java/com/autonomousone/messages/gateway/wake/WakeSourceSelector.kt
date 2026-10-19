@@ -17,6 +17,15 @@ object WakeSourceSelector {
         val configured: WakeMode,
         val fcmAvailable: Boolean,
         val socketAvailable: Boolean,
+        /**
+         * Whether AUTO may choose SOCKET.
+         *
+         * Stage 4 ships the client before GMweb deploys `/gateway/wake`, so production passes
+         * `false`: AUTO keeps resolving to POLLING and default behaviour is byte-identical.
+         * An EXPLICIT `wakeMode = SOCKET` still selects the socket (and falls back, reported, when
+         * the server has not deployed it). Flip this to `true` only when the server endpoint is.
+         */
+        val socketAutoEligible: Boolean = true,
     )
 
     data class Resolution(
@@ -37,7 +46,7 @@ object WakeSourceSelector {
     fun resolve(inputs: Inputs): Resolution = when (inputs.configured) {
         WakeMode.AUTO -> when {
             inputs.fcmAvailable -> Resolution(WakeSourceId.FCM)
-            inputs.socketAvailable -> Resolution(WakeSourceId.SOCKET)
+            inputs.socketAvailable && inputs.socketAutoEligible -> Resolution(WakeSourceId.SOCKET)
             else -> Resolution(WakeSourceId.POLLING)
         }
 

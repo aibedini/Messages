@@ -26,6 +26,16 @@ class GatewayPreferences(context: Context) {
 
         /** ADR-008 wake mechanism, stored by enum name: AUTO | POLLING | SOCKET | FCM. */
         private const val KEY_WAKE_MODE = "gateway_wake_mode"
+
+        /**
+         * STAGE-4 §2.1: user-configured certificate pins for the self-hosted WSS endpoint.
+         *
+         * Two pins (current + next) so a certificate rotation cannot brick the bridge. Stored as
+         * the `sha256/<base64>` spelling; an empty value means "unpinned", which the diagnostic
+         * card reports explicitly.
+         */
+        private const val KEY_WAKE_PIN_CURRENT = "gateway_wake_pin_current"
+        private const val KEY_WAKE_PIN_NEXT = "gateway_wake_pin_next"
         private const val KEY_API_KEY = "gateway_api_key"
         private const val KEY_WEBHOOK_URL = "gateway_webhook_url"
         private const val KEY_WEBHOOK_SECRET = "gateway_webhook_secret"
@@ -111,6 +121,23 @@ class GatewayPreferences(context: Context) {
     var wakeMode: WakeMode
         get() = WakeMode.parse(prefs.getString(KEY_WAKE_MODE, null))
         set(value) = prefs.edit().putString(KEY_WAKE_MODE, value.name).apply()
+
+    /** Certificate pin for the current GMweb certificate. Empty = unpinned. */
+    var wakePinCurrent: String
+        get() = prefs.getString(KEY_WAKE_PIN_CURRENT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WAKE_PIN_CURRENT, value.trim()).apply()
+
+    /** Certificate pin for the NEXT certificate, so a rotation does not become an outage. */
+    var wakePinNext: String
+        get() = prefs.getString(KEY_WAKE_PIN_NEXT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WAKE_PIN_NEXT, value.trim()).apply()
+
+    /** The two-pin policy the socket client uses. */
+    val wakePins: com.autonomousone.messages.gateway.wake.WakeCertificatePins
+        get() = com.autonomousone.messages.gateway.wake.WakeCertificatePins(
+            current = wakePinCurrent,
+            next = wakePinNext
+        )
 
     /**
      * Local REST API key. Encrypted at rest with the Android Keystore;

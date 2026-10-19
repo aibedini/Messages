@@ -15,6 +15,11 @@ composeBom = "2026.02.01"
 # carries no transitive metadata.
 klinkerLogger = "1.0.3"
 okhttpLegacy = "2.5.0"
+# Stage 4 (STAGE-3 Part B): the WebSocket transport pins the okhttp3 4.x that Coil
+# already puts on the classpath, so a Coil upgrade cannot silently change the wire
+# implementation underneath the gateway socket. Do NOT unify this with okhttpLegacy:
+# the vendored mmslib AAR needs 2.5.0 on its own live MMS path.
+okhttp = "4.12.0"
 ksp = "2.2.10-2.0.2"
 room = "2.8.4"
 
@@ -36,6 +41,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 klinker-logger = { group = "com.klinkerapps", name = "logger", version.ref = "klinkerLogger" }
 okhttp-legacy = { group = "com.squareup.okhttp", name = "okhttp", version.ref = "okhttpLegacy" }
 okhttp-urlconnection = { group = "com.squareup.okhttp", name = "okhttp-urlconnection", version.ref = "okhttpLegacy" }
+okhttp3 = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
