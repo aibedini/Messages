@@ -8,14 +8,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * STAGE-2 §2.5 — the heartbeat's retry ladder survives the move onto the shared ticker.
+ * STAGE-2 §2.5 — GatewayTicker's scheduling of a BACKOFF LADDER.
  *
- * `HeartbeatManager` needs a `Context`, so it cannot be constructed here. What is pinned instead is
- * the pair of facts the wiring depends on: the ladder's first step is still
- * `INITIAL_BACKOFF_MS = 1_000L`, and the ticker honours a 1 s per-subscriber request rather than
- * collapsing it into the 60 s cadence.
+ * This test does **not** exercise `HeartbeatManager` (which needs a `Context` and is not wired to the
+ * ticker in this round). It pins the ticker-side property the future wiring depends on: a subscriber
+ * that fails can request its next attempt via `requestEarlierTick`, and the ticker honours a 1 s step
+ * rather than collapsing it into the 60 s cadence. The ladder arithmetic here is the heartbeat's
+ * shape (1 s, doubled), used as a model — not the manager's code.
  */
-class HeartbeatLadderPreservedTest {
+class GatewayTickerBackoffLadderTest {
 
     @Test
     fun `the first retry after a failed heartbeat is about one second, not sixty`() = runTest {
