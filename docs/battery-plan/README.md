@@ -120,7 +120,7 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
 
 | Stage | File | Risk | Needs server work | Needs user action |
 |---|---|---|---|---|
-| 1 | [`STAGE-1-quick-wins.md`](STAGE-1-quick-wins.md) | low | yes, for 1.1 only | decision in §1.1 |
+| 1 | [`STAGE-1-quick-wins.md`](STAGE-1-quick-wins.md) | MERGED (#12) | yes, for 1.1 only | decision in §1.1 |
 | 2 | [`STAGE-2-wake-source.md`](STAGE-2-wake-source.md) | low | no | no |
 | 3 | [`STAGE-3-okhttp.md`](STAGE-3-okhttp.md) | CLOSED — no action (§0) | no | no |
 | 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | medium | yes | no |

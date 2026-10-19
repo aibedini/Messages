@@ -352,7 +352,7 @@ plain `git revert` with no data or preference migration.
 - [ ] Active source and any fallback are visible on the diagnostic card
 - [ ] ADR-008 written
 - [ ] `WakeSourceNoBehaviourChangeTest` passes
-- [ ] `GatewayTicker.requestEarlierTick` implemented per ยง2.5, with per-subscriber
+- [x] `GatewayTicker.requestEarlierTick` implemented per ยง2.5, with per-subscriber
       coalescing and a 1 s floor
 - [ ] Stage 1.5's `GatewayTicker` subscribers wired in the ยง2.5 order; the trust
       publisher deliberately left off, with the reason recorded
@@ -493,3 +493,60 @@ BUILD SUCCESSFUL in 3m 5s
 6. **ADR-008 is accepted; ADR-003 still forbids Google infrastructure.** A future FCM source must
    supersede ADR-003 explicitly, not merely implement `WakeSource`.
 
+
+---
+
+## Addendum — ง2.5 implementation report
+
+Agent: deepseek-flash (DeepSeek Harness)   Date: 2026-10-19
+Branch: perf/battery-stage-2               Base commit: 7f563d2 (rebased)
+
+GATE-VERIFIED: YES
+TESTS EXECUTED: 2702
+COMPILE STATUS: PASS
+
+### A. Completed
+
+| Item | What changed | Commit | Test |
+|---|---|---|---|
+| `requestEarlierTick` | per-subscriber deadlines, earliest-wins coalescing, 1 s floor, additive to the shared tick | 52e80d3 | `GatewayTickerEarlierTickTest`, `GatewayTickerEarlierTickAdditiveTest`, `GatewayTickerOrderTest`, `GatewayTickerBackoffLadderTest` |
+| reconcile on the ticker | 60 s loop removed; registered LAST | 5137100 | `GatewayTickerOrderTest` |
+| tick lifetime (B0) | started in `ensureLoop`, stopped with `loopJob`; no longer tied to the wake source | 92a8c20 | none — `ConnectionSupervisor` needs Room/Context; evidence: `ConnectionSupervisor.kt:341` (`startMaintenanceTick` in `ensureLoop`), `:322` (stop in `shutdown`), `GatewayService` no longer starts/stops the ticker |
+| B1 / B2 | test renamed to what it pins; ADR-008 ง2.5 status | c8c49f5, 0f4065e | — |
+
+### B. Not completed
+
+| Item | Why not | Blocker type | What would unblock it |
+|---|---|---|---|
+| `EventUploader` lease sweep | deferred to "Stage 2b" by decision | user-decision | on-device measurement showing the loop matters |
+| `DeviceTelemetry` periodic report | same | user-decision | same |
+| `HeartbeatManager` | same; a 60 s tick under its 1 s?5 min ladder is a reliability risk without measurement | user-decision | same |
+
+### C. Deviations
+
+1. ง2.5's acceptance text says five timers become one tick, but its own table excludes
+   `TrustStatementPublisher` (5 s publish cadence) — so four would become subscribers, and only
+   `ConnectionSupervisor.reconcile` is wired this round.
+2. No JVM test covers B0's lifetime; the evidence is the file:line trace above.
+
+### D. Constraint check (ง3)
+
+ADR-003 SLO unchanged; correctness triad untouched; no Google dependency; no content on the wake
+channel; no invented measurements; Room schema unchanged; recipients stay tokenised.
+
+### E. Verbatim gate output
+
+```text
+> Task :app:lintDebug
+
+BUILD SUCCESSFUL in 8m 39s
+63 actionable tasks: 21 executed, 42 up-to-date
+```
+
+JUnit XML: **2 702 tests, 0 failures** (`SpamRepositoryTest` passes now that master carries #11).
+
+### F. Residual risk
+
+- The tick is started by `ensureLoop`; no test enforces that call, so a refactor there could silently
+  drop the self-healing tick.
+- `requestEarlierTick` has no production caller by design until Stage 2b.
