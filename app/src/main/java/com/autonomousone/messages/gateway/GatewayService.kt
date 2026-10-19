@@ -348,13 +348,16 @@ class GatewayService : Service() {
                         gatewayTicker.subscribe("connection-supervisor") { supervisor.reconcileNow() }
                         tickerSubscribed = true
                     }
-                    gatewayTicker.start()
                     pollingWakeSource.start { outboxPoller.retryNow() }
                 },
                 stopWakeSource = {
                     pollingWakeSource.stop()
-                    gatewayTicker.stop()
                 },
+                // B0: the tick follows the supervisor LOOP (ensureLoop → shutdown), not the wake
+                // source. Disabling the gateway stops the wake source but not the supervisor loop,
+                // and the 60 s reconcile is that loop's self-healing net.
+                startMaintenanceTick = { gatewayTicker.start() },
+                stopMaintenanceTick = { gatewayTicker.stop() },
                 activeWakeSource = { wakeResolution.chosen },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator

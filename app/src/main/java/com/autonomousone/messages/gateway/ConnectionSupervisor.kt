@@ -172,7 +172,16 @@ class ConnectionSupervisor private constructor(
         /** Which mechanism is actually running — recorded for the diagnostic card, never inferred. */
         val activeWakeSource: () -> com.autonomousone.messages.gateway.wake.WakeSourceId = {
             com.autonomousone.messages.gateway.wake.WakeSourceId.POLLING
-        }
+        },
+        /**
+         * STAGE-2 §2.5 B0: the maintenance tick's lifetime must match [ensureLoop]'s job.
+         *
+         * The old 60 s reconcile loop lived inside that job and kept running while the gateway was
+         * disabled or offline — it is the self-healing net. Starting the ticker from the wake seam
+         * instead stopped it on disable, so the supervisor could lose its periodic reconcile.
+         */
+        val startMaintenanceTick: () -> Unit = {},
+        val stopMaintenanceTick: () -> Unit = {}
     )
 
     enum class State {
@@ -318,6 +327,8 @@ class ConnectionSupervisor private constructor(
     fun shutdown() {
         loopJob?.cancel()
         loopJob = null
+        // B0: the tick is owned by loopJob, so it dies with it.
+        components.stopMaintenanceTick()
         server?.stop()
         server = null
         boundIp = null
@@ -337,6 +348,9 @@ class ConnectionSupervisor private constructor(
 
     private fun ensureLoop() {
         if (loopJob?.isActive == true) return
+        // B0: the tick is owned by the loop's lifetime, exactly like the 60 s reconcile loop it
+        // replaced — not by the wake source, which is stopped when the gateway is disabled.
+        components.startMaintenanceTick()
         loopJob = scope.launch {
             // Debounced: rapid connectivity changes (WiFi toggle, cell handoff)
             // collapse into one reconcile after 3 seconds of stability.
