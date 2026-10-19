@@ -18,8 +18,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.diagnostics.DebugFrameMetrics
 import com.autonomousone.messages.diagnostics.DebugStrictMode
+import com.autonomousone.messages.diagnostics.DiagnosticsPreferences
 import com.autonomousone.messages.diagnostics.MainThreadStallWatchdog
 import com.autonomousone.messages.diagnostics.ProcessExitDiagnostics
+import com.autonomousone.messages.diagnostics.StallWatchdogGate
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -225,7 +227,10 @@ class MessagesApp : Application() {
      * them blocks startup:
      *
      *  - [DebugStrictMode.install]          DEBUG-only, log-only StrictMode thread policy;
-     *  - [MainThreadStallWatchdog.install]  background probe thread, 2 s / 5 s thresholds;
+     *  - [MainThreadStallWatchdog.install]  background probe thread, 2 s / 5 s thresholds — DEBUG
+     *                                       builds or an explicitly enabled developer option only
+     *                                       (it used to run on every user's phone, four probes a
+     *                                       second, all day);
      *  - [DebugFrameMetrics.install]        DEBUG-only bounded FrameMetrics counters;
      *  - [ProcessExitDiagnostics.install]   API 30+, async historical exit-reason import.
      *
@@ -234,7 +239,17 @@ class MessagesApp : Application() {
      */
     private fun installDiagnostics() {
         DebugStrictMode.install()
-        MainThreadStallWatchdog.install()
+        // Stage 1.3: a foreground gateway service keeps this process alive, so an unconditional
+        // watchdog was 345 600 main-looper probes a day for a diagnostic that no user can act on.
+        // ProcessExitDiagnostics (ANR exit reasons) is untouched and keeps the post-hoc evidence.
+        if (
+            StallWatchdogGate.shouldInstall(
+                isDebugBuild = BuildConfig.DEBUG,
+                preferenceEnabled = DiagnosticsPreferences(this).stallWatchdogEnabled
+            )
+        ) {
+            MainThreadStallWatchdog.install()
+        }
         DebugFrameMetrics.install(this)
         ProcessExitDiagnostics.install(this, diagnosticsScope)
     }

@@ -55,6 +55,8 @@ import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.R
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.viewmodel.DataToolsViewModel
+import com.autonomousone.messages.diagnostics.DiagnosticsPreferences
+import com.autonomousone.messages.diagnostics.MainThreadStallWatchdog
 import com.autonomousone.messages.utils.DiagnosticLog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -764,6 +766,44 @@ fun SettingsScreen(
                     label = "GMweb server",
                     value = origin.ifBlank { "Not configured" }
                 )
+
+                // Stage 1.3: the main-thread stall watchdog is a developer diagnostic, not something
+                // every release build should pay for. It stays available here, and the switch applies
+                // at once — installing or stopping the probe thread needs no restart.
+                var stallWatchdog by remember {
+                    mutableStateOf(DiagnosticsPreferences(gatewayContext).stallWatchdogEnabled)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Main-thread stall watchdog",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Diagnostics, increases battery use",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = stallWatchdog,
+                        onCheckedChange = { enabled ->
+                            stallWatchdog = enabled
+                            DiagnosticsPreferences(gatewayContext).stallWatchdogEnabled = enabled
+                            if (enabled) {
+                                MainThreadStallWatchdog.install()
+                            } else {
+                                MainThreadStallWatchdog.stop()
+                            }
+                        }
+                    )
+                }
             }
         }
     }
