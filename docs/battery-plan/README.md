@@ -8,9 +8,10 @@ weakening the availability contract in
 phone runs hot while the gateway is enabled.
 
 **Status of this programme:** IN PROGRESS. Stages 1 and 2 are merged. Stage 4's
-client is merged with the GMweb endpoint still pending (AUTO therefore still
-resolves to POLLING). Stage 3 is CLOSED with no code change. Stage 5 remains
-BLOCKED. **No on-device measurement has been taken.**
+client is implemented on `perf/battery-stage-4` (PR #15) with the GMweb endpoint
+still pending (AUTO therefore still resolves to POLLING). Stage 3 is CLOSED with
+no code change. Stage 5 remains BLOCKED. **No on-device measurement has been
+taken.**
 
 ---
 
@@ -114,7 +115,7 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
    ├──► STAGE-3  OkHttp cleanup  (independent; required only by Stage 4)
    │        │
    │        ▼
-   └──► STAGE-4  SocketWakeSource (client merged; GMweb endpoint pending)
+   └──► STAGE-4  SocketWakeSource (client implemented; GMweb endpoint pending)
             │
             ▼
         STAGE-5  FcmWakeSource — BLOCKED by ADR-003, see that file
@@ -128,8 +129,9 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
 | 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | medium | yes — not deployed yet | no |
 | 5 | [`STAGE-5-fcm-optional.md`](STAGE-5-fcm-optional.md) | medium | yes | yes — Firebase console |
 
-**Stage 4 status: client merged, server pending.** `SocketWakeSource` ships on
-`perf/battery-stage-4`; GMweb does not implement `/gateway/wake` yet, so
+**Stage 4 status: client implemented (PR #15), server pending.**
+`SocketWakeSource` ships on `perf/battery-stage-4`; GMweb does not implement
+`/gateway/wake` yet, so
 `SERVER_WAKE_DEPLOYED` is `false` and `wakeMode = AUTO` still resolves to
 `POLLING` — default behaviour is unchanged. An explicit `SOCKET` choice tries
 the socket, falls back to polling and reports the reason on the diagnostic

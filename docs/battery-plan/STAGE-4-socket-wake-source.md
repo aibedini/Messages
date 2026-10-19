@@ -524,3 +524,6 @@ Test totals were counted from
 - **Do not reuse the legacy `okhttp 2.5.0` line.** The vendored MMS AAR needs it
   live (STAGE-3 §0). The new dependency is the `com.squareup.okhttp3` coordinate.
 - **Stage 5 remains BLOCKED** by ADR-003 and was not touched.
+- **At handoff, PR #15's CI checks were still pending.** The §4 gate ran locally
+  and passed; the branch is pushed, but no squash merge was performed while the
+  checks were pending.
