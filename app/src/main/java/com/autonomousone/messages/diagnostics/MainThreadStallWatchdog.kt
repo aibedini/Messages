@@ -24,15 +24,26 @@ import java.util.concurrent.TimeUnit
  *    the [DiagnosticLog] write happens on the watcher thread too, so no disk
  *    I/O is added to the UI thread;
  *  - when the main thread is healthy the watcher sleeps between probes, so it
- *    costs one post every 250 ms (four per second).
+ *    costs one post per [POLL_INTERVAL_MS] (one per second; it was four, which
+ *    was 345 600 main-looper probes a day).
  *
- * Install once, from [com.autonomousone.messages.MessagesApp.onCreate], and
- * never again: [install] is idempotent.
+ * Install once, from [com.autonomousone.messages.MessagesApp.onCreate] — in
+ * DEBUG builds, or when [DiagnosticsPreferences.stallWatchdogEnabled] is on —
+ * and never again: [install] is idempotent.
  */
 object MainThreadStallWatchdog {
 
     private const val THREAD_NAME = "main-thread-stall-watchdog"
-    private const val POLL_INTERVAL_MS = 250L
+
+    /**
+     * Probe cadence.
+     *
+     * 1 s still resolves [StallWatchdogEngine.DEFAULT_WARNING_MS] (2 s): a stall
+     * that begins just after a sample is reported at the next one, inside the
+     * warning window's own resolution. The DEBUG gate is the main saving; this is
+     * the residual one.
+     */
+    private const val POLL_INTERVAL_MS = 1_000L
 
     @Volatile
     private var installed = false
@@ -66,8 +77,9 @@ object MainThreadStallWatchdog {
     }
 
     /**
-     * Teardown seam. Production never calls this: the watchdog lives as long
-     * as the process does.
+     * Teardown seam. Called by the developer toggle
+     * ([DiagnosticsPreferences.stallWatchdogEnabled]) so switching it off does not
+     * need an app restart; [install] remains idempotent and restartable.
      */
     fun stop() {
         running = false

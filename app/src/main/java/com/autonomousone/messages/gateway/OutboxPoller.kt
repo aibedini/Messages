@@ -259,18 +259,39 @@ class OutboxPoller(
         sendAck = { rec, outcome, reason -> ackRecord(rec, outcome, reason) }
     )
     /**
-     * v2.6.11 Doze resilience: a partial wake lock held ONLY while a pull
-     * cycle is actually in flight (the 25s long-poll + delivery + ack). In
-     * Doze the CPU sleeps between maintenance windows and an in-flight
-     * long-poll socket dies silently — the server then reports
-     * "no device polling" and every Eve send 503s. Holding the lock through
-     * the active part of each cycle keeps the radio+CPU alive exactly when
-     * we promised the server we are reachable; the device sleeps normally
-     * in the idle gap between cycles (lock released, ~5s), so battery cost
-     * stays proportional to actual bridge duty, not to wall-clock time.
+     * v2.6.11 Doze resilience: a partial wake lock held ONLY while a pull cycle is actually in
+     * flight (the 25 s long-poll + delivery + ack). In Doze the CPU sleeps between maintenance
+     * windows and an in-flight long-poll socket dies silently — the server then reports "no device
+     * polling" and every Eve send 503s. Holding the lock through the active part of each cycle keeps
+     * the radio+CPU alive exactly when we promised the server we are reachable, and it is released
+     * for the whole idle gap afterwards ([PollCyclePacing.IDLE_GAP_MS]) so the device sleeps normally
+     * between cycles. Battery cost is proportional to actual bridge duty, not to wall-clock time.
+     *
+     * That sentence was untrue until Stage 1.2: `runLoop` re-entered immediately after releasing the
+     * lock, so it was held effectively continuously. [CycleWakeLockGuard] plus the gap in `runLoop`
+     * are what make it a description of the code rather than an intention.
      */
     private val wakeLock = context.getSystemService(PowerManager::class.java)
         ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Messages:OutboxPoller")
+
+    /**
+     * Acquire/release seam for [wakeLock]. Release runs in `finally`, so no exit path — including a
+     * throwing cycle — can leak the lock. A failed acquire never blocks the bridge.
+     */
+    private val wakeLockGuard = CycleWakeLockGuard(
+        acquire = {
+            try {
+                // 90 s > the active part of a cycle (40 s pull timeout plus delivery/ack), and the
+                // timeout is the safety net against a leaked lock — normal release is in the guard.
+                wakeLock?.acquire(90 * 1000L)
+            } catch (_: Exception) { /* never block the bridge on a lock failure */ }
+        },
+        release = {
+            try {
+                if (wakeLock?.isHeld == true) wakeLock.release()
+            } catch (_: Exception) { }
+        }
+    )
 
     /**
      * Owns the loop's lifetime, so "is it running?" is answered by a live job rather than by a
@@ -365,21 +386,6 @@ class OutboxPoller(
         GatewayHealthRecorder.setPollerState(_stateFlow.value.name)
     }
 
-    private fun acquireCycleWakeLock() {
-        try {
-            // 90s > longest legal cycle (40s pull timeout + 120s drain is the
-            // extreme; re-acquired per cycle anyway). Timeout is the safety
-            // net against a leaked lock; normal release happens in finally.
-            wakeLock?.acquire(90 * 1000L)
-        } catch (_: Exception) { /* never block the bridge on a lock failure */ }
-    }
-
-    private fun releaseCycleWakeLock() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock.release()
-        } catch (_: Exception) { }
-    }
-
     fun start() {
         // Idempotent against an ACTIVE loop, not against "start was once called". A dead loop is
         // always replaceable — that is the whole fix — and a live one is never duplicated.
@@ -442,24 +448,31 @@ class OutboxPoller(
                 PollStatePolicy.Iteration.TRANSMIT -> Unit
             }
             try {
-                acquireCycleWakeLock()
-                try {
-                    loop.onCycleStarted()
-                    // Local terminal outcomes are acked BEFORE dialling
-                    // again: a deferred task never waits for a redelivery.
-                    ackPending()
-                    drainDeliveryReports()
-                    requestInFlight = true
-                    publishPollState()
-                    cycle()
-                    errorRetryMs = INITIAL_RETRY_MS
-                    _stateFlow.value = State.POLLING
-                    publishPollState()
-                } finally {
-                    requestInFlight = false
-                    loop.onCycleFinished()
-                    releaseCycleWakeLock()
+                // True when this cycle actually delivered a task. A busy queue must drain without a
+                // pause between messages; only an empty cycle earns the idle gap.
+                var carriedTask = false
+                wakeLockGuard.withLock {
+                    try {
+                        loop.onCycleStarted()
+                        // Local terminal outcomes are acked BEFORE dialling
+                        // again: a deferred task never waits for a redelivery.
+                        ackPending()
+                        drainDeliveryReports()
+                        requestInFlight = true
+                        publishPollState()
+                        carriedTask = cycle()
+                        errorRetryMs = INITIAL_RETRY_MS
+                        _stateFlow.value = State.POLLING
+                        publishPollState()
+                    } finally {
+                        requestInFlight = false
+                        loop.onCycleFinished()
+                    }
                 }
+                // The idle gap between cycles: the lock is released and the CPU may sleep. It is
+                // interruptible, so retryNow() (manual reconnect) still polls at once, and it is
+                // skipped after a cycle that carried a task.
+                awaitCycleGap(wake, PollCyclePacing.gapMsAfter(carriedTask))
             } catch (e: Exception) {
                 _stateFlow.value = State.ERROR
                 backingOff = true
@@ -503,16 +516,22 @@ class OutboxPoller(
         publishPollState()
     }
 
-    /** One pull → deliver → ack round trip. Throws only on transport errors. */
-    private suspend fun cycle() {
+    /**
+     * One pull → deliver → ack round trip. Throws only on transport errors.
+     *
+     * @return true when a task was pulled, so the caller knows the queue may still hold work and
+     *   skips its idle gap. Every path that reached a task returns true, including the ones that
+     *   rejected or superseded it: the server may hand out the next task immediately.
+     */
+    private suspend fun cycle(): Boolean {
         val base = prefs.gmwebUrl.trimEnd('/')
         if (base.isBlank()) {
             // No GMweb configured — idle quietly; the LAN/cloud features still work.
             delay(30_000)
-            return
+            return false
         }
         _stateFlow.value = State.POLLING
-        val task = pull(base) ?: return // long-poll returned empty
+        val task = pull(base) ?: return false // long-poll returned empty
 
         _stateFlow.value = State.DELIVERING
         val requiresValidation = task.meta?.requiresValidation == true
@@ -529,7 +548,7 @@ class OutboxPoller(
             trace("SUBSCRIPTION_REJECTED", task, mapOf("reason" to task.subscriptionError))
             onLog("🚫 Rejected " + task.requestId + " (" + task.subscriptionError + ")")
             ackForTask(task, EveSmsQueue.OUTCOME_FAILED, task.subscriptionError)
-            return
+            return true
         }
         if (task.subscriptionId != null) {
             trace("SUBSCRIPTION_REQUESTED", task, mapOf("subscriptionId" to task.subscriptionId))
@@ -548,7 +567,7 @@ class OutboxPoller(
                     )
                     ackForTask(task, EveSmsQueue.OUTCOME_SUPERSEDED, early.reason)
                     onLog("🚫 Superseded at pull time: " + task.requestId)
-                    return
+                    return true
                 }
                 is EveSmsQueue.ValidationDecision.Unavailable -> {
                     trace(
@@ -614,7 +633,7 @@ class OutboxPoller(
             ackForTask(task, EveSmsQueue.OUTCOME_FAILED, EveSmsQueue.REASON_DEVICE_SEND_FAILED)
             ackTracker.forget(task.requestId)
             onLog("⌛ Timed out waiting for " + task.requestId)
-            return
+            return true
         }
 
         // The single ACK path — also covers a record that resolved locally
@@ -629,6 +648,7 @@ class OutboxPoller(
             Drain.DEFERRED -> onLog("⏳ Validation unavailable — deferred locally, still retrying: " + task.requestId)
             Drain.TIMEOUT -> Unit // handled above
         }
+        return true
     }
 
     private suspend fun pull(base: String): Task? {
