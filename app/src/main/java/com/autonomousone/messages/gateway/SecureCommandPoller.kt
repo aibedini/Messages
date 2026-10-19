@@ -854,7 +854,10 @@ class SecureCommandPoller(
         // The durable event must exist BEFORE the command is completed: GMweb learns the read state
         // from this event, so completing first would be a claim the phone cannot back up.
         when (val outcome = com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
-            .applyMarkThreadRead(mapping.threadId)
+            .applyMarkThreadRead(
+                mapping.threadId,
+                com.autonomousone.messages.messaging.ReadCause.REMOTE_MARK_READ
+            )
         ) {
             is com.autonomousone.messages.data.TelephonySyncCoordinator.ThreadReadOutcome.Published -> Unit
             is com.autonomousone.messages.data.TelephonySyncCoordinator.ThreadReadOutcome.NotPublished ->

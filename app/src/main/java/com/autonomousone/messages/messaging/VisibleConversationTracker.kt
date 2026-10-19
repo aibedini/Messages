@@ -40,7 +40,22 @@ enum class ReadCause {
     USER_OPEN_RESUMED,
     USER_MARK_READ,
     REMOTE_MARK_READ,
-    INCOMING_WHILE_VISIBLE
+    INCOMING_WHILE_VISIBLE,
+
+    /** The provider's READ column changed and was mirrored in. */
+    PROVIDER_SYNC,
+
+    /** A notification action, as opposed to an in-app mark-read. */
+    NOTIFICATION_ACTION,
+
+    /** Home's "mark all read" action. */
+    MARK_ALL,
+
+    /** A projection repair corrected the stored count. */
+    REPAIR,
+
+    /** A message arrived unread; provenance for the unread state, not a read decision. */
+    INCOMING_UNREAD
 }
 
 /** Why a read was NOT performed. Recorded, so "it stayed unread" is explainable. */

@@ -136,7 +136,24 @@ data class MessageEntity(
      * turning a confirmed delivery into "unknown" with nothing to show for it.
      */
     @ColumnInfo(defaultValue = "0")
-    val deliveryEvidenceRank: Int = 0
+    val deliveryEvidenceRank: Int = 0,
+    /**
+     * Epoch millis at which [read] last changed, or 0 when the change predates provenance.
+     *
+     * Display-only provenance: it answers "when did this become read/unread?", not "was it read?".
+     * The read flag remains the authority; this column may be absent on old rows and is never used
+     * to derive delivery or routing state.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val readStateChangedAt: Long = 0L,
+    /**
+     * The [com.autonomousone.messages.messaging.ReadCause] name for the last read-state change, or
+     * null on rows that predate provenance.
+     *
+     * Stored as a name for the same reason the send verdict is: the reason must survive a restart
+     * and a locale change, and translation belongs at render time.
+     */
+    val readStateCause: String? = null
 ) {
     companion object {
         const val SOURCE_SMS = "sms"

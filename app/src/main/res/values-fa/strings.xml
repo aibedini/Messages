@@ -172,6 +172,20 @@
     <string name="sim_number_permission_missing">دسترسی به شماره تلفن را بده تا شماره هر خط نمایش داده شود. فهرست سیم‌کارت‌ها بدون آن هم کار می‌کند.</string>
     <string name="sim_number_permission_grant">اجازه دسترسی به شماره</string>
 
+    <!-- جزئیات پیام: منشأ خوانده‌شدن -->
+    <string name="details_read_at">خوانده‌شده در</string>
+    <string name="details_unread_since">خوانده‌نشده از</string>
+    <string name="details_read_cause">علت خوانده‌شدن</string>
+    <string name="read_cause_user_open">باز کردن گفتگو</string>
+    <string name="read_cause_user_mark">علامت‌زدن به‌عنوان خوانده‌شده</string>
+    <string name="read_cause_remote">خوانده‌شدن از GMweb</string>
+    <string name="read_cause_incoming_visible">رسیدن پیام وقتی گفتگو باز بود</string>
+    <string name="read_cause_provider">همگام‌سازی با provider</string>
+    <string name="read_cause_notification">اکشن اعلان</string>
+    <string name="read_cause_mark_all">خواندن همه</string>
+    <string name="read_cause_repair">ترمیم projection</string>
+    <string name="read_cause_incoming_unread">رسیدن به‌صورت خوانده‌نشده</string>
+
     <!-- ارسال زمان‌بندی‌شده -->
     <string name="sched_dialog_title">ارسال در زمان مشخص</string>
     <string name="sched_dialog_body">این پیام به‌طور خودکار در زمان انتخابی ارسال می‌شود، حتی اگر برنامه بسته باشد.</string>

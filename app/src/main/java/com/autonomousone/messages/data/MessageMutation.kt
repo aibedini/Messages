@@ -1,5 +1,7 @@
 package com.autonomousone.messages.data
 
+import com.autonomousone.messages.messaging.ReadCause
+
 /**
  * Identity of a message in the app's read model.
  * Composite key mirrors MessageEntity's primary key (source, providerId).
@@ -45,7 +47,9 @@ sealed interface MessageMutation {
      */
     data class MarkThreadRead(
         val threadId: Long,
-        val upToProviderId: Long? = null
+        val upToProviderId: Long? = null,
+        /** Why this read happened; persisted as read provenance on every affected message. */
+        val cause: ReadCause
     ) : MessageMutation
 
     /** Delete all messages in a thread. */

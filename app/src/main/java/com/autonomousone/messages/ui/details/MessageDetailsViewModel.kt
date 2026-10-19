@@ -46,6 +46,7 @@ class MessageDetailsViewModel(
             loaded = false, missing = false, isOutgoing = false,
             body = body, recipient = recipient, sender = sender, createdAt = 0L,
             state = null, headline = "", steps = emptyList(), canRetry = false, duplicateRisk = false,
+            read = false, readStateChangedAt = null, readStateCause = null,
             sentWithLabel = null, sentSlotIndex = null, simEvidenceConflict = false, partCount = null,
             transportState = null, sentResultCode = null, radioErrorCode = null, failureCode = null,
             deliveryResultCode = null, deliveryEvidence = null, deliveryTpStatus = null,

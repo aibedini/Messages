@@ -44,7 +44,11 @@ class MarkConversationReadUseCaseTest {
         val threads = mutableListOf<Long>()
         val horizons = mutableListOf<Long?>()
 
-        override suspend fun markThreadReadLocally(threadId: Long, upToProviderId: Long?) {
+        override suspend fun markThreadReadLocally(
+            threadId: Long,
+            upToProviderId: Long?,
+            cause: ReadCause
+        ) {
             order += "local:$threadId"
             applied = true
             threads += threadId

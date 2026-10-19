@@ -67,6 +67,11 @@ data class MessageDetailsUiState(
     val sender: String,
     val createdAt: Long,
 
+    // ── read provenance (display only; read itself is unchanged) ──
+    val read: Boolean,
+    val readStateChangedAt: Long?,
+    val readStateCause: String?,
+
     // ── the two-stage status ──
     val state: SmsUiState?,
     val headline: String,
@@ -175,6 +180,9 @@ data class MessageDetailsUiState(
                 recipient = recipient,
                 sender = sender,
                 createdAt = evidence.date,
+                read = evidence.read,
+                readStateChangedAt = evidence.readStateChangedAt.takeIf { it > 0 },
+                readStateCause = evidence.readStateCause,
                 state = uiState,
                 headline = headlineFor(uiState, isOutgoing),
                 steps = stepsFor(uiState, isOutgoing, submittedAt, evidence),
@@ -348,6 +356,9 @@ data class MessageDetailsUiState(
             recipient = recipient,
             sender = sender,
             createdAt = 0L,
+            read = false,
+            readStateChangedAt = null,
+            readStateCause = null,
             state = null,
             headline = "",
             steps = emptyList(),
