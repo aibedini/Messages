@@ -318,7 +318,14 @@ data class GatewayHealthSnapshot(
     val wakeSource: String = "POLLING",
     /** Set only when an explicitly chosen mechanism was unavailable and polling took over. */
     val wakeFellBackFrom: String? = null,
-    val wakeUnavailable: String? = null
+    val wakeUnavailable: String? = null,
+    // STAGE-4 §5: WebSocket state, counts and enums only.
+    val wakeSocketState: String? = null,
+    val wakeActivity: String? = null,
+    val wakeActivityReason: String? = null,
+    val wakePinning: String? = null,
+    val wakeReconnects: Int = 0,
+    val wakeSuppressedFrames: Long = 0L
 )
 
 /**

@@ -253,6 +253,20 @@ fun GatewayHealthCard(
             )
             // ADR-008: the mechanism that is actually running, and whether a chosen one fell back.
             // A silent degrade to polling is exactly what this row exists to make visible.
+            val wakeSocketDetail = health.wakeSocketState?.let { socketState ->
+                buildString {
+                    append("socket ").append(socketState)
+                    health.wakeActivity?.let { append(" · ").append(it) }
+                    health.wakeActivityReason?.let { append(" (").append(it).append(")") }
+                    health.wakePinning?.let { append(" · pins ").append(it) }
+                    if (health.wakeReconnects > 0) {
+                        append(" · reconnects ").append(health.wakeReconnects)
+                    }
+                    if (health.wakeSuppressedFrames > 0) {
+                        append(" · suppressed ").append(health.wakeSuppressedFrames)
+                    }
+                }
+            }
             DimensionRow(
                 label = "Wake source",
                 detail = when (val fellBackFrom = health.wakeFellBackFrom) {
@@ -260,7 +274,10 @@ fun GatewayHealthCard(
                     else -> health.wakeSource + " · fell back from " + fellBackFrom +
                         (health.wakeUnavailable?.let { " (" + it + ")" } ?: "")
                 },
-                tone = if (health.wakeFellBackFrom != null) HealthTone.WARN else HealthTone.IDLE
+                supporting = wakeSocketDetail,
+                tone = if (health.wakeFellBackFrom != null ||
+                    health.wakePinning == "MISMATCH"
+                ) HealthTone.WARN else HealthTone.IDLE
             )
 
             if (health.eventUpload.deadLetter > 0) {

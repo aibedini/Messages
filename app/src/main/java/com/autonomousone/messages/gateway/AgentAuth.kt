@@ -29,6 +29,9 @@ import java.util.concurrent.atomic.AtomicLong
  */
 object AgentAuth {
 
+    /** The two headers every signed call carries, produced independently of the client. */
+    internal data class AgentAuthHeaders(val agentAuth: String, val timestamp: Long)
+
     private const val TAG = "AGENT_AUTH"
     private const val REPLAY_WINDOW_MS = 90_000L
     private val lastTimestamp = AtomicLong(0L)
@@ -65,6 +68,32 @@ object AgentAuth {
     ): String = "$method\n$path\n${sha256Hex(bodyBytes ?: ByteArray(0))}\nX-AGENT-TS:$timestamp\n"
 
     /**
+     * The signed headers for one request, independent of the HTTP client.
+     *
+     * Stage 4's WebSocket upgrade uses OkHttp, which cannot hand this object an `HttpURLConnection`.
+     * The signature path is therefore split out rather than reimplemented: the canonical string,
+     * the Keystore key and the fail-closed rule stay in one place. Returns null when signing is
+     * impossible; the caller MUST abort the request rather than send it unsigned.
+     */
+    internal fun signedHeaders(
+        deviceId: String,
+        path: String,
+        method: String,
+        bodyBytes: ByteArray?,
+    ): AgentAuthHeaders? {
+        val ts = freshTimestamp()
+        val canonical = canonicalString(method, path, bodyBytes, ts)
+        val signature = try {
+            DeviceIdentity.signWithOperationalKey(canonical.toByteArray(Charsets.UTF_8))
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "signing failed — aborting request (fail closed)", e)
+            return null
+        }
+        val b64 = android.util.Base64.encodeToString(signature, android.util.Base64.NO_WRAP)
+        return AgentAuthHeaders(agentAuth = "$deviceId:$b64", timestamp = ts)
+    }
+
+    /**
      * Adds X-Agent-Auth + X-Agent-TS headers to [conn]. Returns false (and
      * leaves the request unsigned) when the Keystore is unavailable — the
      * caller must then abort the request instead of sending it in the clear.
@@ -76,17 +105,9 @@ object AgentAuth {
         method: String,
         bodyBytes: ByteArray?
     ): Boolean {
-        val ts = freshTimestamp()
-        val canonical = canonicalString(method, path, bodyBytes, ts)
-        val signature = try {
-            DeviceIdentity.signWithOperationalKey(canonical.toByteArray(Charsets.UTF_8))
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "signing failed — aborting request (fail closed)", e)
-            return false
-        }
-        val b64 = android.util.Base64.encodeToString(signature, android.util.Base64.NO_WRAP)
-        conn.setRequestProperty("X-Agent-Auth", "$deviceId:$b64")
-        conn.setRequestProperty("X-Agent-TS", ts.toString())
+        val headers = signedHeaders(deviceId, path, method, bodyBytes) ?: return false
+        conn.setRequestProperty("X-Agent-Auth", headers.agentAuth)
+        conn.setRequestProperty("X-Agent-TS", headers.timestamp.toString())
         return true
     }
 

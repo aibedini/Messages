@@ -114,6 +114,14 @@ object GatewayHealthRecorder {
     private var wakeFellBackFrom: String? = null
     private var wakeUnavailable: String? = null
 
+    // STAGE-4 §5: WebSocket detail. Counts, enums and timestamps only — no ids, no recipients.
+    private var wakeSocketState: String? = null
+    private var wakeActivity: String? = null
+    private var wakeActivityReason: String? = null
+    private var wakePinning: String? = null
+    private var wakeReconnects: Int = 0
+    private var wakeSuppressedFrames: Long = 0L
+
     // ── Local send queue ───────────────────────────────────────────────────
 
     private var eveQueue: EveQueueHealth = EveQueueHealth()
@@ -151,6 +159,28 @@ object GatewayHealthRecorder {
     fun setWakeFallback(from: String?, reason: String?) = mutate {
         wakeFellBackFrom = from
         wakeUnavailable = reason
+    }
+
+    /**
+     * Records the WebSocket dimension (STAGE-4 §5).
+     *
+     * Names and counts only: the health model must never become a second place where an id or a
+     * recipient could leak into a diagnostic export.
+     */
+    fun setWakeSocket(
+        state: String?,
+        activity: String?,
+        activityReason: String?,
+        pinning: String?,
+        reconnects: Int,
+        suppressedFrames: Long,
+    ) = mutate {
+        wakeSocketState = state
+        wakeActivity = activity
+        wakeActivityReason = activityReason
+        wakePinning = pinning
+        wakeReconnects = reconnects
+        wakeSuppressedFrames = suppressedFrames
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -461,7 +491,13 @@ object GatewayHealthRecorder {
                 eveQueue = eveQueue,
                 wakeSource = wakeSource,
                 wakeFellBackFrom = wakeFellBackFrom,
-                wakeUnavailable = wakeUnavailable
+                wakeUnavailable = wakeUnavailable,
+                wakeSocketState = wakeSocketState,
+                wakeActivity = wakeActivity,
+                wakeActivityReason = wakeActivityReason,
+                wakePinning = wakePinning,
+                wakeReconnects = wakeReconnects,
+                wakeSuppressedFrames = wakeSuppressedFrames
             )
         }
 
@@ -533,6 +569,12 @@ object GatewayHealthRecorder {
             wakeSource = "POLLING"
             wakeFellBackFrom = null
             wakeUnavailable = null
+            wakeSocketState = null
+            wakeActivity = null
+            wakeActivityReason = null
+            wakePinning = null
+            wakeReconnects = 0
+            wakeSuppressedFrames = 0L
             // The lifecycle telemetry must be reset with everything else. Omitting it was a real
             // leak, caught by a test asserting "unmeasured": the recorder is a singleton, so one
             // test's generation stayed visible to the next and "never started" could never be true.

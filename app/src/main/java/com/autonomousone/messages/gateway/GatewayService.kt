@@ -16,16 +16,29 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.wake.AgentAuthWakeSigner
 import com.autonomousone.messages.gateway.wake.PollingWakeSource
+import com.autonomousone.messages.gateway.wake.SocketWakeConfig
+import com.autonomousone.messages.gateway.wake.SocketWakeSource
+import com.autonomousone.messages.gateway.wake.WakeActivitySignalSource
+import com.autonomousone.messages.gateway.wake.WakeActivitySignals
+import com.autonomousone.messages.gateway.wake.WakeHealth
+import com.autonomousone.messages.gateway.wake.WakeMode
+import com.autonomousone.messages.gateway.wake.WakeSocketEndpoint
+import com.autonomousone.messages.gateway.wake.WakeSocketState
+import com.autonomousone.messages.gateway.wake.WakeSourceId
 import com.autonomousone.messages.gateway.wake.WakeSourceSelector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 
 class GatewayService : Service() {
 
@@ -42,6 +55,15 @@ class GatewayService : Service() {
      */
     private lateinit var wakeResolution: WakeSourceSelector.Resolution
     private lateinit var pollingWakeSource: PollingWakeSource
+    /**
+     * STAGE-4: the WSS source, present only when the user explicitly selected SOCKET and a WSS
+     * endpoint can be derived from the configured origin. Null in AUTO and POLLING, which keeps
+     * every default install byte-identical to before this stage.
+     */
+    private var socketWakeSource: SocketWakeSource? = null
+
+    /** Newest message timestamp already stored by the sync path; feeds the ACTIVITY window. */
+    private val lastSmsAt = AtomicLong(0L)
     /** STAGE-2 §2.5: the shared 60 s tick every gateway maintenance subscriber rides. */
     private lateinit var gatewayTicker: GatewayTicker
     /** One-time guard: subscriber registration must not duplicate on every reconcile. */
@@ -68,6 +90,17 @@ class GatewayService : Service() {
         private const val CHANNEL_ID = "gateway_service_channel"
         private const val NOTIFICATION_ID = 2001
         private const val WATCHDOG_DELAY_MS = 15_000L
+
+        /**
+         * STAGE-4 deployment gate: GMweb does not implement `/gateway/wake` yet.
+         *
+         * While false, AUTO never chooses SOCKET, so `wakeMode = AUTO` (the default) resolves to
+         * POLLING and the gateway's behaviour is unchanged. An EXPLICIT `wakeMode = SOCKET` still
+         * tries the socket and falls back to polling, with the reason shown on the card — that is
+         * how the client can be tested against a server that has not deployed the endpoint.
+         * Flip to true only when the GMweb side ships.
+         */
+        private const val SERVER_WAKE_DEPLOYED = false
 
         /** Log tag for the start path, including refused foreground starts. */
         private const val TAG = "GatewayService"
@@ -258,18 +291,35 @@ class GatewayService : Service() {
         )
         liveCommandPoller = commandPoller
 
-        // ── ADR-008 wake seam (Stage 2) ──────────────────────────────────────
-        // Both capability flags are false because SOCKET and FCM do not exist yet, so AUTO and
-        // every explicit mode resolve to POLLING. The resolved mode and any fallback are recorded
-        // rather than inferred: a silent degrade is what this programme must not ship.
+        // ── ADR-008 wake seam (Stage 2) + SocketWakeSource (Stage 4) ─────────
+        // The socket is built ONLY for an explicit SOCKET choice. AUTO's ladder is gated by
+        // SERVER_WAKE_DEPLOYED=false, so the default install still resolves to POLLING and starts
+        // exactly the two pollers it started before this stage. The resolved mode and any fallback
+        // are recorded rather than inferred: a silent degrade is what this programme must not ship.
+        // Only an explicit SOCKET choice touches the socket configuration. In AUTO/POLLING this
+        // block is inert, so the default install keeps exactly its previous startup work.
+        val socketEndpoint = if (prefs.wakeMode == WakeMode.SOCKET) {
+            WakeSocketEndpoint.fromServerOrigin(prefs.gmwebServerOrigin)
+        } else {
+            null
+        }
+        val socketAvailable = socketEndpoint != null
         wakeResolution = WakeSourceSelector.resolve(
             WakeSourceSelector.Inputs(
                 configured = prefs.wakeMode,
                 fcmAvailable = false,
-                socketAvailable = false,
+                socketAvailable = socketAvailable,
+                socketAutoEligible = SERVER_WAKE_DEPLOYED,
             )
         )
         pollingWakeSource = PollingWakeSource(outboxPoller, commandPoller)
+        if (wakeResolution.chosen == WakeSourceId.SOCKET && socketEndpoint != null) {
+            // The ACTIVITY inputs are only needed by the socket; registering their producers in
+            // the default (AUTO → POLLING) path would be a new wake-up for no behaviour change.
+            AppForegroundTracker.install(application)
+            socketWakeSource = buildSocketWakeSource(socketEndpoint)
+            startMessageTimestampSampler()
+        }
         gatewayTicker = GatewayTicker(serviceScope)
         GatewayHealthRecorder.setWakeSourceActive(wakeResolution.chosen.name)
         GatewayHealthRecorder.setWakeFallback(
@@ -337,9 +387,10 @@ class GatewayService : Service() {
                 retryTrustPublisher = { trustPublisher.retryNow() },
                 startCommandPoller = { commandPoller.start() },
                 stopCommandPoller = { commandPoller.stop() },
-                // ADR-008: the wake seam. POLLING starts the same two pollers as the hooks above;
-                // `onWake` is what a socket/FCM source will call, wired to the existing retryNow()
-                // so the fetch side needs no new plumbing (STAGE-2 §2).
+                // ADR-008: the wake seam. The POLLING floor starts in every mode — it is the data
+                // path as well as the fallback — and SOCKET, when present, adds prompt wakes on top.
+                // `onWake` is wired to the existing retryNow(), so the fetch side needs no new
+                // plumbing (STAGE-2 §2).
                 startWakeSource = {
                     // STAGE-2 §2.5: first subscription is registered here because the supervisor is
                     // built by the get() call that owns this lambda. Registration order is dispatch
@@ -349,8 +400,10 @@ class GatewayService : Service() {
                         tickerSubscribed = true
                     }
                     pollingWakeSource.start { outboxPoller.retryNow() }
+                    socketWakeSource?.start { outboxPoller.retryNow() }
                 },
                 stopWakeSource = {
+                    socketWakeSource?.stop()
                     pollingWakeSource.stop()
                 },
                 // B0: the tick follows the supervisor LOOP (ensureLoop → shutdown), not the wake
@@ -358,7 +411,11 @@ class GatewayService : Service() {
                 // and the 60 s reconcile is that loop's self-healing net.
                 startMaintenanceTick = { gatewayTicker.start() },
                 stopMaintenanceTick = { gatewayTicker.stop() },
-                activeWakeSource = { wakeResolution.chosen },
+                // Never report SOCKET as active while the socket is closed/connecting: the card's
+                // job is to say which mechanism is actually delivering wakes right now.
+                activeWakeSource = {
+                    socketWakeSource?.currentSourceId() ?: wakeResolution.chosen
+                },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
                         .get(this).startGatewaySync()
@@ -430,6 +487,89 @@ class GatewayService : Service() {
             }
         }
         createNotificationChannel()
+    }
+
+    /** STAGE-4: the one place the WSS source is constructed, so its wiring is auditable. */
+    private fun buildSocketWakeSource(endpoint: WakeSocketEndpoint): SocketWakeSource {
+        val config = SocketWakeConfig(
+            endpoint = endpoint,
+            deviceId = prefs.agentDeviceId(this),
+            pins = prefs.wakePins,
+        )
+        return SocketWakeSource(
+            config = config,
+            signer = AgentAuthWakeSigner,
+            // Polling is already running; this makes "fall back" an explicit, idempotent action
+            // rather than something the reader has to infer from the startup order.
+            startPollingFallback = { pollingWakeSource.start { outboxPoller.retryNow() } },
+            onHealth = ::recordSocketHealth,
+            activitySignals = WakeActivitySignalSource {
+                WakeActivitySignals(
+                    appForeground = AppForegroundTracker.isForeground,
+                    // Reuses timestamps the sync path already stores; this adds no tracking.
+                    lastMessageAt = lastSmsAt.get().takeIf { it > 0L },
+                    outboxPending = GatewayHealthRecorder.snapshot().eventUpload.pending > 0
+                )
+            },
+        )
+    }
+
+    /**
+     * Mirrors the socket's health into the ONE recorder, in names and counts.
+     *
+     * A closed/failed socket reports POLLING as the active source, with the chosen SOCKET and the
+     * reason beside it — never a silent degrade.
+     */
+    private fun recordSocketHealth(health: WakeHealth) {
+        GatewayHealthRecorder.setWakeSocket(
+            state = health.socketState.name,
+            activity = health.activity.name,
+            activityReason = health.activityReason.name,
+            pinning = health.pinning.name,
+            reconnects = health.reconnectCount,
+            suppressedFrames = health.suppressedWakes,
+        )
+        when {
+            health.socketState == WakeSocketState.OPEN -> {
+                GatewayHealthRecorder.setWakeSourceActive(WakeSourceId.SOCKET.name)
+                GatewayHealthRecorder.setWakeFallback(from = null, reason = null)
+            }
+
+            health.unavailable != null -> {
+                GatewayHealthRecorder.setWakeSourceActive(WakeSourceId.POLLING.name)
+                GatewayHealthRecorder.setWakeFallback(
+                    from = WakeSourceId.SOCKET.name,
+                    reason = health.unavailable.name,
+                )
+            }
+
+            else -> {
+                GatewayHealthRecorder.setWakeSourceActive(
+                    socketWakeSource?.currentSourceId()?.name ?: WakeSourceId.POLLING.name
+                )
+            }
+        }
+    }
+
+    /**
+     * Samples the newest stored SMS timestamp every 30 s for the ACTIVITY window.
+     *
+     * This does not create a new event stream: it reads the timestamp the sync path already wrote,
+     * and a 30 s query is far cheaper than the socket it may keep open.
+     */
+    private fun startMessageTimestampSampler() {
+        serviceScope.launch {
+            val dao = com.autonomousone.messages.data.MessagesDatabase
+                .get(this@GatewayService).messageDao()
+            while (isActive) {
+                runCatching {
+                    dao.newestDateFor(com.autonomousone.messages.data.MessageEntity.SOURCE_SMS)
+                }.onSuccess { newest ->
+                    if (newest != null && newest > 0L) lastSmsAt.set(newest)
+                }
+                delay(30_000L)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

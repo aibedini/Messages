@@ -22,10 +22,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -53,6 +55,9 @@ import androidx.navigation.NavController
 import androidx.core.content.FileProvider
 import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.R
+import com.autonomousone.messages.gateway.GatewayPreferences
+import com.autonomousone.messages.gateway.wake.WakeCertificatePins
+import com.autonomousone.messages.gateway.wake.WakeMode
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.viewmodel.DataToolsViewModel
 import com.autonomousone.messages.diagnostics.DiagnosticsPreferences
@@ -760,12 +765,103 @@ fun SettingsScreen(
                 // which is exactly the value that could disagree with the one in use. It now
                 // reports the single configured origin, or says it is not configured.
                 val gatewayContext = LocalContext.current
-                val origin = com.autonomousone.messages.gateway.GatewayPreferences(gatewayContext)
-                    .gmwebServerOrigin
+                val gatewayPrefs = GatewayPreferences(gatewayContext)
+                val origin = gatewayPrefs.gmwebServerOrigin
                 InfoRow(
                     label = "GMweb server",
                     value = origin.ifBlank { "Not configured" }
                 )
+
+                // ADR-008 / STAGE-4: the same preference that was already resolved at gateway
+                // start is exposed here. AUTO stays on polling until GMweb deploys /gateway/wake;
+                // an explicit SOCKET choice tries the socket and falls back, with the reason shown
+                // on the diagnostics card. The choice is read when the gateway service starts.
+                var wakeMode by remember { mutableStateOf(gatewayPrefs.wakeMode) }
+                var pinCurrent by remember { mutableStateOf(gatewayPrefs.wakePinCurrent) }
+                var pinNext by remember { mutableStateOf(gatewayPrefs.wakePinNext) }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Wake source",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "How GMweb tells this phone that work is waiting.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(WakeMode.AUTO, WakeMode.POLLING, WakeMode.SOCKET).forEach { mode ->
+                        FilterChip(
+                            selected = wakeMode == mode,
+                            onClick = {
+                                wakeMode = mode
+                                gatewayPrefs.wakeMode = mode
+                                Toast.makeText(
+                                    gatewayContext,
+                                    "Wake mode: ${mode.name} — applies when the gateway restarts",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            label = { Text(mode.name) }
+                        )
+                    }
+                }
+                Text(
+                    text = "AUTO (default) uses polling. SOCKET is for a GMweb server that has " +
+                        "deployed /gateway/wake; until then it falls back to polling and says why.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Certificate pins (optional)",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Two sha256/… pins so certificate rotation cannot brick the bridge. " +
+                        "Empty means unpinned, which the diagnostics card reports.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                val pinsValid = !WakeCertificatePins(pinCurrent, pinNext).invalidInput
+                OutlinedTextField(
+                    value = pinCurrent,
+                    onValueChange = { pinCurrent = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Current pin") },
+                    placeholder = { Text("sha256/…") },
+                    isError = !pinsValid,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pinNext,
+                    onValueChange = { pinNext = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Next pin") },
+                    placeholder = { Text("sha256/…") },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        gatewayPrefs.wakePinCurrent = pinCurrent
+                        gatewayPrefs.wakePinNext = pinNext
+                        Toast.makeText(
+                            gatewayContext,
+                            "Pins saved — applies when the gateway restarts",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    enabled = pinsValid
+                ) {
+                    Text("Save pins")
+                }
 
                 // Stage 1.3: the main-thread stall watchdog is a developer diagnostic, not something
                 // every release build should pay for. It stays available here, and the switch applies
