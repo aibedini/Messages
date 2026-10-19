@@ -15,6 +15,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonomousone.messages.MainActivity
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.wake.PollingWakeSource
+import com.autonomousone.messages.gateway.wake.WakeSourceSelector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +36,16 @@ class GatewayService : Service() {
     private lateinit var outboxPoller: OutboxPoller
     private lateinit var eventUploader: EventUploader
     private lateinit var commandPoller: SecureCommandPoller
+    /**
+     * ADR-008 wake seam (Stage 2). [wakeResolution] is the selector's answer — POLLING today,
+     * because no other source is implemented — and [pollingWakeSource] is the only implementation.
+     */
+    private lateinit var wakeResolution: WakeSourceSelector.Resolution
+    private lateinit var pollingWakeSource: PollingWakeSource
+    /** STAGE-2 §2.5: the shared 60 s tick every gateway maintenance subscriber rides. */
+    private lateinit var gatewayTicker: GatewayTicker
+    /** One-time guard: subscriber registration must not duplicate on every reconcile. */
+    private var tickerSubscribed = false
     private lateinit var trustPublisher: TrustStatementPublisher
     private lateinit var deviceTelemetry: DeviceTelemetry
     private lateinit var subscriptionMonitor: SubscriptionChangeMonitor
@@ -244,6 +257,25 @@ class GatewayService : Service() {
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
         liveCommandPoller = commandPoller
+
+        // ── ADR-008 wake seam (Stage 2) ──────────────────────────────────────
+        // Both capability flags are false because SOCKET and FCM do not exist yet, so AUTO and
+        // every explicit mode resolve to POLLING. The resolved mode and any fallback are recorded
+        // rather than inferred: a silent degrade is what this programme must not ship.
+        wakeResolution = WakeSourceSelector.resolve(
+            WakeSourceSelector.Inputs(
+                configured = prefs.wakeMode,
+                fcmAvailable = false,
+                socketAvailable = false,
+            )
+        )
+        pollingWakeSource = PollingWakeSource(outboxPoller, commandPoller)
+        gatewayTicker = GatewayTicker(serviceScope)
+        GatewayHealthRecorder.setWakeSourceActive(wakeResolution.chosen.name)
+        GatewayHealthRecorder.setWakeFallback(
+            from = wakeResolution.fellBackFrom?.name,
+            reason = wakeResolution.unavailable?.name,
+        )
         // LINKED DEVICE CONTROL pt2: publish signed trust statements
         // (DEVICE_APPROVED/CAPABILITIES_CHANGED/REVOKED) until ACKed.
         trustPublisher = TrustStatementPublisher(
@@ -305,6 +337,28 @@ class GatewayService : Service() {
                 retryTrustPublisher = { trustPublisher.retryNow() },
                 startCommandPoller = { commandPoller.start() },
                 stopCommandPoller = { commandPoller.stop() },
+                // ADR-008: the wake seam. POLLING starts the same two pollers as the hooks above;
+                // `onWake` is what a socket/FCM source will call, wired to the existing retryNow()
+                // so the fetch side needs no new plumbing (STAGE-2 §2).
+                startWakeSource = {
+                    // STAGE-2 §2.5: first subscription is registered here because the supervisor is
+                    // built by the get() call that owns this lambda. Registration order is dispatch
+                    // order, and reconcile MUST be last: it starts/stops the other subscribers.
+                    if (!tickerSubscribed) {
+                        gatewayTicker.subscribe("connection-supervisor") { supervisor.reconcileNow() }
+                        tickerSubscribed = true
+                    }
+                    pollingWakeSource.start { outboxPoller.retryNow() }
+                },
+                stopWakeSource = {
+                    pollingWakeSource.stop()
+                },
+                // B0: the tick follows the supervisor LOOP (ensureLoop → shutdown), not the wake
+                // source. Disabling the gateway stops the wake source but not the supervisor loop,
+                // and the 60 s reconcile is that loop's self-healing net.
+                startMaintenanceTick = { gatewayTicker.start() },
+                stopMaintenanceTick = { gatewayTicker.stop() },
+                activeWakeSource = { wakeResolution.chosen },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
                         .get(this).startGatewaySync()

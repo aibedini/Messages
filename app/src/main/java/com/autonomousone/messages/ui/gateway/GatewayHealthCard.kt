@@ -251,6 +251,17 @@ fun GatewayHealthCard(
                 detail = GatewayHealthPresentation.queueSummary(health.eveQueue),
                 tone = if (health.eveQueue.idle) HealthTone.IDLE else HealthTone.NEUTRAL
             )
+            // ADR-008: the mechanism that is actually running, and whether a chosen one fell back.
+            // A silent degrade to polling is exactly what this row exists to make visible.
+            DimensionRow(
+                label = "Wake source",
+                detail = when (val fellBackFrom = health.wakeFellBackFrom) {
+                    null -> health.wakeSource
+                    else -> health.wakeSource + " · fell back from " + fellBackFrom +
+                        (health.wakeUnavailable?.let { " (" + it + ")" } ?: "")
+                },
+                tone = if (health.wakeFellBackFrom != null) HealthTone.WARN else HealthTone.IDLE
+            )
 
             if (health.eventUpload.deadLetter > 0) {
                 Spacer(modifier = Modifier.height(8.dp))

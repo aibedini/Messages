@@ -159,7 +159,29 @@ class ConnectionSupervisor private constructor(
          * question the 48-hour window structurally cannot ask.
          */
         val verifyMirror: () -> Unit = {},
-        val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL
+        val deliveryIntake: DeliveryIntake = DeliveryIntake.LEGACY_PULL,
+        /**
+         * ADR-008 wake seam. Starts the selected wake source; in Stage 2 that is always POLLING,
+         * which starts the same two pollers the hooks above start.
+         *
+         * Kept SEPARATE from [startPoller] on purpose: the poller hook is also used by the
+         * stall-recovery path, which must never restart the command channel as a side effect.
+         */
+        val startWakeSource: () -> Unit = {},
+        val stopWakeSource: () -> Unit = {},
+        /** Which mechanism is actually running — recorded for the diagnostic card, never inferred. */
+        val activeWakeSource: () -> com.autonomousone.messages.gateway.wake.WakeSourceId = {
+            com.autonomousone.messages.gateway.wake.WakeSourceId.POLLING
+        },
+        /**
+         * STAGE-2 §2.5 B0: the maintenance tick's lifetime must match [ensureLoop]'s job.
+         *
+         * The old 60 s reconcile loop lived inside that job and kept running while the gateway was
+         * disabled or offline — it is the self-healing net. Starting the ticker from the wake seam
+         * instead stopped it on disable, so the supervisor could lose its periodic reconcile.
+         */
+        val startMaintenanceTick: () -> Unit = {},
+        val stopMaintenanceTick: () -> Unit = {}
     )
 
     enum class State {
@@ -305,6 +327,8 @@ class ConnectionSupervisor private constructor(
     fun shutdown() {
         loopJob?.cancel()
         loopJob = null
+        // B0: the tick is owned by loopJob, so it dies with it.
+        components.stopMaintenanceTick()
         server?.stop()
         server = null
         boundIp = null
@@ -313,6 +337,9 @@ class ConnectionSupervisor private constructor(
         components.stopEventUploader()
         components.stopTrustPublisher()
         components.stopCommandPoller()
+        // ADR-008: the wake source is stopped last, so it reports "stopped" only after every
+        // dependent poller is already down.
+        components.stopWakeSource()
         _stateFlow.value = State.DISABLED
         synchronized(this) { instance = null }
     }
@@ -321,6 +348,9 @@ class ConnectionSupervisor private constructor(
 
     private fun ensureLoop() {
         if (loopJob?.isActive == true) return
+        // B0: the tick is owned by the loop's lifetime, exactly like the 60 s reconcile loop it
+        // replaced — not by the wake source, which is stopped when the gateway is disabled.
+        components.startMaintenanceTick()
         loopJob = scope.launch {
             // Debounced: rapid connectivity changes (WiFi toggle, cell handoff)
             // collapse into one reconcile after 3 seconds of stability.
@@ -330,7 +360,9 @@ class ConnectionSupervisor private constructor(
             } }
             // A LAN IPv4 change is what a network switch looks like locally;
             // the compare against boundIp inside reconcile() IS the rebind.
-            launch { while (isActive) { delay(60_000); reconcileNow() } }
+            // STAGE-2 §2.5: the 60 s reconcile rides GatewayTicker now (registered LAST, so it
+            // observes the other subscribers' post-tick state). The nudge channel below is
+            // unchanged and still drives immediate reconciles.
             for (nudge in reconciles) {
                 try {
                     reconcile()
@@ -385,6 +417,7 @@ class ConnectionSupervisor private constructor(
                 components.stopEventUploader()
                 components.stopTrustPublisher()
                 components.stopCommandPoller()
+                components.stopWakeSource()
                 server?.stop()
                 server = null
                 boundIp = null
@@ -468,6 +501,10 @@ class ConnectionSupervisor private constructor(
                 // intake owner for a remote send, while read and other non-send commands are served.
                 components.startCommandPoller()
                 if (prefs.gmwebServerOrigin.isNotBlank()) {
+                    // ADR-008: the wake seam starts the selected source (POLLING today, which starts
+                    // the same two pollers). The recovery decision below still owns restarting a
+                    // dead or stalled PULL loop, and still touches only that loop.
+                    components.startWakeSource()
                     // Requirement 10: bounded controlled recovery. `startPoller` alone cannot fix a
                     // loop that is ACTIVE and silent — an active job is not proof of a live bridge —
                     // so a stalled one is replaced. The DECISION comes from the tested rule rather
@@ -551,6 +588,9 @@ class ConnectionSupervisor private constructor(
     private fun publishHealthContext() {
         GatewayHealthRecorder.setDesired(desiredEnabled && prefs.hasGatewayConsent)
         GatewayHealthRecorder.setEndpointUrl(prefs.gmwebServerOrigin)
+        // ADR-008: which wake mechanism is live. Recorded from the running selection, not from the
+        // stored preference — the two differ exactly when a chosen mode could not run.
+        GatewayHealthRecorder.setWakeSourceActive(components.activeWakeSource().name)
         GatewayHealthRecorder.onNetwork(
             validated = networkMonitor.isOnline(),
             transport = networkMonitor.transportLabel()

@@ -100,6 +100,20 @@ object GatewayHealthRecorder {
     private var lastAckFailure: GatewayFailureKind? = null
     private var lastAckFailureDetail: String? = null
 
+    // ── Wake source (ADR-008) ──────────────────────────────────────────────
+
+    /**
+     * The mechanism that is ACTUALLY running.
+     *
+     * Recorded from the selector's resolution, never re-derived from the preference: the two differ
+     * exactly when a chosen mode could not run, and that difference is what the card must show.
+     */
+    private var wakeSource: String = "POLLING"
+
+    /** Set only when an explicitly chosen mechanism was unavailable and polling took over. */
+    private var wakeFellBackFrom: String? = null
+    private var wakeUnavailable: String? = null
+
     // ── Local send queue ───────────────────────────────────────────────────
 
     private var eveQueue: EveQueueHealth = EveQueueHealth()
@@ -121,6 +135,23 @@ object GatewayHealthRecorder {
     }
 
     fun currentEndpoint(): GatewayEndpoint? = synchronized(lock) { endpoint }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Wake source (ADR-008)
+    // ════════════════════════════════════════════════════════════════════════
+
+    fun setWakeSourceActive(id: String) = mutate { wakeSource = id }
+
+    /**
+     * Records a fallback: the mechanism the user selected and why it could not run.
+     *
+     * A silent degrade to polling is the failure this field exists to prevent, so it is written even
+     * when the chosen mode still resolves to polling on every reconcile.
+     */
+    fun setWakeFallback(from: String?, reason: String?) = mutate {
+        wakeFellBackFrom = from
+        wakeUnavailable = reason
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // Network
@@ -427,7 +458,10 @@ object GatewayHealthRecorder {
                     lastAckFailure = lastAckFailure,
                     lastAckFailureSafeDetail = lastAckFailureDetail
                 ),
-                eveQueue = eveQueue
+                eveQueue = eveQueue,
+                wakeSource = wakeSource,
+                wakeFellBackFrom = wakeFellBackFrom,
+                wakeUnavailable = wakeUnavailable
             )
         }
 
@@ -496,6 +530,9 @@ object GatewayHealthRecorder {
             lastAckFailure = null
             lastAckFailureDetail = null
             eveQueue = EveQueueHealth()
+            wakeSource = "POLLING"
+            wakeFellBackFrom = null
+            wakeUnavailable = null
             // The lifecycle telemetry must be reset with everything else. Omitting it was a real
             // leak, caught by a test asserting "unmeasured": the recorder is a singleton, so one
             // test's generation stayed visible to the next and "never started" could never be true.

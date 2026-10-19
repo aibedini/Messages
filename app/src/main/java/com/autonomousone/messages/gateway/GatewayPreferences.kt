@@ -3,6 +3,7 @@ package com.autonomousone.messages.gateway
 import android.content.Context
 import android.content.SharedPreferences
 import com.autonomousone.messages.BuildConfig
+import com.autonomousone.messages.gateway.wake.WakeMode
 import com.autonomousone.messages.utils.SecureStore
 import org.json.JSONArray
 
@@ -22,6 +23,9 @@ class GatewayPreferences(context: Context) {
         // ── LAN server keys ──
         private const val KEY_ENABLED = "gateway_enabled"
         private const val KEY_PORT = "gateway_port"
+
+        /** ADR-008 wake mechanism, stored by enum name: AUTO | POLLING | SOCKET | FCM. */
+        private const val KEY_WAKE_MODE = "gateway_wake_mode"
         private const val KEY_API_KEY = "gateway_api_key"
         private const val KEY_WEBHOOK_URL = "gateway_webhook_url"
         private const val KEY_WEBHOOK_SECRET = "gateway_webhook_secret"
@@ -96,6 +100,17 @@ class GatewayPreferences(context: Context) {
     var port: Int
         get() = prefs.getInt(KEY_PORT, DEFAULT_PORT)
         set(value) = prefs.edit().putInt(KEY_PORT, value).apply()
+
+    /**
+     * ADR-008: which wake mechanism the user selected (AUTO | POLLING | SOCKET | FCM).
+     *
+     * Default [WakeMode.AUTO]. With only POLLING implemented, AUTO resolves to POLLING, so the
+     * default behaviour is identical to before the abstraction existed. Anything unrecognised
+     * degrades to AUTO rather than pinning the device to a mechanism it cannot run.
+     */
+    var wakeMode: WakeMode
+        get() = WakeMode.parse(prefs.getString(KEY_WAKE_MODE, null))
+        set(value) = prefs.edit().putString(KEY_WAKE_MODE, value.name).apply()
 
     /**
      * Local REST API key. Encrypted at rest with the Android Keystore;
