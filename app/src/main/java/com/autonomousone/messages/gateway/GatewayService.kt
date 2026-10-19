@@ -15,6 +15,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonomousone.messages.MainActivity
+import com.autonomousone.messages.gateway.health.GatewayHealthRecorder
+import com.autonomousone.messages.gateway.wake.PollingWakeSource
+import com.autonomousone.messages.gateway.wake.WakeSourceSelector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +36,12 @@ class GatewayService : Service() {
     private lateinit var outboxPoller: OutboxPoller
     private lateinit var eventUploader: EventUploader
     private lateinit var commandPoller: SecureCommandPoller
+    /**
+     * ADR-008 wake seam (Stage 2). [wakeResolution] is the selector's answer — POLLING today,
+     * because no other source is implemented — and [pollingWakeSource] is the only implementation.
+     */
+    private lateinit var wakeResolution: WakeSourceSelector.Resolution
+    private lateinit var pollingWakeSource: PollingWakeSource
     private lateinit var trustPublisher: TrustStatementPublisher
     private lateinit var deviceTelemetry: DeviceTelemetry
     private lateinit var subscriptionMonitor: SubscriptionChangeMonitor
@@ -244,6 +253,24 @@ class GatewayService : Service() {
             onLog = { msg -> _logFlow.tryEmit(msg) }
         )
         liveCommandPoller = commandPoller
+
+        // ── ADR-008 wake seam (Stage 2) ──────────────────────────────────────
+        // Both capability flags are false because SOCKET and FCM do not exist yet, so AUTO and
+        // every explicit mode resolve to POLLING. The resolved mode and any fallback are recorded
+        // rather than inferred: a silent degrade is what this programme must not ship.
+        wakeResolution = WakeSourceSelector.resolve(
+            WakeSourceSelector.Inputs(
+                configured = prefs.wakeMode,
+                fcmAvailable = false,
+                socketAvailable = false,
+            )
+        )
+        pollingWakeSource = PollingWakeSource(outboxPoller, commandPoller)
+        GatewayHealthRecorder.setWakeSourceActive(wakeResolution.chosen.name)
+        GatewayHealthRecorder.setWakeFallback(
+            from = wakeResolution.fellBackFrom?.name,
+            reason = wakeResolution.unavailable?.name,
+        )
         // LINKED DEVICE CONTROL pt2: publish signed trust statements
         // (DEVICE_APPROVED/CAPABILITIES_CHANGED/REVOKED) until ACKed.
         trustPublisher = TrustStatementPublisher(
@@ -305,6 +332,12 @@ class GatewayService : Service() {
                 retryTrustPublisher = { trustPublisher.retryNow() },
                 startCommandPoller = { commandPoller.start() },
                 stopCommandPoller = { commandPoller.stop() },
+                // ADR-008: the wake seam. POLLING starts the same two pollers as the hooks above;
+                // `onWake` is what a socket/FCM source will call, wired to the existing retryNow()
+                // so the fetch side needs no new plumbing (STAGE-2 §2).
+                startWakeSource = { pollingWakeSource.start { outboxPoller.retryNow() } },
+                stopWakeSource = { pollingWakeSource.stop() },
+                activeWakeSource = { wakeResolution.chosen },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
                         .get(this).startGatewaySync()

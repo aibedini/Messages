@@ -308,7 +308,17 @@ data class GatewayHealthSnapshot(
     val pullBridge: PullBridgeHealth = PullBridgeHealth(),
     val eveQueue: EveQueueHealth = EveQueueHealth(),
     val overall: GatewayOverallHealth = GatewayOverallHealth.OFFLINE,
-    val conclusion: GatewayConclusion = GatewayConclusion.NONE
+    val conclusion: GatewayConclusion = GatewayConclusion.NONE,
+    /**
+     * ADR-008: the wake mechanism actually running. POLLING is the permanent floor.
+     *
+     * A plain name rather than the enum so the health model stays free of the wake package — the
+     * card only ever prints it.
+     */
+    val wakeSource: String = "POLLING",
+    /** Set only when an explicitly chosen mechanism was unavailable and polling took over. */
+    val wakeFellBackFrom: String? = null,
+    val wakeUnavailable: String? = null
 )
 
 /**
