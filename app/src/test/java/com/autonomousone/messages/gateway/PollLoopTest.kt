@@ -88,16 +88,26 @@ class PollLoopTest {
     fun `a reconnect against a live loop does not create a second one`() {
         // Requirement 5: repeated start/reconnect must never produce two concurrent long-poll jobs.
         val loop = PollLoop(scope)
-        var bodiesStarted = 0
+        // Atomic + an explicit wait: the body runs on Dispatchers.Default, so a loaded CI runner
+        // can reach the assertions below before the FIRST body has been scheduled at all. That
+        // made this test flaky (observed as "expected 1, was 0" on the Build Debug APK job) even
+        // though the lifecycle rule was correct. Wait for the one body to start, then prove the
+        // five reconnects add none.
+        val bodiesStarted = java.util.concurrent.atomic.AtomicInteger(0)
 
-        assertTrue(loop.start { bodiesStarted++; delay(1_000) })
+        assertTrue(loop.start { bodiesStarted.incrementAndGet(); delay(1_000) })
+        runBlocking {
+            withTimeoutOrNull(2_000L) {
+                while (bodiesStarted.get() == 0) delay(10)
+            }
+        }
         repeat(5) {
             assertFalse(
                 "an ACTIVE loop must make start() a no-op, not a second job",
-                loop.start { bodiesStarted++; delay(1_000) }
+                loop.start { bodiesStarted.incrementAndGet(); delay(1_000) }
             )
         }
-        assertEquals("exactly one loop body ran", 1, bodiesStarted)
+        assertEquals("exactly one loop body ran", 1, bodiesStarted.get())
         assertTrue(loop.isActive)
     }
 
