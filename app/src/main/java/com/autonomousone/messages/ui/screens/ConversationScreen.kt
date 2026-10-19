@@ -126,6 +126,8 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.autonomousone.messages.R
 import com.autonomousone.messages.event.SmsEventBus
+import com.autonomousone.messages.messaging.MessagingPreferences
+import com.autonomousone.messages.messaging.SimNumberFormat
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.repository.ContactRepository
@@ -915,6 +917,9 @@ fun ConversationScreen(
             // `preferredSimRef` — which the sender actually reads — was never written by this screen at
             // all. So the selector could show one line while the message left on another.
             val simManager = remember { com.autonomousone.messages.messaging.SimManager(context) }
+            val messagingPrefs = remember {
+                com.autonomousone.messages.messaging.MessagingPreferences(context)
+            }
             val conversationPrefs = remember {
                 com.autonomousone.messages.repository.ConversationPreferenceRepository(context)
             }
@@ -1167,6 +1172,8 @@ fun ConversationScreen(
             val showSimChip = simState.activeSims.size >= 2 || simState.preferenceUnavailable
             if (showSimChip) {
                 var simMenuOpen by remember { mutableStateOf(false) }
+                val selectedSim = simState.selectedSim
+                val defaultSim = simState.activeSims.firstOrNull { it.isSystemDefault }
                 Box {
                     androidx.compose.material3.AssistChip(
                         onClick = { simMenuOpen = true },
@@ -1176,11 +1183,26 @@ fun ConversationScreen(
                                     // An unresolvable preference says so, and offers no other line.
                                     simState.preferenceUnavailable ->
                                         stringResource(R.string.sim_unavailable_label)
-                                    simState.selectedSim != null ->
-                                        stringResource(
-                                            R.string.sim_slot_fmt,
-                                            simState.selectedSim!!.slotIndex + 1
+                                    selectedSim != null -> {
+                                        val number = simManager.displayNumberFor(
+                                            selectedSim,
+                                            messagingPrefs.simNumberForSim(selectedSim.subscriptionId)
                                         )
+                                        if (number != null) {
+                                            // The chip has room for a hint, not the whole number; the
+                                            // last four still distinguish two lines on one carrier.
+                                            stringResource(
+                                                R.string.sim_slot_number_fmt,
+                                                selectedSim.slotIndex + 1,
+                                                SimNumberFormat.isolate("…" + number.takeLast(4))
+                                            )
+                                        } else {
+                                            stringResource(
+                                                R.string.sim_slot_fmt,
+                                                selectedSim.slotIndex + 1
+                                            )
+                                        }
+                                    }
                                     else -> stringResource(R.string.sim_default_label)
                                 },
                                 style = MaterialTheme.typography.labelMedium
@@ -1197,7 +1219,18 @@ fun ConversationScreen(
                     )
                     DropdownMenu(expanded = simMenuOpen, onDismissRequest = { simMenuOpen = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.sim_system_default)) },
+                            text = {
+                                Text(
+                                    if (defaultSim != null) {
+                                        stringResource(
+                                            R.string.sim_system_default_with_slot_fmt,
+                                            defaultSim.slotIndex + 1
+                                        )
+                                    } else {
+                                        stringResource(R.string.sim_system_default)
+                                    }
+                                )
+                            },
                             onClick = {
                                 simMenuOpen = false
                                 pendingFirstSendSubId = null
@@ -1215,8 +1248,26 @@ fun ConversationScreen(
                             }
                         )
                         simState.activeSims.forEach { sim ->
+                            val manual = messagingPrefs.simNumberForSim(sim.subscriptionId)
+                            val label = simManager.labelWithNumberFor(sim, manual)
+                            val newline = label.indexOf('\n')
                             DropdownMenuItem(
-                                text = { Text(simManager.labelFor(sim)) },
+                                text = {
+                                    if (newline < 0) {
+                                        Text(label)
+                                    } else {
+                                        Column {
+                                            Text(label.substring(0, newline))
+                                            Text(
+                                                text = SimNumberFormat.isolate(
+                                                    label.substring(newline + 1)
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
                                 onClick = {
                                     simMenuOpen = false
                                     val ref = com.autonomousone.messages.ui.conversation

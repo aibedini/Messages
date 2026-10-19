@@ -161,6 +161,17 @@
     <string name="sim_switch">Switch SIM</string>
     <string name="sim_system_default">Default (system)</string>
     <string name="sim_slot_fmt">SIM %1$d</string>
+    <string name="sim_system_default_with_slot_fmt">Default (system) · SIM %1$d</string>
+    <string name="sim_slot_number_fmt">SIM %1$d · %2$s</string>
+    <string name="sim_number_set">Set number</string>
+    <string name="sim_number_edit">Edit number</string>
+    <string name="sim_number_clear">Clear number</string>
+    <string name="sim_number_save">Save</string>
+    <string name="sim_number_hint">+98… or 0933…</string>
+    <string name="sim_number_not_set">No number — set one below</string>
+    <string name="sim_number_local_only">Used only for display on this phone; never sent to GMweb.</string>
+    <string name="sim_number_permission_missing">Allow phone-number access to show each line\'s number. The SIM list works without it.</string>
+    <string name="sim_number_permission_grant">Allow number access</string>
     <!--
       Shown when this conversation has a saved SIM the device can no longer resolve. It is a deliberate
       statement that something is wrong, not a default: the send is blocked rather than quietly moving
