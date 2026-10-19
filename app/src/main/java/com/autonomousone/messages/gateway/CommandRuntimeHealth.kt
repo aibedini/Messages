@@ -20,7 +20,15 @@ object CommandRuntimeHealth {
         val lastAdvertisedVersionName: String?,
         val lastAdvertisedVersionCode: Long?,
         val advertisedCommandTypeCount: Int,
-        val advertisedCommandTypes: List<String>
+        val advertisedCommandTypes: List<String>,
+        /**
+         * Whether the last empty claim proved GMweb honours `waitMs`.
+         *
+         * `null` until such a claim completes; `false` means the channel is running the 2-second
+         * fallback cadence and the server-side long-poll has not landed. Surfaced so the diagnostic
+         * card can name the live mode instead of a silent fallback.
+         */
+        val claimLongPollSupported: Boolean? = null
     ) {
         /** True when a claim carrying runtime metadata has been accepted at least once. */
         val runtimeEverAccepted: Boolean get() = lastClaimSuccessAt != null
@@ -33,6 +41,7 @@ object CommandRuntimeHealth {
     private var versionName: String? = null
     private var versionCode: Long? = null
     private var commandTypes: List<String> = emptyList()
+    private var claimLongPollSupported: Boolean? = null
 
     /**
      * Called immediately before a claim is sent, with the runtime metadata THAT request carries.
@@ -61,6 +70,17 @@ object CommandRuntimeHealth {
         if (httpStatus != null && httpStatus in 200..299) lastClaimSuccessAt = at
     }
 
+    /**
+     * Which idle mode the claim loop is actually running — `true` = the server held `waitMs`,
+     * `false` = the documented 2-second fallback.
+     *
+     * Recorded because the long-poll is only a saving when the SERVER honours it: a device falling
+     * back to 2 s polling must be visible in the diagnostic card, not inferred from a request count.
+     */
+    fun onClaimMode(supported: Boolean?) = synchronized(lock) {
+        claimLongPollSupported = supported
+    }
+
     fun snapshot(): Snapshot = synchronized(lock) {
         Snapshot(
             lastClaimAttemptAt = lastClaimAttemptAt,
@@ -69,7 +89,8 @@ object CommandRuntimeHealth {
             lastAdvertisedVersionName = versionName,
             lastAdvertisedVersionCode = versionCode,
             advertisedCommandTypeCount = commandTypes.size,
-            advertisedCommandTypes = commandTypes
+            advertisedCommandTypes = commandTypes,
+            claimLongPollSupported = claimLongPollSupported
         )
     }
 
@@ -80,5 +101,6 @@ object CommandRuntimeHealth {
         versionName = null
         versionCode = null
         commandTypes = emptyList()
+        claimLongPollSupported = null
     }
 }

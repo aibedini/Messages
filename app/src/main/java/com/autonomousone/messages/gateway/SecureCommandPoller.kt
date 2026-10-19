@@ -67,9 +67,29 @@ class SecureCommandPoller(
         private const val TAG = "CMD_POLLER"
         private const val CLAIM_PATH = "/api/v1/agent/commands/claim"
         private const val STATUS_PATH = "/api/v1/agent/commands/%s/status"
-        private const val QUIET_MS = 2_000L        // empty-claim cadence (§57)
+
+        /**
+         * Empty-claim cadence against a server that does NOT honour `waitMs` (§57) lives in
+         * [CommandClaimPacing.QUIET_MS].
+         *
+         * That is the FALLBACK, not the normal path: the long-poll in
+         * [CommandClaimPacing.LONG_POLL_MS] is what serves ADR-003's `command pickup P95 < 3s`
+         * cheaply, because the server answers the instant a command appears. Two seconds is what a
+         * GMweb without long-poll support forces; see [CommandClaimPacing.afterEmptyClaim].
+         */
         private const val ERROR_RETRY_MS = 5_000L
         private const val CLAIM_LIMIT = 25
+
+        /**
+         * The claim URL, including the long-poll `waitMs` query parameter.
+         *
+         * `waitMs` is deliberately NOT part of the signed material: [AgentAuth.sign] is handed
+         * [CLAIM_PATH] (no query), and `AgentAuth.canonicalString` covers
+         * `METHOD\n<path-without-query>\n…`. Adding the query therefore changes no signature —
+         * `CommandClaimLongPollTest` pins exactly that.
+         */
+        internal fun claimUrl(base: String): String =
+            base.trimEnd('/') + CLAIM_PATH + "?waitMs=" + CommandClaimPacing.LONG_POLL_MS
 
         /**
          * How often the drain pass runs (mission §46).
@@ -239,6 +259,16 @@ class SecureCommandPoller(
      */
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
+    /**
+     * Whether the last EMPTY claim proved the server honours `waitMs`.
+     *
+     * `null` = not observed yet. Strictly diagnostic: a silent fallback to the 2-second cadence is
+     * how this regression would return unnoticed, so the mode is surfaced through
+     * [CommandRuntimeHealth] and the in-app diagnostics card.
+     */
+    @Volatile
+    private var longPollSupported: Boolean? = null
+
     /** Poll immediately instead of waiting out the current quiet/backoff interval. */
     fun retryNow() {
         wake.trySend(Unit)
@@ -280,9 +310,21 @@ class SecureCommandPoller(
                     // Recovery BEFORE intake: a command stranded by a previous process must reach a
                     // terminal state even on a pass where GMweb has nothing new to hand over.
                     drainIfDue()
+                    val claimStartedAt = System.currentTimeMillis()
                     val commands = claim()
                     if (commands.isEmpty()) {
-                        waitOrWake(QUIET_MS)
+                        // Drain the two costs of "nothing to do" into one decision: the server
+                        // either held the request open (long-poll honoured — go straight round) or
+                        // answered instantly (waitMs unsupported — sleep the 2 s SLO fallback).
+                        // See CommandClaimPacing.afterEmptyClaim; this branch is the hot-loop guard.
+                        val pacing = CommandClaimPacing.afterEmptyClaim(
+                            System.currentTimeMillis() - claimStartedAt
+                        )
+                        if (pacing.longPollSupported != longPollSupported) {
+                            longPollSupported = pacing.longPollSupported
+                            CommandRuntimeHealth.onClaimMode(pacing.longPollSupported)
+                        }
+                        if (pacing.waitMs > 0L) waitOrWake(pacing.waitMs)
                         continue
                     }
                     _stateFlow.value = State.INGESTING
@@ -415,17 +457,19 @@ class SecureCommandPoller(
         }
     }
 
-    /** POST /api/v1/agent/commands/claim → opaque rows (base64 payloads). */
+    /** POST /api/v1/agent/commands/claim?waitMs=… → opaque rows (base64 payloads). */
     private suspend fun claim(): List<RemoteCommandEntity> {
         val base = prefs.gmwebUrl.trimEnd('/')
-        val path = "/api/v1/agent/commands/claim"
-        val conn = URL("$base$path").openConnection() as HttpURLConnection
+        val path = CLAIM_PATH
+        val conn = URL(claimUrl(base)).openConnection() as HttpURLConnection
         return try {
             conn.apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connectTimeout = 15_000
-                readTimeout = 30_000
+                // Outlives the server's 25 s hold: a short read timeout would abort the very wait
+                // the long-poll exists for, and every hold would look like a failed claim.
+                readTimeout = CommandClaimPacing.TIMEOUT_MS.toInt()
                 doOutput = true
             }
             val currentDeviceId = deviceId()

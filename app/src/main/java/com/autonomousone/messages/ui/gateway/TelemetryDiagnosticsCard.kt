@@ -80,6 +80,16 @@ fun TelemetryDiagnosticsCard(
             )
             Line("Command types", "${runtime.advertisedCommandTypeCount}")
             Line("Last claim HTTP", runtime.lastClaimHttpStatus?.toString() ?: "n/a")
+            // The idle mode is a battery fact, not an implementation detail: "2 s fallback" means
+            // GMweb is not honouring waitMs and the long-poll saving is NOT in effect.
+            Line(
+                "Claim idle mode",
+                when (runtime.claimLongPollSupported) {
+                    true -> "long-poll · 25 s hold"
+                    false -> "2 s fallback · server ignores waitMs"
+                    null -> "not observed yet"
+                }
+            )
 
             Spacer(Modifier.height(10.dp))
 
