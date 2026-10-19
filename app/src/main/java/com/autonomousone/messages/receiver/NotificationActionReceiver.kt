@@ -83,12 +83,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 // Same unified read path as opening the chat:
                                 // local Room read first, provider write eventual.
                                 //
-                                // USER_MARK_READ: this is the user pressing "Mark as read", which is an
-                                // explicit command and therefore does NOT require the conversation to be
-                                // on screen. Distinct from merely receiving or displaying the
-                                // notification, neither of which is read authority.
+                                // NOTIFICATION_ACTION: this is the user pressing "Mark as read" from a
+                                // notification, an explicit command that does NOT require the
+                                // conversation to be on screen. Kept distinct from USER_MARK_READ so
+                                // the per-message provenance says WHERE the read came from.
                                 MarkConversationReadUseCase.get(appContext)
-                                    .markRead(threadId, phone, ReadCause.USER_MARK_READ)
+                                    .markRead(threadId, phone, ReadCause.NOTIFICATION_ACTION)
                                 if (notificationId != 0) {
                                     NotificationManagerCompat.from(appContext).cancel(notificationId)
                                 }

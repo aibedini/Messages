@@ -1261,6 +1261,18 @@ class SmsSender(
                         radioErrorCode = radioErrorCode,
                         updatedAt = System.currentTimeMillis()
                     )
+                // The provider row does not carry this verdict, so the normal content repair sees no
+                // change and Home can keep saying "Sending". Ask the coordinator to rebuild this
+                // thread's projection from the local mirror, unconditionally.
+                if (updated > 0) {
+                    com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+                        .mutate(
+                            com.autonomousone.messages.data.MessageMutation.RefreshStatus(
+                                source = MessageEntity.SOURCE_SMS,
+                                providerId = rowId
+                            )
+                        )
+                }
                 DiagnosticLog.event(
                     "SMS_STATE",
                     "row=$rowId sendTransportState=${state.name} code=${failureCode ?: "none"} " +

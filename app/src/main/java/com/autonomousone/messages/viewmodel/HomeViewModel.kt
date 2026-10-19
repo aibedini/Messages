@@ -86,6 +86,7 @@ class HomeViewModel(
     /** Cap on search result threads — bounded output for 360K-scale data. */
     private companion object {
         const val SEARCH_RESULT_LIMIT = 100
+        const val SENDING_SWEEP_INTERVAL_MS = 60_000L
     }
 
     private val repository = SmsRepository(application)
@@ -220,6 +221,9 @@ class HomeViewModel(
 
     /** True once the first full load has completed. */
     private var hasLoadedOnce = false
+
+    /** Last bounded sweep for conversations stuck on SENDING; throttled to once a minute. */
+    private var lastSendingSweepAt = 0L
 
     /** Read-cutover latch. */
     @Volatile
@@ -658,8 +662,24 @@ class HomeViewModel(
     // Load
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun loadArchivedIds() {
-        archivedIds.clear()
+    /**
+     * Once-a-minute, bounded repair for a conversation stuck on SENDING because a projection write
+     * was missed. It touches only stale SENDING threads, never the whole list.
+     */
+    private suspend fun sweepStaleSendingProjections() {
+        val now = System.currentTimeMillis()
+        if (now - lastSendingSweepAt < SENDING_SWEEP_INTERVAL_MS) return
+        lastSendingSweepAt = now
+        withContext(Dispatchers.IO) {
+            runCatching {
+                com.autonomousone.messages.data.TelephonySyncCoordinator
+                    .get(getApplication())
+                    .refreshStaleSendingProjections(now)
+            }
+        }
+    }
+
+    private fun loadArchivedIds() {        archivedIds.clear()
         archivedIds.addAll(archiveRepository.getArchivedIds())
         pinnedIds.clear()
         pinnedIds.addAll(pinRepository.getPinnedIds())
@@ -695,6 +715,7 @@ class HomeViewModel(
 
     private suspend fun performLoad() {
         ensureRoomGate()
+        sweepStaleSendingProjections()
 
         if (!hasLoadedOnce) {
             // Instant paint from the last durable snapshot. This is the local
@@ -748,6 +769,7 @@ class HomeViewModel(
 
     private suspend fun silentRefresh() {
         ensureRoomGate()
+        sweepStaleSendingProjections()
 
         if (roomReadEnabled) {
             // Normal Room-ready resume: the durable owner is the always-on

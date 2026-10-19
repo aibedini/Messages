@@ -1,4 +1,4 @@
-﻿package com.autonomousone.messages
+package com.autonomousone.messages
 
 import com.autonomousone.messages.messaging.ConversationReadAudit
 import com.autonomousone.messages.messaging.ReadCause
@@ -133,12 +133,16 @@ class ManualUnreadBookmarkTest {
 
     @Test
     fun `the read-cause taxonomy keeps the two screen-dependent causes separate from explicit ones`() {
-        // The bookmark may only be cleared by a real read, and only these four causes authorise one. A
-        // fifth cause added later without thought would silently grant read authority.
+        // The bookmark may only be cleared by a real read. Screen-dependent and explicit read
+        // authorities stay distinct; the provenance-only causes do not authorise a read at all.
         val causes = ReadCause.entries.map { it.name }.toSet()
 
         assertEquals(
-            setOf("USER_OPEN_RESUMED", "USER_MARK_READ", "REMOTE_MARK_READ", "INCOMING_WHILE_VISIBLE"),
+            setOf(
+                "USER_OPEN_RESUMED", "USER_MARK_READ", "REMOTE_MARK_READ",
+                "INCOMING_WHILE_VISIBLE", "NOTIFICATION_ACTION", "MARK_ALL",
+                "PROVIDER_SYNC", "REPAIR", "INCOMING_UNREAD"
+            ),
             causes
         )
     }

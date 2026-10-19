@@ -26,7 +26,7 @@ interface LocalThreadReadApplier {
      *   screen-authorised read cannot consume a message that arrived afterwards. Null means "no boundary
      *   could be established", which is only correct for an explicit user or remote command.
      */
-    suspend fun markThreadReadLocally(threadId: Long, upToProviderId: Long?)
+    suspend fun markThreadReadLocally(threadId: Long, upToProviderId: Long?, cause: ReadCause)
 }
 
 /**
@@ -203,7 +203,7 @@ class MarkConversationReadUseCase(
 
         // (a) + (b) local-first, then the UI signal. The signal is emitted ONLY
         // when the durable local write actually succeeded.
-        val localApplied = applyLocalRead(threadId, phone, upToProviderId)
+        val localApplied = applyLocalRead(threadId, phone, upToProviderId, cause)
 
         // (c) provider persistence, eventual and failure-isolated. Attempted even
         // when the local write failed: the provider READ is what makes the narrow
@@ -246,7 +246,10 @@ class MarkConversationReadUseCase(
     /** True for the causes whose authority is "this chat is on screen". */
     private fun requiresVisibleScreen(cause: ReadCause): Boolean = when (cause) {
         ReadCause.USER_OPEN_RESUMED, ReadCause.INCOMING_WHILE_VISIBLE -> true
-        ReadCause.USER_MARK_READ, ReadCause.REMOTE_MARK_READ -> false
+        // Explicit choices and provenance-only causes do not depend on the chat being on screen.
+        ReadCause.USER_MARK_READ, ReadCause.REMOTE_MARK_READ, ReadCause.NOTIFICATION_ACTION,
+        ReadCause.MARK_ALL, ReadCause.PROVIDER_SYNC, ReadCause.REPAIR,
+        ReadCause.INCOMING_UNREAD -> false
     }
 
     /**
@@ -287,10 +290,15 @@ class MarkConversationReadUseCase(
      *         because there is no thread to mark), false when the Room
      *         transaction failed.
      */
-    private suspend fun applyLocalRead(threadId: Long, phone: String, upToProviderId: Long?): Boolean {
+    private suspend fun applyLocalRead(
+        threadId: Long,
+        phone: String,
+        upToProviderId: Long?,
+        cause: ReadCause
+    ): Boolean {
         if (threadId > 0L) {
             try {
-                localRead.markThreadReadLocally(threadId, upToProviderId)
+                localRead.markThreadReadLocally(threadId, upToProviderId, cause)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -429,9 +437,13 @@ internal class CoordinatorReadRepairRequester(
 internal class ShadowThreadReadApplier(
     private val context: Context
 ) : LocalThreadReadApplier {
-    override suspend fun markThreadReadLocally(threadId: Long, upToProviderId: Long?) {
+    override suspend fun markThreadReadLocally(
+        threadId: Long,
+        upToProviderId: Long?,
+        cause: ReadCause
+    ) {
         if (threadId <= 0L) return
-        TelephonySyncCoordinator.get(context).markThreadReadAndPublish(threadId, upToProviderId)
+        TelephonySyncCoordinator.get(context).markThreadReadAndPublish(threadId, upToProviderId, cause)
     }
 }
 

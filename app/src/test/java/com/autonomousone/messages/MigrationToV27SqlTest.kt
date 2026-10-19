@@ -97,11 +97,17 @@ class MigrationToV27SqlTest {
     // ── boundary ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `this migration owns the current schema version boundary`() {
+    fun `this migration owns its v26 to v27 boundary but is no longer the newest schema`() {
         assertEquals(26, MessagesDatabase.MIGRATION_26_27.startVersion)
         assertEquals(27, MessagesDatabase.MIGRATION_26_27.endVersion)
-        assertEquals(27, MessagesDatabase.CURRENT_SCHEMA_VERSION)
-        assertEquals(26, MessagesDatabase.PREVIOUS_SCHEMA_VERSION)
+        assertTrue(
+            "a later migration must own the current schema boundary",
+            MessagesDatabase.CURRENT_SCHEMA_VERSION > 27
+        )
+        assertTrue(
+            "the chain must still include the v27 step",
+            MessagesDatabase.PREVIOUS_SCHEMA_VERSION >= 27
+        )
     }
 
     @Test

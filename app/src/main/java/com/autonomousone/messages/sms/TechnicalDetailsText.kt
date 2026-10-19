@@ -46,7 +46,10 @@ object TechnicalDetailsText {
         val deliveryEvidence: String?,
         val deliveryTpStatus: Int?,
         val deliveryResultCode: Int?,
-        val deliveryCallbackAt: Long
+        val deliveryCallbackAt: Long,
+        val read: Boolean = false,
+        val readStateChangedAt: Long = 0L,
+        val readStateCause: String? = null
     )
 
     /**
@@ -82,6 +85,12 @@ object TechnicalDetailsText {
         lines += "outgoing: ${evidence.isOutgoing}"
         lines += "sentAt: ${evidence.sentAt}"
         if (evidence.dateSent > 0) lines += "dateSent: ${evidence.dateSent}"
+        // Read provenance: cause/time only, never content or a recipient.
+        lines += "read: ${evidence.read}"
+        if (evidence.readStateChangedAt > 0) {
+            lines += "readStateChangedAt: ${evidence.readStateChangedAt}"
+        }
+        evidence.readStateCause?.let { lines += "readStateCause: $it" }
         numberTail?.let { lines += "recipient: $it" }
 
         // ── transport evidence ───────────────────────────────────────────────
@@ -162,6 +171,9 @@ object TechnicalDetailsText {
                 isOutgoing = row.type == android.provider.Telephony.Sms.MESSAGE_TYPE_SENT,
                 sentAt = row.date,
                 dateSent = row.dateSent,
+                read = row.read,
+                readStateChangedAt = row.readStateChangedAt,
+                readStateCause = row.readStateCause,
                 transportState = row.sendTransportState,
                 sendFailureCode = row.sendFailureCode,
                 sendResultCode = row.sendResultCode,

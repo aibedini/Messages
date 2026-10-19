@@ -172,6 +172,20 @@
     <string name="sim_number_local_only">Used only for display on this phone; never sent to GMweb.</string>
     <string name="sim_number_permission_missing">Allow phone-number access to show each line\'s number. The SIM list works without it.</string>
     <string name="sim_number_permission_grant">Allow number access</string>
+
+    <!-- Message details: read provenance -->
+    <string name="details_read_at">Read at</string>
+    <string name="details_unread_since">Unread since</string>
+    <string name="details_read_cause">Read reason</string>
+    <string name="read_cause_user_open">opened conversation</string>
+    <string name="read_cause_user_mark">marked read</string>
+    <string name="read_cause_remote">marked read from GMweb</string>
+    <string name="read_cause_incoming_visible">arrived while the conversation was visible</string>
+    <string name="read_cause_provider">provider sync</string>
+    <string name="read_cause_notification">notification action</string>
+    <string name="read_cause_mark_all">mark all read</string>
+    <string name="read_cause_repair">projection repair</string>
+    <string name="read_cause_incoming_unread">arrived unread</string>
     <!--
       Shown when this conversation has a saved SIM the device can no longer resolve. It is a deliberate
       statement that something is wrong, not a default: the send is blocked rather than quietly moving

@@ -303,7 +303,8 @@ interface MessageDao {
      * guarantee than remembering not to append them.
      */
     @Query(
-        "SELECT source, providerId, threadId, type, date, dateSent, " +
+        "SELECT source, providerId, threadId, type, date, dateSent, read, readStateChangedAt, " +
+            "readStateCause, " +
             "sendTransportState, sendFailureCode, sendResultCode, sendRadioErrorCode, " +
             "sendStateUpdatedAt, deliveryEvidence, deliveryTpStatus, deliveryResultCode, " +
             "deliveryCallbackAt FROM messages WHERE source = :source AND providerId = :providerId"
@@ -319,8 +320,8 @@ interface MessageDao {
     @Query(
         "SELECT sendTransportState, sendFailureCode, sendResultCode, sendRadioErrorCode, " +
             "sendStateUpdatedAt, deliveryCallbackAt, deliveryTpStatus, deliveryEvidence, " +
-            "deliveryResultCode, deliveryEvidenceRank FROM messages " +
-            "WHERE source = :source AND providerId = :providerId"
+            "deliveryResultCode, deliveryEvidenceRank, read, readStateChangedAt, readStateCause " +
+            "FROM messages WHERE source = :source AND providerId = :providerId"
     )
     suspend fun sendStateOf(source: String, providerId: Long): MessageSendStateRow?
 
@@ -336,7 +337,8 @@ interface MessageDao {
             "sendStateUpdatedAt = :updatedAt, " +
             "deliveryCallbackAt = :deliveryCallbackAt, deliveryTpStatus = :deliveryTpStatus, " +
             "deliveryEvidence = :deliveryEvidence, deliveryResultCode = :deliveryResultCode, " +
-            "deliveryEvidenceRank = :deliveryEvidenceRank " +
+            "deliveryEvidenceRank = :deliveryEvidenceRank, " +
+            "readStateChangedAt = :readStateChangedAt, readStateCause = :readStateCause " +
             "WHERE source = :source AND providerId = :providerId"
     )
     suspend fun restoreSendState(
@@ -351,7 +353,9 @@ interface MessageDao {
         deliveryTpStatus: Int?,
         deliveryEvidence: String?,
         deliveryResultCode: Int?,
-        deliveryEvidenceRank: Int
+        deliveryEvidenceRank: Int,
+        readStateChangedAt: Long,
+        readStateCause: String?
     )
 
     /**
@@ -392,8 +396,11 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE threadId = :threadId")
     suspend fun deleteThread(threadId: Long)
 
-    @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
-    suspend fun markThreadRead(threadId: Long)
+    @Query(
+        "UPDATE messages SET read = 1, readStateChangedAt = :at, readStateCause = :cause " +
+            "WHERE threadId = :threadId AND read = 0"
+    )
+    suspend fun markThreadRead(threadId: Long, at: Long, cause: String)
 
     /**
      * The BOUNDED form: mark read only messages that already existed when the user's read was
@@ -419,10 +426,11 @@ interface MessageDao {
      * id" is exactly "existed then".
      */
     @Query(
-        "UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0 " +
+        "UPDATE messages SET read = 1, readStateChangedAt = :at, readStateCause = :cause " +
+            "WHERE threadId = :threadId AND read = 0 " +
             "AND providerId <= :upToProviderId"
     )
-    suspend fun markThreadReadUpTo(threadId: Long, upToProviderId: Long)
+    suspend fun markThreadReadUpTo(threadId: Long, upToProviderId: Long, at: Long, cause: String)
 
     /**
      * The highest mirrored provider id for a thread, or null when the thread has no rows.
@@ -458,8 +466,11 @@ interface MessageDao {
      * archived, filtered, blocked and off-screen conversations and left unread
      * rows that reappear the moment the filter changes.
      */
-    @Query("UPDATE messages SET read = 1 WHERE read = 0")
-    suspend fun markAllRead()
+    @Query(
+        "UPDATE messages SET read = 1, readStateChangedAt = :at, readStateCause = :cause " +
+            "WHERE read = 0"
+    )
+    suspend fun markAllRead(at: Long, cause: String)
 
     // ── NEW: SQL COUNT for unread (replaces O(n) in-memory scan) ──────────
 
@@ -631,7 +642,10 @@ data class MessageTechnicalEvidence(
     val deliveryEvidence: String?,
     val deliveryTpStatus: Int?,
     val deliveryResultCode: Int?,
-    val deliveryCallbackAt: Long
+    val deliveryCallbackAt: Long,
+    val read: Boolean = false,
+    val readStateChangedAt: Long = 0L,
+    val readStateCause: String? = null
 )
 
 /** Row shape for [MessageDao.sendStateOf] — the app-owned send AND delivery evidence of one row. */
@@ -645,7 +659,10 @@ data class MessageSendStateRow(
     val deliveryTpStatus: Int?,
     val deliveryEvidence: String?,
     val deliveryResultCode: Int?,
-    val deliveryEvidenceRank: Int
+    val deliveryEvidenceRank: Int,
+    val read: Boolean,
+    val readStateChangedAt: Long,
+    val readStateCause: String?
 )
 
 /**
@@ -678,13 +695,18 @@ object MessageSendStatePreserver {
         if (entities.isEmpty()) return 0
         val preserved = entities.mapNotNull { entity ->
             val existing = dao.sendStateOf(entity.source, entity.providerId) ?: return@mapNotNull null
-            Triple(entity.source, entity.providerId, existing)
+            entity to existing
         }
         dao.upsertAll(entities)
-        for ((source, providerId, state) in preserved) {
+        for ((entity, state) in preserved) {
+            // Read provenance travels with the READ value, not blindly: if the provider actually
+            // changed read (or the row was auto-read), the entity carries the NEW cause/time and
+            // must keep it. Otherwise a re-sync would overwrite the real provenance with the old
+            // one even though nothing about the read state changed.
+            val readChanged = state.read != entity.read
             dao.restoreSendState(
-                source = source,
-                providerId = providerId,
+                source = entity.source,
+                providerId = entity.providerId,
                 state = state.sendTransportState,
                 failureCode = state.sendFailureCode,
                 resultCode = state.sendResultCode,
@@ -698,7 +720,12 @@ object MessageSendStatePreserver {
                 deliveryTpStatus = state.deliveryTpStatus,
                 deliveryEvidence = state.deliveryEvidence,
                 deliveryResultCode = state.deliveryResultCode,
-                deliveryEvidenceRank = state.deliveryEvidenceRank
+                deliveryEvidenceRank = state.deliveryEvidenceRank,
+                // Read provenance is app-owned too. A mirror write carries provider `read`, so
+                // without this the cause/time would be erased on the next sync and the details
+                // screen would lose the answer to "why is this read?".
+                readStateChangedAt = if (readChanged) entity.readStateChangedAt else state.readStateChangedAt,
+                readStateCause = if (readChanged) entity.readStateCause else state.readStateCause
             )
         }
         return preserved.size
@@ -710,6 +737,24 @@ interface ConversationDao {
 
     @Query("SELECT * FROM conversations ORDER BY lastMessageDate DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
+
+    /**
+     * The number of conversations whose stored badge disagrees with the message rows.
+     *
+     * The invariant is [ConversationEntity.unreadCount] == COUNT(messages WHERE threadId = c.threadId
+     * AND read = 0 AND type = 1 AND ACTIVE). Used by diagnostics/reporting only; every projection
+     * writer already derives the count from this same query.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM conversations c WHERE c.unreadCount != (" +
+            "SELECT COUNT(*) FROM messages m WHERE m.threadId = c.threadId " +
+            "AND m.read = 0 AND m.type = 1 AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL})"
+    )
+    suspend fun unreadProjectionMismatchCount(): Int
+
+    /** Threads whose last message is still displayed as SENDING, for the startup safety net. */
+    @Query("SELECT threadId FROM conversations WHERE lastMessageUiState = 'SENDING'")
+    suspend fun sendingThreadIds(): List<Long>
 
     /**
      * ACTIVE-UI conversation list (v3.4.0 FEATURE 8, TRASH).

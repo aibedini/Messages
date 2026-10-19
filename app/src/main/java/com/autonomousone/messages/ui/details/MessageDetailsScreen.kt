@@ -1,4 +1,4 @@
-﻿package com.autonomousone.messages.ui.details
+package com.autonomousone.messages.ui.details
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autonomousone.messages.R
 import com.autonomousone.messages.sms.SmsTpStatus
 import com.autonomousone.messages.sms.SmsUiState
 import java.text.DateFormat
@@ -315,7 +317,38 @@ private fun MessageInformationCard(state: MessageDetailsUiState) {
         state.submittedAt?.let { DetailRow(label = "Submitted at", value = formatTime(it)) }
         state.dateSent?.let { DetailRow(label = "Sent at", value = formatTime(it)) }
         state.deliveryCallbackAt?.let { DetailRow(label = "Delivery report", value = formatTime(it)) }
+        // Read provenance is evidence, not a second read authority. Old rows have no timestamp and
+        // simply omit both lines rather than showing an invented "unknown" date.
+        state.readStateChangedAt?.let { at ->
+            DetailRow(
+                label = stringResource(
+                    if (state.read) R.string.details_read_at else R.string.details_unread_since
+                ),
+                value = formatTime(at)
+            )
+        }
+        state.readStateCause?.let { raw ->
+            DetailRow(
+                label = stringResource(R.string.details_read_cause),
+                value = readCauseLabel(raw)
+            )
+        }
     }
+}
+
+/** Human wording for the persisted [com.autonomousone.messages.messaging.ReadCause] name. */
+@Composable
+private fun readCauseLabel(raw: String): String = when (raw) {
+    "USER_OPEN_RESUMED" -> stringResource(R.string.read_cause_user_open)
+    "USER_MARK_READ" -> stringResource(R.string.read_cause_user_mark)
+    "REMOTE_MARK_READ" -> stringResource(R.string.read_cause_remote)
+    "INCOMING_WHILE_VISIBLE" -> stringResource(R.string.read_cause_incoming_visible)
+    "PROVIDER_SYNC" -> stringResource(R.string.read_cause_provider)
+    "NOTIFICATION_ACTION" -> stringResource(R.string.read_cause_notification)
+    "MARK_ALL" -> stringResource(R.string.read_cause_mark_all)
+    "REPAIR" -> stringResource(R.string.read_cause_repair)
+    "INCOMING_UNREAD" -> stringResource(R.string.read_cause_incoming_unread)
+    else -> raw
 }
 
 @Composable

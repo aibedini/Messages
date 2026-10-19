@@ -946,29 +946,42 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             }
 
             is MessageMutation.RefreshStatus -> {
-                when (val statusRead = readExactMessageStrict(m.source, m.providerId)) {
-                    is ProviderRead.Success -> {
-                        val fresh = statusRead.value
-                        if (fresh != null) {
-                            ingestProviderRows(
-                                source = m.source,
-                                rows = listOf(fresh),
-                                mode = DiscoveryMode.REALTIME_EXACT
-                            )
-                        } else {
-                            ChangeRouter.enqueueExactRepair(
-                                appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
-                            )
+                // The provider row is re-read for provider-owned facts, but the app-owned transport
+                // and delivery state is NOT part of it. `ingestProviderRows` can therefore classify
+                // this row as UNCHANGED and never touch the projection — leaving Home saying
+                // "Sending" while the chat bubble (which reads `messages` directly) says "Sent".
+                // Re-project the thread from the local mirror unconditionally: the write that
+                // produced this mutation already committed, and the projection must catch up.
+                try {
+                    when (val statusRead = readExactMessageStrict(m.source, m.providerId)) {
+                        is ProviderRead.Success -> {
+                            val fresh = statusRead.value
+                            if (fresh != null) {
+                                ingestProviderRows(
+                                    source = m.source,
+                                    rows = listOf(fresh),
+                                    mode = DiscoveryMode.REALTIME_EXACT
+                                )
+                            } else {
+                                ChangeRouter.enqueueExactRepair(
+                                    appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
+                                )
+                            }
                         }
+                        is ProviderRead.Failure -> ChangeRouter.enqueueExactRepair(
+                            appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
+                        )
                     }
-                    is ProviderRead.Failure -> ChangeRouter.enqueueExactRepair(
-                        appContext, m.source, m.providerId, ProviderRepairIntent.REFRESH_STATUS
-                    )
+                } finally {
+                    val local = db.messageDao().findByKey(m.source, m.providerId)
+                    if (local != null && local.threadId > 0L) {
+                        rebuildConversationProjection(local.threadId, preserveFlags = true)
+                    }
                 }
             }
 
             is MessageMutation.MarkThreadRead -> {
-                applyMarkThreadRead(m.threadId, m.upToProviderId)
+                applyMarkThreadRead(m.threadId, m.upToProviderId, m.cause)
             }
 
             is MessageMutation.DeleteThread -> {
@@ -1039,9 +1052,27 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     val autoRead = !providerEntity.read &&
                         providerEntity.threadId > 0L &&
                         VisibleConversationTracker.isVisible(providerEntity.threadId)
-                    val entity = if (autoRead ||
+                    var entity = if (autoRead ||
                         (old?.read == true && !providerEntity.read)
                     ) providerEntity.copy(read = true) else providerEntity
+
+                    // Persist WHY/WHEN the read state changed. This is display evidence beside the
+                    // read flag, never a new authority: `read` remains the only input to routing.
+                    val readCause = when {
+                        autoRead -> ReadCause.INCOMING_WHILE_VISIBLE
+                        old == null && !entity.read && entity.threadId > 0L &&
+                            entity.type == Telephony.Sms.MESSAGE_TYPE_INBOX ->
+                            ReadCause.INCOMING_UNREAD
+                        old != null && old.read != entity.read -> ReadCause.PROVIDER_SYNC
+                        else -> null
+                    }
+                    if (readCause != null) {
+                        entity = entity.copy(
+                            readStateChangedAt = System.currentTimeMillis(),
+                            readStateCause = readCause.name
+                        )
+                    }
+
                     val transition = classifyTransition(old, entity)
                     if (transition == ProviderTransition.UNCHANGED) continue
                     // Audited only for rows actually written: logging every unchanged unread row on
@@ -1174,6 +1205,13 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                         }
                         val unread = dao.countActiveUnread(threadId)
                         val existing = convDao.byThread(threadId)
+                        if (existing != null && existing.unreadCount != unread) {
+                            ConversationReadAudit.readProjectionReconciled(
+                                threadId = threadId,
+                                unreadCount = unread,
+                                source = "ingest_projection"
+                            )
+                        }
                         val pinned = existing?.pinned ?: (threadId in pinnedIds)
                         val archived = existing?.archived ?: (threadId in archivedIds)
                         val projectionChanged = existing == null ||
@@ -2304,6 +2342,29 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         rebuildConversationProjection(threadId, preserveFlags = true)
     }
 
+    /**
+     * Startup/Home-load safety net for the "Sending forever" projection.
+     *
+     * Only threads whose conversation still says SENDING and whose newest message is older than
+     * [staleAfterMs] are rebuilt; a send that is genuinely in flight is left alone. This is a
+     * bounded, targeted sweep — never a full rebuild — so it cannot turn screen load into a scan of
+     * every conversation.
+     */
+    suspend fun refreshStaleSendingProjections(
+        now: Long = System.currentTimeMillis(),
+        staleAfterMs: Long = 2 * 60_000L
+    ) {
+        val stale = runCatching {
+            db.conversationDao().sendingThreadIds().filter { threadId ->
+                val newest = db.messageDao().newestActiveForThread(threadId)
+                newest != null && now - newest.date >= staleAfterMs
+            }
+        }.getOrDefault(emptyList())
+        stale.forEach { threadId ->
+            runCatching { rebuildConversationProjection(threadId, preserveFlags = true) }
+        }
+    }
+
     // PHASE 10.2 originally exposed `markThreadReadInShadow(threadId)` here: ONE transaction marking the
     // per-message read flags and the conversation unread counter together, because those are two views of
     // the same fact and a divergence lets Home clear a badge over messages that are still unread.
@@ -2341,16 +2402,21 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
 
     suspend fun markAllThreadsReadInShadow() = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
         db.withTransaction {
-            db.messageDao().markAllRead()
+            db.messageDao().markAllRead(at = now, cause = ReadCause.MARK_ALL.name)
             db.conversationDao().markAllRead()
         }
     }
 
     /** Remote MARK_READ: update the shadow and durably publish THREAD_READ once. */
-    suspend fun markThreadReadAndPublish(threadId: Long, upToProviderId: Long? = null) {
+    suspend fun markThreadReadAndPublish(
+        threadId: Long,
+        upToProviderId: Long? = null,
+        cause: ReadCause = ReadCause.REMOTE_MARK_READ
+    ) {
         if (threadId > 0L) {
-            applyMutation(MessageMutation.MarkThreadRead(threadId, upToProviderId))
+            applyMutation(MessageMutation.MarkThreadRead(threadId, upToProviderId, cause))
         }
     }
 
@@ -2376,6 +2442,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         if (threadId <= 0L) return -1
         return runCatching { db.conversationDao().byThread(threadId)?.unreadCount ?: -1 }.getOrDefault(-1)
     }
+
+    /** Diagnostics: how many conversation badges disagree with the message rows. */
+    suspend fun unreadProjectionMismatchCount(): Int =
+        runCatching { db.conversationDao().unreadProjectionMismatchCount() }.getOrDefault(-1)
 
     /**
      * What actually happened when a read was applied — the FACT, not an assumption.
@@ -2406,8 +2476,10 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * gate must be VISIBLE to the caller rather than silently turning a refused publish into a
      * completed read command.
      */
-    internal suspend fun applyMarkThreadRead(threadId: Long): ThreadReadOutcome =
-        applyMarkThreadRead(threadId, upToProviderId = null)
+    internal suspend fun applyMarkThreadRead(
+        threadId: Long,
+        cause: ReadCause
+    ): ThreadReadOutcome = applyMarkThreadRead(threadId, upToProviderId = null, cause = cause)
 
     /**
      * Apply a read bounded to [upToProviderId] when the caller has one.
@@ -2420,7 +2492,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      */
     internal suspend fun applyMarkThreadRead(
         threadId: Long,
-        upToProviderId: Long?
+        upToProviderId: Long?,
+        cause: ReadCause
     ): ThreadReadOutcome {
         if (threadId <= 0L) return ThreadReadOutcome.Failed
         var published: EnqueueAttempt = EnqueueAttempt.SKIPPED_SYNC_OFF
@@ -2437,10 +2510,11 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         )
         var snapshot: ReadSnapshot? = null
         db.withTransaction {
+            val now = System.currentTimeMillis()
             if (upToProviderId != null) {
-                db.messageDao().markThreadReadUpTo(threadId, upToProviderId)
+                db.messageDao().markThreadReadUpTo(threadId, upToProviderId, now, cause.name)
             } else {
-                db.messageDao().markThreadRead(threadId)
+                db.messageDao().markThreadRead(threadId, now, cause.name)
             }
             remainingUnread = ConversationReadProjection.remainingUnreadAfter(
                 bounded = upToProviderId != null,
@@ -2772,12 +2846,22 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                 return@withTransaction
             }
             val unread = dao.countActiveUnread(threadId)
+            val existing = convDao.byThread(threadId)
+            // ONE source of truth: the conversation badge is the count of unread incoming rows.
+            // A stale projection is repaired here and recorded, so "the badge was wrong" becomes an
+            // observable fact rather than a guess.
+            if (existing != null && existing.unreadCount != unread) {
+                ConversationReadAudit.readProjectionReconciled(
+                    threadId = threadId,
+                    unreadCount = unread,
+                    source = "rebuild_projection"
+                )
+            }
 
             if (preserveFlags) {
                 // A rebuild is authoritative: it must be able to move the
                 // projection BACKWARDS after a delete. upsertPreservingFlags is
                 // monotonic by design and is only for the realtime insert path.
-                val existingForInsert = convDao.byThread(threadId)
                 convDao.replaceProjectionPreservingFlags(
                     threadId = threadId,
                     normalizedAddress = newest.normalizedAddress,
@@ -2789,13 +2873,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
                     // a rebuild must satisfy them too or the whole thread
                     // vanishes. The row wins; the repositories only seed a
                     // genuine first insert.
-                    pinnedOnInsert = existingForInsert?.pinned ?: (threadId in pinRepositoryIds()),
-                    archivedOnInsert = existingForInsert?.archived ?: (threadId in archivedRepositoryIds()),
+                    pinnedOnInsert = existing?.pinned ?: (threadId in pinRepositoryIds()),
+                    archivedOnInsert = existing?.archived ?: (threadId in archivedRepositoryIds()),
                     lastMessageType = newest.type,
                     lastMessageUiState = lastMessageUiStateOf(newest)
                 )
             } else {
-                val existing = convDao.byThread(threadId)
                 convDao.upsertFull(
                     ConversationEntity(
                         threadId = threadId,

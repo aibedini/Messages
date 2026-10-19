@@ -88,7 +88,7 @@ import com.autonomousone.messages.BuildConfig
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
         PendingInboundSmsEntity::class
     ],
-    version = 27,
+    version = 28,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -569,10 +569,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 27
+        const val CURRENT_SCHEMA_VERSION = 28
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 26
+        const val PREVIOUS_SCHEMA_VERSION = 27
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -932,6 +932,27 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v27 -> v28: read/unread PROVENANCE on every message.
+         *
+         * `read` answers whether a message is read; it never answered WHEN or WHY. Every read
+         * decision was audited only in the diagnostic log, so the one question a user asks about a
+         * wrong READ — "what did this?" — could not be answered from the message row itself.
+         *
+         * Additive and defaulted: existing rows migrate to "unknown provenance" (0/null), never to
+         * an invented cause. `read` remains the authority; these columns are display evidence only.
+         */
+        internal val UPGRADE_TO_V28_SQL: List<String> = listOf(
+            "ALTER TABLE `messages` ADD COLUMN `readStateChangedAt` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `messages` ADD COLUMN `readStateCause` TEXT"
+        )
+
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V28_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -943,7 +964,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never
