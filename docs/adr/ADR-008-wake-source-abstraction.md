@@ -75,6 +75,22 @@ The 3 s pickup measurement remains at the durable queue. A faster transport can 
 pickup; a slower or unavailable one falls back to polling, whose cadence is the existing 2 s claim /
 25 s long-poll contract from Stage 1. No wake source may relax or reinterpret the SLO.
 
+## HTTP stacks, and what does not ride the ticker
+
+The APK contains **three** HTTP stacks, and that is a decision to record, not an accident to
+discover later:
+
+| Stack | Used by |
+|---|---|
+| `HttpURLConnection` | the app's own 15 signed REST call sites. `AgentAuth`'s canonical string is byte-pinned by a test and a silent client swap makes every request 401 → credential wipe, so a migration is not a battery task. |
+| `okhttp 2.5.0` | the vendored `mmslib` AAR — the **live** MMS send/download path. Load-bearing; see `STAGE-3-okhttp.md` §0. |
+| `okhttp3 4.12.0` | Coil (image loading), and a future WebSocket transport if Stage 4 ships. Arrives transitively; pin it explicitly if it is used. |
+
+`TrustStatementPublisher` stays **off** the shared ticker. Its `QUIET_MS = 5_000L` loop is a publish
+cadence, not a 60 s maintenance check, and its 60 s position refresh is a check *inside* that 5 s
+loop. Moving it to a 60 s tick would change when trust statements are published — a behaviour change
+this stage does not make.
+
 ## Consequences
 
 - **Stage 2 ships the seam only.** `fcmAvailable` and `socketAvailable` are hard-wired `false`, so
