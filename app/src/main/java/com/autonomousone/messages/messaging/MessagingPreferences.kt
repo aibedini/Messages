@@ -50,6 +50,29 @@ class MessagingPreferences(context: Context) {
         prefs.edit().remove("smsc_sim_$subscriptionId").apply()
     }
 
+    /**
+     * Per-SIM MANUAL phone number, for DISPLAY only.
+     *
+     * Many Iranian SIMs do not return a number from the platform, so the user may enter one in
+     * Settings. It is keyed by subscription id exactly like [smscForSim]; a subscription id change
+     * (SIM moved to another slot/device) means re-entering it.
+     *
+     * This value must never leave the phone: it is not an identity, not a routing input, and it must
+     * not reach telemetry, gateway events or diagnostic exports. [SimInfo.simRef] is the only
+     * SIM-derived value those paths may carry.
+     */
+    fun simNumberForSim(subscriptionId: Int): String? =
+        prefs.getString("sim_number_manual_$subscriptionId", null)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+    fun setSimNumberForSim(subscriptionId: Int, value: String?) {
+        val v = value?.trim().orEmpty()
+        val key = "sim_number_manual_$subscriptionId"
+        if (v.isEmpty()) prefs.edit().remove(key).apply()
+        else prefs.edit().putString(key, v).apply()
+    }
+
     companion object {
         /**
          * The ONE messaging preference file on the device.

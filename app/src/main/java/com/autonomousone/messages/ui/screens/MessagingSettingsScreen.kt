@@ -54,6 +54,7 @@ import androidx.navigation.NavController
 import com.autonomousone.messages.R
 import com.autonomousone.messages.messaging.CustomRetentionRange
 import com.autonomousone.messages.messaging.MessagingPreferences
+import com.autonomousone.messages.messaging.SimNumberFormat
 import com.autonomousone.messages.utils.formatFullTimestamp
 import com.autonomousone.messages.viewmodel.MessagingSettingsViewModel
 import com.autonomousone.messages.viewmodel.OtpRetentionViewModel
@@ -70,13 +71,6 @@ fun MessagingSettingsScreen(navController: NavController) {
     val viewModel: MessagingSettingsViewModel = viewModel()
     var hasPhonePermission by remember { mutableStateOf(viewModel.hasPhonePermission()) }
     var tempSmsc by remember { mutableStateOf(viewModel.smscAddress) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPhonePermission = granted
-        if (granted) viewModel.refreshSims()
-    }
 
     LaunchedEffect(hasPhonePermission) {
         if (hasPhonePermission) viewModel.refreshSims()
@@ -322,9 +316,15 @@ private fun SimSlotContent(
     hasPhonePermission: Boolean,
     onPermissionResult: (Boolean) -> Unit
 ) {
+    var hasNumberPermission by remember { mutableStateOf(viewModel.hasPhoneNumbersPermission()) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        // The inventory needs READ_PHONE_STATE. READ_PHONE_NUMBERS is requested alongside it, but a
+        // denied number permission only leaves the number empty — it must not disable the SIM list.
+        val granted = result[Manifest.permission.READ_PHONE_STATE] == true
+        hasNumberPermission = result[Manifest.permission.READ_PHONE_NUMBERS] == true
         onPermissionResult(granted)
         if (granted) {
             viewModel.refreshSims()
@@ -337,6 +337,13 @@ private fun SimSlotContent(
         }
     }
 
+    val numberPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        hasNumberPermission = result[Manifest.permission.READ_PHONE_NUMBERS] == true
+        if (hasNumberPermission) viewModel.refreshSims()
+    }
+
     if (!hasPhonePermission) {
         Text(
             "Permission is required to identify the SIM card slots.",
@@ -345,7 +352,14 @@ private fun SimSlotContent(
         )
         Spacer(modifier = Modifier.height(10.dp))
         Button(
-            onClick = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
+            onClick = {
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.READ_PHONE_STATE,
+                        Manifest.permission.READ_PHONE_NUMBERS
+                    )
+                )
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Grant permission")
@@ -359,13 +373,79 @@ private fun SimSlotContent(
         selected = viewModel.selectedSubscriptionId == MessagingPreferences.SUBSCRIPTION_UNSET,
         onClick = { viewModel.selectSim(MessagingPreferences.SUBSCRIPTION_UNSET) }
     )
-    viewModel.sims.forEach { sim ->
-        SimRow(
-            title = viewModel.labelFor(sim),
-            subtitle = sim.number.ifBlank { "Subscription ${sim.subscriptionId}" },
-            selected = viewModel.selectedSubscriptionId == sim.subscriptionId,
-            onClick = { viewModel.selectSim(sim.subscriptionId) }
+    if (viewModel.sims.isNotEmpty() && !hasNumberPermission) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.sim_number_permission_missing),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        TextButton(
+            onClick = {
+                numberPermissionLauncher.launch(
+                    arrayOf(Manifest.permission.READ_PHONE_NUMBERS)
+                )
+            }
+        ) {
+            Text(stringResource(R.string.sim_number_permission_grant))
+        }
+    }
+    if (viewModel.sims.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.sim_number_local_only),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+        )
+    }
+    viewModel.sims.forEach { sim ->
+        val subId = sim.subscriptionId
+        val editing = viewModel.numberEditingSubId == subId
+        val manual = viewModel.simNumberManual[subId]
+        Column {
+            SimRow(
+                title = viewModel.labelFor(sim),
+                subtitle = viewModel.displayNumberFor(sim)
+                    ?.let { SimNumberFormat.isolate(it) }
+                    ?: stringResource(R.string.sim_number_not_set),
+                selected = viewModel.selectedSubscriptionId == sim.subscriptionId,
+                onClick = { viewModel.selectSim(sim.subscriptionId) }
+            )
+            Row(
+                modifier = Modifier.padding(start = 40.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (editing) {
+                    var temp by remember(subId) { mutableStateOf(manual.orEmpty()) }
+                    OutlinedTextField(
+                        value = temp,
+                        onValueChange = { temp = it },
+                        placeholder = { Text(stringResource(R.string.sim_number_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { viewModel.saveSimNumberForSim(subId, temp) }) {
+                        Text(stringResource(R.string.sim_number_save))
+                    }
+                } else {
+                    TextButton(onClick = { viewModel.editSimNumberForSim(subId) }) {
+                        Text(
+                            stringResource(
+                                if (manual == null) R.string.sim_number_set
+                                else R.string.sim_number_edit
+                            )
+                        )
+                    }
+                    if (manual != null) {
+                        TextButton(onClick = { viewModel.clearSimNumberForSim(subId) }) {
+                            Text(stringResource(R.string.sim_number_clear))
+                        }
+                    }
+                }
+            }
+        }
     }
     if (viewModel.sims.isEmpty()) {
         Text(

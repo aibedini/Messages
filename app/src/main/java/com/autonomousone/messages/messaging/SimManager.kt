@@ -27,6 +27,13 @@ data class SimInfo(
     val slotIndex: Int,
     val carrierName: String,
     val displayName: String,
+    /**
+     * The line's phone number, or empty when the platform/carrier did not provide it.
+     *
+     * DISPLAY ONLY. It is never an identity, never an input to routing, and must never be sent to
+     * telemetry, gateway events or diagnostic exports. A user-entered fallback lives in
+     * `MessagingPreferences.simNumberForSim` and wins over this value in the UI.
+     */
     val number: String,
     /** True when this is the platform default subscription. */
     val isSystemDefault: Boolean,
@@ -55,6 +62,16 @@ class SimManager(
 
     fun hasReadPhoneState(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Whether the carrier/SIM number is readable.
+     *
+     * Separate from [hasReadPhoneState] because the inventory works without it: a denied number
+     * permission leaves [SimInfo.number] empty and the user can still type a display number.
+     */
+    fun hasReadPhoneNumbers(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_NUMBERS) ==
             PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission") // guarded by hasReadPhoneState() before the platform call
@@ -104,17 +121,7 @@ class SimManager(
         val defaultSubId = defaultSmsSubscriptionId()
 
         for (info in infos) {
-            val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                try {
-                    info.getNumber().orEmpty()
-                } catch (e: Exception) {
-                    ""
-                }
-            } else {
-                // Pre-13: per-subscription number lookup is no longer exposed
-                // by current SDK stubs; the carrier label is still shown.
-                ""
-            }
+            val number = readNumber(sm, info)
             result += SimInfo(
                 subscriptionId = info.subscriptionId,
                 slotIndex = info.simSlotIndex,
@@ -132,10 +139,53 @@ class SimManager(
         return result
     }
 
+    /**
+     * The platform/carrier number for one subscription, in the order Android documents:
+     * `SubscriptionManager.getPhoneNumber` on API 33+, then the deprecated `SubscriptionInfo.number`
+     * as a fallback. Every branch is isolated: a carrier that refuses the lookup must not empty the
+     * rest of the inventory.
+     */
+    @SuppressLint("MissingPermission") // the caller holds READ_PHONE_STATE; number failures are caught
+    private fun readNumber(sm: SubscriptionManager, info: SubscriptionInfo): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                sm.getPhoneNumber(info.subscriptionId)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { return it }
+            } catch (_: Exception) {
+                // Fall through to the deprecated per-subscription value.
+            }
+        }
+        return try {
+            @Suppress("DEPRECATION")
+            info.getNumber()?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     /** Human-readable label for a subscription, e.g. "Slot 1 · Irancell". */
     fun labelFor(sim: SimInfo): String {
         val carrier = sim.carrierName.ifBlank { sim.displayName.ifBlank { "SIM" } }
         return "SIM ${sim.slotIndex + 1} · $carrier"
+    }
+
+    /**
+     * The number to DISPLAY for [sim], with the manual value taking precedence over the platform
+     * value and nothing invented when both are absent.
+     */
+    fun displayNumberFor(sim: SimInfo, manualNumber: String?): String? =
+        SimNumberDisplay.resolve(manualNumber, sim.number)
+
+    /**
+     * The two-line label used by the in-conversation selector: line one is [labelFor], line two is
+     * the display number when one exists. [labelFor] is deliberately unchanged because Settings and
+     * SMSC also use it and must keep their compact one-line form.
+     */
+    fun labelWithNumberFor(sim: SimInfo, manualNumber: String?): String {
+        val number = displayNumberFor(sim, manualNumber) ?: return labelFor(sim)
+        return labelFor(sim) + "\n" + number
     }
 
     /**

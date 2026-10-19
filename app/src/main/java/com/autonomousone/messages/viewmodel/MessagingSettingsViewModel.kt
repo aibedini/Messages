@@ -44,9 +44,22 @@ class MessagingSettingsViewModel(
     /** v2.6.14: live-read SMSC per SIM from the (U)SIM itself (API 30+). */
     val simSmscRead = mutableStateMapOf<Int, String?>()
 
+    /** DISPLAY-ONLY manual number overrides per SIM. Local preference; never leaves this phone. */
+    val simNumberManual = mutableStateMapOf<Int, String?>()
+
+    /** Subscription id whose number editor row is open (-1 = none). */
+    var numberEditingSubId by mutableIntStateOf(-1)
+        private set
+
     fun seedSmscManual() {
         sims.forEach { sim ->
             smscManual[sim.subscriptionId] = prefs.smscForSim(sim.subscriptionId)
+        }
+    }
+
+    fun seedSimNumberManual() {
+        sims.forEach { sim ->
+            simNumberManual[sim.subscriptionId] = prefs.simNumberForSim(sim.subscriptionId)
         }
     }
     var reactionsAsEmojiEnabled by mutableStateOf(prefs.showIphoneReactionsAsEmoji)
@@ -58,6 +71,9 @@ class MessagingSettingsViewModel(
 
     fun hasPhonePermission(): Boolean = simManager.hasReadPhoneState()
 
+    /** Separate from [hasPhonePermission]: a denied number permission leaves only the number blank. */
+    fun hasPhoneNumbersPermission(): Boolean = simManager.hasReadPhoneNumbers()
+
     fun refreshSims() {
         viewModelScope.launch(Dispatchers.IO) {
             val list = simManager.getActiveSims()
@@ -65,6 +81,7 @@ class MessagingSettingsViewModel(
                 sims.clear()
                 sims.addAll(list)
                 seedSmscManual()
+                seedSimNumberManual()
             }
         }
     }
@@ -113,6 +130,35 @@ class MessagingSettingsViewModel(
         smscManual[subscriptionId] = null
         smscEditingSubId = -1
     }
+
+    fun editSimNumberForSim(subscriptionId: Int) {
+        numberEditingSubId = subscriptionId
+    }
+
+    /**
+     * Saves a DISPLAY-ONLY number for a SIM. Empty input removes the override and the platform
+     * value (if any) becomes visible again. The value stays in the local messaging preference file;
+     * it is never added to telemetry, gateway events or diagnostics.
+     */
+    fun saveSimNumberForSim(subscriptionId: Int, value: String) {
+        prefs.setSimNumberForSim(subscriptionId, value)
+        simNumberManual[subscriptionId] = prefs.simNumberForSim(subscriptionId)
+        numberEditingSubId = -1
+    }
+
+    fun clearSimNumberForSim(subscriptionId: Int) {
+        prefs.setSimNumberForSim(subscriptionId, null)
+        simNumberManual[subscriptionId] = null
+        numberEditingSubId = -1
+    }
+
+    /** Manual > platform > none, formatted for display. */
+    fun displayNumberFor(sim: SimInfo): String? =
+        simManager.displayNumberFor(sim, simNumberManual[sim.subscriptionId])
+
+    /** Two-line selector label: "SIM n · carrier" + the display number when available. */
+    fun labelWithNumberFor(sim: SimInfo): String =
+        simManager.labelWithNumberFor(sim, simNumberManual[sim.subscriptionId])
 
     fun setReactionsAsEmoji(enabled: Boolean) {
         reactionsAsEmojiEnabled = enabled

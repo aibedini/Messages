@@ -160,6 +160,17 @@
     <string name="sim_switch">تغییر سیم‌کارت</string>
     <string name="sim_system_default">پیش‌فرض سیستم</string>
     <string name="sim_slot_fmt">سیم %1$d</string>
+    <string name="sim_system_default_with_slot_fmt">پیش‌فرض سیستم · سیم %1$d</string>
+    <string name="sim_slot_number_fmt">سیم %1$d · %2$s</string>
+    <string name="sim_number_set">ثبت شماره</string>
+    <string name="sim_number_edit">ویرایش شماره</string>
+    <string name="sim_number_clear">حذف شماره</string>
+    <string name="sim_number_save">ذخیره</string>
+    <string name="sim_number_hint">‎+98… یا 0933…</string>
+    <string name="sim_number_not_set">شماره‌ای ثبت نشده — پایین وارد کنید</string>
+    <string name="sim_number_local_only">فقط برای نمایش روی همین گوشی؛ هرگز به GMweb فرستاده نمی‌شود.</string>
+    <string name="sim_number_permission_missing">دسترسی به شماره تلفن را بده تا شماره هر خط نمایش داده شود. فهرست سیم‌کارت‌ها بدون آن هم کار می‌کند.</string>
+    <string name="sim_number_permission_grant">اجازه دسترسی به شماره</string>
 
     <!-- ارسال زمان‌بندی‌شده -->
     <string name="sched_dialog_title">ارسال در زمان مشخص</string>
