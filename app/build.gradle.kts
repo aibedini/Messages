@@ -134,6 +134,9 @@ dependencies {
     // meant any unit test using runTest/advanceTimeBy could not compile at all
     // (the test source set is the one that actually runs in CI here).
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // STAGE-4 JVM tests: a real TLS WebSocket server, generated in-process. It exercises the
+    // upgrade, ping/pong, pinning and fallback paths without any Android device or GMweb server.
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -166,6 +169,10 @@ dependencies {
     implementation(libs.klinker.logger)
     implementation(libs.okhttp.legacy)
     implementation(libs.okhttp.urlconnection)
+    // Stage 4: pin the okhttp3 4.x that Coil already brings in, because the gateway
+    // WebSocket (SocketWakeSource) now uses it directly. Scoped to that one transport;
+    // no HttpURLConnection call site moves here (STAGE-3 Part B §3).
+    implementation(libs.okhttp3)
     // Room: local read-SSOT for the UI (phase 2 architecture).
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
