@@ -7,8 +7,10 @@ weakening the availability contract in
 **Reported symptom (device owner, Nothing Phone):** battery drains fast and the
 phone runs hot while the gateway is enabled.
 
-**Status of this programme:** PLANNED. Nothing in these documents has been
-implemented or measured.
+**Status of this programme:** IN PROGRESS. Stages 1 and 2 are merged. Stage 4's
+client is merged with the GMweb endpoint still pending (AUTO therefore still
+resolves to POLLING). Stage 3 is CLOSED with no code change. Stage 5 remains
+BLOCKED. **No on-device measurement has been taken.**
 
 ---
 
@@ -112,7 +114,7 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
    ├──► STAGE-3  OkHttp cleanup  (independent; required only by Stage 4)
    │        │
    │        ▼
-   └──► STAGE-4  SocketWakeSource (self-hosted push)
+   └──► STAGE-4  SocketWakeSource (client merged; GMweb endpoint pending)
             │
             ▼
         STAGE-5  FcmWakeSource — BLOCKED by ADR-003, see that file
@@ -123,8 +125,17 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
 | 1 | [`STAGE-1-quick-wins.md`](STAGE-1-quick-wins.md) | MERGED (#12) | yes, for 1.1 only | decision in §1.1 |
 | 2 | [`STAGE-2-wake-source.md`](STAGE-2-wake-source.md) | low | no | no |
 | 3 | [`STAGE-3-okhttp.md`](STAGE-3-okhttp.md) | CLOSED — no action (§0) | no | no |
-| 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | medium | yes | no |
+| 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | medium | yes — not deployed yet | no |
 | 5 | [`STAGE-5-fcm-optional.md`](STAGE-5-fcm-optional.md) | medium | yes | yes — Firebase console |
+
+**Stage 4 status: client merged, server pending.** `SocketWakeSource` ships on
+`perf/battery-stage-4`; GMweb does not implement `/gateway/wake` yet, so
+`SERVER_WAKE_DEPLOYED` is `false` and `wakeMode = AUTO` still resolves to
+`POLLING` — default behaviour is unchanged. An explicit `SOCKET` choice tries
+the socket, falls back to polling and reports the reason on the diagnostic
+card. No request-count or battery reduction is claimed for Stage 4: the
+polling floor still runs while the socket is open (see the stage report §C).
+Stage 5 remains **BLOCKED** and was not touched.
 
 Stage 3 is closed with no code change. Its finding — that the vendored
 MMS AAR needs OkHttp 2.5.0 — is recorded in STAGE-3-okhttp.md §0 and
@@ -133,9 +144,10 @@ must not be re-litigated from greps.
 Everything a human must do, in Persian, is in
 [`MANUAL-STEPS.md`](MANUAL-STEPS.md).
 
-**Stage 1 is expected to recover most of the regression on its own.** Stages 4
-and 5 buy a further reduction, but the present symptom is a 2-second poll and a
-permanently held wake lock, not the absence of push.
+**Stage 1 is expected to recover most of the regression on its own.** Stage 4's
+socket was expected to buy a further reduction, but its client currently runs
+alongside the polling floor and the GMweb endpoint is pending, so no such
+reduction is claimed. Stage 5 remains BLOCKED.
 
 ---
 

@@ -342,3 +342,185 @@ rebuild, which is the reason Stage 2 exists.
 ---
 
 <!-- The implementing agent appends the report from README.md §5 below. -->
+
+## Implementation report
+
+Agent: deepseek-flash (DeepSeek Harness)   Date: 2026-10-19
+Branch: perf/battery-stage-4               Base commit: 8bb088d
+
+GATE-VERIFIED: YES
+TESTS EXECUTED: 2735
+COMPILE STATUS: PASS
+
+### Step 0 — Android 15 foreground-service audit (precondition)
+
+The `type` passed to `startForeground` is computed in
+`GatewayService.kt:697` from `GatewayForegroundStartPolicy.decide(...)`:
+
+```kotlin
+val wantsDataSync = GatewayForegroundStartPolicy.includesDataSync(decision)
+val type = when {
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+    wantsDataSync ->
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+    else ->
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+}
+startForeground(NOTIFICATION_ID, notification, type)
+```
+
+`decide(apiLevel, startReason)` (`GatewayForegroundStartPolicy.kt:40`) returns
+`START_WITH_DATA_SYNC` below API 35 and `START_SPECIAL_USE_ONLY` from API 35.
+The resulting flags per SDK branch are therefore:
+
+| SDK branch | Flags | Why |
+|---|---|---|
+| API < 34 (`UPSIDE_DOWN_CAKE`) | `DATA_SYNC` only | pre-timeout behaviour |
+| API 34 | `DATA_SYNC \| SPECIAL_USE` | `decide` still returns DATA_SYNC |
+| API 35+ | `SPECIAL_USE` only | `decide` refuses the dataSync budget |
+
+**DATA_SYNC on API 35+: no.** The manifest declares
+`foregroundServiceType="dataSync|specialUse"` (`AndroidManifest.xml:228`), so the
+platform would accept the bit, but including it would enrol this permanent
+gateway in the Android 15 6-hour-per-24-hour `dataSync` cap — precisely the
+failure the stage says must not ship. The policy already excludes it, so the
+socket-holding service runs `specialUse`-only on API 35+ and the cap does **not**
+apply. This satisfies §0's precondition. Residual risk: any future change that
+re-adds `DATA_SYNC` at API 35+ silently reintroduces the daily cap.
+
+### A. Completed
+
+| Item | What was changed (file:line) | Commit | Test proving it |
+|---|---|---|---|
+| okhttp3 4.12.0 pinned as a direct dependency, legacy 2.5.0 untouched | `gradle/libs.versions.toml:22,44`, `app/build.gradle.kts:175` | 8477adc | `:app:dependencies --configuration debugRuntimeClasspath` resolves `+--- com.squareup.okhttp3:okhttp:4.12.0 (*)`; `com.squareup.okhttp:okhttp:2.5.0` and `okhttp-urlconnection:2.5.0` remain |
+| WSS endpoint derived by scheme substitution; `ws://` impossible | `WakeSocketEndpoint.kt:12` | d1d0168 | `PlaintextWebSocketRejectedTest` (4 tests) |
+| Upgrade signed with the existing `AgentAuth` canonical string and operational key, fail closed | `AgentAuth.kt:78`, `AgentAuthWakeSigner.kt:11`, `WakeHandshake.kt` | d1d0168 | `WakeHandshakeTest` (3 tests), including the on-the-wire `X-Agent-Auth`/`X-AGENT-TS` assertion |
+| Two-pin, user-configurable certificate pinning; mismatch reported, never bypassed | `WakeCertificatePins.kt:17`, `GatewayPreferences.kt:126` | d1d0168 | `CertificatePinRotationTest` (4 tests) + live pin-mismatch case in `SocketFallbackLadderTest` |
+| One-second wake floor and sustained-abuse disconnect | `WakeRateLimiter.kt:13` | d1d0168 | `WakeRateLimitTest` (2), `WakeAbuseDisconnectTest` (1) |
+| Adaptive ACTIVE/IDLE window, pure and debounced, wired to the socket | `WakeActivityPolicy.kt:48`, `AppForegroundTracker.kt` | d1d0168 | `WakeActivityPolicyTest` (6), including open/close wiring |
+| `SocketWakeSource`: handshake, frames, 4-minute ping, reconnect backoff, fallback | `SocketWakeSource.kt:68` | d1d0168 | `SocketKeepaliveTest` (2), `SocketFallbackLadderTest` (3) |
+| 401/404 upgrade is a transport failure and never wipes credentials | `SocketWakeSource.kt:383` (no credential API exists in the class) | d1d0168 | `SocketAuthRejectionDoesNotWipeCredentialsTest` (2) |
+| `wakeMode=SOCKET` selects the socket; AUTO still resolves to POLLING | `WakeSourceSelector.kt:28`, `GatewayService.kt:103` (`SERVER_WAKE_DEPLOYED=false`) | d1d0168 | `WakeSourceSelectorStage4Test` (3) |
+| Settings mode picker (AUTO/POLLING/SOCKET) and two pin fields in the existing Gateway section | `SettingsScreen.kt:784` | d1d0168 | compiles under `compileDebugAndroidTestKotlin`; no screenshot/instrumentation test added |
+| Health: socket state, ACTIVITY + reason, pinning, reconnects, suppressed frames | `GatewayHealth.kt`, `GatewayHealthRecorder.kt`, `GatewayHealthCard.kt:256` | d1d0168 | exercised by the socket tests' `WakeHealth` assertions |
+| JVM test harness: in-process TLS WebSocket server | `app/src/test/.../FakeWakeServer.kt` | 8394d18 | 31 new tests across 10 classes; all green |
+
+Test count: the full suite ran **2735 tests / 266 result classes, 0 failures,
+0 skipped**. The Stage 4 additions are **31 tests**.
+
+Release sanity (not part of the §4 gate): `:app:assembleRelease` passed
+`minifyReleaseWithR8` with OkHttp's consumer rules at 30 371 307 bytes. The APK
+is unsigned in this environment (no `keystore.properties`/`KEYSTORE_*`).
+
+### B. Not completed
+
+| Item | Why not | Blocker type | What would unblock it |
+|---|---|---|---|
+| GMweb `GET wss://…/gateway/wake` | The server does not implement it (§0 of the task and MANUAL-STEPS §2.2) | server-dependency | Deploy the endpoint with the signed upgrade + `{"t":"wake"}` frames, then set `SERVER_WAKE_DEPLOYED=true` |
+| End-to-end socket test against GMweb | No server endpoint to connect to | server-dependency | The deployment above |
+| On-device measurement of the socket's battery effect | No device run was performed; this programme forbids inventing one | server-dependency | MANUAL-STEPS §3 measurement with the endpoint deployed |
+| Pausing the long-poll while the socket is ACTIVE | Deliberately not attempted: the pollers are also the only fetch path, and no on-demand single-cycle entry point exists. Stopping them would put the ACK ledger/SLO at risk | out-of-scope | A separate designed stage with on-demand claim support and measurement |
+| Web-client ACTIVE hint from heartbeat/telemetry replies | `BackendClient.Result.Success` exposes no response headers; only the upgrade response header is read | out-of-scope | Extend the result type or add a hint field/server call |
+| A distinct 401/404 status on the diagnostic card | OkHttp reports a non-101 upgrade as a failure without a public response; it is correctly classified `TRANSPORT_FAILED` and never wipes | out-of-scope | An interceptor/event listener if the status must be displayed |
+| `keepalivesSent` counter | OkHttp exposes no ping callback; reporting a count would invent one | out-of-scope | A raw WebSocket implementation (rejected in Stage 3 Part B) |
+
+### C. Deviations from the plan
+
+1. **The AUTO ladder is gated.** ADR-008 says AUTO → SOCKET if available. The
+   task requires default behaviour to stay POLLING, so `Inputs` gained
+   `socketAutoEligible` and production passes `SERVER_WAKE_DEPLOYED=false`
+   (`GatewayService.kt:103`). AUTO never chooses SOCKET; an explicit SOCKET
+   choice still does. Flip that constant when GMweb deploys the endpoint.
+2. **The polling floor is not paused in SOCKET mode.** The two pollers keep
+   running because they are the data path; `onWake` calls the existing
+   `retryNow()`. Consequently Stage 4 adds prompt wakes but does **not**
+   deliver the "360 keepalives instead of 3 456 long-polls" reduction claimed in
+   §0. No request-count or battery improvement is claimed. This is the main
+   reason the stage is a client-only, default-off deliverable.
+3. **`wakeMode` was not exposed anywhere before this stage.** Step 3 said
+   "wherever it is already exposed"; it was preference-only. The picker was
+   added to the existing Settings → Gateway `SectionCard` using the existing
+   `FilterChip` pattern, with a note that the choice is read when the gateway
+   service starts.
+4. **The ACTIVITY server hint is a lease.** It is read only from the upgrade
+   response (`X-Wake-Active: 1`) and expires after 10 minutes, because the
+   one-bit channel carries no refresh frame and the heartbeat path cannot expose
+   headers without an out-of-scope change. A long-lived web session therefore
+   keeps the socket open only while another ACTIVE input (foreground, recent
+   message, outbox) is also present; otherwise it falls back to polling.
+5. **No `keepalivesSent` counter.** OkHttp owns the protocol ping and exposes no
+   callback; the health model reports the configured interval instead
+   (`pingIntervalMs=240_000`). `wakeCount`, `suppressedWakes`, `unknownFrames`
+   and `reconnectCount` are real counters.
+6. **`WakeHealth`/`GatewayHealthSnapshot` grew fields** beyond the Stage 2
+   minimum (socket state, activity, pinning, counts). The old fields and
+   defaults are unchanged, so Stage 2's tests still pass.
+7. **Android 15 audit outcome is a finding, not a code change**: the existing
+   policy already runs `specialUse`-only at API 35+; no `connectedDevice` or
+   alarm-recovery work was needed.
+
+### D. Constraint check (§3)
+
+| Constraint | Upheld? | Evidence |
+|---|---|---|
+| ADR-003 SLO | Yes | SOCKET mode only adds `retryNow()` nudges to the existing loop; no cadence, claim or ACK change. AUTO = POLLING by default. The polling floor remains, so pickup cannot be slower than Stage 1.1. |
+| Correctness triad untouched | Yes | No change to `EveSmsQueue`, the ACK ledger, `GatewayAckTracker` or idempotency keys; `git diff` touches only wake transport/wiring/health/UI. |
+| No Google dependency added | Yes | Only OkHttp/OkHttp-TLS (Square, test-only TLS). No FCM/Play Services addition. |
+| No content on wake channel | Yes | The only frame field read is `t` (`SocketWakeSource.kt:346`); no client payload is sent; `WakeFrameParsingTest` sends recipients/bodies/commands and observes only a wake or an ignored/counted frame. |
+| No invented measurements | Yes | Counts are derived from test/run output; no battery percentages, no drain claims, and §C.2 explicitly withdraws the plan's request-count claim. |
+| Room schema unchanged | Yes | `app/schemas/com.autonomousone.messages.data.MessagesDatabase/15.json` exists; no `@Entity`/DAO/schema file in the diff. |
+| Recipients tokenised in logs | Yes | New logs contain only class names, state names and counts; test frames use fake numbers and are never logged. |
+| No source-only claim about binary contents | Yes | The OkHttp version claim comes from `:app:dependencies`, and the release APK was built with R8. |
+
+### E. Verbatim command output
+
+Command: `./gradlew testDebugUnitTest assembleDebug compileDebugAndroidTestKotlin lintDebug`
+(Windows wrapper `gradlew.bat`; redirect to a file, tail reproduced verbatim).
+
+```text
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:lintAnalyzeDebugAndroidTest
+> Task :app:lintAnalyzeDebug
+> Task :app:lintAnalyzeDebugUnitTest
+> Task :app:testDebugUnitTest
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug
+
+> Task :app:lintReportDebug
+Wrote HTML report to file:///C:/Users/Mahna/sms%20center/Messages/app/build/reports/lint-results-debug.html
+
+> Task :app:lintDebug
+
+BUILD SUCCESSFUL in 7m 42s
+63 actionable tasks: 16 executed, 47 up-to-date
+```
+
+Test totals were counted from
+`app/build/test-results/testDebugUnitTest/TEST-*.xml` after that run:
+**2735 tests, 0 failures, 0 skipped** across 266 result classes.
+
+### F. Residual risk / what the next agent must know
+
+- **The server half does not exist.** Every explicit SOCKET user currently gets
+  one connection attempt, a reported `TRANSPORT_FAILED` fallback to polling, and
+  backoff. That is the designed behaviour, not a failure of the client.
+- **The battery premise of Stage 4 is not delivered.** Polling still runs while
+  the socket is open. Do not claim the 360-vs-3 456 request reduction until the
+  pollers can be safely paused and measured.
+- **Android 15:** the gateway is `specialUse`-only at API 35+; adding `dataSync`
+  back at that level re-enables the 6 h/24 h cap and would kill the socket daily.
+- **Pinning:** an invalid pin fails closed as `NOT_CONFIGURED`; a mismatch is
+  `MISMATCH` + `TRANSPORT_FAILED`. Empty pins mean unpinned and the card says
+  so. The UI stores pins but the service reads them only on the next start.
+- **Mode changes apply on the next gateway service start** (the picker says so).
+  Toggling the gateway off/on is the expected way to apply one.
+- **OkHttp 4.12.0 is pinned.** If a future Coil upgrade needs a newer 4.x, this
+  pin will hold it back deliberately; revisit then.
+- **Do not reuse the legacy `okhttp 2.5.0` line.** The vendored MMS AAR needs it
+  live (STAGE-3 §0). The new dependency is the `com.squareup.okhttp3` coordinate.
+- **Stage 5 remains BLOCKED** by ADR-003 and was not touched.
