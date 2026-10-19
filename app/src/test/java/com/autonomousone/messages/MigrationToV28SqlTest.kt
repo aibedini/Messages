@@ -74,6 +74,14 @@ class MigrationToV28SqlTest {
         }
 
     @Test
+    fun `this migration owns the current schema version boundary`() {
+        assertEquals(27, MessagesDatabase.MIGRATION_27_28.startVersion)
+        assertEquals(28, MessagesDatabase.MIGRATION_27_28.endVersion)
+        assertEquals(28, MessagesDatabase.CURRENT_SCHEMA_VERSION)
+        assertEquals(27, MessagesDatabase.PREVIOUS_SCHEMA_VERSION)
+    }
+
+    @Test
     fun `v27 messages migrates to exactly the v28 schema`() {
         val migrated = DriverManager.getConnection("jdbc:sqlite::memory:")
         try {
