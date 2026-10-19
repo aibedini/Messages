@@ -10,6 +10,7 @@ import com.autonomousone.messages.repository.SpamRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -253,7 +254,25 @@ class SpamRepositoryTest {
         assertEquals("09123456789", com.autonomousone.messages.repository.BlocklistRepository.normalize("+989123456789"))
         assertEquals("09123456789", com.autonomousone.messages.repository.BlocklistRepository.normalize("0912 345 6789"))
         assertEquals("09123456789", com.autonomousone.messages.repository.BlocklistRepository.normalize("989123456789"))
-        assertEquals("", com.autonomousone.messages.repository.BlocklistRepository.normalize("not a number"))
+        // f8a71f7 changed this deliberately: a sender with no digits is an ALPHANUMERIC sender, and
+        // returning "" for one is what the P1 fix removed. The expectation here was stale.
+        assertEquals("not a number", com.autonomousone.messages.repository.BlocklistRepository.normalize("not a number"))
+    }
+
+    /**
+     * P1 (f8a71f7): bank names and service shortcodes are the majority of senders in this market,
+     * and every one of them normalizes without digits. Collapsing them to the same empty key meant
+     * blocking one alphanumeric sender blocked all of them — a user-visible, irreversible action.
+     * This is the assertion that would have caught that regression.
+     */
+    @Test
+    fun `normalize keeps alphanumeric sender IDs distinct`() {
+        assertEquals("bank", com.autonomousone.messages.repository.BlocklistRepository.normalize("BANK"))
+        assertEquals("ikco", com.autonomousone.messages.repository.BlocklistRepository.normalize(" IKCO "))
+        assertNotEquals(
+            com.autonomousone.messages.repository.BlocklistRepository.normalize("BANK"),
+            com.autonomousone.messages.repository.BlocklistRepository.normalize("IKCO"),
+        )
     }
 
     // ── Spam is NOT Trash (the invariant a release must not get wrong) ───────
