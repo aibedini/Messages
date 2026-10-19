@@ -91,6 +91,18 @@ cadence, not a 60 s maintenance check, and its 60 s position refresh is a check 
 loop. Moving it to a 60 s tick would change when trust statements are published — a behaviour change
 this stage does not make.
 
+## Status of §2.5
+
+`GatewayTicker.requestEarlierTick` is implemented and tested (per-subscriber, coalescing, 1 s floor,
+additive to the shared tick). `ConnectionSupervisor`'s 60 s reconcile is the one subscriber on the
+ticker, and the tick now lives exactly as long as the supervisor loop (`ensureLoop` → `shutdown`),
+not as long as the wake source.
+
+**Deferred to a "Stage 2b"**: the `EventUploader` lease sweep, `DeviceTelemetry`'s periodic report
+and `HeartbeatManager`. They are gated on an on-device measurement showing those loops matter; wiring
+a 60 s tick under a 1 s→5 min heartbeat ladder without that measurement is a reliability risk, not a
+battery win. `requestEarlierTick` therefore has **no production caller by design** for now.
+
 ## Consequences
 
 - **Stage 2 ships the seam only.** `fcmAvailable` and `socketAvailable` are hard-wired `false`, so
