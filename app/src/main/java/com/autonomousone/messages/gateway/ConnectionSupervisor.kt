@@ -346,7 +346,9 @@ class ConnectionSupervisor private constructor(
             } }
             // A LAN IPv4 change is what a network switch looks like locally;
             // the compare against boundIp inside reconcile() IS the rebind.
-            launch { while (isActive) { delay(60_000); reconcileNow() } }
+            // STAGE-2 §2.5: the 60 s reconcile rides GatewayTicker now (registered LAST, so it
+            // observes the other subscribers' post-tick state). The nudge channel below is
+            // unchanged and still drives immediate reconciles.
             for (nudge in reconciles) {
                 try {
                     reconcile()

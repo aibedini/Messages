@@ -42,6 +42,10 @@ class GatewayService : Service() {
      */
     private lateinit var wakeResolution: WakeSourceSelector.Resolution
     private lateinit var pollingWakeSource: PollingWakeSource
+    /** STAGE-2 §2.5: the shared 60 s tick every gateway maintenance subscriber rides. */
+    private lateinit var gatewayTicker: GatewayTicker
+    /** One-time guard: subscriber registration must not duplicate on every reconcile. */
+    private var tickerSubscribed = false
     private lateinit var trustPublisher: TrustStatementPublisher
     private lateinit var deviceTelemetry: DeviceTelemetry
     private lateinit var subscriptionMonitor: SubscriptionChangeMonitor
@@ -266,6 +270,7 @@ class GatewayService : Service() {
             )
         )
         pollingWakeSource = PollingWakeSource(outboxPoller, commandPoller)
+        gatewayTicker = GatewayTicker(serviceScope)
         GatewayHealthRecorder.setWakeSourceActive(wakeResolution.chosen.name)
         GatewayHealthRecorder.setWakeFallback(
             from = wakeResolution.fellBackFrom?.name,
@@ -335,8 +340,21 @@ class GatewayService : Service() {
                 // ADR-008: the wake seam. POLLING starts the same two pollers as the hooks above;
                 // `onWake` is what a socket/FCM source will call, wired to the existing retryNow()
                 // so the fetch side needs no new plumbing (STAGE-2 §2).
-                startWakeSource = { pollingWakeSource.start { outboxPoller.retryNow() } },
-                stopWakeSource = { pollingWakeSource.stop() },
+                startWakeSource = {
+                    // STAGE-2 §2.5: first subscription is registered here because the supervisor is
+                    // built by the get() call that owns this lambda. Registration order is dispatch
+                    // order, and reconcile MUST be last: it starts/stops the other subscribers.
+                    if (!tickerSubscribed) {
+                        gatewayTicker.subscribe("connection-supervisor") { supervisor.reconcileNow() }
+                        tickerSubscribed = true
+                    }
+                    gatewayTicker.start()
+                    pollingWakeSource.start { outboxPoller.retryNow() }
+                },
+                stopWakeSource = {
+                    pollingWakeSource.stop()
+                    gatewayTicker.stop()
+                },
                 activeWakeSource = { wakeResolution.chosen },
                 startSync = {
                     com.autonomousone.messages.data.TelephonySyncCoordinator
