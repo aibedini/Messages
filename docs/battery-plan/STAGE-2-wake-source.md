@@ -343,21 +343,21 @@ plain `git revert` with no data or preference migration.
 
 ## 9. Acceptance checklist
 
-- [ ] `WakeSource`, `WakeSourceId`, `WakeHealth`, `WakeUnavailable` exist in
+- [x] `WakeSource`, `WakeSourceId`, `WakeHealth`, `WakeUnavailable` exist in
       `gateway/wake/`
-- [ ] `PollingWakeSource` delegates to the existing pollers and adds no logic
-- [ ] `WakeSourceSelector` is pure, Android-free, and fully tested
-- [ ] `wakeMode` preference exists, defaults to `AUTO`, resolves to POLLING
-- [ ] `ManagedComponents` extended without removing existing hooks
-- [ ] Active source and any fallback are visible on the diagnostic card
-- [ ] ADR-008 written
-- [ ] `WakeSourceNoBehaviourChangeTest` passes
+- [x] `PollingWakeSource` delegates to the existing pollers and adds no logic
+- [x] `WakeSourceSelector` is pure, Android-free, and fully tested
+- [x] `wakeMode` preference exists, defaults to `AUTO`, resolves to POLLING
+- [x] `ManagedComponents` extended without removing existing hooks
+- [x] Active source and any fallback are visible on the diagnostic card
+- [x] ADR-008 written
+- [x] `WakeSourceNoBehaviourChangeTest` passes
 - [x] `GatewayTicker.requestEarlierTick` implemented per §2.5, with per-subscriber
       coalescing and a 1 s floor
 - [ ] Stage 1.5's `GatewayTicker` subscribers wired in the §2.5 order; the trust
       publisher deliberately left off, with the reason recorded
-- [ ] Gate passes; test-file count ≥ 242 + new tests
-- [ ] Report appended per [`README.md`](README.md) §5
+- [x] Gate passes; test-file count ≥ 242 + new tests
+- [x] Report appended per [`README.md`](README.md) §5
 
 ---
 

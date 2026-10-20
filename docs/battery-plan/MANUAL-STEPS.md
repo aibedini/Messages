@@ -69,37 +69,61 @@
 پیاده بشه:
 
 ```
-GET /api/v1/agent/commands/claim?waitMs=25000
-Headers: X-Agent-Auth, X-Agent-TS        (بدون تغییر، همان امضای فعلی)
+POST /api/v1/agent/commands/claim?waitMs=25000
+Headers: Content-Type: application/json; charset=utf-8
+         X-Agent-Auth, X-Agent-TS
+         X-API-Key                       (fallback قدیمی، اختیاری)
+Body:    {"agentId":"…","limit":25,
+          "runtime":{"protocolVersion":1,"appVersionName":"…","appVersionCode":…,
+                     "commandTypes":[…]}}
+امضا روی: POST\n/api/v1/agent/commands/claim\n<sha256hex(body)>\nX-AGENT-TS:<ts>\n
+          (مسیر بدون query؛ پس ?waitMs= امضا نمی‌شود)
 
 رفتار:
   - اگر کامندی موجوده → همین الان برگردان (مثل امروز)
   - اگر نیست → تا waitMs میلی‌ثانیه نگه دار
       • کامند رسید → همان لحظه برگردان
-      • نرسید → 200 با لیست خالی برگردان
+      • نرسید → 200 با {"commands":[]} برگردان
+  - پاسخ موفق همیشه این شکل است: {"commands":[...]} — حتی وقتی خالی است
   - سقف waitMs را سمت سرور ببند (مثلاً 30000) تا کلاینت نتونه سرور را نگه داره
 ```
 
 **سه نکته‌ی حیاتی:**
 
-1. **امضا عوض نمی‌شه.** `AgentAuth.canonicalString` مسیر را **بدون query
-   string** امضا می‌کنه. پس اضافه شدن `?waitMs=` هیچ تغییری در امضا نمی‌ده و
-   `src/agentAuth.js` دست نمی‌خوره. این را به توسعه‌دهنده‌ی GMweb بگو تا دنبال
-   تغییر امضا نگرده.
+1. **امضا عوض نمی‌شه — ولی body هم امضا می‌شه.** `AgentAuth.canonicalString`
+   (`AgentAuth.kt:68`) عیناً این است:
+
+   ```
+   "$method\n$path\n${sha256Hex(bodyBytes ?: ByteArray(0))}\nX-AGENT-TS:$timestamp\n"
+   ```
+
+   `claim()` مسیر را **بدون query** به امضا می‌دهد: `SecureCommandPoller.kt:463`
+   (`val path = CLAIM_PATH`) و `:490`
+   (`AgentAuth.sign(conn, currentDeviceId, path, "POST", bodyBytes)`).
+   پس **query string واقعاً امضا نمی‌شود** و اضافه شدن `?waitMs=` امضا را عوض
+   نمی‌کند. اما **body امضا می‌شود** (SHA-256 پایین‌حروفی): اگر JSON بدنه تغییر
+   کند امضا باطل است. `src/agentAuth.js` باید همین canonical string را با hash
+   بدنه بسازد — این قاعده‌ی جدیدی نیست، فقط نباید بدنه از پوشش خارج شود.
 2. **ریورس‌پراکسی.** اگر nginx یا Cloudflare جلوی GMweb هست، باید
    `proxy_read_timeout` از ۲۵ ثانیه بیشتر باشه (مثلاً ۶۰ ثانیه)، وگرنه پراکسی
    کانکشن را می‌بنده و کلاینت فکر می‌کنه شبکه قطع شد. **این بیشترین چیزیه که
    این کار را خراب می‌کنه.**
 3. **سازگاری عقب‌رو.** اگر سرور `waitMs` را نشناخت و فوراً جواب داد، کلاینت
-   خودش تشخیص می‌ده و به حالت ۲ ثانیه برمی‌گرده (Stage 1.1 §C.3). پس استقرار
-   سرور و اپ می‌تونه ناهمزمان باشه.
+   خودش تشخیص می‌ده و به حالت ۲ ثانیه برمی‌گرده (Stage 1.1 §C.3).
+   آستانه: پاسخی که در **کمتر از ۱۲٬۵۰۰ میلی‌ثانیه** برگردد
+   (`CommandClaimPacing.HOLD_THRESHOLD_MS = LONG_POLL_MS / 2`، با
+   `LONG_POLL_MS = 25_000` و `QUIET_MS = 2_000`) یعنی «سرور long-poll
+   نمی‌کند»؛ کلاینت ۲ ثانیه صبر می‌کند. پاسخی که بعد از ≥ ۱۲٬۵۰۰ ms با
+   `{"commands":[]}` بیاید یعنی hold انجام شده و حلقه بدون تأخیر اضافه دور بعد
+   را می‌زند. پس استقرار سرور و اپ می‌تونه ناهمزمان باشه.
 
 ### ۲.۲ اندپوینت بیدارسازی WSS — لازمه‌ی Stage 4
 
 ```
-GET wss://<your-gmweb-host>/gateway/wake
-Headers: X-Agent-Auth, X-Agent-TS
+GET wss://<your-gmweb-host>/gateway/wake        ← WebSocket upgrade (101)
+Headers (request):  X-Agent-Auth, X-Agent-TS
 امضا روی: GET\n/gateway/wake\n<sha256hex("")>\nX-AGENT-TS:<ts>\n
+Header (response):  X-Wake-Active: 1            ← اختیاری؛ "true" هم قبول است
 
 سرور → کلاینت، تنها فریم مجاز:
     {"t":"wake"}
@@ -107,6 +131,11 @@ Headers: X-Agent-Auth, X-Agent-TS
 
 کلاینت → سرور: هیچ‌چی (فقط pong پروتکلی)
 ```
+
+`X-Wake-Active` روی **پاسخ upgrade** خوانده می‌شود (`SocketWakeSource.kt:280-282`):
+مقدار `1` یا `true` یعنی GMweb می‌گوید یک سشن وب باز است. این یک hint فعالیت است،
+نه محتوا؛ TTL آن ۱۰ دقیقه است (`webClientHintTtlMs`) و اگر هدر نیاید یا منقضی
+شود، کلاینت به سیگنال‌های محلی تکیه می‌کند.
 
 قواعدی که سمت سرور **باید** رعایت بشه:
 

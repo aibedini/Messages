@@ -613,18 +613,18 @@ component.
 
 # Stage 1 acceptance checklist
 
-- [ ] 1.1 long-poll, with capability detection and no hot-loop path — **or**
+- [x] 1.1 long-poll, with capability detection and no hot-loop path — **or**
       explicitly reported as not done with the server/owner blocker named
-- [ ] 1.2 B1 idle gap landed; B2 either absent or present-and-default-off
-- [ ] 1.2 B3 KDoc now matches the code
-- [ ] 1.3 watchdog DEBUG/preference gated, default off
-- [ ] 1.4 busy loop replaced by a bounded condition wait
+- [x] 1.2 B1 idle gap landed; B2 either absent or present-and-default-off
+- [x] 1.2 B3 KDoc now matches the code
+- [x] 1.3 watchdog DEBUG/preference gated, default off
+- [x] 1.4 busy loop replaced by a bounded condition wait
 - [ ] 1.5 five 60 s timers behind one `GatewayTicker`
-- [ ] No change to: `EveSmsQueue` status transitions, `GatewayAckTracker`,
+- [x] No change to: `EveSmsQueue` status transitions, `GatewayAckTracker`,
       command idempotency, Room schema, `AgentAuth.canonicalString`
 - [ ] `./gradlew testDebugUnitTest assembleDebug compileDebugAndroidTestKotlin lintDebug` passes
 - [ ] Test-file count did not drop below 242
-- [ ] Report appended per [`README.md`](README.md) §5
+- [x] Report appended per [`README.md`](README.md) §5
 
 ---
 
