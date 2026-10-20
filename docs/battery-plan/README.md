@@ -124,9 +124,9 @@ STAGE-2  WakeSource abstraction (pure refactor, no behaviour change)
 | Stage | File | Risk | Needs server work | Needs user action |
 |---|---|---|---|---|
 | 1 | [`STAGE-1-quick-wins.md`](STAGE-1-quick-wins.md) | MERGED (#12) | yes, for 1.1 only | decision in §1.1 |
-| 2 | [`STAGE-2-wake-source.md`](STAGE-2-wake-source.md) | low | no | no |
+| 2 | [`STAGE-2-wake-source.md`](STAGE-2-wake-source.md) | MERGED (#14) | no | no |
 | 3 | [`STAGE-3-okhttp.md`](STAGE-3-okhttp.md) | CLOSED — no action (§0) | no | no |
-| 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | medium | yes — not deployed yet | no |
+| 4 | [`STAGE-4-socket-wake-source.md`](STAGE-4-socket-wake-source.md) | MERGED (#15) — client only, server pending | yes — not deployed yet | no |
 | 5 | [`STAGE-5-fcm-optional.md`](STAGE-5-fcm-optional.md) | medium | yes | yes — Firebase console |
 
 **Stage 4 status: client implemented (PR #15), server pending.**

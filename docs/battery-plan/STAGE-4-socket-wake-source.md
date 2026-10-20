@@ -323,21 +323,21 @@ rebuild, which is the reason Stage 2 exists.
 
 ## 8. Acceptance checklist
 
-- [ ] Android 15 FGS audit completed and recorded, or the stage stopped and
+- [x] Android 15 FGS audit completed and recorded, or the stage stopped and
       reported
-- [ ] `SocketWakeSource` implements the Stage 2 interface; carries **no payload**
-- [ ] Handshake signed via `AgentAuth`; fails closed when the Keystore cannot sign
-- [ ] `ws://` rejected unconditionally
-- [ ] Two-pin certificate pinning, user-configurable, mismatch reported not bypassed
-- [ ] Wake rate limit and abuse disconnect implemented
-- [ ] ACTIVE/IDLE policy is a pure, tested function
-- [ ] Fallback ladder to POLLING, every fallback reported with a reason
-- [ ] Upgrade rejection does **not** wipe credentials, with a test proving it
-- [ ] Mode picker in settings (AUTO / POLLING / SOCKET), with the active source
+- [x] `SocketWakeSource` implements the Stage 2 interface; carries **no payload**
+- [x] Handshake signed via `AgentAuth`; fails closed when the Keystore cannot sign
+- [x] `ws://` rejected unconditionally
+- [x] Two-pin certificate pinning, user-configurable, mismatch reported not bypassed
+- [x] Wake rate limit and abuse disconnect implemented
+- [x] ACTIVE/IDLE policy is a pure, tested function
+- [x] Fallback ladder to POLLING, every fallback reported with a reason
+- [x] Upgrade rejection does **not** wipe credentials, with a test proving it
+- [x] Mode picker in settings (AUTO / POLLING / SOCKET), with the active source
       and any fallback shown on the diagnostic card
-- [ ] Health counters exposed; counts and timings only
-- [ ] Gate passes
-- [ ] Report appended per [`README.md`](README.md) §5
+- [x] Health counters exposed; counts and timings only
+- [x] Gate passes
+- [x] Report appended per [`README.md`](README.md) §5
 
 ---
 
