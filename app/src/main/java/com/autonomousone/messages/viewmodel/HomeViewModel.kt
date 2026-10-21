@@ -86,7 +86,7 @@ class HomeViewModel(
     /** Cap on search result threads — bounded output for 360K-scale data. */
     private companion object {
         const val SEARCH_RESULT_LIMIT = 100
-        const val SENDING_SWEEP_INTERVAL_MS = 60_000L
+        const val ATTENTION_SWEEP_INTERVAL_MS = 60_000L
     }
 
     private val repository = SmsRepository(application)
@@ -222,8 +222,8 @@ class HomeViewModel(
     /** True once the first full load has completed. */
     private var hasLoadedOnce = false
 
-    /** Last bounded sweep for conversations stuck on SENDING; throttled to once a minute. */
-    private var lastSendingSweepAt = 0L
+    /** Last bounded attention sweep; throttled to once a minute. */
+    private var lastAttentionSweepAt = 0L
 
     /** Read-cutover latch. */
     @Volatile
@@ -663,23 +663,25 @@ class HomeViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Once-a-minute, bounded repair for a conversation stuck on SENDING because a projection write
-     * was missed. It touches only stale SENDING threads, never the whole list.
+     * Once-a-minute, bounded repair for a conversation whose attention projection is stale (SENDING,
+     * SEND_STATUS_UNKNOWN, NOT_SENT or DELIVERY_UNKNOWN). It touches only stale threads, never the
+     * whole list.
      */
-    private suspend fun sweepStaleSendingProjections() {
+    private suspend fun sweepStaleAttentionProjections() {
         val now = System.currentTimeMillis()
-        if (now - lastSendingSweepAt < SENDING_SWEEP_INTERVAL_MS) return
-        lastSendingSweepAt = now
+        if (now - lastAttentionSweepAt < ATTENTION_SWEEP_INTERVAL_MS) return
+        lastAttentionSweepAt = now
         withContext(Dispatchers.IO) {
             runCatching {
                 com.autonomousone.messages.data.TelephonySyncCoordinator
                     .get(getApplication())
-                    .refreshStaleSendingProjections(now)
+                    .refreshStaleAttentionProjections(now)
             }
         }
     }
 
-    private fun loadArchivedIds() {        archivedIds.clear()
+    private fun loadArchivedIds() {
+        archivedIds.clear()
         archivedIds.addAll(archiveRepository.getArchivedIds())
         pinnedIds.clear()
         pinnedIds.addAll(pinRepository.getPinnedIds())
@@ -715,7 +717,7 @@ class HomeViewModel(
 
     private suspend fun performLoad() {
         ensureRoomGate()
-        sweepStaleSendingProjections()
+        sweepStaleAttentionProjections()
 
         if (!hasLoadedOnce) {
             // Instant paint from the last durable snapshot. This is the local
@@ -769,7 +771,7 @@ class HomeViewModel(
 
     private suspend fun silentRefresh() {
         ensureRoomGate()
-        sweepStaleSendingProjections()
+        sweepStaleAttentionProjections()
 
         if (roomReadEnabled) {
             // Normal Room-ready resume: the durable owner is the always-on
