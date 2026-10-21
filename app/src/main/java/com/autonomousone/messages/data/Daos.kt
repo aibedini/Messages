@@ -766,7 +766,7 @@ interface ConversationDao {
     /** Threads whose last message is still an attention state, for the startup safety net. */
     @Query(
         "SELECT threadId, lastMessageUiState FROM conversations " +
-            "WHERE lastMessageUiState IN ('SENDING','SEND_STATUS_UNKNOWN','NOT_SENT','DELIVERY_UNKNOWN') " +
+            "WHERE lastMessageUiState IN ('SENDING','SEND_STATUS_UNKNOWN','NOT_SENT','NOT_DELIVERED','DELIVERY_UNKNOWN') " +
             "LIMIT 50"
     )
     suspend fun attentionThreads(): List<AttentionThreadRow>

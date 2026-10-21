@@ -18,6 +18,7 @@ object StaleProjectionPolicy {
         "SENDING",
         "SEND_STATUS_UNKNOWN",
         "NOT_SENT",
+        "NOT_DELIVERED",
         "DELIVERY_UNKNOWN"
     )
 

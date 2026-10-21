@@ -218,6 +218,8 @@ object SmsStatusPresentationMapper {
         } else when (presentation.state) {
             SmsUiState.SENDING -> "Sending"
             SmsUiState.NOT_SENT -> presentation.causeLabel?.let { "Not sent · $it" } ?: "Not sent"
+            SmsUiState.NOT_DELIVERED ->
+                presentation.causeLabel?.let { "Not delivered · $it" } ?: "Not delivered"
             SmsUiState.SEND_STATUS_UNKNOWN -> "Send status unknown"
             SmsUiState.DELIVERY_UNKNOWN -> "Delivery unknown"
             // Success stays quiet in the list.

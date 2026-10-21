@@ -36,7 +36,9 @@ class StaleProjectionPolicyTest {
             )
         }
         assertEquals(
-            setOf("SENDING", "SEND_STATUS_UNKNOWN", "NOT_SENT", "DELIVERY_UNKNOWN"),
+            setOf(
+                "SENDING", "SEND_STATUS_UNKNOWN", "NOT_SENT", "NOT_DELIVERED", "DELIVERY_UNKNOWN"
+            ),
             StaleProjectionPolicy.ATTENTION_STATES
         )
     }

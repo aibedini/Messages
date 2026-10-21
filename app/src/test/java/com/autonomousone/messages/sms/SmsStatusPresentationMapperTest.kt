@@ -244,10 +244,61 @@ class SmsStatusPresentationMapperTest {
 
         assertTrue(summaryOf(outgoing())!!.startsWith("Sending"))
         assertTrue(summaryOf(outgoing(failureCode = "NO_SERVICE"))!!.startsWith("Not sent"))
+        assertTrue(summaryOf(outgoing(deliveryFailed = true))!!.startsWith("Not delivered"))
         assertEquals("Send status unknown", summaryOf(outgoing(failureCode = "MODEM_FAILURE")))
         assertEquals("Delivery unknown", summaryOf(outgoing(sent = true, deliveryUnknown = true)))
         assertNull("a sent message must not clutter Home", summaryOf(outgoing(sent = true)))
         assertNull("a delivered message must not clutter Home", summaryOf(outgoing(sent = true, delivered = true)))
+    }
+
+    @Test
+    fun `the list summary and row marker agree on every actionable state`() {
+        fun summary(evidence: SmsStatusEvidence) = SmsStatusPresentationMapper.conversationSummary(
+            SmsStatusPresentationMapper.present(evidence),
+            isOutgoing = true
+        )
+
+        fun marker(evidence: SmsStatusEvidence) = SmsStatusPresentationMapper.rowMarker(
+            SmsStatusPresentationMapper.present(evidence),
+            isOutgoing = true
+        )
+
+        data class Case(
+            val evidence: SmsStatusEvidence,
+            val summaryPrefix: String?,
+            val marker: String?
+        )
+
+        val cases = listOf(
+            Case(outgoing(), "Sending", "◷ Sending"),
+            Case(outgoing(failureCode = "NO_SERVICE"), "Not sent", "⚠ Not sent"),
+            Case(outgoing(deliveryFailed = true), "Not delivered", "⚠ Not delivered"),
+            Case(
+                outgoing(failureCode = "MODEM_FAILURE"),
+                "Send status unknown",
+                "⚠ Send status unknown"
+            ),
+            Case(outgoing(sent = true, deliveryUnknown = true), "Delivery unknown", "Delivery unknown"),
+            Case(outgoing(sent = true), null, null),
+            Case(outgoing(sent = true, delivered = true), null, null)
+        )
+
+        for (case in cases) {
+            val actualSummary = summary(case.evidence)
+            if (case.summaryPrefix == null) {
+                assertNull("quiet states must not get a summary", actualSummary)
+            } else {
+                assertTrue(
+                    "summary should start with '${case.summaryPrefix}', was '$actualSummary'",
+                    actualSummary?.startsWith(case.summaryPrefix) == true
+                )
+            }
+            assertEquals(
+                "row marker for ${SmsStatusPresentationMapper.present(case.evidence).state}",
+                case.marker,
+                marker(case.evidence)
+            )
+        }
     }
 
     @Test
