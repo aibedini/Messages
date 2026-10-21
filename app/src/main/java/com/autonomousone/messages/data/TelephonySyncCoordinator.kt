@@ -2343,27 +2343,44 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     }
 
     /**
-     * Startup/Home-load safety net for the "Sending forever" projection.
+     * Startup/Home-load safety net for a stale attention projection.
      *
-     * Only threads whose conversation still says SENDING and whose newest message is older than
+     * Sweeps every state Home renders as attention — SENDING, SEND_STATUS_UNKNOWN, NOT_SENT and
+     * DELIVERY_UNKNOWN — not just SENDING. Only threads whose newest active message is older than
      * [staleAfterMs] are rebuilt; a send that is genuinely in flight is left alone. This is a
-     * bounded, targeted sweep — never a full rebuild — so it cannot turn screen load into a scan of
-     * every conversation.
+     * bounded, targeted sweep (the DAO caps it at 50 threads), never a full rebuild.
      */
-    suspend fun refreshStaleSendingProjections(
+    suspend fun refreshStaleAttentionProjections(
         now: Long = System.currentTimeMillis(),
         staleAfterMs: Long = 2 * 60_000L
     ) {
         val stale = runCatching {
-            db.conversationDao().sendingThreadIds().filter { threadId ->
-                val newest = db.messageDao().newestActiveForThread(threadId)
-                newest != null && now - newest.date >= staleAfterMs
-            }
+            db.conversationDao().attentionThreads()
+                .filter { row ->
+                    val newest = db.messageDao().newestActiveForThread(row.threadId)
+                    newest != null && StaleProjectionPolicy.isStale(
+                        uiState = row.lastMessageUiState,
+                        newestDate = newest.date,
+                        now = now,
+                        staleAfterMs = staleAfterMs
+                    )
+                }
+                .map { it.threadId }
         }.getOrDefault(emptyList())
         stale.forEach { threadId ->
             runCatching { rebuildConversationProjection(threadId, preserveFlags = true) }
         }
     }
+
+    /** @deprecated use [refreshStaleAttentionProjections]; kept for callers from the v3.6.3 fix. */
+    @Deprecated(
+        "Use refreshStaleAttentionProjections",
+        ReplaceWith("refreshStaleAttentionProjections(now, staleAfterMs)")
+    )
+    suspend fun refreshStaleSendingProjections(
+        now: Long = System.currentTimeMillis(),
+        staleAfterMs: Long = 2 * 60_000L
+    ) = refreshStaleAttentionProjections(now, staleAfterMs)
 
     // PHASE 10.2 originally exposed `markThreadReadInShadow(threadId)` here: ONE transaction marking the
     // per-message read flags and the conversation unread counter together, because those are two views of

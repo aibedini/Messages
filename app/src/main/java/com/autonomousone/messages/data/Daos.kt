@@ -732,6 +732,17 @@ object MessageSendStatePreserver {
     }
 }
 
+/**
+ * One conversation whose last message may still need its attention projection refreshed.
+ *
+ * The UI state travels with the id so [StaleProjectionPolicy] can decide staleness without a second
+ * read of the same row.
+ */
+data class AttentionThreadRow(
+    val threadId: Long,
+    val lastMessageUiState: String?
+)
+
 @Dao
 interface ConversationDao {
 
@@ -752,9 +763,13 @@ interface ConversationDao {
     )
     suspend fun unreadProjectionMismatchCount(): Int
 
-    /** Threads whose last message is still displayed as SENDING, for the startup safety net. */
-    @Query("SELECT threadId FROM conversations WHERE lastMessageUiState = 'SENDING'")
-    suspend fun sendingThreadIds(): List<Long>
+    /** Threads whose last message is still an attention state, for the startup safety net. */
+    @Query(
+        "SELECT threadId, lastMessageUiState FROM conversations " +
+            "WHERE lastMessageUiState IN ('SENDING','SEND_STATUS_UNKNOWN','NOT_SENT','DELIVERY_UNKNOWN') " +
+            "LIMIT 50"
+    )
+    suspend fun attentionThreads(): List<AttentionThreadRow>
 
     /**
      * ACTIVE-UI conversation list (v3.4.0 FEATURE 8, TRASH).
