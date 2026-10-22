@@ -1,73 +1,150 @@
 package com.autonomousone.messages.evechat
 
+import android.app.Application
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class EveChatConversationViewModel(
-    private val repository: EveChatRepository,
+    application: Application,
     private val conversationId: String
 ) : ViewModel() {
 
-    val messages: StateFlow<List<EveChatMessage>> = repository.messages
+    private val session = EveChatSession.get(application)
 
-    private val _conversation = MutableStateFlow<EveChatConversation?>(null)
-    val conversation: StateFlow<EveChatConversation?> = _conversation.asStateFlow()
+    val conversation: StateFlow<EveChatConversation?> = session.observeConversation(conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    val messages: StateFlow<List<EveChatMessage>> = session.observeMessages(conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val visitorTyping: StateFlow<Boolean> = session.observeTyping(conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val connection: StateFlow<EveChatSession.Connection> = session.connection
+    val myAgentId: StateFlow<String?> = session.myAgentId
+
+    private val _syncing = MutableStateFlow(true)
+    val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
+
+    private val _loadingOlder = MutableStateFlow(false)
+    val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+
+    private val _busyAction = MutableStateFlow<String?>(null)
+    val busyAction: StateFlow<String?> = _busyAction.asStateFlow()
+
+    private val _events = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val events: SharedFlow<String> = _events.asSharedFlow()
+
+    private var typingSent = false
+    private var typingStop: Job? = null
 
     init {
         viewModelScope.launch {
-            _isLoading.value = true
-            repository.loadMessages(conversationId)
-            _conversation.value = repository.conversations.value.find { it.id == conversationId }
-            repository.markRead(conversationId)
-            _isLoading.value = false
-        }
-    }
-
-    fun sendMessage(content: String) {
-        if (content.isBlank()) return
-        viewModelScope.launch {
-            repository.sendMessage(conversationId, content)
-        }
-    }
-
-    fun claim() {
-        viewModelScope.launch {
-            if (repository.claimConversation(conversationId)) {
-                _conversation.value = _conversation.value?.copy(
-                    assignedAgentId = repository.currentAgent.value?.id,
-                    status = "active"
-                )
+            try {
+                if (!session.syncThread(conversationId) && conversation.value == null) {
+                    _events.tryEmit("بارگذاری گفتگو ممکن نشد")
+                }
+            } finally {
+                _syncing.value = false
             }
         }
     }
 
-    fun resolve() {
+    /** Visible chat: suppresses its notifications and keeps the server read pointer current. */
+    fun onVisible() = session.setActiveConversation(conversationId)
+
+    fun onHidden() {
+        session.setActiveConversation(null)
+        stopTyping()
+    }
+
+    fun send(text: String) {
+        session.send(conversationId, text)
+        stopTyping()
+    }
+
+    fun retry(message: EveChatMessage) = session.retry(message.id)
+    fun discard(message: EveChatMessage) = session.discard(message.id)
+
+    fun loadOlder() {
+        if (_loadingOlder.value || conversation.value?.historyComplete != false) return
         viewModelScope.launch {
-            if (repository.resolveConversation(conversationId)) {
-                _conversation.value = _conversation.value?.copy(status = "resolved")
+            _loadingOlder.value = true
+            try {
+                session.loadOlder(conversationId)
+            } finally {
+                _loadingOlder.value = false
             }
         }
     }
 
-    fun reopen() {
+    fun claim() = act("claim") { session.claim(conversationId) }
+    fun resolve() = act("resolve") { session.resolve(conversationId) }
+    fun reopen() = act("reopen") { session.reopen(conversationId) }
+
+    private fun act(name: String, block: suspend () -> ApiResult<Unit>) {
+        if (_busyAction.value != null) return
         viewModelScope.launch {
-            if (repository.reopenConversation(conversationId)) {
-                _conversation.value = _conversation.value?.copy(status = "active")
+            _busyAction.value = name
+            try {
+                val r = block()
+                if (r is ApiResult.Err) _events.tryEmit(r.error.userMessage)
+            } finally {
+                _busyAction.value = null
             }
+        }
+    }
+
+    /** Throttled: one `typing.start` per burst, `typing.stop` after a pause. */
+    fun onInputChanged(text: String) {
+        if (text.isBlank()) {
+            stopTyping()
+            return
+        }
+        if (!typingSent) {
+            typingSent = true
+            session.setTyping(conversationId, true)
+        }
+        typingStop?.cancel()
+        typingStop = viewModelScope.launch {
+            delay(4_000)
+            stopTyping()
+        }
+    }
+
+    private fun stopTyping() {
+        typingStop?.cancel()
+        if (typingSent) {
+            typingSent = false
+            session.setTyping(conversationId, false)
         }
     }
 
     override fun onCleared() {
+        stopTyping()
         super.onCleared()
-        repository.clearMessages()
+    }
+
+    class Factory(
+        private val application: Application,
+        private val conversationId: String
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            EveChatConversationViewModel(application, conversationId) as T
     }
 }

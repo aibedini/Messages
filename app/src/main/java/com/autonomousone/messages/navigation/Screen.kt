@@ -178,7 +178,7 @@ sealed class Screen(val route: String) {
 
     object EveChatConversation : Screen("evechat_conversation/{conversationId}") {
         fun createRoute(conversationId: String): String =
-            "evechat_conversation/$conversationId"
+            "evechat_conversation/${encode(conversationId)}"
     }
 
     /**
