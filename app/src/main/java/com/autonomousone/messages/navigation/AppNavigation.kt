@@ -394,7 +394,7 @@ fun AppNavigation(
             RecentlyDeletedScreen(navController = navController)
         }
 
-        // EveChat support dashboard.
+        // EveChat support inbox.
         composable(
             Screen.EveChat.route,
             enterTransition = { fadeIn(tween(140)) },
@@ -404,6 +404,20 @@ fun AppNavigation(
         ) {
             com.autonomousone.messages.evechat.EveChatScreen(
                 navController = navController
+            )
+        }
+
+        // EveChat native conversation (chat screen).
+        composable(
+            route = Screen.EveChatConversation.route,
+            arguments = listOf(
+                navArgument("conversationId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+            EveChatConversationRoute(
+                conversationId = conversationId,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -494,6 +508,29 @@ fun AppNavigation(
             )
         }
     }
+}
+
+/**
+ * EveChat conversation, wired to its ViewModel via the shared repository
+ * from the parent EveChatViewModel.
+ */
+@Composable
+private fun EveChatConversationRoute(
+    conversationId: String,
+    onBack: () -> Unit
+) {
+    val parentVm: com.autonomousone.messages.evechat.EveChatViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel()
+    val viewModel = remember(conversationId) {
+        com.autonomousone.messages.evechat.EveChatConversationViewModel(
+            repository = parentVm.repository,
+            conversationId = conversationId
+        )
+    }
+    com.autonomousone.messages.evechat.ui.EveChatConversationScreen(
+        viewModel = viewModel,
+        onBack = onBack
+    )
 }
 
 /**

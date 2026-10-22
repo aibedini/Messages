@@ -176,6 +176,11 @@ sealed class Screen(val route: String) {
 
     object EveChat : Screen("evechat")
 
+    object EveChatConversation : Screen("evechat_conversation/{conversationId}") {
+        fun createRoute(conversationId: String): String =
+            "evechat_conversation/$conversationId"
+    }
+
     /**
      * Message Details — the send and delivery evidence of ONE message.
      *
