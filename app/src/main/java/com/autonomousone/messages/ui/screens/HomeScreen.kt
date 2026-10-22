@@ -59,6 +59,7 @@ import com.autonomousone.messages.repository.DraftRepository
 import com.autonomousone.messages.ui.components.AppSearchBar
 import com.autonomousone.messages.ui.components.EmptyView
 import com.autonomousone.messages.ui.components.MainTopBar
+import com.autonomousone.messages.ui.components.MessagesBottomNav
 import com.autonomousone.messages.ui.home.CategoryFilter
 import com.autonomousone.messages.ui.home.CategoryFilterBar
 import com.autonomousone.messages.ui.home.ConversationFilter
@@ -295,6 +296,11 @@ fun HomeScreen(
                     onGatewayClick = { navController.navigate(Screen.Gateway.route) },
                     onSettingsClick = { navController.navigate(Screen.Settings.route) }
                 )
+            }
+        },
+        bottomBar = {
+            if (!selectionActive) {
+                MessagesBottomNav(navController = navController)
             }
         },
         floatingActionButton = {

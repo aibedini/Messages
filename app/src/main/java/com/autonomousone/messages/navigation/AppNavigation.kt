@@ -394,6 +394,19 @@ fun AppNavigation(
             RecentlyDeletedScreen(navController = navController)
         }
 
+        // EveChat support dashboard.
+        composable(
+            Screen.EveChat.route,
+            enterTransition = { fadeIn(tween(140)) },
+            exitTransition = { fadeOut(tween(90)) },
+            popEnterTransition = { fadeIn(tween(140)) },
+            popExitTransition = { fadeOut(tween(90)) }
+        ) {
+            com.autonomousone.messages.evechat.EveChatScreen(
+                navController = navController
+            )
+        }
+
         composable(
             route = Screen.Conversation.route,
             // v2.6.8 motion polish: Home → Conversation opens with a SHALLOW

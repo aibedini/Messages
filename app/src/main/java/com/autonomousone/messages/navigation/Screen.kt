@@ -174,6 +174,8 @@ sealed class Screen(val route: String) {
      */
     object Trash : Screen("trash")
 
+    object EveChat : Screen("evechat")
+
     /**
      * Message Details — the send and delivery evidence of ONE message.
      *
