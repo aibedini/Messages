@@ -2,15 +2,16 @@ package com.autonomousone.messages.evechat.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -21,19 +22,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.autonomousone.messages.evechat.model.ConvStatus
 import com.autonomousone.messages.evechat.model.EveChatConversation
+import com.autonomousone.messages.evechat.model.SenderType
+import com.autonomousone.messages.utils.formatConversationDate
 
 @Composable
 fun EveChatConversationRow(
     conversation: EveChatConversation,
+    myAgentId: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val visitorName = conversation.visitor?.displayName ?: "بازدیدکننده"
-    val initial = visitorName.first().toString()
+    val name = conversation.displayName
     val hasUnread = conversation.unreadAgent > 0
+    val preview = when {
+        conversation.lastMessagePreview == null -> conversation.subject ?: "بدون پیام"
+        conversation.lastMessageSenderType == SenderType.AGENT -> "شما: ${conversation.lastMessagePreview}"
+        else -> conversation.lastMessagePreview
+    }
 
     Row(
         modifier = modifier
@@ -50,7 +60,7 @@ fun EveChatConversationRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = initial,
+                text = name.trim().firstOrNull()?.uppercase() ?: "?",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -59,53 +69,51 @@ fun EveChatConversationRow(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = visitorName,
+                    text = name,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-
-                StatusChip(conversation.status)
+                Text(
+                    text = formatConversationDate(conversation.activityAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (hasUnread) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Spacer(Modifier.size(2.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = conversation.lastMessagePreview
-                        ?: conversation.subject
-                        ?: "",
+                    text = preview,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (hasUnread) FontWeight.Medium else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-
+                StatusChip(conversation, myAgentId)
                 if (hasUnread) {
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
-                            .size(22.dp)
+                            .defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (conversation.unreadAgent > 99) "99+"
-                                else conversation.unreadAgent.toString(),
+                            text = if (conversation.unreadAgent > 99) "99+" else conversation.unreadAgent.toString(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -115,40 +123,27 @@ fun EveChatConversationRow(
 }
 
 @Composable
-private fun StatusChip(status: String) {
-    val (bgColor, textColor, label) = when (status) {
-        "pending" -> Triple(
-            MaterialTheme.colorScheme.tertiaryContainer,
-            MaterialTheme.colorScheme.onTertiaryContainer,
-            "در انتظار"
-        )
-        "active" -> Triple(
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.onPrimaryContainer,
-            "فعال"
-        )
-        "resolved" -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "حل شده"
-        )
-        else -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            status
-        )
+private fun StatusChip(conversation: EveChatConversation, myAgentId: String?) {
+    val scheme = MaterialTheme.colorScheme
+    val (bg, fg, label) = when {
+        conversation.status == ConvStatus.PENDING && conversation.assignedAgentId == null ->
+            Triple(scheme.tertiaryContainer, scheme.onTertiaryContainer, "در انتظار")
+        conversation.status == ConvStatus.RESOLVED -> Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, "حل شده")
+        conversation.status == ConvStatus.CLOSED -> Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, "بسته")
+        conversation.assignedAgentId != null && conversation.assignedAgentId != myAgentId ->
+            Triple(scheme.secondaryContainer, scheme.onSecondaryContainer, conversation.assignedAgentName ?: "کارشناس دیگر")
+        else -> return
     }
-
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = bgColor,
-        modifier = Modifier.padding(start = 8.dp)
-    ) {
+    Surface(shape = RoundedCornerShape(12.dp), color = bg, modifier = Modifier.padding(start = 6.dp)) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .widthIn(max = 120.dp)
         )
     }
 }

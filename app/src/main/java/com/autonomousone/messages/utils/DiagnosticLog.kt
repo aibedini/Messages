@@ -7,28 +7,41 @@ import android.os.Debug
 import android.util.Log
 import com.autonomousone.messages.BuildConfig
 import java.io.File
+import java.io.FileOutputStream
 import java.io.Writer
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Privacy-aware, rotating on-device diagnostic log with system health snapshots.
  *
- * It intentionally records state transitions and raw numeric result codes,
- * never SMS bodies or full phone numbers. Files live in app-private storage;
- * the user can explicitly export a merged copy from Settings.
+ * Callers never touch the disk: records are formatted on the calling thread and handed to a
+ * bounded queue drained by one daemon writer thread, so logging from the main thread cannot
+ * jank or ANR. When the queue is full the record is dropped and counted rather than blocking.
+ * Every line passes through [LogRedactor] (tokens, JWTs, passwords, emails, phone numbers).
  */
 object DiagnosticLog {
     private const val TAG = "DIAGNOSTICS"
     private const val CURRENT = "messages-diagnostics.log"
-    private const val MAX_BYTES = 384 * 1024L
-    private const val GENERATIONS = 3
-    private val phonePattern = Regex("(?<![\\dA-Za-z])\\+?\\d{7,15}(?!\\d)")
+    private const val MAX_BYTES = 512 * 1024L
+    private const val GENERATIONS = 4
+    private const val QUEUE_CAPACITY = 4_096
+    private const val BATCH = 256
+    private const val WRITER_THREAD = "diagnostic-log-writer"
 
     @Volatile
     private var appContext: Context? = null
 
-    @Volatile
-    private var lastAnrCheckMs = 0L
+    private val queue = LinkedBlockingQueue<Any>(QUEUE_CAPACITY)
+    private val dropped = AtomicLong(0)
+    private val levelCounts = LongArray(LogLevel.entries.size)
+    private val minFileLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.INFO
+    private val minLogcatLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN
+
+    private class FlushMarker(val latch: CountDownLatch)
 
     private val mainThreadWatchdog = MainThreadWatchdog()
 
@@ -36,50 +49,134 @@ object DiagnosticLog {
     fun initialize(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
-        event(
-            "SESSION",
-            "start version=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE}) " +
-                "sdk=${Build.VERSION.SDK_INT} device=${Build.MANUFACTURER}/${Build.MODEL} " +
-                "cores=${Runtime.getRuntime().availableProcessors()} " +
-                "heap=${Runtime.getRuntime().maxMemory() / 1024 / 1024}MB"
+        Thread(::drainLoop, WRITER_THREAD).apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+            start()
+        }
+        i(
+            "SESSION", "start",
+            fields = mapOf(
+                "version" to "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})",
+                "sdk" to Build.VERSION.SDK_INT,
+                "device" to "${Build.MANUFACTURER}/${Build.MODEL}",
+                "cores" to Runtime.getRuntime().availableProcessors(),
+                "heapMb" to Runtime.getRuntime().maxMemory() / 1024 / 1024
+            )
         )
     }
 
     fun phoneToken(phone: String): String = PhoneToken.of(phone)
 
-    @Synchronized
-    fun event(category: String, message: String, error: Throwable? = null) {
-        val context = appContext ?: return
+    fun d(tag: String, message: String, error: Throwable? = null, fields: Map<String, Any?> = emptyMap()) =
+        log(LogLevel.DEBUG, tag, message, error, fields)
+
+    fun i(tag: String, message: String, error: Throwable? = null, fields: Map<String, Any?> = emptyMap()) =
+        log(LogLevel.INFO, tag, message, error, fields)
+
+    fun w(tag: String, message: String, error: Throwable? = null, fields: Map<String, Any?> = emptyMap()) =
+        log(LogLevel.WARN, tag, message, error, fields)
+
+    fun e(tag: String, message: String, error: Throwable? = null, fields: Map<String, Any?> = emptyMap()) =
+        log(LogLevel.ERROR, tag, message, error, fields)
+
+    /** Legacy entry point: INFO, or ERROR when a throwable is attached. */
+    fun event(category: String, message: String, error: Throwable? = null) =
+        log(if (error != null) LogLevel.ERROR else LogLevel.INFO, category, message, error, emptyMap())
+
+    fun log(level: LogLevel, tag: String, message: String, error: Throwable?, fields: Map<String, Any?>) {
         try {
-            val file = currentFile(context)
-            if (file.length() >= MAX_BYTES) rotate(context)
-            val trace = error?.let { "\n" + Log.getStackTraceString(it) }.orEmpty()
-            val line = buildString {
-                append(Instant.now().toString())
-                append(" [")
-                append(Thread.currentThread().name)
-                append("] ")
-                append(category.take(40))
-                append(" | ")
-                append(sanitize(message + trace))
-                append('\n')
+            if (level >= minLogcatLevel) {
+                val text = LogRedactor.redact(message)
+                when (level) {
+                    LogLevel.DEBUG -> Log.d(tag, text, error)
+                    LogLevel.INFO -> Log.i(tag, text, error)
+                    LogLevel.WARN -> Log.w(tag, text, error)
+                    LogLevel.ERROR -> Log.e(tag, text, error)
+                }
             }
-            currentFile(context).appendText(line, Charsets.UTF_8)
+            if (level < minFileLevel || appContext == null) return
+            val line = LogLineFormatter.format(
+                isoTime = Instant.now().toString(),
+                level = level,
+                tag = tag,
+                thread = Thread.currentThread().name,
+                message = message,
+                fields = fields,
+                stackTrace = error?.let { Log.getStackTraceString(it) }
+            )
+            synchronized(levelCounts) { levelCounts[level.ordinal]++ }
+            if (!queue.offer(line)) dropped.incrementAndGet()
         } catch (loggingError: Throwable) {
-            Log.w(TAG, "Unable to write diagnostic log", loggingError)
+            Log.w(TAG, "Unable to enqueue diagnostic log", loggingError)
+        }
+    }
+
+    /** Blocks until everything enqueued so far is on disk, or [timeoutMs] elapses. */
+    fun flush(timeoutMs: Long = 2_000): Boolean {
+        if (appContext == null || Thread.currentThread().name == WRITER_THREAD) return true
+        val latch = CountDownLatch(1)
+        if (!queue.offer(FlushMarker(latch), timeoutMs, TimeUnit.MILLISECONDS)) return false
+        return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+    }
+
+    private fun drainLoop() {
+        val batch = ArrayList<Any>(BATCH)
+        while (true) {
+            try {
+                batch.clear()
+                batch.add(queue.take())
+                queue.drainTo(batch, BATCH - 1)
+                writeBatch(batch)
+            } catch (_: InterruptedException) {
+                return
+            } catch (error: Throwable) {
+                Log.w(TAG, "Unable to write diagnostic log", error)
+            }
+        }
+    }
+
+    private fun writeBatch(batch: List<Any>) {
+        val context = appContext ?: return
+        val markers = ArrayList<FlushMarker>(1)
+        try {
+            if (currentFile(context).length() >= MAX_BYTES) rotate(context)
+            val lost = dropped.getAndSet(0)
+            FileOutputStream(currentFile(context), true).bufferedWriter(Charsets.UTF_8).use { writer ->
+                if (lost > 0) {
+                    writer.write(
+                        LogLineFormatter.format(
+                            Instant.now().toString(), LogLevel.WARN, TAG, WRITER_THREAD,
+                            "log queue overflow", mapOf("dropped" to lost)
+                        )
+                    )
+                }
+                for (item in batch) {
+                    when (item) {
+                        is String -> writer.write(item)
+                        is FlushMarker -> markers.add(item)
+                    }
+                }
+            }
+        } finally {
+            markers.forEach { it.latch.countDown() }
         }
     }
 
     /** Creates a user-shareable snapshot in cache; originals stay app-private. */
-    @Synchronized
     fun createExportFile(context: Context): File? = try {
         initialize(context)
-        event("DIAGNOSTICS", "user requested export")
+        i("DIAGNOSTICS", "user requested export")
+        flush()
         val output = File(context.cacheDir, "messages-diagnostics-${System.currentTimeMillis()}.txt")
         output.outputStream().bufferedWriter(Charsets.UTF_8).use { writer ->
             writer.appendLine("Messages diagnostics ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             writer.appendLine("Generated ${Instant.now()}")
-            writer.appendLine("SMS bodies and full phone numbers are intentionally excluded.")
+            writer.appendLine("Message bodies, tokens, emails and full phone numbers are redacted.")
+            val counts = synchronized(levelCounts) { levelCounts.copyOf() }
+            writer.appendLine(
+                "This session: " + LogLevel.entries.joinToString(" ") { "${it.name}=${counts[it.ordinal]}" }
+            )
             writer.appendLine()
 
             writeSystemHealth(writer, context)
@@ -191,8 +288,6 @@ object DiagnosticLog {
         writer.appendLine()
     }
 
-    private fun sanitize(value: String): String =
-        phonePattern.replace(value.take(24_000)) { match -> "phone#${phoneToken(match.value)}" }
 
     private fun directory(context: Context): File =
         File(context.filesDir, "diagnostics").apply { mkdirs() }
@@ -206,6 +301,7 @@ object DiagnosticLog {
         add(currentFile(context))
     }
 
+    /** Writer thread only. */
     private fun rotate(context: Context) {
         val dir = directory(context)
         File(dir, "$CURRENT.$GENERATIONS").delete()

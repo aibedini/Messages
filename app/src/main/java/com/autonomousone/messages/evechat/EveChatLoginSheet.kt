@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,10 +42,11 @@ import androidx.compose.ui.unit.dp
 fun EveChatLoginSheet(
     loginState: EveChatViewModel.LoginState,
     savedServerUrl: String,
+    savedEmail: String,
     onLogin: (serverUrl: String, email: String, password: String) -> Unit
 ) {
-    var serverUrl by remember { mutableStateOf(savedServerUrl) }
-    var email by remember { mutableStateOf("") }
+    var serverUrl by rememberSaveable { mutableStateOf(savedServerUrl) }
+    var email by rememberSaveable { mutableStateOf(savedEmail) }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     val isLoading = loginState is EveChatViewModel.LoginState.Loading
@@ -136,7 +138,7 @@ fun EveChatLoginSheet(
                     Icon(
                         imageVector = if (passwordVisible) Icons.Default.VisibilityOff
                             else Icons.Default.Visibility,
-                        contentDescription = if (passwordVisible) "Hide" else "Show"
+                        contentDescription = if (passwordVisible) "پنهان کردن رمز" else "نمایش رمز"
                     )
                 }
             },

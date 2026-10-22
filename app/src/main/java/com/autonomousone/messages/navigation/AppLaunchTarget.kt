@@ -17,6 +17,8 @@ sealed interface AppLaunchTarget {
         val phone: String,
         val name: String
     ) : AppLaunchTarget
+
+    data class SupportConversation(val conversationId: String) : AppLaunchTarget
 }
 
 object AppLaunchIntent {
@@ -33,9 +35,21 @@ object AppLaunchIntent {
     const val EXTRA_NAME =
         "extra_name"
 
+    const val ACTION_OPEN_SUPPORT_CONVERSATION =
+        "com.autonomousone.messages.OPEN_SUPPORT_CONVERSATION"
+
+    const val EXTRA_SUPPORT_CONVERSATION_ID =
+        "extra_support_conversation_id"
+
     fun parse(
         intent: Intent?
     ): AppLaunchTarget? {
+
+        if (intent?.action == ACTION_OPEN_SUPPORT_CONVERSATION) {
+            return intent.getStringExtra(EXTRA_SUPPORT_CONVERSATION_ID)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { AppLaunchTarget.SupportConversation(it) }
+        }
 
         if (
             intent?.action !=

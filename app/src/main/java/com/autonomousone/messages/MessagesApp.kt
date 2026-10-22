@@ -52,6 +52,7 @@ class MessagesApp : Application() {
         super.onCreate()
         Holders.init(this)
         DiagnosticLog.initialize(this)
+        com.autonomousone.messages.evechat.EveChatSession.get(this).install()
         // Phase 2 observability: missing runtime permissions and Doze-style
         // battery restrictions are the two most common "works in code, silent
         // on device" causes for the SMS pipeline. Log both at process start.
@@ -77,7 +78,8 @@ class MessagesApp : Application() {
                 // crashGuard logs carry the structured fields (threadId,
                 // page, syncState); this one is the last-resort net.
                 Log.e("CRASH_GUARD", "Uncaught on '${thread.name}'", error)
-                DiagnosticLog.event("CRASH", "uncaught thread=${thread.name}", error)
+                DiagnosticLog.e("CRASH", "uncaught exception", error, mapOf("thread" to thread.name))
+                DiagnosticLog.flush(1_500)
             } catch (_: Throwable) {
                 // Logging must never mask the original crash.
             }

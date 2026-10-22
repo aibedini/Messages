@@ -107,7 +107,15 @@ fun AppNavigation(
 
         navController.currentBackStackEntryFlow.first { entry ->
             val route = entry.destination.route
-            route == Screen.Home.route || route?.startsWith("conversation/") == true
+            route == Screen.Home.route || route?.startsWith("conversation/") == true ||
+                route?.startsWith("evechat") == true
+        }
+
+        if (target is AppLaunchTarget.SupportConversation) {
+            navController.navigate(Screen.EveChatConversation.createRoute(target.conversationId)) {
+                popUpTo(Screen.Home.route) { inclusive = false }
+                launchSingleTop = true
+            }
         }
 
         if (target is AppLaunchTarget.Conversation) {
@@ -414,7 +422,7 @@ fun AppNavigation(
                 navArgument("conversationId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+            val conversationId = Screen.cleanArg(backStackEntry.arguments?.getString("conversationId"))
             EveChatConversationRoute(
                 conversationId = conversationId,
                 onBack = { navController.popBackStack() }
@@ -510,23 +518,18 @@ fun AppNavigation(
     }
 }
 
-/**
- * EveChat conversation, wired to its ViewModel via the shared repository
- * from the parent EveChatViewModel.
- */
+/** EveChat conversation; state lives in the app-scoped EveChatSession, so this VM is per screen. */
 @Composable
 private fun EveChatConversationRoute(
     conversationId: String,
     onBack: () -> Unit
 ) {
-    val parentVm: com.autonomousone.messages.evechat.EveChatViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel()
-    val viewModel = remember(conversationId) {
-        com.autonomousone.messages.evechat.EveChatConversationViewModel(
-            repository = parentVm.repository,
-            conversationId = conversationId
+    val application = LocalContext.current.applicationContext as android.app.Application
+    val viewModel: com.autonomousone.messages.evechat.EveChatConversationViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel(
+            key = "evechat_$conversationId",
+            factory = com.autonomousone.messages.evechat.EveChatConversationViewModel.Factory(application, conversationId)
         )
-    }
     com.autonomousone.messages.evechat.ui.EveChatConversationScreen(
         viewModel = viewModel,
         onBack = onBack

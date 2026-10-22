@@ -1,92 +1,114 @@
 package com.autonomousone.messages.evechat.model
 
-import org.json.JSONArray
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
 import org.json.JSONObject
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+object ConvStatus {
+    const val PENDING = "pending"
+    const val ACTIVE = "active"
+    const val RESOLVED = "resolved"
+    const val CLOSED = "closed"
+
+    val OPEN = listOf(PENDING, ACTIVE)
+    val DONE = listOf(RESOLVED, CLOSED)
+
+    fun isOpen(status: String) = status == PENDING || status == ACTIVE
+}
+
+object SenderType {
+    const val VISITOR = "visitor"
+    const val AGENT = "agent"
+    const val BOT = "bot"
+    const val SYSTEM = "system"
+}
 
 data class EveChatAgent(
     val id: String,
     val name: String,
     val email: String,
-    val avatarUrl: String? = null,
-    val role: String = "agent",
-    val isOnline: Boolean = false
+    val role: String = "agent"
 ) {
     companion object {
         fun fromJson(j: JSONObject) = EveChatAgent(
             id = j.getString("id"),
-            name = j.optString("name", ""),
-            email = j.optString("email", ""),
-            avatarUrl = j.optString("avatar_url", null).takeIf { !it.isNullOrBlank() },
-            role = j.optString("role", "agent"),
-            isOnline = j.optBoolean("is_online", false)
+            name = j.optStringOrNull("name") ?: "",
+            email = j.optStringOrNull("email") ?: "",
+            role = j.optStringOrNull("role") ?: "agent"
         )
     }
 }
 
-data class EveChatVisitor(
-    val id: String,
-    val name: String? = null,
-    val email: String? = null,
-    val phone: String? = null,
-    val country: String? = null,
-    val lastSeenAt: String? = null
-) {
-    val displayName: String
-        get() = name?.takeIf { it.isNotBlank() }
-            ?: phone?.takeIf { it.isNotBlank() }
-            ?: email?.takeIf { it.isNotBlank() }
-            ?: "بازدیدکننده"
-
-    companion object {
-        fun fromJson(j: JSONObject) = EveChatVisitor(
-            id = j.getString("id"),
-            name = j.optString("name", null).takeIf { !it.isNullOrBlank() },
-            email = j.optString("email", null).takeIf { !it.isNullOrBlank() },
-            phone = j.optString("phone", null).takeIf { !it.isNullOrBlank() },
-            country = j.optString("country", null).takeIf { !it.isNullOrBlank() },
-            lastSeenAt = j.optString("last_seen_at", null).takeIf { !it.isNullOrBlank() }
-        )
-    }
-}
-
+@Entity(tableName = "conversations")
 data class EveChatConversation(
-    val id: String,
+    @PrimaryKey val id: String,
     val visitorId: String,
+    val visitorName: String? = null,
+    val visitorEmail: String? = null,
+    val visitorPhone: String? = null,
     val assignedAgentId: String? = null,
-    val status: String = "pending",
+    val assignedAgentName: String? = null,
+    val status: String = ConvStatus.PENDING,
     val channel: String = "web",
     val subject: String? = null,
     val unreadAgent: Int = 0,
-    val lastMessageAt: String? = null,
-    val createdAt: String = "",
-    val visitor: EveChatVisitor? = null,
-    val agent: EveChatAgent? = null,
-    val lastMessagePreview: String? = null
+    val lastMessageAt: Long? = null,
+    val createdAt: Long = 0,
+    val lastMessagePreview: String? = null,
+    val lastMessageSenderType: String? = null,
+    val historyComplete: Boolean = false
 ) {
+    val displayName: String
+        get() = visitorName ?: visitorPhone ?: visitorEmail ?: "بازدیدکننده"
+
+    val activityAt: Long
+        get() = lastMessageAt ?: createdAt
+
     companion object {
+        /** Accepts both the REST conversation view and the flattened `conversation.new` payload. */
         fun fromJson(j: JSONObject): EveChatConversation {
-            val visitor = j.optJSONObject("visitor")?.let { EveChatVisitor.fromJson(it) }
-            val agent = j.optJSONObject("agent")?.let { EveChatAgent.fromJson(it) }
+            val visitor = j.optJSONObject("visitor")
+            val agent = j.optJSONObject("agent")
             return EveChatConversation(
                 id = j.getString("id"),
-                visitorId = j.optString("visitor_id", ""),
-                assignedAgentId = j.optString("assigned_agent_id", null).takeIf { !it.isNullOrBlank() },
-                status = j.optString("status", "pending"),
-                channel = j.optString("channel", "web"),
-                subject = j.optString("subject", null).takeIf { !it.isNullOrBlank() },
+                visitorId = j.optStringOrNull("visitor_id") ?: visitor?.optStringOrNull("id") ?: "",
+                visitorName = visitor?.let { v ->
+                    v.optStringOrNull("name") ?: v.optStringOrNull("eve_mobile")
+                },
+                visitorEmail = visitor?.optStringOrNull("email"),
+                visitorPhone = visitor?.optStringOrNull("phone"),
+                assignedAgentId = j.optStringOrNull("assigned_agent_id"),
+                assignedAgentName = agent?.optStringOrNull("name"),
+                status = j.optStringOrNull("status") ?: ConvStatus.PENDING,
+                channel = j.optStringOrNull("channel") ?: "web",
+                subject = j.optStringOrNull("subject"),
                 unreadAgent = j.optInt("unread_agent", 0),
-                lastMessageAt = j.optString("last_message_at", null).takeIf { !it.isNullOrBlank() },
-                createdAt = j.optString("created_at", ""),
-                visitor = visitor,
-                agent = agent
+                lastMessageAt = EveChatTime.parse(j.optStringOrNull("last_message_at")),
+                createdAt = EveChatTime.parse(j.optStringOrNull("created_at")) ?: 0L
             )
         }
     }
 }
 
+enum class SendState { SENT, PENDING, FAILED }
+
+@Entity(
+    tableName = "messages",
+    indices = [
+        Index(value = ["conversationId", "createdAt"]),
+        Index(value = ["clientMessageId"], unique = true)
+    ]
+)
 data class EveChatMessage(
-    val id: String,
+    @PrimaryKey val id: String,
     val conversationId: String,
+    val clientMessageId: String? = null,
     val senderType: String,
     val senderId: String? = null,
     val senderName: String? = null,
@@ -95,67 +117,72 @@ data class EveChatMessage(
     val attachments: List<String> = emptyList(),
     val isInternal: Boolean = false,
     val isRead: Boolean = false,
-    val createdAt: String = "",
-    val clientMessageId: String? = null,
-    val sendState: SendState = SendState.Sent
+    val createdAt: Long = 0,
+    val sendState: SendState = SendState.SENT,
+    val attempts: Int = 0,
+    val lastError: String? = null
 ) {
-    enum class SendState { Sending, Sent, Failed }
+    val isOutgoing: Boolean get() = senderType == SenderType.AGENT
+    val isSystem: Boolean get() = senderType == SenderType.SYSTEM || senderType == SenderType.BOT
 
     companion object {
+        const val LOCAL_PREFIX = "local-"
+
         fun fromJson(j: JSONObject): EveChatMessage {
             val attachments = mutableListOf<String>()
             j.optJSONArray("attachments")?.let { arr ->
-                for (i in 0 until arr.length()) attachments.add(arr.getString(i))
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let(attachments::add)
             }
             return EveChatMessage(
                 id = j.getString("id"),
-                conversationId = j.optString("conversation_id", ""),
-                senderType = j.optString("sender_type", ""),
-                senderId = j.optString("sender_id", "").takeIf { it.isNotBlank() },
-                senderName = j.optString("sender_name", "").takeIf { it.isNotBlank() },
-                contentType = j.optString("content_type", "text"),
-                content = j.optString("content", ""),
+                conversationId = j.optStringOrNull("conversation_id") ?: "",
+                clientMessageId = j.optStringOrNull("client_message_id"),
+                senderType = j.optStringOrNull("sender_type") ?: SenderType.SYSTEM,
+                senderId = j.optStringOrNull("sender_id"),
+                senderName = j.optStringOrNull("sender_name"),
+                contentType = j.optStringOrNull("content_type") ?: "text",
+                content = j.optStringOrNull("content") ?: "",
                 attachments = attachments,
                 isInternal = j.optBoolean("is_internal", false),
                 isRead = j.optBoolean("is_read", false),
-                createdAt = j.optString("created_at", ""),
-                clientMessageId = j.optString("client_message_id", "").takeIf { it.isNotBlank() }
+                createdAt = EveChatTime.parse(j.optStringOrNull("created_at")) ?: System.currentTimeMillis()
             )
         }
     }
 }
 
-data class EveChatTicket(
-    val id: String,
-    val title: String,
-    val status: String = "open",
-    val priority: String = "medium",
+/** `conversation.updated` carries only the fields that changed. */
+data class ConversationPatch(
+    val conversationId: String,
+    val status: String? = null,
     val assignedAgentId: String? = null,
-    val tags: List<String> = emptyList(),
-    val createdAt: String = ""
-) {
-    companion object {
-        fun fromJson(j: JSONObject): EveChatTicket {
-            val tags = mutableListOf<String>()
-            j.optJSONArray("tags")?.let { arr ->
-                for (i in 0 until arr.length()) tags.add(arr.getString(i))
-            }
-            return EveChatTicket(
-                id = j.getString("id"),
-                title = j.optString("title", ""),
-                status = j.optString("status", "open"),
-                priority = j.optString("priority", "medium"),
-                assignedAgentId = j.optString("assigned_agent_id", null).takeIf { !it.isNullOrBlank() },
-                tags = tags,
-                createdAt = j.optString("created_at", "")
-            )
-        }
+    val assignedAgentName: String? = null,
+    val lastMessageAt: Long? = null,
+    val unreadAgent: Int? = null,
+    val senderType: String? = null
+)
+
+data class PagedList<T>(val items: List<T>, val total: Int)
+
+object EveChatTime {
+    private val sqlLayout = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    /** Server times are UTC; returns epoch millis, or null for blank/unknown input. */
+    fun parse(value: String?): Long? {
+        val text = value?.trim().orEmpty()
+        if (text.isEmpty()) return null
+        text.toLongOrNull()?.let { return it }
+        return runCatching { Instant.parse(text).toEpochMilli() }.getOrNull()
+            ?: runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }.getOrNull()
+            ?: runCatching {
+                LocalDateTime.parse(text.take(19).replace('T', ' '), sqlLayout)
+                    .toInstant(ZoneOffset.UTC).toEpochMilli()
+            }.getOrNull()
     }
 }
 
-data class PagedList<T>(
-    val data: List<T>,
-    val total: Int,
-    val limit: Int,
-    val offset: Int
-)
+/** org.json returns the literal "null" for JSON null with optString; this does not. */
+fun JSONObject.optStringOrNull(key: String): String? {
+    if (!has(key) || isNull(key)) return null
+    return optString(key).trim().takeIf { it.isNotEmpty() }
+}

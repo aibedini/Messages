@@ -3,130 +3,81 @@ package com.autonomousone.messages.evechat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonomousone.messages.evechat.EveChatSession.InboxFilter
 import com.autonomousone.messages.evechat.model.EveChatConversation
-import com.autonomousone.messages.evechat.network.EveChatSocket
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class EveChatViewModel(application: Application) : AndroidViewModel(application) {
 
-    val prefs = EveChatPreferences(application)
-    val repository = EveChatRepository(prefs, viewModelScope)
+    private val session = EveChatSession.get(application)
 
     sealed class LoginState {
         data object Idle : LoginState()
         data object Loading : LoginState()
-        data object Success : LoginState()
         data class Error(val message: String) : LoginState()
     }
 
-    enum class InboxFilter(val label: String) {
-        Pending("در انتظار"),
-        Mine("من"),
-        All("همه"),
-        Resolved("حل شده")
-    }
+    val authState: StateFlow<EveChatSession.AuthState> = session.authState
+    val connection: StateFlow<EveChatSession.Connection> = session.connection
+    val errors: SharedFlow<String> = session.errors
 
-    private val _loginState = MutableStateFlow<LoginState>(
-        if (prefs.isLoggedIn) LoginState.Success else LoginState.Idle
-    )
+    private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
     val loginState: StateFlow<LoginState> = _loginState.asStateFlow()
 
-    private val _serverUrl = MutableStateFlow(prefs.serverUrl)
-    val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
+    private val _filter = MutableStateFlow(InboxFilter.OPEN)
+    val filter: StateFlow<InboxFilter> = _filter.asStateFlow()
 
-    private val _selectedFilter = MutableStateFlow(InboxFilter.Pending)
-    val selectedFilter: StateFlow<InboxFilter> = _selectedFilter.asStateFlow()
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    val conversations: StateFlow<List<EveChatConversation>> =
+        combine(_filter, session.myAgentId) { f, _ -> f }
+            .flatMapLatest { session.observeInbox(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val connectionState: StateFlow<EveChatSocket.State> = repository.socket.state
+    val myAgentId: StateFlow<String?> = session.myAgentId
 
-    val conversations: StateFlow<List<EveChatConversation>> = repository.conversations
+    val savedServer: String get() = session.lastServer
+    val savedEmail: String get() = session.lastEmail
 
-    val filteredConversations: StateFlow<List<EveChatConversation>> =
-        repository.conversations.map { convs ->
-            when (_selectedFilter.value) {
-                InboxFilter.Pending -> convs.filter { it.status == "pending" }
-                InboxFilter.Mine -> convs.filter {
-                    it.assignedAgentId == repository.currentAgent.value?.id
-                }
-                InboxFilter.Resolved -> convs.filter { it.status == "resolved" }
-                InboxFilter.All -> convs
-            }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    init {
-        if (prefs.isLoggedIn) {
-            connectAndLoad()
-        }
-    }
-
-    fun login(serverUrl: String, email: String, password: String) {
+    fun login(server: String, email: String, password: String) {
+        if (_loginState.value is LoginState.Loading) return
         _loginState.value = LoginState.Loading
         viewModelScope.launch {
-            when (val result = EveChatApiClient.login(serverUrl, email, password)) {
-                is EveChatApiClient.Result.Success -> {
-                    prefs.serverUrl = serverUrl
-                    prefs.accessToken = result.data.accessToken
-                    prefs.refreshToken = result.data.refreshToken
-                    prefs.agentEmail = email
-                    _serverUrl.value = serverUrl
-                    _loginState.value = LoginState.Success
-                    connectAndLoad()
-                }
-                is EveChatApiClient.Result.Error -> {
-                    _loginState.value = LoginState.Error(result.message)
-                }
+            _loginState.value = when (val r = session.login(server, email, password)) {
+                is ApiResult.Ok -> LoginState.Idle
+                is ApiResult.Err -> LoginState.Error(r.error.userMessage)
             }
         }
     }
 
-    fun logout() {
-        repository.disconnect()
-        prefs.clear()
-        _loginState.value = LoginState.Idle
-    }
+    fun logout() = session.logout()
 
     fun selectFilter(filter: InboxFilter) {
-        _selectedFilter.value = filter
-        viewModelScope.launch { loadForFilter(filter) }
+        _filter.value = filter
+        if (filter == InboxFilter.RESOLVED) viewModelScope.launch { session.refreshResolved() }
     }
 
     fun refresh() {
+        if (_refreshing.value) return
         viewModelScope.launch {
-            _isRefreshing.value = true
-            loadForFilter(_selectedFilter.value)
-            _isRefreshing.value = false
+            _refreshing.value = true
+            try {
+                session.catchUp("pull-to-refresh")
+                if (_filter.value == InboxFilter.RESOLVED) session.refreshResolved()
+            } finally {
+                _refreshing.value = false
+            }
         }
-    }
-
-    private fun connectAndLoad() {
-        viewModelScope.launch {
-            repository.fetchMe()
-            repository.connect()
-            loadForFilter(_selectedFilter.value)
-        }
-    }
-
-    private suspend fun loadForFilter(filter: InboxFilter) {
-        val status = when (filter) {
-            InboxFilter.Pending -> "pending"
-            InboxFilter.Mine -> "mine"
-            InboxFilter.Resolved -> "resolved"
-            InboxFilter.All -> null
-        }
-        repository.loadConversations(status)
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        repository.disconnect()
     }
 }
