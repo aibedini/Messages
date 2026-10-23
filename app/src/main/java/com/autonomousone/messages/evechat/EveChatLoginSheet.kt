@@ -33,10 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.autonomousone.messages.R
 
 @Composable
 fun EveChatLoginSheet(
@@ -69,13 +71,13 @@ fun EveChatLoginSheet(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "اتصال به EveChat",
+            text = stringResource(R.string.eve_login_title),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface
         )
 
         Text(
-            text = "آدرس سرور و اطلاعات ورود خود را وارد کنید",
+            text = stringResource(R.string.eve_login_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -87,7 +89,7 @@ fun EveChatLoginSheet(
         OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
-            label = { Text("آدرس سرور") },
+            label = { Text(stringResource(R.string.eve_login_server)) },
             placeholder = { Text("https://chat.example.com") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
@@ -103,7 +105,7 @@ fun EveChatLoginSheet(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("ایمیل") },
+            label = { Text(stringResource(R.string.eve_login_email)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
@@ -118,7 +120,7 @@ fun EveChatLoginSheet(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("رمز عبور") },
+            label = { Text(stringResource(R.string.eve_login_password)) },
             singleLine = true,
             visualTransformation = if (passwordVisible) VisualTransformation.None
                 else PasswordVisualTransformation(),
@@ -138,7 +140,10 @@ fun EveChatLoginSheet(
                     Icon(
                         imageVector = if (passwordVisible) Icons.Default.VisibilityOff
                             else Icons.Default.Visibility,
-                        contentDescription = if (passwordVisible) "پنهان کردن رمز" else "نمایش رمز"
+                        contentDescription = stringResource(
+                            if (passwordVisible) R.string.eve_login_hide_password
+                            else R.string.eve_login_show_password
+                        )
                     )
                 }
             },
@@ -169,7 +174,7 @@ fun EveChatLoginSheet(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("ورود")
+                Text(stringResource(R.string.eve_login_button))
             }
         }
     }

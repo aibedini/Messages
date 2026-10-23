@@ -26,8 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.model.EveChatMessage
 import com.autonomousone.messages.evechat.model.SendState
 import com.autonomousone.messages.utils.formatMessageTime
@@ -91,7 +93,11 @@ fun EveChatBubble(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (message.isInternal) {
-                Text("یادداشت داخلی", style = MaterialTheme.typography.labelSmall, color = NoteLabel)
+                Text(
+                    stringResource(R.string.eve_note_internal),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NoteLabel
+                )
             }
             if (showSender && message.senderName != null) {
                 Text(
@@ -113,16 +119,29 @@ fun EveChatBubble(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (failed) "ارسال نشد — برای تلاش دوباره بزنید" else formatMessageTime(message.createdAt),
+                    text = if (failed) stringResource(R.string.eve_bubble_failed)
+                    else formatMessageTime(message.createdAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (failed) scheme.error else textColor.copy(alpha = 0.7f)
                 )
                 if (outgoing) {
                     Spacer(Modifier.width(3.dp))
                     val (icon, tint, label) = when (message.sendState) {
-                        SendState.PENDING -> Triple(Icons.Default.Schedule, textColor.copy(alpha = 0.6f), "در حال ارسال")
-                        SendState.SENT -> Triple(Icons.Default.Check, textColor.copy(alpha = 0.8f), "ارسال شد")
-                        SendState.FAILED -> Triple(Icons.Default.ErrorOutline, scheme.error, "ارسال نشد")
+                        SendState.PENDING -> Triple(
+                            Icons.Default.Schedule,
+                            textColor.copy(alpha = 0.6f),
+                            stringResource(R.string.eve_sending)
+                        )
+                        SendState.SENT -> Triple(
+                            Icons.Default.Check,
+                            textColor.copy(alpha = 0.8f),
+                            stringResource(R.string.eve_sent)
+                        )
+                        SendState.FAILED -> Triple(
+                            Icons.Default.ErrorOutline,
+                            scheme.error,
+                            stringResource(R.string.eve_not_sent)
+                        )
                     }
                     Icon(icon, contentDescription = label, modifier = Modifier.size(14.dp), tint = tint)
                 }

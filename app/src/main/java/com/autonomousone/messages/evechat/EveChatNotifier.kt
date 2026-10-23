@@ -43,13 +43,21 @@ class EveChatNotifier(private val context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_MESSAGES, "پیام‌های پشتیبانی", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "پیام‌های جدید بازدیدکنندگان EveChat"
+            NotificationChannel(
+                CHANNEL_MESSAGES,
+                context.getString(R.string.eve_channel_messages),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = context.getString(R.string.eve_channel_messages_desc)
             }
         )
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_NEW, "گفتگوهای جدید پشتیبانی", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "گفتگوهایی که منتظر پاسخ هستند"
+            NotificationChannel(
+                CHANNEL_NEW,
+                context.getString(R.string.eve_channel_new),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = context.getString(R.string.eve_channel_new_desc)
             }
         )
     }
@@ -64,9 +72,11 @@ class EveChatNotifier(private val context: Context) {
                 while (lines.size > 6) lines.removeFirst()
             }
         }
-        val visitor = Person.Builder().setName(conversation.displayName).setKey(conversation.visitorId).build()
-        val style = NotificationCompat.MessagingStyle(Person.Builder().setName("من").build())
-            .setConversationTitle(conversation.displayName)
+        val name = conversation.displayName.ifBlank { context.getString(R.string.eve_visitor) }
+        val visitor = Person.Builder().setName(name).setKey(conversation.visitorId).build()
+        val style = NotificationCompat.MessagingStyle(
+            Person.Builder().setName(context.getString(R.string.eve_notif_you)).build()
+        ).setConversationTitle(name)
         synchronized(lines) { lines.forEach { (text, at) -> style.addMessage(text, at, visitor) } }
         post(
             conversation.id,
@@ -89,8 +99,16 @@ class EveChatNotifier(private val context: Context) {
             conversation.id,
             NotificationCompat.Builder(context, CHANNEL_NEW)
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("گفتگوی جدید: ${conversation.displayName}")
-                .setContentText(first?.content?.take(300) ?: conversation.subject ?: "منتظر پاسخ")
+                .setContentTitle(
+                    context.getString(
+                        R.string.eve_notif_new_conversation_fmt,
+                        conversation.displayName.ifBlank { context.getString(R.string.eve_visitor) }
+                    )
+                )
+                .setContentText(
+                    first?.content?.take(300) ?: conversation.subject
+                        ?: context.getString(R.string.eve_notif_waiting)
+                )
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setGroup(GROUP)
@@ -109,8 +127,12 @@ class EveChatNotifier(private val context: Context) {
             conversationId,
             NotificationCompat.Builder(context, if (newConversation) CHANNEL_NEW else CHANNEL_MESSAGES)
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(push.title ?: if (newConversation) "گفتگوی جدید پشتیبانی" else "پیام جدید پشتیبانی")
-                .setContentText(push.body ?: "برای مشاهده باز کنید")
+                .setContentTitle(
+                    push.title ?: context.getString(
+                        if (newConversation) R.string.eve_notif_new_conversation else R.string.eve_notif_new_message
+                    )
+                )
+                .setContentText(push.body ?: context.getString(R.string.eve_notif_open))
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setGroup(GROUP)

@@ -42,13 +42,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.autonomousone.messages.evechat.EveChatLoginSheet
+import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.EveChatSession
 import com.autonomousone.messages.evechat.EveChatSession.InboxFilter
 import com.autonomousone.messages.evechat.EveChatViewModel
+import com.autonomousone.messages.evechat.messageRes
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.ui.components.MessagesBottomNav
 
@@ -65,6 +68,7 @@ fun EveChatInboxScreen(
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val myAgentId by viewModel.myAgentId.collectAsStateWithLifecycle()
+    val myAgentName by viewModel.myAgentName.collectAsStateWithLifecycle()
     val pushStatus by viewModel.pushStatus.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
     var showStatus by rememberSaveable { mutableStateOf(false) }
@@ -82,9 +86,14 @@ fun EveChatInboxScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("پشتیبانی")
+                            Text(stringResource(R.string.eve_title))
                             Text(
-                                text = connectionLabel(connection),
+                                // Which support account is signed in, then the link state:
+                                // "vpnmahna · Connected" — the header used to hide both.
+                                text = listOfNotNull(
+                                    myAgentName,
+                                    stringResource(connection.messageRes())
+                                ).joinToString(" · "),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -93,11 +102,14 @@ fun EveChatInboxScreen(
                     actions = {
                         Box {
                             IconButton(onClick = { menuOpen = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌ها")
+                                Icon(
+                                    Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.eve_menu_more)
+                                )
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(
-                                    text = { Text("وضعیت همگام‌سازی") },
+                                    text = { Text(stringResource(R.string.eve_menu_status)) },
                                     leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
@@ -105,7 +117,7 @@ fun EveChatInboxScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("خروج") },
+                                    text = { Text(stringResource(R.string.eve_menu_sign_out)) },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
@@ -133,7 +145,7 @@ fun EveChatInboxScreen(
                 Column(Modifier.fillMaxSize()) {
                     AnimatedVisibility(visible = connection == EveChatSession.Connection.OFFLINE) {
                         Text(
-                            text = "آفلاین — گفتگوهای ذخیره‌شده نمایش داده می‌شوند",
+                            text = stringResource(R.string.eve_offline_banner),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier
@@ -152,7 +164,7 @@ fun EveChatInboxScreen(
                         if (conversations.isEmpty()) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = emptyLabel(filter),
+                                    text = stringResource(emptyLabelRes(filter)),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -197,15 +209,17 @@ fun EveChatInboxScreen(
     if (confirmLogout) {
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
-            title = { Text("خروج از پشتیبانی") },
-            text = { Text("گفتگوهای ذخیره‌شده و پیام‌های ارسال‌نشده از این دستگاه حذف می‌شوند.") },
+            title = { Text(stringResource(R.string.eve_sign_out_title)) },
+            text = { Text(stringResource(R.string.eve_sign_out_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmLogout = false
                     viewModel.logout()
-                }) { Text("خروج") }
+                }) { Text(stringResource(R.string.eve_menu_sign_out)) }
             },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("انصراف") } }
+            dismissButton = {
+                TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.action_cancel)) }
+            }
         )
     }
 }
@@ -220,28 +234,27 @@ private fun FilterRow(selected: InboxFilter, onSelect: (InboxFilter) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         InboxFilter.entries.forEach { f ->
-            FilterChip(selected = f == selected, onClick = { onSelect(f) }, label = { Text(filterLabel(f)) })
+            FilterChip(
+                selected = f == selected,
+                onClick = { onSelect(f) },
+                label = { Text(stringResource(filterLabelRes(f))) }
+            )
         }
     }
 }
 
-private fun filterLabel(f: InboxFilter) = when (f) {
-    InboxFilter.OPEN -> "باز"
-    InboxFilter.PENDING -> "در انتظار"
-    InboxFilter.MINE -> "گفتگوهای من"
-    InboxFilter.RESOLVED -> "حل شده"
+@androidx.annotation.StringRes
+private fun filterLabelRes(f: InboxFilter) = when (f) {
+    InboxFilter.OPEN -> R.string.eve_filter_open
+    InboxFilter.PENDING -> R.string.eve_filter_pending
+    InboxFilter.MINE -> R.string.eve_filter_mine
+    InboxFilter.RESOLVED -> R.string.eve_filter_resolved
 }
 
-private fun emptyLabel(f: InboxFilter) = when (f) {
-    InboxFilter.OPEN -> "گفتگوی بازی وجود ندارد"
-    InboxFilter.PENDING -> "گفتگویی در انتظار نیست"
-    InboxFilter.MINE -> "گفتگویی به شما واگذار نشده است"
-    InboxFilter.RESOLVED -> "گفتگوی حل‌شده‌ای وجود ندارد"
-}
-
-internal fun connectionLabel(c: EveChatSession.Connection) = when (c) {
-    EveChatSession.Connection.ONLINE -> "متصل"
-    EveChatSession.Connection.SYNCING -> "در حال همگام‌سازی…"
-    EveChatSession.Connection.CONNECTING -> "در حال اتصال…"
-    EveChatSession.Connection.OFFLINE -> "آفلاین"
+@androidx.annotation.StringRes
+private fun emptyLabelRes(f: InboxFilter) = when (f) {
+    InboxFilter.OPEN -> R.string.eve_empty_open
+    InboxFilter.PENDING -> R.string.eve_empty_pending
+    InboxFilter.MINE -> R.string.eve_empty_mine
+    InboxFilter.RESOLVED -> R.string.eve_empty_resolved
 }

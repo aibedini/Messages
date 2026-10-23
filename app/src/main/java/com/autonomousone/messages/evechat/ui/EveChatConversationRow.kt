@@ -21,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.model.ConvStatus
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.SenderType
@@ -37,11 +39,13 @@ fun EveChatConversationRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val name = conversation.displayName
+    val name = conversation.displayName.ifBlank { stringResource(R.string.eve_visitor) }
     val hasUnread = conversation.unreadAgent > 0
     val preview = when {
-        conversation.lastMessagePreview == null -> conversation.subject ?: "بدون پیام"
-        conversation.lastMessageSenderType == SenderType.AGENT -> "شما: ${conversation.lastMessagePreview}"
+        conversation.lastMessagePreview == null ->
+            conversation.subject ?: stringResource(R.string.eve_row_no_message)
+        conversation.lastMessageSenderType == SenderType.AGENT ->
+            stringResource(R.string.eve_row_you_fmt, conversation.lastMessagePreview)
         else -> conversation.lastMessagePreview
     }
 
@@ -127,11 +131,17 @@ private fun StatusChip(conversation: EveChatConversation, myAgentId: String?) {
     val scheme = MaterialTheme.colorScheme
     val (bg, fg, label) = when {
         conversation.status == ConvStatus.PENDING && conversation.assignedAgentId == null ->
-            Triple(scheme.tertiaryContainer, scheme.onTertiaryContainer, "در انتظار")
-        conversation.status == ConvStatus.RESOLVED -> Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, "حل شده")
-        conversation.status == ConvStatus.CLOSED -> Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, "بسته")
+            Triple(scheme.tertiaryContainer, scheme.onTertiaryContainer, stringResource(R.string.eve_status_waiting))
+        conversation.status == ConvStatus.RESOLVED ->
+            Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, stringResource(R.string.eve_status_resolved))
+        conversation.status == ConvStatus.CLOSED ->
+            Triple(scheme.surfaceVariant, scheme.onSurfaceVariant, stringResource(R.string.eve_status_closed))
         conversation.assignedAgentId != null && conversation.assignedAgentId != myAgentId ->
-            Triple(scheme.secondaryContainer, scheme.onSecondaryContainer, conversation.assignedAgentName ?: "کارشناس دیگر")
+            Triple(
+                scheme.secondaryContainer,
+                scheme.onSecondaryContainer,
+                conversation.assignedAgentName ?: stringResource(R.string.eve_unknown_agent)
+            )
         else -> return
     }
     Surface(shape = RoundedCornerShape(12.dp), color = bg, modifier = Modifier.padding(start = 6.dp)) {

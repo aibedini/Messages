@@ -124,19 +124,24 @@ object EveChatServerUrl {
 
     sealed interface Result {
         data class Ok(val url: String, val insecure: Boolean) : Result
-        data class Invalid(val reason: String) : Result
+
+        /** [reasonRes] is a string resource: this object has no Context and must not guess a language. */
+        data class Invalid(@androidx.annotation.StringRes val reasonRes: Int) : Result
     }
 
     /** Accepts what people actually type: no scheme, trailing slashes, a pasted `/api/v1`. */
     fun normalize(input: String): Result {
         var text = input.trim().trimEnd('/')
-        if (text.isEmpty()) return Result.Invalid("آدرس سرور را وارد کنید")
+        val required = com.autonomousone.messages.R.string.eve_server_required
+        val invalid = com.autonomousone.messages.R.string.eve_server_invalid
+        if (text.isEmpty()) return Result.Invalid(required)
         if (!text.contains("://")) text = "https://$text"
-        val uri = runCatching { java.net.URI(text) }.getOrNull()
-            ?: return Result.Invalid("آدرس سرور معتبر نیست")
+        val uri = runCatching { java.net.URI(text) }.getOrNull() ?: return Result.Invalid(invalid)
         val scheme = uri.scheme?.lowercase()
-        if (scheme != "https" && scheme != "http") return Result.Invalid("فقط آدرس http یا https پذیرفته می‌شود")
-        if (uri.host.isNullOrBlank()) return Result.Invalid("آدرس سرور معتبر نیست")
+        if (scheme != "https" && scheme != "http") {
+            return Result.Invalid(com.autonomousone.messages.R.string.eve_server_scheme)
+        }
+        if (uri.host.isNullOrBlank()) return Result.Invalid(invalid)
         var path = (uri.rawPath ?: "").trimEnd('/')
         if (path.endsWith("/api/v1")) path = path.removeSuffix("/api/v1")
         val port = if (uri.port > 0) ":${uri.port}" else ""

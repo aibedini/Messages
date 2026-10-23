@@ -535,4 +535,165 @@
     <string name="trash_snackbar_emptied_partial">%1$d deleted, %2$d kept — please try again</string>
     <string name="settings_trash_title">Recently deleted</string>
     <string name="settings_trash_hint">Restore or permanently delete conversations</string>
+
+    <!-- ══════════ Support (EveChat) ══════════ -->
+    <!-- In-app language follows the system locale: every support string lives here so an
+         English phone never shows Persian chrome. Persian copies live in values-fa. -->
+    <string name="nav_messages">Messages</string>
+    <string name="nav_support">Support</string>
+    <string name="nav_unread_fmt">%1$s, %2$d unread</string>
+
+    <string name="eve_title">Support</string>
+    <string name="eve_visitor">Visitor</string>
+    <string name="eve_unknown_agent">Another agent</string>
+
+    <string name="eve_conn_online">Connected</string>
+    <string name="eve_conn_syncing">Syncing…</string>
+    <string name="eve_conn_connecting">Connecting…</string>
+    <string name="eve_conn_offline">Offline</string>
+    <string name="eve_offline_banner">Offline — showing saved conversations</string>
+
+    <string name="eve_filter_open">Open</string>
+    <string name="eve_filter_pending">Waiting</string>
+    <string name="eve_filter_mine">My chats</string>
+    <string name="eve_filter_resolved">Resolved</string>
+
+    <string name="eve_empty_open">No open conversations</string>
+    <string name="eve_empty_pending">Nobody is waiting</string>
+    <string name="eve_empty_mine">No conversation is assigned to you</string>
+    <string name="eve_empty_resolved">No resolved conversations</string>
+
+    <string name="eve_status_waiting">Waiting for a reply</string>
+    <string name="eve_status_resolved">Resolved</string>
+    <string name="eve_status_closed">Closed</string>
+    <string name="eve_status_active">Active</string>
+    <string name="eve_status_assigned_fmt">Assigned to %1$s</string>
+    <string name="eve_typing">typing…</string>
+
+    <string name="eve_menu_more">More options</string>
+    <string name="eve_menu_status">Sync status</string>
+    <string name="eve_menu_sign_out">Sign out</string>
+    <string name="eve_sign_out_title">Sign out of Support?</string>
+    <string name="eve_sign_out_body">Saved conversations and unsent messages will be removed from this device.</string>
+
+    <string name="eve_status_dialog_title">Sync status</string>
+    <string name="eve_status_connection">Live connection</string>
+    <string name="eve_status_push">Instant notifications (FCM)</string>
+    <string name="eve_status_last_push">Last notification received</string>
+    <string name="eve_status_polling">Background check</string>
+    <string name="eve_status_poll_15">Every 15 minutes</string>
+    <string name="eve_status_poll_30">Every 30 minutes</string>
+    <string name="eve_status_server">Server</string>
+    <string name="eve_status_account">Account</string>
+
+    <string name="eve_push_active">On</string>
+    <string name="eve_push_registering">Registering this device…</string>
+    <string name="eve_push_failed">Registration failed; retrying automatically</string>
+    <string name="eve_push_unsupported">This server does not support instant notifications yet</string>
+    <string name="eve_push_not_configured">Firebase is not configured in this build</string>
+    <string name="eve_push_no_play_services">Google Play services are unavailable on this device</string>
+    <string name="eve_push_disabled">Off</string>
+
+    <string name="eve_notifications_off">Notifications are off — you\'ll miss new support messages</string>
+    <string name="eve_notifications_enable">Turn on</string>
+
+    <string name="eve_back">Back</string>
+    <string name="eve_claim">Take conversation</string>
+    <string name="eve_resolve">Mark resolved</string>
+    <string name="eve_reopen">Reopen</string>
+    <string name="eve_closed_banner">This conversation is closed</string>
+    <string name="eve_input_hint">Write a message…</string>
+    <string name="eve_input_locked">This conversation is assigned to another agent</string>
+    <string name="eve_send">Send</string>
+    <string name="eve_send_failed_title">Message not sent</string>
+    <string name="eve_send_failed_body">Sending this message failed.</string>
+
+    <string name="eve_channel_messages">Support messages</string>
+    <string name="eve_channel_messages_desc">New messages from EveChat visitors</string>
+    <string name="eve_channel_new">New support conversations</string>
+    <string name="eve_channel_new_desc">Conversations waiting for a reply</string>
+    <string name="eve_notif_you">You</string>
+    <string name="eve_notif_new_conversation_fmt">New conversation: %1$s</string>
+    <string name="eve_notif_waiting">Waiting for a reply</string>
+    <string name="eve_notif_new_message">New support message</string>
+    <string name="eve_notif_new_conversation">New support conversation</string>
+    <string name="eve_notif_open">Open to view</string>
+
+    <string name="eve_row_no_message">No messages yet</string>
+    <string name="eve_row_you_fmt">You: %1$s</string>
+
+    <string name="eve_note_internal">Internal note</string>
+    <string name="eve_bubble_failed">Not sent — tap to retry</string>
+    <string name="eve_sending">Sending</string>
+    <string name="eve_sent">Sent</string>
+    <string name="eve_not_sent">Not sent</string>
+
+    <string name="eve_login_title">Connect to EveChat</string>
+    <string name="eve_login_subtitle">Enter your server address and sign-in details</string>
+    <string name="eve_login_server">Server address</string>
+    <string name="eve_login_email">Email</string>
+    <string name="eve_login_password">Password</string>
+    <string name="eve_login_show_password">Show password</string>
+    <string name="eve_login_hide_password">Hide password</string>
+    <string name="eve_login_button">Sign in</string>
+    <string name="eve_login_failed">Email or password is incorrect</string>
+    <string name="eve_server_required">Enter the server address</string>
+    <string name="eve_server_invalid">That server address is not valid</string>
+    <string name="eve_server_scheme">Only http or https addresses are supported</string>
+
+    <!-- Visitor profile sheet -->
+    <string name="eve_profile_open">Visitor details</string>
+    <string name="eve_profile_identity">Identity</string>
+    <string name="eve_profile_subscription">Plan and subscription</string>
+    <string name="eve_profile_device">Device</string>
+    <string name="eve_profile_network">Network</string>
+    <string name="eve_profile_page">Current page</string>
+    <string name="eve_profile_activity">Activity</string>
+    <string name="eve_profile_extra">Extra data</string>
+    <string name="eve_profile_reference">Reference</string>
+    <string name="eve_profile_empty">The server sent no profile details for this visitor.</string>
+    <string name="eve_profile_refresh">Refresh</string>
+    <string name="eve_profile_updated_fmt">Updated %1$s</string>
+
+    <string name="eve_field_name">Name</string>
+    <string name="eve_field_mobile">Mobile</string>
+    <string name="eve_field_email">Email</string>
+    <string name="eve_field_user_id">User ID</string>
+    <string name="eve_field_reseller">Reseller</string>
+    <string name="eve_field_plan">Plan</string>
+    <string name="eve_field_expiry">Expires</string>
+    <string name="eve_field_days_left">Days left</string>
+    <string name="eve_field_device">Device</string>
+    <string name="eve_field_os">System</string>
+    <string name="eve_field_browser">Browser</string>
+    <string name="eve_field_language">Language</string>
+    <string name="eve_field_ip">IP address</string>
+    <string name="eve_field_country">Country</string>
+    <string name="eve_field_referrer">Came from</string>
+    <string name="eve_field_page_title">Page title</string>
+    <string name="eve_field_first_seen">First seen</string>
+    <string name="eve_field_last_seen">Last seen</string>
+    <string name="eve_field_visitor_id">Visitor ID</string>
+    <string name="eve_field_conversation_id">Conversation ID</string>
+    <string name="eve_field_channel">Channel</string>
+    <string name="eve_field_agent">Agent</string>
+
+    <string name="eve_no_subscription">No subscription</string>
+    <string name="eve_days_left_fmt">%1$d days left</string>
+    <string name="eve_expired">Expired</string>
+    <string name="eve_banned">Banned</string>
+    <string name="eve_copied">Copied to clipboard</string>
+
+    <string name="eve_err_network">Couldn\'t reach the server</string>
+    <string name="eve_err_timeout">The server took too long — try again</string>
+    <string name="eve_err_unauthorized">Your session expired — sign in again</string>
+    <string name="eve_err_forbidden">You don\'t have access to this</string>
+    <string name="eve_err_not_found">Not found</string>
+    <string name="eve_err_conflict">Another agent already took this conversation</string>
+    <string name="eve_err_rate_limited">Too many requests — wait a moment</string>
+    <string name="eve_err_server">Server error — try again shortly</string>
+    <string name="eve_err_client">The request was rejected</string>
+    <string name="eve_err_parse">Unreadable response from the server</string>
+    <string name="eve_session_expired">Your session expired — please sign in again</string>
+    <string name="eve_load_failed">Couldn\'t load the conversation</string>
 </resources>

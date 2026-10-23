@@ -1,17 +1,24 @@
 package com.autonomousone.messages.evechat.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AssignmentInd
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,15 +54,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.EveChatConversationViewModel
 import com.autonomousone.messages.evechat.EveChatSession
+import com.autonomousone.messages.evechat.messageRes
 import com.autonomousone.messages.evechat.model.ConvStatus
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import com.autonomousone.messages.evechat.model.EveChatVisitor
 import com.autonomousone.messages.utils.formatDateHeader
 import java.util.Calendar
 
@@ -98,6 +112,7 @@ fun EveChatConversationScreen(
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val profile by viewModel.profile.collectAsStateWithLifecycle()
     val typing by viewModel.visitorTyping.collectAsStateWithLifecycle()
     val syncing by viewModel.syncing.collectAsStateWithLifecycle()
     val loadingOlder by viewModel.loadingOlder.collectAsStateWithLifecycle()
@@ -109,6 +124,7 @@ fun EveChatConversationScreen(
     val snackbar = remember { SnackbarHostState() }
     var input by rememberSaveable { mutableStateOf("") }
     var failedPrompt by remember { mutableStateOf<EveChatMessage?>(null) }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -143,44 +159,85 @@ fun EveChatConversationScreen(
     val open = status != null && ConvStatus.isOpen(status)
     val assignedToOther = conversation?.assignedAgentId != null && conversation?.assignedAgentId != myAgentId
 
+    // Who am I talking to? The visitor's own name when the server sent one, otherwise an
+    // explicit "Visitor · 4f2a" so two anonymous chats are still distinguishable in the header.
+    val visitorLabel = stringResource(R.string.eve_visitor)
+    val namedVisitor = conversation?.displayName?.takeIf { it.isNotBlank() }
+        ?: profile?.visitor?.displayName?.takeIf { it.isNotBlank() }
+    val title = namedVisitor ?: run {
+        val suffix = conversation?.visitorId?.takeLast(4)?.takeIf { it.isNotBlank() }
+        if (suffix != null) "$visitorLabel · $suffix" else visitorLabel
+    }
+    val subtitle = when {
+        typing -> stringResource(R.string.eve_typing)
+        connection != EveChatSession.Connection.ONLINE -> stringResource(connection.messageRes())
+        else -> statusText(status, conversation?.assignedAgentName, assignedToOther)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(conversation?.displayName ?: "گفتگو", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = when {
-                                typing -> "در حال نوشتن…"
-                                connection != EveChatSession.Connection.ONLINE -> connectionLabel(connection)
-                                else -> statusLabel(status, conversation?.assignedAgentName, assignedToOther)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (typing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        VisitorAvatar(name = title)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (typing) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "برگشت")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.eve_back)
+                        )
                     }
                 },
                 actions = {
                     if (busy != null) {
                         CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp)
                     }
+                    IconButton(onClick = { showProfile = true }) {
+                        Icon(
+                            Icons.Outlined.Info,
+                            contentDescription = stringResource(R.string.eve_profile_open)
+                        )
+                    }
                     if (status == ConvStatus.PENDING && conversation?.assignedAgentId == null) {
                         IconButton(onClick = viewModel::claim, enabled = busy == null) {
-                            Icon(Icons.Default.AssignmentInd, contentDescription = "برداشتن گفتگو")
+                            Icon(
+                                Icons.Default.AssignmentInd,
+                                contentDescription = stringResource(R.string.eve_claim)
+                            )
                         }
                     }
                     if (open) {
                         IconButton(onClick = viewModel::resolve, enabled = busy == null) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "حل شد")
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = stringResource(R.string.eve_resolve)
+                            )
                         }
                     } else if (status != null) {
                         IconButton(onClick = viewModel::reopen, enabled = busy == null) {
-                            Icon(Icons.Default.Refresh, contentDescription = "بازگشایی")
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.eve_reopen)
+                            )
                         }
                     }
                 }
@@ -195,6 +252,11 @@ fun EveChatConversationScreen(
                 .imePadding()
         ) {
             if (syncing && messages.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+            // The profile the agent needs while answering, without leaving the conversation:
+            // plan + days left, device, network. Tapping opens the full sheet.
+            profile?.visitor?.takeIf { it.hasAnything }?.let { visitor ->
+                VisitorStrip(visitor = visitor, onClick = { showProfile = true })
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (messages.isEmpty() && syncing) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -231,11 +293,13 @@ fun EveChatConversationScreen(
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "این گفتگو بسته شده است",
+                            stringResource(R.string.eve_closed_banner),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = viewModel::reopen, enabled = busy == null) { Text("بازگشایی") }
+                        TextButton(onClick = viewModel::reopen, enabled = busy == null) {
+                            Text(stringResource(R.string.eve_reopen))
+                        }
                     }
                 }
             } else {
@@ -252,7 +316,13 @@ fun EveChatConversationScreen(
                             viewModel.onInputChanged(it)
                         },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (assignedToOther) "این گفتگو به کارشناس دیگری واگذار شده" else "پیام بنویسید…") },
+                        placeholder = {
+                            Text(
+                                stringResource(
+                                    if (assignedToOther) R.string.eve_input_locked else R.string.eve_input_hint
+                                )
+                            )
+                        },
                         maxLines = 5,
                         shape = RoundedCornerShape(24.dp)
                     )
@@ -265,7 +335,7 @@ fun EveChatConversationScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "ارسال",
+                            contentDescription = stringResource(R.string.eve_send),
                             tint = if (input.isNotBlank()) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -275,25 +345,120 @@ fun EveChatConversationScreen(
         }
     }
 
+    if (showProfile) {
+        EveChatVisitorSheet(
+            profile = profile,
+            conversation = conversation,
+            syncing = syncing,
+            onRefresh = viewModel::refreshProfile,
+            onDismiss = { showProfile = false }
+        )
+    }
+
     failedPrompt?.let { msg ->
         AlertDialog(
             onDismissRequest = { failedPrompt = null },
-            title = { Text("پیام ارسال نشد") },
-            text = { Text(msg.lastError ?: "ارسال این پیام با خطا مواجه شد.") },
+            title = { Text(stringResource(R.string.eve_send_failed_title)) },
+            text = {
+                Text(msg.lastError ?: stringResource(R.string.eve_send_failed_body))
+            },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.retry(msg)
                     failedPrompt = null
-                }) { Text("تلاش دوباره") }
+                }) { Text(stringResource(R.string.action_retry)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     viewModel.discard(msg)
                     failedPrompt = null
-                }) { Text("حذف") }
+                }) { Text(stringResource(R.string.action_delete)) }
             }
         )
     }
+}
+
+/**
+ * One line of context above the messages: what the customer pays for and where they are writing
+ * from. Only fields the server actually sent are rendered.
+ */
+@Composable
+private fun VisitorStrip(visitor: EveChatVisitor, onClick: () -> Unit) {
+    val subscriptionText: String = run {
+        val sub = visitor.subscription
+        val days = sub?.daysLeft()
+        when {
+            sub == null -> stringResource(R.string.eve_no_subscription)
+            days == null -> sub.plan.orEmpty()
+            days < 0 -> listOfNotNull(sub.plan, stringResource(R.string.eve_expired)).joinToString(" · ")
+            else -> listOfNotNull(sub.plan, stringResource(R.string.eve_days_left_fmt, days))
+                .joinToString(" · ")
+        }
+    }
+    val deviceText = listOfNotNull(visitor.os, visitor.browser).joinToString(" · ")
+        .ifBlank { visitor.deviceType }
+    val networkText = visitor.ip ?: visitor.country
+    val chips = listOfNotNull(
+        subscriptionText.takeIf { it.isNotBlank() },
+        deviceText?.takeIf { it.isNotBlank() },
+        networkText?.takeIf { it.isNotBlank() }
+    )
+    if (chips.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        chips.forEach { text ->
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun VisitorAvatar(name: String, size: Int = 36) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    }
+}
+
+@Composable
+private fun statusText(status: String?, agentName: String?, assignedToOther: Boolean): String = when {
+    status == null -> ""
+    status == ConvStatus.PENDING -> stringResource(R.string.eve_status_waiting)
+    status == ConvStatus.RESOLVED -> stringResource(R.string.eve_status_resolved)
+    status == ConvStatus.CLOSED -> stringResource(R.string.eve_status_closed)
+    assignedToOther -> stringResource(
+        R.string.eve_status_assigned_fmt,
+        agentName ?: stringResource(R.string.eve_unknown_agent)
+    )
+    else -> stringResource(R.string.eve_status_active)
 }
 
 @Composable
@@ -308,13 +473,4 @@ private fun DayHeader(at: Long) {
             )
         }
     }
-}
-
-private fun statusLabel(status: String?, agentName: String?, assignedToOther: Boolean) = when {
-    status == null -> ""
-    status == ConvStatus.PENDING -> "در انتظار پاسخ"
-    status == ConvStatus.RESOLVED -> "حل شده"
-    status == ConvStatus.CLOSED -> "بسته"
-    assignedToOther -> "واگذار شده به ${agentName ?: "کارشناس دیگر"}"
-    else -> "فعال"
 }

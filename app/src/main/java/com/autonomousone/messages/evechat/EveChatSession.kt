@@ -11,6 +11,8 @@ import com.autonomousone.messages.evechat.model.ConvStatus
 import com.autonomousone.messages.evechat.model.EveChatAgent
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import com.autonomousone.messages.evechat.model.EveChatVisitor
+import com.autonomousone.messages.evechat.model.EveChatVisitorSnapshot
 import com.autonomousone.messages.evechat.model.SendState
 import com.autonomousone.messages.evechat.model.SenderType
 import com.autonomousone.messages.evechat.network.EveChatEventParser
@@ -92,6 +94,10 @@ class EveChatSession private constructor(private val app: Application) {
     private val _me = MutableStateFlow(prefs.agentId.takeIf { it.isNotBlank() })
     val myAgentId: StateFlow<String?> = _me.asStateFlow()
 
+    /** The signed-in agent's display name, shown in the inbox header so the account is never a mystery. */
+    private val _meName = MutableStateFlow(prefs.agentName.takeIf { it.isNotBlank() })
+    val myAgentName: StateFlow<String?> = _meName.asStateFlow()
+
     val push = EveChatPushRegistrar(
         context = app,
         prefs = prefs,
@@ -118,6 +124,15 @@ class EveChatSession private constructor(private val app: Application) {
         }.stateIn(scope, SharingStarted.Eagerly, Connection.OFFLINE)
 
     private val _typing = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /**
+     * Visitor profiles by conversation, exactly as the last detail fetch returned them.
+     *
+     * Server-owned and time-sensitive, so they are not written to Room: a stale cache would keep
+     * showing a plan or an IP the server has already changed. The sheet says "Updated …" from
+     * [EveChatVisitorSnapshot.fetchedAt] instead of pretending the data is live.
+     */
+    private val _visitors = MutableStateFlow<Map<String, EveChatVisitorSnapshot>>(emptyMap())
 
     private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val errors: SharedFlow<String> = _errors.asSharedFlow()
@@ -214,7 +229,8 @@ class EveChatSession private constructor(private val app: Application) {
 
     suspend fun login(serverInput: String, email: String, password: String): ApiResult<Unit> {
         val server = when (val n = EveChatServerUrl.normalize(serverInput)) {
-            is EveChatServerUrl.Result.Invalid -> return ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = n.reason))
+            is EveChatServerUrl.Result.Invalid ->
+                return ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "invalid server url"))
             is EveChatServerUrl.Result.Ok -> n.url
         }
         return when (val r = api.login(server, email.trim(), password)) {
@@ -232,7 +248,7 @@ class EveChatSession private constructor(private val app: Application) {
                     auth.store(r.value)
                 }
                 if (!stored) {
-                    return ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "ذخیره امن نشست ممکن نشد"))
+                    return ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "secure store unavailable"))
                 }
                 EveChatLog.i("auth", "signed in")
                 _auth.value = currentAuth()
@@ -253,7 +269,7 @@ class EveChatSession private constructor(private val app: Application) {
     }
 
     private suspend fun expireSession() {
-        if (signOut("expired")) _errors.tryEmit("نشست شما منقضی شد؛ لطفاً دوباره وارد شوید")
+        if (signOut("expired")) _errors.tryEmit(app.getString(com.autonomousone.messages.R.string.eve_session_expired))
     }
 
     /**
@@ -274,7 +290,9 @@ class EveChatSession private constructor(private val app: Application) {
         dao.clearAll()
         notifier.cancelAll()
         _me.value = null
+        _meName.value = null
         _typing.value = emptyMap()
+        _visitors.value = emptyMap()
         inaccessible.clear()
         true
     }
@@ -291,6 +309,7 @@ class EveChatSession private constructor(private val app: Application) {
             prefs.agentId = r.value.id
             prefs.agentName = r.value.name
             _me.value = r.value.id
+            _meName.value = r.value.name.takeIf { it.isNotBlank() }
         }
     }
 
@@ -310,6 +329,14 @@ class EveChatSession private constructor(private val app: Application) {
         combine(_auth, dao.observeUnreadTotal()) { a, n -> if (a is AuthState.SignedIn) n else 0 }
 
     fun observeTyping(conversationId: String): Flow<Boolean> = _typing.map { it.containsKey(conversationId) }
+
+    fun observeVisitor(conversationId: String): Flow<EveChatVisitorSnapshot?> =
+        _visitors.map { it[conversationId] }
+
+    private fun rememberVisitor(conversationId: String, visitor: EveChatVisitor?) {
+        if (visitor == null) return
+        _visitors.value = _visitors.value + (conversationId to EveChatVisitorSnapshot(visitor))
+    }
 
     // ── sync ─────────────────────────────────────────────────────────────
 
@@ -386,7 +413,7 @@ class EveChatSession private constructor(private val app: Application) {
     suspend fun refreshResolved() {
         when (val r = auth.authorized { api.conversations(it, ConvStatus.RESOLVED, PAGE, 0) }) {
             is ApiResult.Ok -> dao.mergeConversations(r.value.items)
-            is ApiResult.Err -> _errors.tryEmit(r.error.userMessage)
+            is ApiResult.Err -> _errors.tryEmit(r.error.message(app))
         }
     }
 
@@ -412,6 +439,7 @@ class EveChatSession private constructor(private val app: Application) {
                 is ApiResult.Ok -> {
                     dao.mergeConversations(listOf(r.value.conversation))
                     dao.upsertServerMessages(r.value.messages)
+                    rememberVisitor(id, r.value.visitor)
                     r.value.messages.lastOrNull()?.let(::touchPreview)
                     true
                 }
@@ -440,6 +468,7 @@ class EveChatSession private constructor(private val app: Application) {
         }
         dao.mergeConversations(listOf(detail.conversation))
         dao.upsertServerMessages(detail.messages)
+        rememberVisitor(id, detail.visitor)
         val windowStart = detail.messages.firstOrNull()?.createdAt
         if (cachedNewest == null) {
             dao.setHistoryComplete(id, detail.messages.size < DETAIL_WINDOW)
@@ -449,6 +478,12 @@ class EveChatSession private constructor(private val app: Application) {
         detail.messages.lastOrNull()?.let(::touchPreview)
         if (id == activeConversationId && foreground) scheduleMarkRead(id)
         return true
+    }
+
+    /** Re-reads the visitor profile; used by the profile sheet's refresh action. */
+    suspend fun refreshProfile(id: String): Boolean {
+        if (_auth.value !is AuthState.SignedIn || isInaccessible(id)) return false
+        return refreshConversation(id)
     }
 
     /** History older than the detail window, loaded from the beginning of the thread. */
@@ -637,11 +672,11 @@ class EveChatSession private constructor(private val app: Application) {
                         EveChatLog.i("outbox", "delivered", "client" to EveChatLog.id(clientId), "duplicate" to r.value.duplicate)
                     }
                     is ApiResult.Err -> if (r.error.retryable) {
-                        dao.updateSendState(m.id, SendState.PENDING, r.error.userMessage, 1)
+                        dao.updateSendState(m.id, SendState.PENDING, r.error.message(app), 1)
                         scheduleOutboxRetry(m.attempts + 1)
                         return
                     } else {
-                        dao.updateSendState(m.id, SendState.FAILED, r.error.userMessage, 1)
+                        dao.updateSendState(m.id, SendState.FAILED, r.error.message(app), 1)
                         EveChatLog.w("outbox", "rejected", null, "client" to EveChatLog.id(clientId), "kind" to r.error.kind)
                     }
                 }

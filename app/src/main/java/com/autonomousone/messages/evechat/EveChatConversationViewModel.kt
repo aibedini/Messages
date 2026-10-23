@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import com.autonomousone.messages.evechat.model.EveChatVisitorSnapshot
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,7 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class EveChatConversationViewModel(
-    application: Application,
+    private val application: Application,
     private val conversationId: String
 ) : ViewModel() {
 
@@ -33,6 +34,10 @@ class EveChatConversationViewModel(
 
     val visitorTyping: StateFlow<Boolean> = session.observeTyping(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** The server's visitor profile for this chat; null until a detail fetch succeeds. */
+    val profile: StateFlow<EveChatVisitorSnapshot?> = session.observeVisitor(conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val connection: StateFlow<EveChatSession.Connection> = session.connection
     val myAgentId: StateFlow<String?> = session.myAgentId
@@ -56,7 +61,7 @@ class EveChatConversationViewModel(
         viewModelScope.launch {
             try {
                 if (!session.syncThread(conversationId) && conversation.value == null) {
-                    _events.tryEmit("بارگذاری گفتگو ممکن نشد")
+                    _events.tryEmit(application.getString(com.autonomousone.messages.R.string.eve_load_failed))
                 }
             } finally {
                 _syncing.value = false
@@ -92,6 +97,11 @@ class EveChatConversationViewModel(
         }
     }
 
+    /** Manual refresh from the visitor sheet; keeps the last good profile if the fetch fails. */
+    fun refreshProfile() {
+        viewModelScope.launch { session.refreshProfile(conversationId) }
+    }
+
     fun claim() = act("claim") { session.claim(conversationId) }
     fun resolve() = act("resolve") { session.resolve(conversationId) }
     fun reopen() = act("reopen") { session.reopen(conversationId) }
@@ -102,7 +112,7 @@ class EveChatConversationViewModel(
             _busyAction.value = name
             try {
                 val r = block()
-                if (r is ApiResult.Err) _events.tryEmit(r.error.userMessage)
+                if (r is ApiResult.Err) _events.tryEmit(r.error.message(application))
             } finally {
                 _busyAction.value = null
             }

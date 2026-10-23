@@ -1012,6 +1012,26 @@ interface ConversationDao {
     @Query("UPDATE conversations SET unreadCount = 0 WHERE unreadCount != 0")
     suspend fun markAllRead()
 
+    /**
+     * Unread incoming messages across every conversation the ACTIVE-UI contract still shows.
+     *
+     * Feeds the Messages tab badge, so it mirrors [observeAllActive]: an archived conversation and
+     * a thread whose only unread rows are trashed are both invisible on Home and must not be
+     * counted here either.
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(c.unreadCount), 0) FROM conversations c
+        WHERE c.archived = 0
+          AND EXISTS (
+            SELECT 1 FROM messages m
+            WHERE m.threadId = c.threadId
+              AND ${MessageCutoff.ACTIVE_MESSAGE_FILTER_SQL}
+          )
+        """
+    )
+    fun observeUnreadTotal(): Flow<Int>
+
     @Query("UPDATE conversations SET archived = :archived WHERE threadId = :threadId")
     suspend fun setArchived(threadId: Long, archived: Boolean)
 

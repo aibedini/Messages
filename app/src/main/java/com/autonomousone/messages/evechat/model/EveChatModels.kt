@@ -5,6 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -64,8 +65,14 @@ data class EveChatConversation(
     val lastMessageSenderType: String? = null,
     val historyComplete: Boolean = false
 ) {
+    /**
+     * Best available label, or empty when the server sent no identity.
+     *
+     * Empty rather than a baked-in word: the fallback is UI copy, so it must come from the
+     * string resources and follow the app language (an English build has no Persian words).
+     */
     val displayName: String
-        get() = visitorName ?: visitorPhone ?: visitorEmail ?: "بازدیدکننده"
+        get() = visitorName ?: visitorPhone ?: visitorEmail ?: ""
 
     val activityAt: Long
         get() = lastMessageAt ?: createdAt
@@ -177,6 +184,10 @@ object EveChatTime {
             ?: runCatching {
                 LocalDateTime.parse(text.take(19).replace('T', ' '), sqlLayout)
                     .toInstant(ZoneOffset.UTC).toEpochMilli()
+            }.getOrNull()
+            // Subscription expiries arrive as plain dates ("2026-11-01"), not timestamps.
+            ?: runCatching {
+                LocalDate.parse(text.take(10)).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
             }.getOrNull()
     }
 }

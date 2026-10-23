@@ -3,6 +3,7 @@ package com.autonomousone.messages.evechat
 import com.autonomousone.messages.evechat.model.EveChatAgent
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import com.autonomousone.messages.evechat.model.EveChatVisitor
 import com.autonomousone.messages.evechat.model.PagedList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,19 +24,8 @@ data class ApiError(val kind: Kind, val httpStatus: Int? = null, val serverMessa
     val retryable: Boolean
         get() = kind == Kind.NETWORK || kind == Kind.TIMEOUT || kind == Kind.RATE_LIMITED || kind == Kind.SERVER
 
-    val userMessage: String
-        get() = serverMessage ?: when (kind) {
-            Kind.NETWORK -> "اتصال به سرور برقرار نشد"
-            Kind.TIMEOUT -> "پاسخ سرور طول کشید؛ دوباره تلاش کنید"
-            Kind.UNAUTHORIZED -> "نشست شما منقضی شده است؛ دوباره وارد شوید"
-            Kind.FORBIDDEN -> "به این بخش دسترسی ندارید"
-            Kind.NOT_FOUND -> "مورد درخواستی یافت نشد"
-            Kind.CONFLICT -> "این گفتگو توسط کارشناس دیگری برداشته شده است"
-            Kind.RATE_LIMITED -> "درخواست‌ها زیاد است؛ کمی صبر کنید"
-            Kind.SERVER -> "خطای سرور؛ کمی بعد دوباره تلاش کنید"
-            Kind.CLIENT -> "درخواست نامعتبر است"
-            Kind.PARSE -> "پاسخ نامعتبر از سرور"
-        }
+    /** Code-only description for logs; user-facing text lives in the string resources. */
+    val logLabel: String get() = serverMessage ?: kind.name
 
     companion object {
         fun fromStatus(status: Int, serverMessage: String?) = ApiError(
@@ -80,7 +70,12 @@ data class TokenPair(val accessToken: String, val refreshToken: String)
 
 data class ConversationDetail(
     val conversation: EveChatConversation,
-    val messages: List<EveChatMessage>
+    val messages: List<EveChatMessage>,
+    /**
+     * The visitor profile the server attached to this conversation (device, network, plan…).
+     * Null when an older server omits it — the UI then says so instead of inventing values.
+     */
+    val visitor: EveChatVisitor? = null
 )
 
 data class SendResult(val message: EveChatMessage, val duplicate: Boolean)
@@ -117,9 +112,12 @@ class EveChatApiClient(private val baseUrl: () -> String) {
 
     suspend fun conversation(token: String, id: String): ApiResult<ConversationDetail> =
         call("GET", "/api/v1/conversations/${enc(id)}", token).parse { json ->
+            val conversationJson = json.getJSONObject("conversation")
             ConversationDetail(
-                conversation = EveChatConversation.fromJson(json.getJSONObject("conversation")),
-                messages = json.optJSONArray("messages").objects().map(EveChatMessage::fromJson)
+                conversation = EveChatConversation.fromJson(conversationJson),
+                messages = json.optJSONArray("messages").objects().map(EveChatMessage::fromJson),
+                visitor = conversationJson.optJSONObject("visitor")
+                    ?.let { EveChatVisitor.fromJson(it, conversationJson) }
             )
         }
 
@@ -168,7 +166,7 @@ class EveChatApiClient(private val baseUrl: () -> String) {
         val requestId = UUID.randomUUID().toString().take(12)
         val logPath = path.substringBefore('?')
         val started = System.nanoTime()
-        if (server.isBlank()) return@withContext ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "سرور تنظیم نشده است"))
+        if (server.isBlank()) return@withContext ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "server not configured"))
         var conn: HttpURLConnection? = null
         try {
             conn = (URL(server.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
@@ -207,7 +205,7 @@ class EveChatApiClient(private val baseUrl: () -> String) {
             EveChatLog.w("http", "$method $logPath network error", null, "req" to requestId, "error" to e.javaClass.simpleName)
             ApiResult.Err(ApiError(ApiError.Kind.NETWORK))
         } catch (e: IllegalArgumentException) {
-            ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "آدرس سرور معتبر نیست"))
+            ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "invalid server url"))
         } finally {
             conn?.disconnect()
         }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -36,7 +37,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.EveChatSession
+import com.autonomousone.messages.evechat.messageRes
 import com.autonomousone.messages.evechat.push.EveChatPushRegistrar
 import com.autonomousone.messages.utils.formatFullTimestamp
 
@@ -87,7 +90,7 @@ fun NotificationsOffBanner() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "اعلان‌ها خاموش است؛ پیام‌های جدید پشتیبانی را از دست می‌دهید",
+            text = stringResource(R.string.eve_notifications_off),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.weight(1f)
@@ -104,7 +107,7 @@ fun NotificationsOffBanner() {
             } else {
                 openSettings()
             }
-        }) { Text("فعال‌سازی") }
+        }) { Text(stringResource(R.string.eve_notifications_enable)) }
     }
 }
 
@@ -128,21 +131,37 @@ fun SyncStatusDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("وضعیت همگام‌سازی") },
+        title = { Text(stringResource(R.string.eve_status_dialog_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatusLine("اتصال زنده", connectionLabel(connection))
-                StatusLine("اعلان لحظه‌ای (FCM)", pushLabel(pushStatus))
-                if (lastPushAt > 0) StatusLine("آخرین اعلان دریافتی", formatFullTimestamp(lastPushAt))
                 StatusLine(
-                    "بررسی دوره‌ای در پس‌زمینه",
-                    if (pushStatus == EveChatPushRegistrar.Status.ACTIVE) "هر ۳۰ دقیقه" else "هر ۱۵ دقیقه"
+                    stringResource(R.string.eve_status_connection),
+                    stringResource(connection.messageRes())
                 )
-                StatusLine("سرور", server)
-                StatusLine("حساب", email)
+                StatusLine(
+                    stringResource(R.string.eve_status_push),
+                    stringResource(pushStatus.messageRes())
+                )
+                if (lastPushAt > 0) {
+                    StatusLine(stringResource(R.string.eve_status_last_push), formatFullTimestamp(lastPushAt))
+                }
+                StatusLine(
+                    stringResource(R.string.eve_status_polling),
+                    stringResource(
+                        if (pushStatus == EveChatPushRegistrar.Status.ACTIVE) {
+                            R.string.eve_status_poll_30
+                        } else {
+                            R.string.eve_status_poll_15
+                        }
+                    )
+                )
+                StatusLine(stringResource(R.string.eve_status_server), server)
+                StatusLine(stringResource(R.string.eve_status_account), email)
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("بستن") } }
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+        }
     )
 }
 
@@ -154,12 +173,4 @@ private fun StatusLine(label: String, value: String) {
     }
 }
 
-internal fun pushLabel(status: EveChatPushRegistrar.Status) = when (status) {
-    EveChatPushRegistrar.Status.ACTIVE -> "فعال"
-    EveChatPushRegistrar.Status.REGISTERING -> "در حال ثبت دستگاه…"
-    EveChatPushRegistrar.Status.FAILED -> "ثبت ناموفق؛ خودکار دوباره تلاش می‌شود"
-    EveChatPushRegistrar.Status.SERVER_UNSUPPORTED -> "سرور هنوز از اعلان لحظه‌ای پشتیبانی نمی‌کند"
-    EveChatPushRegistrar.Status.NOT_CONFIGURED -> "Firebase در این نسخه برنامه پیکربندی نشده است"
-    EveChatPushRegistrar.Status.NO_PLAY_SERVICES -> "سرویس‌های Google Play روی این دستگاه در دسترس نیست"
-    EveChatPushRegistrar.Status.DISABLED -> "غیرفعال"
-}
+

@@ -529,4 +529,165 @@
     <string name="trash_snackbar_emptied_partial">%1$d حذف شد، %2$d باقی ماند — دوباره تلاش کنید</string>
     <string name="settings_trash_title">اخیراً حذف‌شده</string>
     <string name="settings_trash_hint">بازگردانی یا حذف همیشگی گفت‌وگوها</string>
+
+    <!-- ══════════ پشتیبانی (EveChat) ══════════ -->
+    <!-- زبان برنامه از سیستم‌عامل پیروی می‌کند؛ هر متن پشتیبانی اینجاست تا گوشی انگلیسی
+         هیچ متن فارسی‌ای نشان ندهد. نسخهٔ انگلیسی در values/strings.xml است. -->
+    <string name="nav_messages">پیام‌ها</string>
+    <string name="nav_support">پشتیبانی</string>
+    <string name="nav_unread_fmt">%1$s، %2$d خوانده‌نشده</string>
+
+    <string name="eve_title">پشتیبانی</string>
+    <string name="eve_visitor">بازدیدکننده</string>
+    <string name="eve_unknown_agent">کارشناس دیگر</string>
+
+    <string name="eve_conn_online">متصل</string>
+    <string name="eve_conn_syncing">در حال همگام‌سازی…</string>
+    <string name="eve_conn_connecting">در حال اتصال…</string>
+    <string name="eve_conn_offline">آفلاین</string>
+    <string name="eve_offline_banner">آفلاین — گفت‌وگوهای ذخیره‌شده نمایش داده می‌شوند</string>
+
+    <string name="eve_filter_open">باز</string>
+    <string name="eve_filter_pending">در انتظار</string>
+    <string name="eve_filter_mine">گفت‌وگوهای من</string>
+    <string name="eve_filter_resolved">حل‌شده</string>
+
+    <string name="eve_empty_open">گفت‌وگوی بازی وجود ندارد</string>
+    <string name="eve_empty_pending">گفت‌وگویی در انتظار نیست</string>
+    <string name="eve_empty_mine">گفت‌وگویی به شما واگذار نشده است</string>
+    <string name="eve_empty_resolved">گفت‌وگوی حل‌شده‌ای وجود ندارد</string>
+
+    <string name="eve_status_waiting">در انتظار پاسخ</string>
+    <string name="eve_status_resolved">حل‌شده</string>
+    <string name="eve_status_closed">بسته</string>
+    <string name="eve_status_active">فعال</string>
+    <string name="eve_status_assigned_fmt">واگذار شده به %1$s</string>
+    <string name="eve_typing">در حال نوشتن…</string>
+
+    <string name="eve_menu_more">گزینه‌ها</string>
+    <string name="eve_menu_status">وضعیت همگام‌سازی</string>
+    <string name="eve_menu_sign_out">خروج</string>
+    <string name="eve_sign_out_title">خروج از پشتیبانی</string>
+    <string name="eve_sign_out_body">گفت‌وگوهای ذخیره‌شده و پیام‌های ارسال‌نشده از این دستگاه حذف می‌شوند.</string>
+
+    <string name="eve_status_dialog_title">وضعیت همگام‌سازی</string>
+    <string name="eve_status_connection">اتصال زنده</string>
+    <string name="eve_status_push">اعلان لحظه‌ای (FCM)</string>
+    <string name="eve_status_last_push">آخرین اعلان دریافتی</string>
+    <string name="eve_status_polling">بررسی دوره‌ای در پس‌زمینه</string>
+    <string name="eve_status_poll_15">هر ۱۵ دقیقه</string>
+    <string name="eve_status_poll_30">هر ۳۰ دقیقه</string>
+    <string name="eve_status_server">سرور</string>
+    <string name="eve_status_account">حساب</string>
+
+    <string name="eve_push_active">فعال</string>
+    <string name="eve_push_registering">در حال ثبت دستگاه…</string>
+    <string name="eve_push_failed">ثبت ناموفق؛ خودکار دوباره تلاش می‌شود</string>
+    <string name="eve_push_unsupported">سرور هنوز از اعلان لحظه‌ای پشتیبانی نمی‌کند</string>
+    <string name="eve_push_not_configured">Firebase در این نسخه برنامه پیکربندی نشده است</string>
+    <string name="eve_push_no_play_services">سرویس‌های Google Play روی این دستگاه در دسترس نیست</string>
+    <string name="eve_push_disabled">غیرفعال</string>
+
+    <string name="eve_notifications_off">اعلان‌ها خاموش است؛ پیام‌های جدید پشتیبانی را از دست می‌دهید</string>
+    <string name="eve_notifications_enable">فعال‌سازی</string>
+
+    <string name="eve_back">برگشت</string>
+    <string name="eve_claim">برداشتن گفت‌وگو</string>
+    <string name="eve_resolve">حل شد</string>
+    <string name="eve_reopen">بازگشایی</string>
+    <string name="eve_closed_banner">این گفت‌وگو بسته شده است</string>
+    <string name="eve_input_hint">پیام بنویسید…</string>
+    <string name="eve_input_locked">این گفت‌وگو به کارشناس دیگری واگذار شده</string>
+    <string name="eve_send">ارسال</string>
+    <string name="eve_send_failed_title">پیام ارسال نشد</string>
+    <string name="eve_send_failed_body">ارسال این پیام با خطا مواجه شد.</string>
+
+    <string name="eve_channel_messages">پیام‌های پشتیبانی</string>
+    <string name="eve_channel_messages_desc">پیام‌های جدید بازدیدکنندگان EveChat</string>
+    <string name="eve_channel_new">گفت‌وگوهای جدید پشتیبانی</string>
+    <string name="eve_channel_new_desc">گفت‌وگوهایی که منتظر پاسخ هستند</string>
+    <string name="eve_notif_you">من</string>
+    <string name="eve_notif_new_conversation_fmt">گفت‌وگوی جدید: %1$s</string>
+    <string name="eve_notif_waiting">منتظر پاسخ</string>
+    <string name="eve_notif_new_message">پیام جدید پشتیبانی</string>
+    <string name="eve_notif_new_conversation">گفت‌وگوی جدید پشتیبانی</string>
+    <string name="eve_notif_open">برای مشاهده باز کنید</string>
+
+    <string name="eve_row_no_message">بدون پیام</string>
+    <string name="eve_row_you_fmt">شما: %1$s</string>
+
+    <string name="eve_note_internal">یادداشت داخلی</string>
+    <string name="eve_bubble_failed">ارسال نشد — برای تلاش دوباره بزنید</string>
+    <string name="eve_sending">در حال ارسال</string>
+    <string name="eve_sent">ارسال شد</string>
+    <string name="eve_not_sent">ارسال نشد</string>
+
+    <string name="eve_login_title">اتصال به EveChat</string>
+    <string name="eve_login_subtitle">آدرس سرور و اطلاعات ورود خود را وارد کنید</string>
+    <string name="eve_login_server">آدرس سرور</string>
+    <string name="eve_login_email">ایمیل</string>
+    <string name="eve_login_password">رمز عبور</string>
+    <string name="eve_login_show_password">نمایش رمز</string>
+    <string name="eve_login_hide_password">پنهان کردن رمز</string>
+    <string name="eve_login_button">ورود</string>
+    <string name="eve_login_failed">ایمیل یا رمز عبور درست نیست</string>
+    <string name="eve_server_required">آدرس سرور را وارد کنید</string>
+    <string name="eve_server_invalid">آدرس سرور معتبر نیست</string>
+    <string name="eve_server_scheme">فقط آدرس http یا https پذیرفته می‌شود</string>
+
+    <!-- مشخصات بازدیدکننده -->
+    <string name="eve_profile_open">مشخصات بازدیدکننده</string>
+    <string name="eve_profile_identity">هویت</string>
+    <string name="eve_profile_subscription">پلن و اشتراک</string>
+    <string name="eve_profile_device">دستگاه</string>
+    <string name="eve_profile_network">شبکه</string>
+    <string name="eve_profile_page">صفحه فعلی</string>
+    <string name="eve_profile_activity">فعالیت</string>
+    <string name="eve_profile_extra">داده‌های بیشتر</string>
+    <string name="eve_profile_reference">شناسه‌ها</string>
+    <string name="eve_profile_empty">سرور جزئیاتی برای این بازدیدکننده نفرستاده است.</string>
+    <string name="eve_profile_refresh">به‌روزرسانی</string>
+    <string name="eve_profile_updated_fmt">آخرین به‌روزرسانی %1$s</string>
+
+    <string name="eve_field_name">نام</string>
+    <string name="eve_field_mobile">موبایل</string>
+    <string name="eve_field_email">ایمیل</string>
+    <string name="eve_field_user_id">شناسه کاربر</string>
+    <string name="eve_field_reseller">نمایندگی</string>
+    <string name="eve_field_plan">پلن</string>
+    <string name="eve_field_expiry">انقضا</string>
+    <string name="eve_field_days_left">روز باقی‌مانده</string>
+    <string name="eve_field_device">دستگاه</string>
+    <string name="eve_field_os">سیستم</string>
+    <string name="eve_field_browser">مرورگر</string>
+    <string name="eve_field_language">زبان</string>
+    <string name="eve_field_ip">آدرس IP</string>
+    <string name="eve_field_country">کشور</string>
+    <string name="eve_field_referrer">آمده از</string>
+    <string name="eve_field_page_title">عنوان صفحه</string>
+    <string name="eve_field_first_seen">اولین بازدید</string>
+    <string name="eve_field_last_seen">آخرین بازدید</string>
+    <string name="eve_field_visitor_id">شناسه بازدیدکننده</string>
+    <string name="eve_field_conversation_id">شناسه گفت‌وگو</string>
+    <string name="eve_field_channel">کانال</string>
+    <string name="eve_field_agent">کارشناس</string>
+
+    <string name="eve_no_subscription">بدون اشتراک</string>
+    <string name="eve_days_left_fmt">%1$d روز باقی‌مانده</string>
+    <string name="eve_expired">منقضی</string>
+    <string name="eve_banned">مسدود</string>
+    <string name="eve_copied">در کلیپ‌بورد کپی شد</string>
+
+    <string name="eve_err_network">اتصال به سرور برقرار نشد</string>
+    <string name="eve_err_timeout">پاسخ سرور طول کشید؛ دوباره تلاش کنید</string>
+    <string name="eve_err_unauthorized">نشست شما منقضی شده است؛ دوباره وارد شوید</string>
+    <string name="eve_err_forbidden">به این بخش دسترسی ندارید</string>
+    <string name="eve_err_not_found">مورد درخواستی یافت نشد</string>
+    <string name="eve_err_conflict">این گفت‌وگو توسط کارشناس دیگری برداشته شده است</string>
+    <string name="eve_err_rate_limited">درخواست‌ها زیاد است؛ کمی صبر کنید</string>
+    <string name="eve_err_server">خطای سرور؛ کمی بعد دوباره تلاش کنید</string>
+    <string name="eve_err_client">درخواست نامعتبر است</string>
+    <string name="eve_err_parse">پاسخ نامعتبر از سرور</string>
+    <string name="eve_session_expired">نشست شما منقضی شد؛ لطفاً دوباره وارد شوید</string>
+    <string name="eve_load_failed">بارگذاری گفت‌وگو ممکن نشد</string>
 </resources>
