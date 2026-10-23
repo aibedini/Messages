@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonomousone.messages.evechat.EveChatSession.InboxFilter
 import com.autonomousone.messages.evechat.model.EveChatConversation
+import com.autonomousone.messages.evechat.push.EveChatPushRegistrar
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,6 +47,8 @@ class EveChatViewModel(application: Application) : AndroidViewModel(application)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val myAgentId: StateFlow<String?> = session.myAgentId
+    val pushStatus: StateFlow<EveChatPushRegistrar.Status> = session.pushStatus
+    val lastPushAt: Long get() = session.push.lastPushAt
 
     val savedServer: String get() = session.lastServer
     val savedEmail: String get() = session.lastEmail

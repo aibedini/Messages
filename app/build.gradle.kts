@@ -8,6 +8,15 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// EveChat push (FCM) is opt-in per build: drop the Firebase project's google-services.json into
+// app/ (or app/src/<buildType>/) to enable it. Without it the app builds unchanged and EveChat
+// keeps its WebSocket + periodic sync delivery.
+val googleServicesConfigured = listOf("google-services.json", "src/debug/google-services.json", "src/release/google-services.json")
+    .any { file(it).exists() }
+if (googleServicesConfigured) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.autonomousone.messages"
     compileSdk = 36
@@ -36,8 +45,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 154
-        versionName = "3.8.0"
+        versionCode = 155
+        versionName = "3.9.0"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -180,4 +189,6 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.paging)
     ksp(libs.androidx.room.compiler)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 }

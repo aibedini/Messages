@@ -15,7 +15,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -61,6 +65,9 @@ fun EveChatInboxScreen(
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val myAgentId by viewModel.myAgentId.collectAsStateWithLifecycle()
+    val pushStatus by viewModel.pushStatus.collectAsStateWithLifecycle()
+    var menuOpen by remember { mutableStateOf(false) }
+    var showStatus by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     val signedIn = auth is EveChatSession.AuthState.SignedIn
@@ -84,8 +91,28 @@ fun EveChatInboxScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { confirmLogout = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "خروج")
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌ها")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("وضعیت همگام‌سازی") },
+                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        showStatus = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("خروج") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        confirmLogout = true
+                                    }
+                                )
+                            }
                         }
                     }
                 )
@@ -115,6 +142,7 @@ fun EveChatInboxScreen(
                                 .padding(horizontal = 16.dp, vertical = 6.dp)
                         )
                     }
+                    NotificationsOffBanner()
                     FilterRow(filter, viewModel::selectFilter)
                     PullToRefreshBox(
                         isRefreshing = refreshing,
@@ -153,6 +181,17 @@ fun EveChatInboxScreen(
                 }
             }
         }
+    }
+
+    if (showStatus && signedIn) {
+        SyncStatusDialog(
+            connection = connection,
+            pushStatus = pushStatus,
+            lastPushAt = viewModel.lastPushAt,
+            server = viewModel.savedServer,
+            email = viewModel.savedEmail,
+            onDismiss = { showStatus = false }
+        )
     }
 
     if (confirmLogout) {

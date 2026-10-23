@@ -22,6 +22,15 @@ pluginManagement {
         }
         gradlePluginPortal()
     }
+    // The google-services plugin's marker artifact is missing from some mirrors (and
+    // dl.google.com is unreachable on some networks); resolve the plugin by its module instead.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.google.gms.google-services") {
+                useModule("com.google.gms:google-services:${requested.version}")
+            }
+        }
+    }
 }
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"

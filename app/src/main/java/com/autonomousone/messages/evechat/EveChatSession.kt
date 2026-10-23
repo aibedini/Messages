@@ -17,6 +17,8 @@ import com.autonomousone.messages.evechat.network.EveChatEventParser
 import com.autonomousone.messages.evechat.network.EveChatSocket
 import com.autonomousone.messages.evechat.network.ReconnectBackoff
 import com.autonomousone.messages.evechat.network.SocketEvent
+import com.autonomousone.messages.evechat.push.EveChatPush
+import com.autonomousone.messages.evechat.push.EveChatPushRegistrar
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +92,17 @@ class EveChatSession private constructor(private val app: Application) {
     private val _me = MutableStateFlow(prefs.agentId.takeIf { it.isNotBlank() })
     val myAgentId: StateFlow<String?> = _me.asStateFlow()
 
+    val push = EveChatPushRegistrar(
+        context = app,
+        prefs = prefs,
+        api = api,
+        auth = auth,
+        scope = scope,
+        signedIn = { _auth.value is AuthState.SignedIn },
+        agentId = { _me.value }
+    )
+    val pushStatus: StateFlow<EveChatPushRegistrar.Status> get() = push.status
+
     private val syncing = MutableStateFlow(false)
     private val networkUp = MutableStateFlow(true)
 
@@ -114,6 +127,7 @@ class EveChatSession private constructor(private val app: Application) {
     private var startedActivities = 0
     private var backgroundStop: Job? = null
     private val catchUpMutex = Mutex()
+    private val authMutex = Mutex()
     @Volatile private var catchUpAgain = false
     private val outboxMutex = Mutex()
     private var outboxRetry: Job? = null
@@ -168,7 +182,8 @@ class EveChatSession private constructor(private val app: Application) {
         }.onFailure { EveChatLog.w("net", "network callback unavailable", it) }
         scope.launch { socket.events.collect { handle(it) } }
         scope.launch { expireTypingLoop() }
-        if (prefs.hasSession) EveChatSyncWorker.schedule(app)
+        scope.launch { push.status.collect { onPushStatusChanged() } }
+        if (prefs.hasSession) push.ensureRegistered()
     }
 
     private fun onForeground() {
@@ -179,6 +194,7 @@ class EveChatSession private constructor(private val app: Application) {
         socket.reconnectNow()
         scope.launch { catchUp("foreground") }
         activeConversationId?.let { scheduleMarkRead(it) }
+        push.ensureRegistered()
     }
 
     /** Keep the socket briefly so a quick app switch does not drop it; the worker covers the rest. */
@@ -207,18 +223,22 @@ class EveChatSession private constructor(private val app: Application) {
                 r
             }
             is ApiResult.Ok -> {
-                if (prefs.serverUrl != server || !prefs.agentEmail.equals(email.trim(), ignoreCase = true)) {
-                    dao.clearAll()
+                val stored = authMutex.withLock {
+                    if (prefs.serverUrl != server || !prefs.agentEmail.equals(email.trim(), ignoreCase = true)) {
+                        dao.clearAll()
+                    }
+                    prefs.serverUrl = server
+                    prefs.agentEmail = email.trim()
+                    auth.store(r.value)
                 }
-                prefs.serverUrl = server
-                prefs.agentEmail = email.trim()
-                if (!auth.store(r.value)) {
+                if (!stored) {
                     return ApiResult.Err(ApiError(ApiError.Kind.CLIENT, serverMessage = "ذخیره امن نشست ممکن نشد"))
                 }
                 EveChatLog.i("auth", "signed in")
                 _auth.value = currentAuth()
                 refreshMe()
-                EveChatSyncWorker.schedule(app)
+                push.onSignedIn()
+                onPushStatusChanged()
                 if (foreground) {
                     socket.start()
                     scope.launch { catchUp("login") }
@@ -233,16 +253,22 @@ class EveChatSession private constructor(private val app: Application) {
     }
 
     private suspend fun expireSession() {
-        if (_auth.value is AuthState.SignedOut) return
-        signOut("expired")
-        _errors.tryEmit("نشست شما منقضی شد؛ لطفاً دوباره وارد شوید")
+        if (signOut("expired")) _errors.tryEmit("نشست شما منقضی شد؛ لطفاً دوباره وارد شوید")
     }
 
-    private suspend fun signOut(reason: String) {
+    /**
+     * The state flips first so concurrent work (outbox, pushes, an expiry raised by a failing
+     * request) sees a signed-out session immediately; cleanup then runs once under [authMutex].
+     * @return false when another sign-out already handled it.
+     */
+    private suspend fun signOut(reason: String): Boolean = authMutex.withLock {
+        if (_auth.value is AuthState.SignedOut && !prefs.hasSession) return@withLock false
+        _auth.value = AuthState.SignedOut
         EveChatLog.i("auth", "signing out", "reason" to reason)
         socket.stop()
         outboxRetry?.cancel()
         EveChatSyncWorker.cancel(app)
+        push.onSignedOut(accessToken = if (reason == "expired") null else auth.accessToken())
         auth.forget()
         prefs.clearSession()
         dao.clearAll()
@@ -250,7 +276,7 @@ class EveChatSession private constructor(private val app: Application) {
         _me.value = null
         _typing.value = emptyMap()
         inaccessible.clear()
-        _auth.value = AuthState.SignedOut
+        true
     }
 
     private fun currentAuth(): AuthState =
@@ -663,6 +689,88 @@ class EveChatSession private constructor(private val app: Application) {
         }
         flushOutbox()
         return true
+    }
+
+    // ── push ─────────────────────────────────────────────────────────────
+
+    /** Polling is the safety net; with working push it can run far less often. */
+    fun onPushStatusChanged() {
+        if (_auth.value !is AuthState.SignedIn) return
+        val minutes = if (push.status.value == EveChatPushRegistrar.Status.ACTIVE) 30L else 15L
+        EveChatSyncWorker.schedule(app, minutes)
+    }
+
+    fun requestBackgroundSync() {
+        if (_auth.value is AuthState.SignedIn) EveChatSyncWorker.runOnce(app)
+    }
+
+    /**
+     * A push only says "something changed here". The conversation is re-read from the server and
+     * notifications are built from that; a message that was already in the cache before the
+     * fetch was delivered by the socket or an earlier sync and is not announced twice.
+     */
+    suspend fun handlePush(p: EveChatPush) {
+        if (_auth.value !is AuthState.SignedIn) {
+            EveChatLog.d("push", "dropped: signed out")
+            return
+        }
+        val me = _me.value ?: prefs.agentId.takeIf { it.isNotBlank() }
+        if (p.agentId != null && me != null && p.agentId != me) {
+            EveChatLog.w("push", "dropped: addressed to another agent; re-registering")
+            prefs.pushRecord = null
+            push.ensureRegistered()
+            return
+        }
+        push.recordDelivery()
+
+        if (foreground && socket.state.value == EveChatSocket.State.CONNECTED) {
+            scope.launch { catchUp("push") }
+            return
+        }
+        val conversationId = p.conversationId
+        if (p.type == EveChatPush.Type.SYNC || conversationId == null) {
+            if (foreground) catchUp("push") else backgroundSync()
+            return
+        }
+        inaccessible.remove(conversationId)
+        when (p.type) {
+            EveChatPush.Type.CONVERSATION_UPDATED -> {
+                refreshConversation(conversationId)
+                val c = dao.conversation(conversationId)
+                if (c == null || !ConvStatus.isOpen(c.status) || !isMine(c)) notifier.cancel(conversationId)
+            }
+            EveChatPush.Type.MESSAGE, EveChatPush.Type.NEW_CONVERSATION -> {
+                val knownBefore = p.messageId?.let { dao.message(it) != null } ?: false
+                val newestBefore = dao.newestSentAt(conversationId)
+                if (!syncThread(conversationId)) {
+                    if (!knownBefore) notifier.fallback(p)
+                    requestBackgroundSync()
+                    return
+                }
+                kickOutbox()
+                if (knownBefore) return
+                val conv = dao.conversation(conversationId) ?: return
+                if (conv.unreadAgent == 0 || !ConvStatus.isOpen(conv.status)) return
+                val fresh = if (newestBefore == null) {
+                    listOfNotNull(dao.visitorMessagesAfter(conversationId, 0).lastOrNull())
+                } else {
+                    dao.visitorMessagesAfter(conversationId, newestBefore)
+                }
+                if (p.type == EveChatPush.Type.NEW_CONVERSATION && newestBefore == null) {
+                    notifier.newConversation(conv, fresh.lastOrNull())
+                } else {
+                    fresh.takeLast(5).forEach { notifier.message(conv, it, isMine(conv)) }
+                }
+            }
+            EveChatPush.Type.SYNC -> Unit
+        }
+    }
+
+    /** The push could not be handled within the FCM time budget: show what it carried, sync later. */
+    fun onPushTimedOut(p: EveChatPush) {
+        if (_auth.value !is AuthState.SignedIn) return
+        if (p.type == EveChatPush.Type.MESSAGE || p.type == EveChatPush.Type.NEW_CONVERSATION) notifier.fallback(p)
+        requestBackgroundSync()
     }
 
     companion object {

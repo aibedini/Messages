@@ -148,6 +148,13 @@ class EveChatApiClient(private val baseUrl: () -> String) {
     suspend fun markRead(token: String, id: String, upToMessageId: String?) =
         action(token, id, "read", upToMessageId?.let { JSONObject().put("up_to_message_id", it) })
 
+    /** Upsert keyed by `device_id`: a new token, agent or app build replaces the previous row. */
+    suspend fun registerPushDevice(token: String, body: JSONObject): ApiResult<Unit> =
+        call("POST", "/api/v1/push/devices", token, body).map { }
+
+    suspend fun unregisterPushDevice(token: String, deviceId: String): ApiResult<Unit> =
+        call("DELETE", "/api/v1/push/devices/${enc(deviceId)}", token).map { }
+
     private suspend fun action(token: String, id: String, verb: String, body: JSONObject?): ApiResult<Unit> =
         call("POST", "/api/v1/conversations/${enc(id)}/$verb", token, body ?: JSONObject()).map { }
 

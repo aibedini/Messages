@@ -31,6 +31,29 @@ class EveChatPreferences(context: Context) {
         get() = prefs.getString(KEY_AGENT_NAME, "") ?: ""
         set(value) = prefs.edit { putString(KEY_AGENT_NAME, value) }
 
+    /** Stable per install, never tied to hardware ids; survives sign-out so the server can upsert. */
+    val deviceId: String
+        @Synchronized get() = prefs.getString(KEY_DEVICE_ID, null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit(commit = true) { putString(KEY_DEVICE_ID, it) }
+        }
+
+    var fcmToken: String?
+        get() = prefs.getString(KEY_FCM_TOKEN, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_FCM_TOKEN) else putString(KEY_FCM_TOKEN, value) }
+
+    var pushRecord: String?
+        get() = prefs.getString(KEY_PUSH_RECORD, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_PUSH_RECORD) else putString(KEY_PUSH_RECORD, value) }
+
+    /** `<server>|<epoch ms>`: the server that reported no push support, and when to ask again. */
+    var pushUnsupported: String?
+        get() = prefs.getString(KEY_PUSH_UNSUPPORTED, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_PUSH_UNSUPPORTED) else putString(KEY_PUSH_UNSUPPORTED, value) }
+
+    var lastPushAt: Long
+        get() = prefs.getLong(KEY_LAST_PUSH_AT, 0L)
+        set(value) = prefs.edit { putLong(KEY_LAST_PUSH_AT, value) }
+
     val hasSession: Boolean
         get() = serverUrl.isNotBlank() &&
             (prefs.contains(KEY_ACCESS_ENC) || !prefs.getString(LEGACY_ACCESS, null).isNullOrBlank())
@@ -63,6 +86,10 @@ class EveChatPreferences(context: Context) {
             remove(LEGACY_REFRESH)
             remove(KEY_AGENT_ID)
             remove(KEY_AGENT_NAME)
+            remove(KEY_FCM_TOKEN)
+            remove(KEY_PUSH_RECORD)
+            remove(KEY_PUSH_UNSUPPORTED)
+            remove(KEY_LAST_PUSH_AT)
         }
     }
 
@@ -83,6 +110,11 @@ class EveChatPreferences(context: Context) {
         private const val KEY_AGENT_NAME = "agent_name"
         private const val KEY_ACCESS_ENC = "access_token_enc"
         private const val KEY_REFRESH_ENC = "refresh_token_enc"
+        private const val KEY_DEVICE_ID = "push_device_id"
+        private const val KEY_FCM_TOKEN = "push_fcm_token"
+        private const val KEY_PUSH_RECORD = "push_registration"
+        private const val KEY_PUSH_UNSUPPORTED = "push_unsupported"
+        private const val KEY_LAST_PUSH_AT = "push_last_received_at"
         private const val LEGACY_ACCESS = "access_token"
         private const val LEGACY_REFRESH = "refresh_token"
     }

@@ -16,6 +16,7 @@ import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.R
 import com.autonomousone.messages.evechat.model.EveChatConversation
 import com.autonomousone.messages.evechat.model.EveChatMessage
+import com.autonomousone.messages.evechat.push.EveChatPush
 import com.autonomousone.messages.navigation.AppLaunchIntent
 import java.util.concurrent.ConcurrentHashMap
 
@@ -23,6 +24,20 @@ class EveChatNotifier(private val context: Context) {
 
     private val manager = NotificationManagerCompat.from(context)
     private val recent = ConcurrentHashMap<String, ArrayDeque<Pair<String, Long>>>()
+
+    /** Socket, push and polling can all report the same message; each is announced once. */
+    private val announced = object : LinkedHashMap<String, Boolean>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?) = size > 500
+    }
+
+    private fun firstAnnouncement(messageId: String?): Boolean {
+        if (messageId == null) return true
+        synchronized(announced) {
+            if (announced.containsKey(messageId)) return false
+            announced[messageId] = true
+            return true
+        }
+    }
 
     fun ensureChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -41,7 +56,7 @@ class EveChatNotifier(private val context: Context) {
 
     /** Only conversations that are unassigned or assigned to this agent interrupt the user. */
     fun message(conversation: EveChatConversation, message: EveChatMessage, isMine: Boolean) {
-        if (!isMine || message.isInternal) return
+        if (!isMine || message.isInternal || !firstAnnouncement(message.id)) return
         val lines = recent.getOrPut(conversation.id) { ArrayDeque() }
         synchronized(lines) {
             if (lines.none { it.second == message.createdAt && it.first == message.content }) {
@@ -81,6 +96,27 @@ class EveChatNotifier(private val context: Context) {
                 .setGroup(GROUP)
                 .setAutoCancel(true)
                 .setContentIntent(openIntent(conversation.id))
+                .build()
+        )
+    }
+
+    /** Used only when the conversation could not be fetched: shows what the push itself carried. */
+    fun fallback(push: EveChatPush) {
+        val conversationId = push.conversationId ?: return
+        if (!firstAnnouncement(push.messageId)) return
+        val newConversation = push.type == EveChatPush.Type.NEW_CONVERSATION
+        post(
+            conversationId,
+            NotificationCompat.Builder(context, if (newConversation) CHANNEL_NEW else CHANNEL_MESSAGES)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(push.title ?: if (newConversation) "گفتگوی جدید پشتیبانی" else "پیام جدید پشتیبانی")
+                .setContentText(push.body ?: "برای مشاهده باز کنید")
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setGroup(GROUP)
+                .setAutoCancel(true)
+                .apply { push.sentAt?.let(::setWhen) }
+                .setContentIntent(openIntent(conversationId))
                 .build()
         )
     }
