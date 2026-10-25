@@ -38,4 +38,15 @@ object StaleProjectionPolicy {
         if (now < newestDate) return false
         return now - newestDate >= staleAfterMs
     }
+
+    /**
+     * True when the stored marker no longer describes the newest message.
+     *
+     * The age rule above exists for one reason only: a send that is genuinely still in flight must
+     * not be rebuilt every minute. That reason does not apply to a marker that CONTRADICTS its own
+     * newest row — a delivery report that arrived after the last projection write leaves the list
+     * saying "Send status unknown" about a message the chat already renders as delivered. The row is
+     * wrong at that instant and waiting two minutes only extends the lie.
+     */
+    fun disagrees(projected: String?, derived: String?): Boolean = projected != derived
 }

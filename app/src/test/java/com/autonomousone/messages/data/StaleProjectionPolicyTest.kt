@@ -86,6 +86,18 @@ class StaleProjectionPolicyTest {
     }
 
     @Test
+    fun `a marker that contradicts its newest message is repaired without waiting for age`() {
+        // The reported bug: the list says "Send status unknown" while the chat already renders the
+        // same message as delivered, because the delivery report landed after the last projection
+        // write. This is not "in flight" — it is wrong now — so the age rule must not gate it.
+        assertTrue(StaleProjectionPolicy.disagrees("SEND_STATUS_UNKNOWN", null))
+        assertTrue(StaleProjectionPolicy.disagrees("SEND_STATUS_UNKNOWN", "DELIVERED"))
+        assertTrue(StaleProjectionPolicy.disagrees("SENDING", "SEND_STATUS_UNKNOWN"))
+        assertFalse(StaleProjectionPolicy.disagrees("SEND_STATUS_UNKNOWN", "SEND_STATUS_UNKNOWN"))
+        assertFalse(StaleProjectionPolicy.disagrees(null, null))
+    }
+
+    @Test
     fun `delivered evidence has no conversation attention summary`() {
         val presentation = SmsStatusPresentationMapper.present(
             SmsStatusEvidence(

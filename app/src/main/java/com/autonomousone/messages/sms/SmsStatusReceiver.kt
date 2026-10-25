@@ -21,6 +21,7 @@ import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -500,9 +501,18 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 SmsStatusPolicy.DeliveryEvidence.UNKNOWN ->
                     DeliveryEvidenceRank.UNKNOWN
             }
-            val updated = MessagesDatabase.get(context.applicationContext)
-                .messageDao()
-                .recordDeliveryEvidence(
+            val dao = MessagesDatabase.get(context.applicationContext).messageDao()
+            // The delivery report can beat the mirror row. Before this loop the verdict was
+            // simply dropped in that window (the provider row carries no delivery evidence at
+            // all), so a message the carrier confirmed as delivered could stay "Send status
+            // unknown" for ever. A short bounded retry covers the real race: the sender's own
+            // ingest lands in milliseconds, and a confirmed verdict is worth waiting for.
+            var updated = 0
+            var attempt = 0
+            while (updated == 0 && attempt < EVIDENCE_WRITE_ATTEMPTS) {
+                if (attempt > 0) delay(EVIDENCE_WRITE_RETRY_MS)
+                attempt++
+                updated = dao.recordDeliveryEvidence(
                     source = MessageEntity.SOURCE_SMS,
                     providerId = rowId,
                     at = System.currentTimeMillis(),
@@ -511,11 +521,21 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     resultCode = resultCode,
                     rank = rank.ordinal
                 )
+            }
             DiagnosticLog.event(
                 "SMS_DELIVERY_EVIDENCE",
                 "row=$rowId evidence=${evidence.name} tpStatus=${tpStatus ?: "none"} " +
-                    "rank=${rank.ordinal} mirrored=${updated > 0}"
+                    "rank=${rank.ordinal} mirrored=${updated > 0} attempts=$attempt"
             )
+            if (updated == 0) {
+                // The mirror row never appeared: the verdict is lost rather than misapplied,
+                // and the diagnostic names the row so the missing identity can be traced.
+                Log.w(
+                    TAG,
+                    "delivery evidence not applied: no mirror row for rowId=$rowId after " +
+                        "$attempt attempts ($EVIDENCE_WRITE_RETRY_MS ms apart)"
+                )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "delivery-evidence write failed row=$rowId", e)
         }
@@ -625,6 +645,16 @@ class SmsStatusReceiver : BroadcastReceiver() {
 
         private const val PREFS = "sms_status_callbacks"
         private const val BROADCAST_DEADLINE_MS = 8_000L
+
+        /**
+         * How long to wait for the mirror row before giving up on a delivery verdict.
+         *
+         * A delivery report names a provider row id; the mirror row for it is created by the
+         * sender's own ingest milliseconds later. The retry is bounded because the verdict is
+         * worth a couple of seconds, not because the wait is expected.
+         */
+        private const val EVIDENCE_WRITE_ATTEMPTS = 6
+        private const val EVIDENCE_WRITE_RETRY_MS = 300L
         private const val TAG = "SMS_STATUS"
         private val LOCK = Any()
 

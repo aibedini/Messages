@@ -2346,9 +2346,16 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
      * Startup/Home-load safety net for a stale attention projection.
      *
      * Sweeps every state Home renders as attention — SENDING, SEND_STATUS_UNKNOWN, NOT_SENT and
-     * DELIVERY_UNKNOWN — not just SENDING. Only threads whose newest active message is older than
-     * [staleAfterMs] are rebuilt; a send that is genuinely in flight is left alone. This is a
-     * bounded, targeted sweep (the DAO caps it at 50 threads), never a full rebuild.
+     * DELIVERY_UNKNOWN — not just SENDING. A thread is rebuilt when EITHER:
+     *
+     *  - its marker now CONTRADICTS the newest message (a delivery report landed after the last
+     *    projection write, so the list still shows "Send status unknown" for a delivered message).
+     *    This is repaired immediately: the row is already wrong, and the age rule below exists only
+     *    to protect a send that is genuinely in flight; or
+     *  - the marker is an attention state older than [staleAfterMs] (a refresh was missed entirely).
+     *
+     * Bounded and targeted: the DAO caps the candidate set at 50 attention threads and each check is
+     * one indexed single-thread read, never a full rebuild.
      */
     suspend fun refreshStaleAttentionProjections(
         now: Long = System.currentTimeMillis(),
@@ -2356,16 +2363,33 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
     ) {
         val stale = runCatching {
             db.conversationDao().attentionThreads()
-                .filter { row ->
+                .mapNotNull { row ->
                     val newest = db.messageDao().newestActiveForThread(row.threadId)
-                    newest != null && StaleProjectionPolicy.isStale(
+                        ?: return@mapNotNull null
+                    val derived = lastMessageUiStateOf(newest)
+                    val wrongNow = StaleProjectionPolicy.disagrees(row.lastMessageUiState, derived)
+                    val missed = StaleProjectionPolicy.isStale(
                         uiState = row.lastMessageUiState,
                         newestDate = newest.date,
                         now = now,
                         staleAfterMs = staleAfterMs
                     )
+                    if (wrongNow || missed) {
+                        if (wrongNow) {
+                            // The list and the chat disagreed about one message; log the fact so a
+                            // regression is visible in diagnostics, not only in a screenshot.
+                            com.autonomousone.messages.utils.DiagnosticLog.event(
+                                "PROJECTION",
+                                "attention_mismatch thread=" + row.threadId +
+                                    " projected=" + row.lastMessageUiState +
+                                    " derived=" + derived
+                            )
+                        }
+                        row.threadId
+                    } else {
+                        null
+                    }
                 }
-                .map { it.threadId }
         }.getOrDefault(emptyList())
         stale.forEach { threadId ->
             runCatching { rebuildConversationProjection(threadId, preserveFlags = true) }
