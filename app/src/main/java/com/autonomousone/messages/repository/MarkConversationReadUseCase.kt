@@ -313,7 +313,16 @@ class MarkConversationReadUseCase(
             }
         }
         try {
-            onLocalReadApplied(threadId, phone)
+            // A BOUNDED read describes the thread as it was at the horizon, not as it is now. Telling
+            // the UI layer "this conversation is read" then is a claim the durable row does not make:
+            // whenever a message arrived after that horizon, the list paints the badge away and keeps
+            // it away — the overlay only retires when Room itself says read, which is exactly what a
+            // bounded read just avoided. The chat then shows an unread message while Home shows none.
+            //
+            // The durable projection already carries the exact remaining count (0 or more), so for a
+            // bounded read the Room flow is the honest signal; an UNBOUNDED read consumed the whole
+            // thread and still gets the immediate optimistic clear.
+            if (upToProviderId == null) onLocalReadApplied(threadId, phone)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {

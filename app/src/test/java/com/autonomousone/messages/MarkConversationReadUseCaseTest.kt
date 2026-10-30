@@ -218,6 +218,31 @@ class MarkConversationReadUseCaseTest {
         assertEquals("local:42", order.first())
     }
 
+    @Test
+    fun `a BOUNDED screen read does not tell the list the whole conversation is read`() {
+        // The reported bug: the list showed the conversation as read while the open chat still had an
+        // unread message. A screen-authorised read is bounded by the horizon captured at authorisation,
+        // so a message that arrived after it stays unread — and the optimistic "thread is read" signal
+        // would hide that badge for ever, because the overlay only retires when Room itself says read.
+        VisibleConversationTracker.onScreenResumed(42L, "+98912")
+        val order = mutableListOf<String>()
+        val local = RecordingLocal(order)
+        val signals = mutableListOf<String>()
+        val useCase = MarkConversationReadUseCase(
+            localRead = local,
+            providerRead = RecordingProvider(order),
+            diagnostics = RecordingDiagnostics(),
+            repair = RecordingRepair(),
+            readHorizon = ReadHorizonProvider { 500L },
+            onLocalReadApplied = { threadId, phone -> signals += "signal:$threadId:$phone" }
+        )
+
+        runBlocking { useCase.markRead(42L, "+98912", ReadCause.USER_OPEN_RESUMED) }
+
+        assertTrue("the bounded local read still happens", local.applied)
+        assertEquals("only the durable projection may clear the badge here", emptyList<String>(), signals)
+    }
+
     // ── P0: screen-dependent authority is validated at EXECUTION time ─────────
 
     @Test

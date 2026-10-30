@@ -288,6 +288,20 @@ class HomeConversationStateTest {
     }
 
     @Test
+    fun `a new incoming message is not masked by an earlier read prediction`() {
+        // Read the thread, then a new message arrives. The old "thread is read" prediction must not
+        // survive a newer message: it would force the fresh unread row back to read, and because an
+        // override only retires when Room itself says read, the badge would stay hidden for ever.
+        val state = HomeConversationState()
+        state.recordMarkRead(7L)
+        state.recordIncoming(sms(7L, 200L, unread = true))
+
+        val rendered = state.render(listOf(sms(7L, 100L)), emptySet(), emptySet())
+
+        assertTrue("the newer message must show as unread", rendered.main[0].unread)
+    }
+
+    @Test
     fun `an incoming overlay can be read locally before room commits`() {
         val state = HomeConversationState()
         state.recordIncoming(sms(8L, 400L, unread = true))

@@ -76,9 +76,16 @@ class HomeConversationState {
         reconcile(rows)
     }
 
-    /** New incoming conversation observed before Room commits the row. */
+    /**
+     * New incoming conversation observed before Room commits the row.
+     *
+     * A NEW message invalidates any earlier "this thread is read" prediction: keeping it would force
+     * the fresh unread row back to read in the UI, and the override only retires when Room says read
+     * — which a thread holding an unread message never does. The prediction described the thread as
+     * it was before this message existed.
+     */
     fun recordIncoming(row: Sms) {
-        upsert(row.threadId) { it.copy(row = row) }
+        upsert(row.threadId) { it.copy(row = row, forceRead = false) }
     }
 
     /** Outgoing message that is not yet visible in the Room projection. */
