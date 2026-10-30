@@ -857,25 +857,42 @@ class OutboxPoller(
                 conn.outputStream.use { it.write(report.json().toString().toByteArray(Charsets.UTF_8)) }
                 val responseCode = conn.responseCode
                 if (responseCode !in 200..299) {
-                    val errorCode = if (responseCode == 404) runCatching {
+                    val errorCode = runCatching {
                         JSONObject(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "")
                             .optString("error")
-                    }.getOrNull() else null
-                    if (GatewayDeliveryReports.isUnknownRequestResponse(responseCode, errorCode)) {
-                        if (!GatewayDeliveryReports.quarantineUnknownRequest(context, report.eventId)) {
-                            Log.w(TAG, "delivery-report quarantine was not persisted")
+                    }.getOrNull()?.takeIf { it.isNotBlank() }
+                    // One permanently-rejected report must not park the queue: it used to sit at
+                    // the head and starve every later verdict. A link/auth problem still stops the
+                    // cycle, because nothing in this batch can succeed until it is fixed.
+                    when (DeliveryReportUploadPolicy.classify(responseCode, errorCode)) {
+                        DeliveryReportUploadPolicy.Action.QUARANTINE -> {
+                            if (!GatewayDeliveryReports.quarantineUnknownRequest(context, report.eventId)) {
+                                Log.w(TAG, "delivery-report quarantine was not persisted")
+                                break
+                            }
+                            Log.w(
+                                TAG,
+                                "delivery-report rejected http=$responseCode " +
+                                    "error=${errorCode ?: "-"} quarantined; other reports continue"
+                            )
+                            com.autonomousone.messages.utils.DiagnosticLog.event(
+                                "GM_DELIVERY",
+                                "upload_quarantined event=${report.eventId} request=${report.requestId} " +
+                                    "status=${report.status} http=$responseCode error=${errorCode ?: "-"}"
+                            )
+                            continue
+                        }
+                        DeliveryReportUploadPolicy.Action.RETRY -> {
+                            Log.w(TAG, "delivery-report HTTP $responseCode")
+                            com.autonomousone.messages.utils.DiagnosticLog.event(
+                                "GM_DELIVERY",
+                                "upload_retry event=${report.eventId} status=${report.status} " +
+                                    "part=${report.segmentIndex + 1}/${report.segmentCount} http=$responseCode"
+                            )
                             break
                         }
-                        Log.w(TAG, "delivery-report unknown task quarantined; other reports continue")
-                        continue
+                        DeliveryReportUploadPolicy.Action.ACCEPT -> Unit
                     }
-                    Log.w(TAG, "delivery-report HTTP $responseCode")
-                    com.autonomousone.messages.utils.DiagnosticLog.event(
-                        "GM_DELIVERY",
-                        "upload_retry event=${report.eventId} status=${report.status} " +
-                            "part=${report.segmentIndex + 1}/${report.segmentCount} http=$responseCode"
-                    )
-                    break
                 }
                 if (!GatewayDeliveryReports.acknowledge(context, report.eventId)) {
                     Log.w(TAG, "delivery-report acknowledgement was not persisted")
