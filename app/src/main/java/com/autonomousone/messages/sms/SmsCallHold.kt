@@ -1,6 +1,7 @@
 package com.autonomousone.messages.sms
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
@@ -104,7 +105,14 @@ data class CallSnapshot(
     val callOnOtherSim: Boolean
 )
 
-/** Reads call state from the device. READ_PHONE_STATE is granted to the default SMS app. */
+/**
+ * Reads call state from the device. READ_PHONE_STATE is granted to the default SMS app.
+ *
+ * The permission is checked HERE, in [hasPhoneState], before any protected telephony getter is
+ * touched — lint's flow analysis cannot see through the helper and reports the getters as
+ * unguarded, which is why the suppression is stated once on the object rather than per call.
+ */
+@SuppressLint("MissingPermission")
 object SmsCallGuard {
 
     private fun hasPhoneState(context: Context): Boolean =
@@ -127,7 +135,11 @@ object SmsCallGuard {
         if (!hasPhoneState(context)) return CallSnapshot(inCall = true, voiceNetworkType = null, callOnOtherSim = false)
         val base = context.getSystemService(TelephonyManager::class.java)
             ?: return CallSnapshot(inCall = true, voiceNetworkType = null, callOnOtherSim = false)
-        val tm = if (subscriptionId != null && subscriptionId >= 0) {
+        // createForSubscriptionId(int) on TelephonyManager is API 31+. Below that the base manager
+        // still answers voiceNetworkType for the device's current call, which is all this needs.
+        val tm = if (subscriptionId != null && subscriptionId >= 0 &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
             runCatching { base.createForSubscriptionId(subscriptionId) }.getOrDefault(base)
         } else {
             base
