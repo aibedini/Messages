@@ -50,9 +50,14 @@ class SendSimPolicyTest {
     }
 
     @Test
-    fun `aManagerBoundElsewhereIsRefused`() {
+    fun `aManagerThatReportsAnotherLineStillAttemptsAndRecordsWhatItReports`() {
+        // The reported regression: on some OEM builds the manager created for the chosen line
+        // reports another subscription (or none) even though the SIM is present. Refusing there
+        // meant the chosen line could NEVER be used - the user had to change the system default SIM
+        // to send at all. The manager is still the one created for the request, so the send is
+        // attempted; the ledger keeps the manager's claim, never a fabricated request.
         assertEquals(
-            SimDecision.Refuse(2),
+            SimDecision.Send(3),
             decide(requested = 2, actual = 3, active = true)
         )
     }
@@ -69,19 +74,20 @@ class SendSimPolicyTest {
     }
 
     @Test
-    fun `anUnknownManagerCannotProveTheExplicitSimWasSelected`() {
+    fun `anUnknownManagerStillAttemptsAndRecordsUnknown`() {
         assertEquals(
-            SimDecision.Refuse(2),
+            SimDecision.Send(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID),
             decide(requested = 2, actual = SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID, active = null)
         )
     }
 
     @Test
     fun `anUnreadableSubscriptionNeverFabricatesTheRequest`() {
-        // A requested SIM with unknown manager binding cannot enter the modem.
+        // The send is attempted, but the ledger records ONLY what the manager reported: an unknown
+        // binding stays unknown, so the per-SIM counter cannot claim the chosen line carried it.
         val decision = decide(requested = 2, actual = SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID, active = true)
 
-        assertEquals(SimDecision.Refuse(2), decision)
+        assertEquals(SimDecision.Send(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID), decision)
     }
 
     @Test
@@ -108,15 +114,10 @@ class SendSimPolicyTest {
     }
 
     @Test
-    fun `aRefusalAlwaysNamesTheSimTheUserChose`() {
-        // The message the user sees has to identify their own selection, not the line the app would
-        // have used — otherwise it reads as "some SIM is unavailable" and they cannot act on it.
-        listOf(
-            decide(requested = 2, actual = 3, active = true),
-            decide(requested = 2, actual = 1, active = false)
-        ).forEach { decision ->
-            assertTrue(decision is SimDecision.Refuse)
-            assertEquals(2, (decision as SimDecision.Refuse).requestedSubscriptionId)
-        }
+    fun `the only refusal names the sim the user chose`() {
+        // Absence is the one remaining refusal; a read-back disagreement attempts the send.
+        val decision = decide(requested = 2, actual = 1, active = false)
+        assertTrue(decision is SimDecision.Refuse)
+        assertEquals(2, (decision as SimDecision.Refuse).requestedSubscriptionId)
     }
 }

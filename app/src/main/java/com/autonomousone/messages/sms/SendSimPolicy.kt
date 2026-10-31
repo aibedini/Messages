@@ -20,8 +20,15 @@ package com.autonomousone.messages.sms
  * strictly apart: the id the user asked for, and the id the manager reports it is actually bound to.
  * The ledger records the second, never the first.
  *
- * Pure and Android-free so the decision can be tested directly — the two cases that must never
- * happen are a fabricated attribution and a send that refuses because the app could not tell.
+ * **The amendment that this file now carries.** The read-back is evidence, not a veto. Refusing a
+ * send because the platform's manager reported a different subscription (or none) turned a device
+ * quirk into "a chosen SIM can never be used": the user got no message at all and had to change the
+ * system default SMS SIM to work around it. The manager object is still the one created for the
+ * requested line, so the send is attempted and the ledger keeps the manager's claim — an unknown
+ * binding stays unknown, and a contradictory one is recorded as the contradiction it is. The only
+ * refusal left is proof that the chosen SIM is no longer present.
+ *
+ * Pure and Android-free so the decision can be tested directly.
  */
 sealed interface SimDecision {
 
@@ -35,10 +42,11 @@ sealed interface SimDecision {
     data class Send(val recordedSubscriptionId: Int) : SimDecision
 
     /**
-     * Do not send: the request cannot be honoured and the app can prove it.
+     * Do not send: the chosen SIM is provably absent from the device.
      *
-     * Refusing is the mission's requirement. Sending anyway would put a message on a line the user
-     * did not choose, and a wrong-origin SMS cannot be recalled.
+     * The ONE refusal left, and the only one about which the app has proof rather than a read-back.
+     * Sending would put the message on the other line, from a number the user did not choose, and a
+     * wrong-origin SMS cannot be recalled.
      */
     data class Refuse(val requestedSubscriptionId: Int) : SimDecision
 }
@@ -107,19 +115,24 @@ object SendSimPolicy {
 
         // Proof, from the device's own active-subscription list, that the chosen line is not there.
         // Nothing about the manager read-back is needed for this and no read-back contradiction can
-        // make it untrue.
+        // make it untrue. This is the ONE refusal left, and it is about the SIM, not about the API.
         requestedSimActive == false -> SimDecision.Refuse(requested)
 
         // The request was honoured — the only case where the requested id is also a fact.
         actual == requested -> SimDecision.Send(requested)
 
-        // An explicit line choice cannot be verified when the manager reports
-        // no bound subscription. Fail before modem submission.
-        actual == UNKNOWN_SUBSCRIPTION_ID -> SimDecision.Refuse(requested)
-
-        // The manager says it is bound elsewhere. Positive evidence of a mismatch, so the safe
-        // direction is to refuse: a wrong-origin SMS cannot be recalled.
-        else -> SimDecision.Refuse(requested)
+        // The manager reported something else (or nothing) even though the SIM is present.
+        //
+        // ATTEMPT THE SEND ANYWAY, and record only what the manager reported. The read-back is
+        // evidence about the binding, not a veto: several OEM builds return a manager that does not
+        // report the subscription it was created for — and on those devices the old "refuse on any
+        // doubt" rule meant a chosen line could NEVER be used, while the same message sent fine on
+        // whatever line the phone considered default. Refusing protected nobody: the user got no
+        // message at all and had to change the system default SIM to work around it.
+        //
+        // The manager object itself is still the one created for [requested], so the radio is asked
+        // for that line. The ledger records [actual] (possibly UNKNOWN), never a fabricated request.
+        else -> SimDecision.Send(actual)
     }
 }
 

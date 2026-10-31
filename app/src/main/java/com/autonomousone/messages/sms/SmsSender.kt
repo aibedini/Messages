@@ -721,6 +721,17 @@ class SmsSender(
             ?: (defaultResolution as? SendSimPolicy.DefaultSimResolution.Use)?.subscriptionId
 
         val bound = resolveSmsManager(requestedSubId)
+        // The manager is created for the chosen line, but the read-back is not always trustworthy:
+        // some OEM builds report the subscription they were created for and still route by the
+        // system default. Record the discrepancy here (the ledger keeps the manager's claim) so a
+        // 'sent on the wrong SIM' report can be answered from diagnostics instead of guessed at.
+        if (requestedSubId != null && bound.actualSubscriptionId != requestedSubId) {
+            DiagnosticLog.event(
+                "SMS_SEND",
+                "sim-readback-unconfirmed requested=$requestedSubId actual=${bound.actualSubscriptionId} " +
+                    "proceeding=true"
+            )
+        }
 
         // v2.6.14 — Effective SMSC, strictly user intent:
         //   per-request override → this SIM's manual override → global manual
@@ -740,8 +751,10 @@ class SmsSender(
             actual = bound.actualSubscriptionId,
             requestedSimActive = requestedSimActive(requestedSubId)
         )
-        // A refusal based on a PROVABLE mismatch. Letting it through would put the message on a line
-        // the user did not choose, and a sent SMS cannot be recalled.
+        // The ONE refusal left: the chosen SIM is provably absent from the active-subscription list.
+        // A read-back disagreement no longer refuses — it attempts the send through the manager that
+        // was created for the chosen line, because refusing made a chosen SIM unusable on OEM builds
+        // whose read-back is unreliable.
         if (decision is SimDecision.Refuse) {
             return rejectForSimMismatch(sentId, phone, requestedSubId, bound.actualSubscriptionId, showToast)
         }
@@ -1216,22 +1229,44 @@ class SmsSender(
     private fun platformDefaultSmsSubscriptionId(): Int? =
         com.autonomousone.messages.messaging.SimManager(context).defaultSmsSubscriptionIdOrNull()
 
-    private fun resolveSmsManager(override: Int? = null): BoundSim {        val subId = override ?: prefs.sendSubscriptionId
+    private fun resolveSmsManager(override: Int? = null): BoundSim {
+        val subId = override ?: prefs.sendSubscriptionId
         val hasSelection = subId != MessagingPreferences.SUBSCRIPTION_UNSET
-        val manager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val base = context.getSystemService(SmsManager::class.java)
-            if (hasSelection) base.createForSubscriptionId(subId) else base
+        if (!hasSelection) {
+            val manager = defaultSmsManager()
+            return BoundSim(manager, readBack(manager))
+        }
+        // Two public bindings exist and they do NOT behave identically on every OEM build: some
+        // return a manager that reports the subscription it was created for and still send on the
+        // default line, others report nothing at all. Ask both, prefer the one that reports the
+        // requested subscription, and fall back to the other so the chosen line always has a manager.
+        val candidates = ArrayList<SmsManager>(2)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                context.getSystemService(SmsManager::class.java).createForSubscriptionId(subId)
+            }.getOrNull()?.let(candidates::add)
+        }
+        @Suppress("DEPRECATION")
+        runCatching { SmsManager.getSmsManagerForSubscriptionId(subId) }.getOrNull()?.let(candidates::add)
+        if (candidates.isEmpty()) {
+            val manager = defaultSmsManager()
+            return BoundSim(manager, readBack(manager))
+        }
+        val chosen = candidates.firstOrNull { readBack(it) == subId } ?: candidates.first()
+        return BoundSim(chosen, readBack(chosen))
+    }
+
+    private fun defaultSmsManager(): SmsManager =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
         } else {
             @Suppress("DEPRECATION")
-            if (hasSelection) SmsManager.getSmsManagerForSubscriptionId(subId) else SmsManager.getDefault()
+            SmsManager.getDefault()
         }
-        // Read back rather than assume. A manager created for an inactive subscription can be bound
-        // to nothing, and on some platforms the call is simply refused; either way the answer here is
-        // the only fact available about which line will carry the message.
-        val actual = runCatching { manager.subscriptionId }
-            .getOrDefault(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID)
-        return BoundSim(manager, actual)
-    }
+
+    /** What the manager says it is bound to, or [SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID]. */
+    private fun readBack(manager: SmsManager): Int = runCatching { manager.subscriptionId }
+        .getOrDefault(SendSimPolicy.UNKNOWN_SUBSCRIPTION_ID)
 
     private fun buildStatusPendingIntent(
         action: String,

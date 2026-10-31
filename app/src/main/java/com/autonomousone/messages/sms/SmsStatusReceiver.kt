@@ -68,6 +68,10 @@ class SmsStatusReceiver : BroadcastReceiver() {
         val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0).coerceAtLeast(0)
         val partCount = intent.getIntExtra(EXTRA_PART_COUNT, 1).coerceAtLeast(1)
         val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
+        // The platform's own answer for the line that carried this part, when it supplies one. It is
+        // NOT our send-time extra: a device that ignores the requested binding reports the default
+        // line here, and that is the only durable evidence of a misrouted send.
+        val platformSubscriptionId = intent.getIntExtra(PLATFORM_SUBSCRIPTION_EXTRA, -1)
         val sendAttemptId = intent.getLongExtra(EXTRA_SEND_ATTEMPT_ID, rowId)
         val delivered = intent.action == ACTION_SMS_DELIVERED
         val phase = if (delivered) SmsStatusPolicy.Phase.DELIVERED else SmsStatusPolicy.Phase.SENT
@@ -91,6 +95,14 @@ class SmsStatusReceiver : BroadcastReceiver() {
         }
         val deliveryEvidence = deliveryParse?.evidence ?: SmsStatusPolicy.DeliveryEvidence.UNKNOWN
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (platformSubscriptionId >= 0 && subscriptionId >= 0 &&
+            platformSubscriptionId != subscriptionId
+        ) {
+            DiagnosticLog.event(
+                "SMS_SIM_ROUTE",
+                "callback-on-other-sim row=$rowId sent=$subscriptionId platform=$platformSubscriptionId"
+            )
+        }
         DiagnosticLog.event(
             "SMS_CALLBACK",
             "row=$rowId phase=$phase part=${partIndex + 1}/$partCount sub=$subscriptionId " +
@@ -647,6 +659,9 @@ class SmsStatusReceiver : BroadcastReceiver() {
         const val EXTRA_PART_COUNT = "part_count"
         const val EXTRA_SUBSCRIPTION_ID = "subscription_id"
         const val EXTRA_SEND_ATTEMPT_ID = "send_attempt_id"
+
+        /** Set by the telephony stack on the sent/delivery intent; absent on builds that omit it. */
+        private const val PLATFORM_SUBSCRIPTION_EXTRA = "subscription"
 
         private const val PREFS = "sms_status_callbacks"
         private const val BROADCAST_DEADLINE_MS = 8_000L
