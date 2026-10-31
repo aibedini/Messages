@@ -53,6 +53,7 @@ class MessagesApp : Application() {
         Holders.init(this)
         DiagnosticLog.initialize(this)
         com.autonomousone.messages.evechat.EveChatSession.get(this).install()
+        com.autonomousone.messages.sms.SmsCallHoldWorker.resumeIfNeeded(this)
         // Phase 2 observability: missing runtime permissions and Doze-style
         // battery restrictions are the two most common "works in code, silent
         // on device" causes for the SMS pipeline. Log both at process start.

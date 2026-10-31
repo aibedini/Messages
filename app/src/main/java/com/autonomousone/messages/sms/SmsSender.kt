@@ -681,6 +681,7 @@ class SmsSender(
         threadId: Long = 0L,
         assertedSimRef: String? = null,
         oneShotOverride: Boolean = false,
+        callHoldAllowed: Boolean = true,
     ): Boolean {
         // ── THE STICKY CONVERSATION SIM (mission §13/§14/§15/§19/§20/§31) ───
         //
@@ -747,6 +748,40 @@ class SmsSender(
         val manager = bound.manager
         // The line that will actually carry the message (or an explicit "unknown"), never the request.
         val recordedSubId = (decision as SimDecision.Send).recordedSubscriptionId
+
+        // ── ONE RADIO, ONE CALL ─────────────────────────────────────────────
+        // A CS voice call (or a call on the other SIM) makes the modem refuse or lose this SMS and
+        // its status report. Hold it before anything reaches the radio and send when the call ends.
+        if (callHoldAllowed) {
+            val call = SmsCallGuard.snapshot(context, recordedSubId)
+            if (call.inCall) {
+                val store = SmsCallHoldStore(context)
+                if (SmsCallHoldPolicy.shouldHold(call)) {
+                    store.put(
+                        HeldSend(
+                            rowId = sentId,
+                            kind = HeldSend.Kind.HOLD,
+                            phone = phone,
+                            subscriptionIdOverride = subscriptionIdOverride,
+                            smscOverride = smscOverride,
+                            threadId = threadId,
+                            assertedSimRef = assertedSimRef,
+                            oneShotOverride = oneShotOverride,
+                            heldAt = System.currentTimeMillis()
+                        )
+                    )
+                    recordSendState(sentId, SendTransportState.SENT_PENDING)
+                    DiagnosticLog.event(
+                        "SMS_CALL_HOLD",
+                        "row=$sentId state=HELD sub=$recordedSubId voiceNet=${call.voiceNetworkType ?: -1} " +
+                            "otherSim=${call.callOnOtherSim}"
+                    )
+                    SmsCallHoldWorker.enqueue(context)
+                    return true
+                }
+                store.markCallAtSubmit(sentId)
+            }
+        }
         val scAddress = smscOverride?.trim()?.takeIf { it.isNotBlank() }
             ?: prefs.smscForSim(requestedSubId ?: MessagingPreferences.SUBSCRIPTION_UNSET)
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
@@ -868,6 +903,33 @@ class SmsSender(
             }
             return false
         }
+    }
+
+    /**
+     * Dispatches a message the call guard held (or queued for resend) on its ORIGINAL provider row,
+     * so the conversation keeps one bubble. The body is read back from the provider: a row the user
+     * deleted meanwhile is simply not sent.
+     */
+    fun releaseHeld(send: HeldSend, ignoreCall: Boolean): Boolean {
+        requireOffMainThread()
+        val row = SmsProviderRow.read(context, send.rowId)
+        if (row == null) {
+            DiagnosticLog.event("SMS_CALL_HOLD", "row=${send.rowId} state=DROPPED reason=row_gone")
+            return false
+        }
+        updateStatus(send.rowId, Telephony.Sms.STATUS_PENDING)
+        return dispatch(
+            sentId = send.rowId,
+            phone = send.phone,
+            text = row.body,
+            subscriptionIdOverride = send.subscriptionIdOverride,
+            smscOverride = send.smscOverride,
+            showToast = false,
+            threadId = send.threadId.takeIf { it > 0L } ?: row.threadId,
+            assertedSimRef = send.assertedSimRef,
+            oneShotOverride = send.oneShotOverride,
+            callHoldAllowed = !ignoreCall
+        )
     }
 
     /**

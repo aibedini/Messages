@@ -386,6 +386,11 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 providerId = rowId
             )
         )
+
+        // Last, so it overrides the NOT_SENT just written when the refusal was caused by a call.
+        if (!delivered) {
+            SmsCallRetry.onSentCallback(appContext, ledgerDao, rowId, partCount, subscriptionId)
+        }
     }
 
     /**
