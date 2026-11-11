@@ -135,7 +135,7 @@ class InConversationSearchRepository(
             return SearchOutcome.Skipped(raw)
         }
 
-        val page = loadPage(threadId, match, offset = 0)
+        val page = loadPage(threadId, raw, offset = 0)
         log(
             LOG_CATEGORY,
             "search thread=$threadId query=${queryToken(raw)} total=${page.total} " +
@@ -150,9 +150,8 @@ class InConversationSearchRepository(
      * re-fetched.
      */
     suspend fun loadMore(threadId: Long, raw: String, offset: Int): SearchOutcome {
-        val match = FtsQuery.build(raw)
-        if (match.isEmpty()) return SearchOutcome.Skipped(raw)
-        val page = loadPage(threadId, match, offset = offset.coerceAtLeast(0))
+        if (FtsQuery.build(raw).isEmpty()) return SearchOutcome.Skipped(raw)
+        val page = loadPage(threadId, raw, offset = offset.coerceAtLeast(0))
         log(
             LOG_CATEGORY,
             "search page thread=$threadId query=${queryToken(raw)} offset=${page.offset} " +
@@ -161,12 +160,25 @@ class InConversationSearchRepository(
         return SearchOutcome.Completed(raw, page)
     }
 
-    private suspend fun loadPage(threadId: Long, match: String, offset: Int) =
-        ConversationSearchPage(
-            hits = dao.searchThread(threadId, match, MAX_PAGE, offset),
-            total = dao.countThreadMatches(threadId, match),
-            offset = offset
-        )
+    /**
+     * One page of hits, with a bounded recall fallback.
+     *
+     * The strict expression requires every token; when that finds nothing, a multi-word query is
+     * retried ANY-token. That is the difference between "no results" and "here is the message that
+     * contains one of your words", and it only runs on an empty result, so the happy path keeps the
+     * strict semantics (and the index cost) it always had.
+     */
+    private suspend fun loadPage(threadId: Long, raw: String, offset: Int): ConversationSearchPage {
+        val strict = FtsQuery.build(raw)
+        var hits = dao.searchThread(threadId, strict, MAX_PAGE, offset)
+        var total = dao.countThreadMatches(threadId, strict)
+        if (total == 0 && FtsQuery.tokenCount(raw) > 1) {
+            val any = FtsQuery.buildAny(raw)
+            hits = dao.searchThread(threadId, any, MAX_PAGE, offset)
+            total = dao.countThreadMatches(threadId, any)
+        }
+        return ConversationSearchPage(hits = hits, total = total, offset = offset)
+    }
 
     /**
      * JUMP TO A SEARCH RESULT — O(1) row resolution + two bounded keyset reads.

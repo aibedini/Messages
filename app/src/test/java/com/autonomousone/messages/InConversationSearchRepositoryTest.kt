@@ -182,11 +182,20 @@ class InConversationSearchRepositoryTest {
             return row.date < cutoff
         }
 
-        /** Deliberately dumb token match; the MATCH SYNTAX is asserted separately. */
+        /**
+         * Deliberately dumb matcher for the shapes [FtsQuery] emits — enough to model "AND within
+         * an alternative, OR across alternatives, trailing '*' is a prefix". The real MATCH syntax
+         * is executed against SQLite in SearchMatchIntegrationTest.
+         */
         private fun matches(body: String, match: String): Boolean {
-            val terms = match.split('"').filter { it.isNotBlank() }
-            if (terms.isEmpty()) return false
-            return terms.all { body.contains(it, ignoreCase = true) }
+            if (match.isBlank()) return false
+            val alternatives = match.split(" OR ").map { it.trim().trim('(', ')') }
+            return alternatives.any { alternative ->
+                val terms = alternative.split(' ').filter { it.isNotBlank() }
+                terms.isNotEmpty() && terms.all { term ->
+                    body.contains(term.removeSuffix("*"), ignoreCase = true)
+                }
+            }
         }
     }
 
@@ -295,13 +304,16 @@ class InConversationSearchRepositoryTest {
 
         repo.search(thread, raw)
 
-        val call = dao.searchCalls.single()
+        // The FIRST query is the strict expression; a multi-token query may add one recall
+        // fallback after it, which is why this asserts on the head of the list rather than single().
+        val call = dao.searchCalls.first()
         assertEquals(FtsQuery.build(raw), call.match)
-        // Every token is quoted, so the operator soup is literal TEXT.
-        assertTrue(call.match.startsWith("\""))
-        assertFalse(call.match.contains(" NEAR("))
+        // The operator soup is punctuation: only the letters survive, each as a prefix term.
+        assertFalse(call.match.contains("\""))
+        assertFalse(call.match.contains("NEAR("))
+        assertTrue(call.match.endsWith("*"))
         // The counter uses the exact same expression as the page.
-        assertEquals(call.match, dao.countCalls.single().second)
+        assertEquals(call.match, dao.countCalls.first().second)
     }
 
     @Test
@@ -323,7 +335,8 @@ class InConversationSearchRepositoryTest {
         val dao = daoWithFixture()
         val repo = repository(dao)
 
-        val outcome = repo.search(thread, "zzzzz-no-such-token") as SearchOutcome.Completed
+        // ONE token, so the recall fallback cannot fire and "no results" stays observable.
+        val outcome = repo.search(thread, "zzzzznosuchtoken") as SearchOutcome.Completed
 
         assertEquals(0, outcome.page.total)
         assertTrue(outcome.page.hits.isEmpty())

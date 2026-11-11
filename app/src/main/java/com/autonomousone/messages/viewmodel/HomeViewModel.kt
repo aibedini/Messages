@@ -1176,7 +1176,15 @@ class HomeViewModel(
                     return@launch
                 }
                 val db = MessagesDatabase.get(getApplication())
-                val hits = db.messageFtsDao().threadHits(match, limit = SEARCH_RESULT_LIMIT)
+                var hits = db.messageFtsDao().threadHits(match, limit = SEARCH_RESULT_LIMIT)
+                // Strict AND found nothing: for a multi-word query, ask for ANY token instead of
+                // showing an empty screen. One extra indexed query, only on an empty result.
+                if (hits.isEmpty() && com.autonomousone.messages.data.FtsQuery.tokenCount(q) > 1) {
+                    hits = db.messageFtsDao().threadHits(
+                        com.autonomousone.messages.data.FtsQuery.buildAny(q),
+                        limit = SEARCH_RESULT_LIMIT
+                    )
+                }
                 val blocked = blocklistRepository.getBlocked()
                 val results = hits.mapNotNull { hit ->
                     val newest = db.messageDao()
