@@ -477,6 +477,23 @@ private const val MAX_HEADERS_BYTES = 32 * 1024  // header block cap
                                     if (smsc.isNotBlank()) put("smsc", smsc)
                                 })
                             }
+                            is com.autonomousone.messages.sms.SmsSender.SendOutcome.Held -> {
+                                // The modem does not have it yet: a voice call is holding the radio and
+                                // the durable hold queue will submit it when the call ends. 202 stays
+                                // correct for "accepted for delivery", but the body must say so.
+                                onRequestLog?.invoke("📩 POST /api/v1/sms/send HELD (voice call) -> ***${phone.takeLast(4)}")
+                                sendResponse(output, 202, JSONObject().apply {
+                                    put("status", "held_call")
+                                    put("id", outcome.rowId)
+                                    put("phone", phone)
+                                    put("message", message)
+                                    put("idempotent", false)
+                                    put("retrySafe", false)
+                                    put("note", "queued until the voice call ends; nothing was sent yet")
+                                    if (hasSubId) put("subscription_id", subscriptionId ?: -1)
+                                    if (smsc.isNotBlank()) put("smsc", smsc)
+                                })
+                            }
                             is com.autonomousone.messages.sms.SmsSender.SendOutcome.Rejected -> {
                                 onRequestLog?.invoke("📩 POST /api/v1/sms/send REJECTED (${outcome.reason})")
                                 sendResponse(output, 503, JSONObject().apply {

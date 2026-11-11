@@ -217,12 +217,14 @@ object GatewayOutgoingPipeline {
             originCommandId = cmd.commandId,
             clientMessageId = bubbleKey,
         )
-        val terminal = if (outcome is SmsSender.SendOutcome.Accepted)
+        // Held counts as handed off: the durable hold store owns the row until the call ends.
+        val handedOff = outcome !is SmsSender.SendOutcome.Rejected
+        val terminal = if (handedOff)
             RemoteCommandEntity.STATE_COMPLETED else RemoteCommandEntity.STATE_FAILED
         repo.finishCommandFrom(
             commandId = cmd.commandId,
             state = terminal,
-            errorCode = if (outcome is SmsSender.SendOutcome.Accepted) null
+            errorCode = if (handedOff) null
             else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
             fromStates = listOf(
                 RemoteCommandEntity.STATE_EXECUTING,

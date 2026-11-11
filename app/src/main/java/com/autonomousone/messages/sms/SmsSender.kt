@@ -107,6 +107,8 @@ class SmsSender(
             )
         ) {
             is SendOutcome.Accepted -> outcome.rowId
+            // A held message still has a durable row and will be sent when the call ends.
+            is SendOutcome.Held -> outcome.rowId
             is SendOutcome.Rejected -> outcome.rowId ?: -1L
         }
     }
@@ -164,6 +166,8 @@ class SmsSender(
             date = System.currentTimeMillis(),
             providerRowId = sentId
         )
+        // Set when dispatch queued the message behind a voice call instead of submitting it.
+        var held = false
         val dispatched = dispatch(
             sentId = sentId,
             phone = phone,
@@ -173,12 +177,15 @@ class SmsSender(
             showToast = showToast,
             threadId = threadId,
             assertedSimRef = assertedSimRef,
-            oneShotOverride = oneShotOverride
+            oneShotOverride = oneShotOverride,
+            onHeld = { held = true }
         )
-        return if (dispatched) {
-            SendOutcome.Accepted(rowId = sentId)
-        } else {
-            SendOutcome.Rejected(rowId = sentId, reason = "modem rejected send (see message STATUS_FAILED)")
+        return when {
+            // Nothing reached the modem. Reporting this as Accepted made a held message look
+            // submitted to every machine caller; the row is durable and sends when the call ends.
+            held -> SendOutcome.Held(rowId = sentId)
+            dispatched -> SendOutcome.Accepted(rowId = sentId)
+            else -> SendOutcome.Rejected(rowId = sentId, reason = "modem rejected send (see message STATUS_FAILED)")
         }
     }
 
@@ -295,11 +302,15 @@ class SmsSender(
                     clientMessageId = idempotencyKey,
                     threadId = threadId
                 )
+                // Held is handed off as far as this ledger is concerned: the durable hold store
+                // owns the pending row and will submit it when the call ends. Only a real
+                // rejection leaves the command FAILED.
+                val handedOff = outcome !is SendOutcome.Rejected
                 repo.finishCommandFrom(
                     commandId = plan.commandId,
-                    state = if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+                    state = if (handedOff) RemoteCommandEntity.STATE_COMPLETED
                     else RemoteCommandEntity.STATE_FAILED,
-                    errorCode = if (outcome is SendOutcome.Accepted) null
+                    errorCode = if (handedOff) null
                     else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
                     fromStates = listOf(
                         RemoteCommandEntity.STATE_ACCEPTED,
@@ -415,11 +426,12 @@ class SmsSender(
                 clientMessageId = clientMessageId,
                 threadId = threadId
             )
+            val handedOff = outcome !is SendOutcome.Rejected
             repo.finishCommandFrom(
                 commandId = plan.commandId,
-                state = if (outcome is SendOutcome.Accepted) RemoteCommandEntity.STATE_COMPLETED
+                state = if (handedOff) RemoteCommandEntity.STATE_COMPLETED
                 else RemoteCommandEntity.STATE_FAILED,
-                errorCode = if (outcome is SendOutcome.Accepted) null
+                errorCode = if (handedOff) null
                 else com.autonomousone.messages.sync.SyncErrorCode.SMS_SEND_FAILED.name,
                 fromStates = listOf(
                     RemoteCommandEntity.STATE_ACCEPTED,
@@ -428,6 +440,9 @@ class SmsSender(
             )
             when (outcome) {
                 is SendOutcome.Accepted -> IdempotentSendOutcome.Sent(outcome.rowId)
+                // Queued behind a voice call: the row will be submitted when it ends. Reporting a
+                // rejection here would invite a retry that the hold store is already going to make.
+                is SendOutcome.Held -> IdempotentSendOutcome.Sent(outcome.rowId)
                 is SendOutcome.Rejected -> IdempotentSendOutcome.Rejected(outcome.reason)
             }
         } catch (e: Exception) {
@@ -477,6 +492,16 @@ class SmsSender(
     sealed interface SendOutcome {
         /** Handed to SmsManager successfully; SENT/DELIVERED callbacks follow. */
         data class Accepted(val rowId: Long) : SendOutcome
+
+        /**
+         * NOT handed to the radio: a voice call owns the modem and the message is queued.
+         *
+         * It used to report [Accepted] — the row id is the same, but "accepted" means "the modem has
+         * it", and claiming that before SmsManager was ever called makes a call-held message
+         * indistinguishable from a submitted one for every machine caller (the EVE/GMweb queue
+         * included). The row stays durable and is dispatched when the call ends.
+         */
+        data class Held(val rowId: Long) : SendOutcome
 
         /** Telephony refused the send (SIM unavailable, radio off, ...). */
         data class Rejected(val rowId: Long?, val reason: String) : SendOutcome
@@ -548,6 +573,9 @@ class SmsSender(
             )
         ) {
             is SendOutcome.Accepted -> outcome.rowId
+            // Held still has a durable row that WILL be sent; returning null would make the caller
+            // treat it as a failure and retry into a duplicate.
+            is SendOutcome.Held -> outcome.rowId
             is SendOutcome.Rejected -> null
         }
 
@@ -682,6 +710,8 @@ class SmsSender(
         assertedSimRef: String? = null,
         oneShotOverride: Boolean = false,
         callHoldAllowed: Boolean = true,
+        /** Invoked when the message was queued behind a voice call instead of being submitted. */
+        onHeld: () -> Unit = {},
     ): Boolean {
         // ── THE STICKY CONVERSATION SIM (mission §13/§14/§15/§19/§20/§31) ───
         //
@@ -790,6 +820,8 @@ class SmsSender(
                             "otherSim=${call.callOnOtherSim}"
                     )
                     SmsCallHoldWorker.enqueue(context)
+                    // Tell the caller this was queued, not submitted: the modem has not seen it.
+                    onHeld()
                     return true
                 }
                 store.markCallAtSubmit(sentId)
