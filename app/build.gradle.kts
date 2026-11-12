@@ -45,8 +45,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 161
-        versionName = "3.11.3"
+        versionCode = 162
+        versionName = "3.11.4"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -87,6 +87,12 @@ android {
             if (keystoreAvailable) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+        debug {
+            // The CI "debug-apk" artifact is debug-signed, and a release APK can never be installed
+            // over it (Android reports the unhelpful "App not installed"). The suffix makes the two
+            // distinguishable in Settings → Apps without a PC or adb.
+            versionNameSuffix = "-debug"
         }
     }
     compileOptions {

@@ -58,6 +58,7 @@ class MessagesApp : Application() {
         // battery restrictions are the two most common "works in code, silent
         // on device" causes for the SMS pipeline. Log both at process start.
         logMissingRuntimePermissions()
+        logSigningIdentity()
         maybeWarnBatteryRestriction()
         // FIX 2: an install that enrolled its agent identity but never
         // completed a real browser approve would otherwise never produce the
@@ -257,6 +258,44 @@ class MessagesApp : Application() {
         ProcessExitDiagnostics.install(this, diagnosticsScope)
     }
 
+    /**
+     * Record WHICH KEY signed this install.
+     *
+     * Android refuses to update an app across a signing key change, and the installer reports that
+     * as the unhelpful "App not installed". It happens when a CI debug artifact (signed with the
+     * debug key) is installed on a phone and the next release APK (signed with the release key) is
+     * installed over it. Naming the fingerprint here turns that into a one-line answer instead of a
+     * guessing game: compare `sha256` with the release fingerprint below.
+     */
+    private fun logSigningIdentity() {
+        try {
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                    .signingInfo?.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                    .signatures
+            }
+            val bytes = signatures?.firstOrNull()?.toByteArray() ?: return
+            val sha256 = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+            val isRelease = sha256 == RELEASE_SIGNING_SHA256
+            DiagnosticLog.event("APP_SIGNING", "sha256=$sha256 release=$isRelease")
+            if (!isRelease) {
+                Log.w(
+                    "APP_SIGNING",
+                    "this install is NOT signed with the release key — a release APK cannot " +
+                        "update it (Android reports 'App not installed'). Uninstall once, then " +
+                        "install the release APK."
+                )
+            }
+        } catch (_: Throwable) {
+            // A signing check must never affect startup.
+        }
+    }
+
     /** Log any runtime-critical permission that is currently denied. */
     private fun logMissingRuntimePermissions() {
         val required = listOf(
@@ -325,5 +364,15 @@ class MessagesApp : Application() {
         } catch (e: Exception) {
             Log.w("BatteryOptimization", "battery prompt notification failed", e)
         }
+    }
+
+    private companion object {
+        /**
+         * SHA-256 of the certificate that signs every GitHub release APK
+         * (`CN=Messages SMS Gateway, OU=AutonomousOne, O=AutonomousOne, C=IR`).
+         * Public material: it identifies the key, it does not weaken it.
+         */
+        const val RELEASE_SIGNING_SHA256 =
+            "fe0b6a00e119e3e57b3042c7f244cfde0414ffb2f15ed288c62e4b1115b9fe1b"
     }
 }
