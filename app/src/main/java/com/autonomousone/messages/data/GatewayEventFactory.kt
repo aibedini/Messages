@@ -40,6 +40,14 @@ object GatewayEventFactory {
         const val THREAD_READ = "THREAD_READ"
         const val DEVICE_STATUS_CHANGED = "DEVICE_STATUS_CHANGED"
         const val SIM_STATE_CHANGED = "SIM_STATE_CHANGED"
+
+        /**
+         * What the user did with an AI suggestion (XR-GA-017).
+         *
+         * A content-bearing event: `editedText` is text the user typed from a suggestion, so it is
+         * encrypted exactly like a message payload and NEVER appears in an envelope field.
+         */
+        const val SUGGESTION_FEEDBACK = "SUGGESTION_FEEDBACK"
     }
 
     object Encoding {
@@ -497,4 +505,30 @@ object GatewayEventFactory {
             conversationId,
             JSONObject().put("conversationId", conversationId).toString(),
         ).copy(revision = revision, sortKey = revision)
+
+    /**
+     * `SUGGESTION_FEEDBACK` — what the user did with one AI suggestion (XR-GA-017).
+     *
+     * ## Identity is random, NOT deterministic
+     *
+     * Every other event here is rebuilt from the same provider row and must therefore dedupe
+     * (deterministic UUID + unique index). Feedback is the opposite: selecting the same suggestion
+     * twice on two different messages is two real user actions, and collapsing them would make the
+     * rating wrong in the direction that matters — it would look like one selection. So the id is
+     * random, and redelivery of the *event upload* (not of the user action) is still deduped by the
+     * outbox row's own primary key.
+     *
+     * The payload is built by [com.autonomousone.messages.sync.SuggestionFeedback.payloadJson] so the
+     * wire shape has exactly one owner; this function only turns it into a row.
+     */
+    fun suggestionFeedback(
+        conversationId: String,
+        payloadJson: String,
+        atMs: Long = System.currentTimeMillis(),
+    ): GatewayEventOutboxEntity = outboxRow(
+        UUID.randomUUID().toString(),
+        Types.SUGGESTION_FEEDBACK,
+        conversationId,
+        payloadJson
+    ).copy(revision = atMs, sortKey = atMs)
 }

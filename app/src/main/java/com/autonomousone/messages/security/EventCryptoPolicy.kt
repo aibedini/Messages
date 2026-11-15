@@ -20,6 +20,10 @@ object EventCryptoPolicy {
         "CONVERSATION_UPSERTED" to setOf(3),
         "CONVERSATION_DELETED" to setOf(3),
         "THREAD_READ" to setOf(1, 2, 3),
+        // XR-GA-017: `editedText` is human-authored text, so this event is content-bearing and must be
+        // encrypted on the wire. Listed here or it would be refused as an unknown type at upload time
+        // — the allowlist is what makes "no plaintext leaves the device" a checked property.
+        "SUGGESTION_FEEDBACK" to setOf(1, 2, 3),
         "CONTACTS_SNAPSHOT" to setOf(1, 2),
         "CONTACTS_CHANGED" to setOf(1, 2),
     )

@@ -41,7 +41,10 @@ class CommandRoutingDriftTest {
                 "MARK_THREAD_READ",
                 "REFRESH_DEVICE_TELEMETRY",
                 "FETCH_THREAD_HISTORY",
-                "SET_CONVERSATION_PREFERRED_SIM"
+                "SET_CONVERSATION_PREFERRED_SIM",
+                // XR-GA-017: the AI suggestion command, advertised only once its executor, storage,
+                // UI and feedback path all exist — which is what this build ships.
+                "SUGGESTIONS_READY"
             ),
             CommandRouting.ADVERTISED_COMMAND_TYPES
         )

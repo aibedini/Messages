@@ -86,9 +86,11 @@ import com.autonomousone.messages.BuildConfig
         // v23 — Full-mirror verification progress (ADDITIVE; see MirrorVerifyState.kt).
         MirrorVerifyStateEntity::class,
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
-        PendingInboundSmsEntity::class
+        PendingInboundSmsEntity::class,
+        // v29 — AI reply suggestions per conversation (XR-GA-017; ADDITIVE; see SuggestionCards.kt).
+        SuggestionCardEntity::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -128,6 +130,8 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun mirrorVerifyStateDao(): MirrorVerifyStateDao
     // v24 — Inbound messages held until they can be written to the provider (mission §16).
     abstract fun pendingInboundSmsDao(): PendingInboundSmsDao
+    // v29 — AI reply suggestions per conversation (XR-GA-017).
+    abstract fun suggestionCardDao(): SuggestionCardDao
 
     companion object {
         @Volatile
@@ -569,10 +573,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 28
+        const val CURRENT_SCHEMA_VERSION = 29
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 27
+        const val PREVIOUS_SCHEMA_VERSION = 28
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -953,6 +957,48 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v28 -> v29: `suggestion_cards` — the AI's reply suggestions for one inbound message
+         * (XR-GA-017).
+         *
+         * ## Why a new table rather than columns on `messages`
+         *
+         * A suggestion is not a property of a message: it arrives asynchronously, after the fact, and
+         * describes what the user might say BACK. It has its own lifecycle — received, shown, expired,
+         * replaced by a newer batch — and it must be deletable without touching the message mirror.
+         * Purely ADDITIVE: no existing table, column or index is rebuilt, so the migration is a create
+         * plus its indices and nothing can lose data.
+         *
+         * `payload_ciphertext` is a sealed blob from day one, and the columns are exactly the ones the
+         * contract names (`docs/contracts/messages-suggestion-ui.md` §4) — the suggestion id, kind and
+         * badge live INSIDE the sealed payload because they are content-adjacent, while the four values
+         * the device must query on (`thread_id`, `for_message_id`, `expires_at`, `generation`) are
+         * columns.
+         *
+         * `expires_at` is indexed because the expiry sweep is global (`DELETE … WHERE expires_at <= ?`)
+         * and runs on every intake, not per conversation.
+         */
+        internal val UPGRADE_TO_V29_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `suggestion_cards` (" +
+                "`thread_id` INTEGER NOT NULL, " +
+                "`for_message_id` TEXT NOT NULL, " +
+                "`payload_ciphertext` BLOB NOT NULL, " +
+                "`expires_at` INTEGER NOT NULL, " +
+                "`received_at` INTEGER NOT NULL, " +
+                "`generation` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`thread_id`, `for_message_id`))",
+            "CREATE INDEX IF NOT EXISTS `index_suggestion_cards_thread_id` " +
+                "ON `suggestion_cards` (`thread_id`)",
+            "CREATE INDEX IF NOT EXISTS `index_suggestion_cards_expires_at` " +
+                "ON `suggestion_cards` (`expires_at`)"
+        )
+
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V29_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -964,7 +1010,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

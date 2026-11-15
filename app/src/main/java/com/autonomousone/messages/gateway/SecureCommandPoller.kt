@@ -2,17 +2,25 @@ package com.autonomousone.messages.gateway
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
 import com.autonomousone.messages.BuildConfig
 import com.autonomousone.messages.data.GatewayEventFactory
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.RemoteCommandEntity
+import com.autonomousone.messages.data.SuggestionCardEntity
+import com.autonomousone.messages.messaging.MessagingPreferences
 import com.autonomousone.messages.repository.GatewaySyncRepository
+import com.autonomousone.messages.security.SuggestionCardVault
+import com.autonomousone.messages.security.ThreadLocalOnlyPolicy
 import com.autonomousone.messages.sms.GatewayOutgoingPipeline
 import com.autonomousone.messages.sync.CommandDrainPolicy
 import com.autonomousone.messages.sync.CommandRoute
 import com.autonomousone.messages.sync.CommandRouting
 import com.autonomousone.messages.sync.ConversationSimCommand
 import com.autonomousone.messages.sync.ConversationSimFailure
+import com.autonomousone.messages.sync.SuggestionCommandFailure
+import com.autonomousone.messages.sync.SuggestionDeliveryPolicy
+import com.autonomousone.messages.sync.SuggestionsReadyCommand
 import com.autonomousone.messages.sync.ThreadHistoryCommand
 import com.autonomousone.messages.data.TelephonySyncCoordinator
 import com.autonomousone.messages.data.MessageEntity
@@ -593,6 +601,9 @@ class SecureCommandPoller(
                         // Sticky conversation SIM: persist, publish the canonical event, then ACK.
                         CommandRoute.CONVERSATION_SIM ->
                             executeSetConversationPreferredSim(cmd, plaintext, repo)
+                        // AI reply suggestions (XR-GA-017): validate against the local mirror, seal the
+                        // cards, then ACK. Never enters the SMS pipeline and never writes a message.
+                        CommandRoute.SUGGESTIONS -> executeSuggestionsReady(cmd, plaintext, repo)
                         // SEND_SMS is the ONLY type that may enter the SMS pipeline.
                         CommandRoute.SMS_PIPELINE -> withContext(Dispatchers.IO) {
                             GatewayOutgoingPipeline.executeIngested(
@@ -1029,6 +1040,167 @@ class SecureCommandPoller(
                 RemoteCommandEntity.STATE_EXECUTING
             )
         )
+    }
+
+    /**
+     * `SUGGESTIONS_READY` — the AI's reply suggestions for one conversation (XR-GA-017).
+     *
+     * ## Order is the contract
+     *
+     * ```text
+     * parse -> resolve thread -> LOCAL_ONLY gate -> generation -> expiry/anchor -> seal -> persist -> ACK
+     * ```
+     *
+     * The ACK happens only after the cards are durably sealed, because "GMweb was told the suggestion
+     * was delivered" and "the user can actually see it" must be the same fact. A refusal is a terminal
+     * FAILED carrying the exact reason (stale, expired, unknown anchor, LOCAL_ONLY) — never a silent
+     * success, and never a retry that would deliver an answer about a conversation that has moved on.
+     *
+     * ## What this NEVER does
+     *
+     * It does not touch a message row, the send state machine, the SIM preference or the outbox: the
+     * only writes are `suggestion_cards` rows. Showing a suggestion is the UI's job, and sending is a
+     * user action — this executor cannot cause either.
+     */
+    private suspend fun executeSuggestionsReady(
+        cmd: RemoteCommandEntity,
+        plaintext: ByteArray,
+        repo: GatewaySyncRepository
+    ) {
+        check(repo.markCommandAcceptedIfReceived(cmd.commandId)) { "command already owned" }
+        repo.markCommandState(
+            cmd.commandId, RemoteCommandEntity.STATE_EXECUTING,
+            listOf(RemoteCommandEntity.STATE_ACCEPTED)
+        )
+
+        val request = when (val parsed = SuggestionsReadyCommand.parse(String(plaintext, Charsets.UTF_8))) {
+            is SuggestionsReadyCommand.Parsed.Invalid ->
+                throw SuggestionCommandFailure.InvalidPayload(parsed.code, parsed.detail)
+            is SuggestionsReadyCommand.Parsed.Ok -> parsed.request
+        }
+
+        val db = MessagesDatabase.get(context)
+        val threadId = resolveSuggestionThread(db, request.threadRef)
+        val conversation = withContext(Dispatchers.IO) { db.conversationDao().byThread(threadId) }
+            ?: throw SuggestionCommandFailure.ThreadNotFound(request.threadRef)
+
+        val recentInbound = withContext(Dispatchers.IO) {
+            db.messageDao().recentInbound(threadId, SuggestionDeliveryPolicy.ANCHOR_WINDOW)
+        }
+        val currentGeneration = withContext(Dispatchers.IO) { db.messageDao().countInbound(threadId) }
+
+        // ADR-006 defence in depth: the command should never have been produced for a LOCAL_ONLY
+        // conversation, but if it was, storing or rendering its text would spread content the device
+        // deliberately kept off the network. Refused before anything is written.
+        val address = conversation.rawAddress.ifBlank { conversation.normalizedAddress }
+        val probeBody = recentInbound.firstOrNull()?.body ?: conversation.snippet
+        val localOnly = withContext(Dispatchers.IO) {
+            ThreadLocalOnlyPolicy.isLocalOnly(
+                sender = address,
+                body = probeBody,
+                prefs = MessagingPreferences(context.applicationContext)
+            )
+        }
+        if (localOnly) throw SuggestionCommandFailure.LocalOnlyThread(threadId)
+
+        val anchors = recentInbound.map { message ->
+            SuggestionDeliveryPolicy.Anchor(
+                canonicalId = GatewayEventFactory.messageIdFor(
+                    message.source, message.providerId, message.date
+                ),
+                aliases = listOf("${message.source}:${message.providerId}")
+            )
+        }
+        val outcome = SuggestionDeliveryPolicy.decide(
+            commandGeneration = request.conversationGeneration,
+            currentGeneration = currentGeneration,
+            expiresAtMs = request.expiresAtMs,
+            nowMs = System.currentTimeMillis(),
+            forMessageRef = request.forMessageRef,
+            anchors = anchors
+        )
+        val anchorMessageId = when (outcome) {
+            is SuggestionDeliveryPolicy.Outcome.Accept -> outcome.anchorMessageId
+            is SuggestionDeliveryPolicy.Outcome.Reject -> throw when (outcome.detail) {
+                "expired" -> SuggestionCommandFailure.Expired(request.expiresAtMs)
+                "generation" -> SuggestionCommandFailure.StaleGeneration(
+                    commandGeneration = request.conversationGeneration,
+                    currentGeneration = currentGeneration
+                )
+                "anchor_superseded" -> SuggestionCommandFailure.SupersededMessage(request.forMessageRef)
+                else -> SuggestionCommandFailure.UnknownMessage(request.forMessageRef)
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        val sealed = try {
+            SuggestionCardVault.seal(
+                SuggestionsReadyCommand.payloadJson(request, anchorMessageId).toByteArray(Charsets.UTF_8),
+                threadId = threadId
+            )
+        } catch (e: Exception) {
+            throw SuggestionCommandFailure.PersistFailed(e)
+        }
+
+        try {
+            withContext(Dispatchers.IO) {
+                // ONE transaction: the old batch for this conversation disappears exactly when the new
+                // one appears, so the UI can never observe two anchors' cards at once. Expired rows are
+                // swept in the same pass — the cleanup is a property of intake, not a separate job that
+                // a phone which never reopens the app would never run.
+                db.withTransaction {
+                    db.suggestionCardDao().deleteForThread(threadId)
+                    db.suggestionCardDao().upsert(
+                        SuggestionCardEntity(
+                            threadId = threadId,
+                            forMessageId = anchorMessageId,
+                            payloadCiphertext = sealed,
+                            expiresAt = request.expiresAtMs,
+                            receivedAt = now,
+                            generation = request.conversationGeneration
+                        )
+                    )
+                    db.suggestionCardDao().deleteExpired(now)
+                }
+            }
+        } catch (e: Exception) {
+            throw SuggestionCommandFailure.PersistFailed(e)
+        }
+
+        DiagnosticLog.event(
+            "GM_SUGGEST",
+            "stored thread=$threadId count=${request.suggestions.size} " +
+                "generation=${request.conversationGeneration} current=$currentGeneration"
+        )
+
+        repo.finishCommandFrom(
+            commandId = cmd.commandId,
+            state = RemoteCommandEntity.STATE_COMPLETED,
+            errorCode = null,
+            fromStates = listOf(
+                RemoteCommandEntity.STATE_ACCEPTED,
+                RemoteCommandEntity.STATE_EXECUTING
+            )
+        )
+    }
+
+    /**
+     * `thread_ref` is either the numeric Telephony thread id or the opaque conversation UUID.
+     *
+     * Both are accepted because both already exist on this device: the thread id addresses the mirror
+     * directly, and the UUID is the only identity GMweb was ever given (TechSpec §12). Nothing else is
+     * guessed — a ref that matches neither is refused rather than normalised into some other thread.
+     */
+    private suspend fun resolveSuggestionThread(
+        db: MessagesDatabase,
+        threadRef: String
+    ): Long {
+        threadRef.toLongOrNull()?.takeIf { it > 0L }?.let { return it }
+        val mapped = withContext(Dispatchers.IO) {
+            db.remoteConversationMapDao().getByConversationId(threadRef)
+        } ?: throw SuggestionCommandFailure.ThreadNotFound(threadRef)
+        if (mapped.threadId <= 0L) throw SuggestionCommandFailure.ThreadNotFound(threadRef)
+        return mapped.threadId
     }
 
     /** The conversation id for a thread, from the mapping or freshly minted, exactly as sync does. */

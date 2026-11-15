@@ -45,8 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 162
-        versionName = "3.11.4"
+        // XR-GA-017 (suggestion cards): versionCode +1, patch release, matching the repo's convention
+        // (163 / 3.11.5 follows 162 / 3.11.4).
+        versionCode = 163
+        versionName = "3.11.5"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -172,6 +172,32 @@ enum class SyncErrorCode {
     /** The preference could not be durably persisted, so the change must not be ACKed as done. */
     PREFERENCE_UPDATE_FAILED,
 
+    // ── Suggestion commands (SUGGESTIONS_READY) ──────────────────────────────
+    //
+    // A suggestion that arrives too late, for a message this device no longer considers the newest
+    // inbound one, or for a thread that is LOCAL_ONLY is not a failure of anything the user did. It
+    // still needs its own name: "the AI's answer was already obsolete when it reached the phone" and
+    // "the phone refused to render a card for a conversation GOD AI must never have seen" are two
+    // different operational facts, and neither may be reported as a send or a read failure.
+
+    /** The decrypted payload is not the `schema_version 1` contract this build understands. */
+    SUGGESTIONS_INVALID_PAYLOAD,
+
+    /** The command's `conversation_generation` is older than the device's, or its anchor is superseded. */
+    SUGGESTIONS_STALE,
+
+    /** The command's `expires_at` had already passed when it was validated. */
+    SUGGESTIONS_EXPIRED,
+
+    /** `for_message_ref` does not identify any inbound message on this device. */
+    SUGGESTIONS_UNKNOWN_MESSAGE,
+
+    /** The thread is LOCAL_ONLY, so no suggestion may be stored or rendered for it. */
+    SUGGESTIONS_LOCAL_ONLY_THREAD,
+
+    /** The cards could not be sealed/durably written, so the command must not be ACKed as stored. */
+    SUGGESTIONS_PERSIST_FAILED,
+
     // ── Command execution ────────────────────────────────────────────────────
 
     /**
@@ -228,6 +254,11 @@ enum class SyncErrorCode {
             // SAME request unchanged would produce the same answer.
             THREAD_NOT_FOUND, SIM_NOT_FOUND, SIM_INACTIVE, INVALID_SIM_REFERENCE,
             PREFERENCE_UPDATE_FAILED,
+            // Suggestion commands: a late, superseded, expired, unknown-anchor or LOCAL_ONLY refusal
+            // is a statement about this specific payload. Re-driving the SAME command unchanged would
+            // get the same answer, so none of them is transient.
+            SUGGESTIONS_INVALID_PAYLOAD, SUGGESTIONS_STALE, SUGGESTIONS_EXPIRED,
+            SUGGESTIONS_UNKNOWN_MESSAGE, SUGGESTIONS_LOCAL_ONLY_THREAD, SUGGESTIONS_PERSIST_FAILED,
             COMMAND_INTERRUPTED_AFTER_SUBMIT, COMMAND_EXPIRED_BEFORE_CLAIM,
             UNKNOWN -> false
         }

@@ -484,6 +484,44 @@ interface MessageDao {
     suspend fun countUnread(threadId: Long): Int
 
     /**
+     * How many INBOUND messages this thread has — the conversation generation watermark.
+     *
+     * XR-GA-017 needs one monotonic, per-conversation number to compare a `SUGGESTIONS_READY`
+     * command's `conversation_generation` against. The database deliberately has no separate
+     * generation table: its existing per-conversation watermarks are either the conversation
+     * projection's `lastMessageDate` (a timestamp, not the counter the contract sends) or the
+     * global history/CKE generations, which are not conversation-scoped. The inbound count IS the
+     * monotonic per-conversation quantity the mirror already owns, and it is served by the
+     * `(threadId, read, type)` index — one indexed count, never a scan.
+     *
+     * It can only ever grow as messages arrive, which is exactly the property a staleness check
+     * needs. History backfill also grows it, so the comparison is deliberately ONE-DIRECTIONAL: a
+     * command is refused only when its generation is strictly older. A device that has not yet
+     * mirrored an older page must never be able to reject a fresh suggestion.
+     */
+    @Query("SELECT COUNT(*) FROM messages WHERE threadId = :threadId AND type = 1")
+    suspend fun countInbound(threadId: Long): Int
+
+    /**
+     * The newest inbound messages of a thread, newest first — bounded anchor resolution for
+     * `SUGGESTIONS_READY` (XR-GA-017).
+     *
+     * The bound matters: a conversation can hold tens of thousands of rows, and resolving a
+     * `for_message_ref` must never walk them. The newest few are the only ones a fresh suggestion
+     * can name; anything older is STALE by definition, and a ref that is not in this window is
+     * reported as stale rather than as "unknown" when it belongs to a message we did not read.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE threadId = :threadId AND type = 1
+        ORDER BY date DESC, providerId DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentInbound(threadId: Long, limit: Int): List<MessageEntity>
+
+    /**
      * PHASE 5: every thread's unread count in ONE aggregate query.
      *
      * The full projection rebuild used to call countUnread() once per

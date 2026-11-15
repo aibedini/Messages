@@ -135,6 +135,10 @@ import com.autonomousone.messages.repository.ConversationParticipantActions
 import com.autonomousone.messages.repository.ConversationParticipantState
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.repository.ParticipantContactAction
+import com.autonomousone.messages.repository.SuggestionCardsRepository
+import com.autonomousone.messages.repository.SuggestionFeedbackPublisher
+import com.autonomousone.messages.security.ThreadLocalOnlyPolicy
+import com.autonomousone.messages.sync.SuggestionFeedback
 import com.autonomousone.messages.ui.components.ChatBubble
 import com.autonomousone.messages.ui.components.contentAwareTextStyle
 import com.autonomousone.messages.ui.components.ConversationTopBar
@@ -146,6 +150,11 @@ import com.autonomousone.messages.ui.conversation.ConversationSearchTopBar
 import com.autonomousone.messages.ui.conversation.ConversationSelectionTopBar
 import com.autonomousone.messages.ui.conversation.MessageEntrance
 import com.autonomousone.messages.ui.conversation.MessageList
+import com.autonomousone.messages.ui.conversation.SuggestionCardUi
+import com.autonomousone.messages.ui.conversation.SuggestionSlotPolicy
+import com.autonomousone.messages.ui.conversation.composerDraft
+import com.autonomousone.messages.ui.conversation.suggestionAnchorId
+import com.autonomousone.messages.ui.conversation.withSuggestionSlot
 import com.autonomousone.messages.ui.conversation.buildReverseChatItems
 import com.autonomousone.messages.ui.conversation.chatItemKey
 import com.autonomousone.messages.ui.conversation.resolveConversationEmptyContent
@@ -520,11 +529,193 @@ fun ConversationScreen(
         viewModel.runSearchPipeline()
     }
 
+    // ── XR-GA-017: AI suggestion cards ───────────────────────────────────────
+    //
+    // The cards are DELIVERED, not computed here: a `SUGGESTIONS_READY` command seals one batch into
+    // `suggestion_cards`, this flow opens it on IO, and the screen only decides whether it may be
+    // shown. Nothing in this block can send a message.
+    val suggestionRepository = remember { SuggestionCardsRepository.get(context) }
+    val suggestionFeedbackPublisher = remember { SuggestionFeedbackPublisher.get(context) }
+    // Privacy is evaluated with the SAME firewall inputs the message path used, so a LOCAL_ONLY
+    // conversation can never grow a card simply because the command arrived.
+    val suggestionPrivacyPrefs = remember {
+        com.autonomousone.messages.messaging.MessagingPreferences(context)
+    }
+    val suggestionQuickReplies = remember(threadId) {
+        com.autonomousone.messages.messaging.QuickRepliesPreferences(context).getAll()
+    }
+    var suggestionCards by remember(threadId) { mutableStateOf<List<SuggestionCardUi>>(emptyList()) }
+    var suggestionNowMs by remember(threadId) { mutableStateOf(System.currentTimeMillis()) }
+    // The card the draft came from, so a send can report `edited` (and only when it really was edited).
+    var activeSuggestion by remember(threadId) { mutableStateOf<SuggestionCardUi?>(null) }
+    var suggestionReportTarget by remember(threadId) { mutableStateOf<SuggestionCardUi?>(null) }
+    val suggestionScope = rememberCoroutineScope()
+
+    LaunchedEffect(threadId) {
+        // Expired rows can never be shown again; dropping them on open keeps the table bounded even if
+        // nothing else ever prunes it.
+        runCatching { suggestionRepository.clearExpired() }
+        suggestionRepository.observe(threadId).collect { batches ->
+            suggestionCards = batches.flatMap { SuggestionCardUi.from(it) }
+        }
+    }
+    // Expiry is time-driven, not event-driven: when the soonest card's `expires_at` passes, the row must
+    // disappear without any database write to prompt it.
+    LaunchedEffect(suggestionCards) {
+        while (true) {
+            val now = System.currentTimeMillis()
+            suggestionNowMs = now
+            val nextExpiry = suggestionCards.minOfOrNull { it.expiresAtMs } ?: break
+            if (nextExpiry <= now) break
+            delay(nextExpiry - now + 50)
+        }
+    }
+
+    fun selectSuggestion(card: SuggestionCardUi) {
+        // COMPOSER ONLY. There is deliberately no sender, transport gate or send-state call in this
+        // function — sending stays the user's separate, explicit action on the send control.
+        message = card.composerDraft()
+        activeSuggestion = card
+        suggestionFeedbackPublisher.publish(
+            SuggestionFeedback(
+                threadId = threadId,
+                suggestionId = card.id,
+                action = SuggestionFeedback.Action.SELECTED,
+                forMessageRef = card.anchorMessageId,
+                conversationGeneration = card.generation
+            )
+        )
+    }
+
+    fun dismissSuggestions() {
+        val dismissed = suggestionCards
+        dismissed.forEach { card ->
+            suggestionFeedbackPublisher.publish(
+                SuggestionFeedback(
+                    threadId = threadId,
+                    suggestionId = card.id,
+                    action = SuggestionFeedback.Action.REJECTED,
+                    forMessageRef = card.anchorMessageId,
+                    conversationGeneration = card.generation
+                )
+            )
+        }
+        activeSuggestion = null
+        suggestionScope.launch { runCatching { suggestionRepository.dismiss(threadId) } }
+    }
+
+    suggestionReportTarget?.let { card ->
+        val sourceLabel = when (card.badge) {
+            com.autonomousone.messages.ui.conversation.SuggestionBadge.KNOWLEDGE ->
+                stringResource(R.string.suggestion_badge_knowledge)
+            com.autonomousone.messages.ui.conversation.SuggestionBadge.NEEDS_REVIEW ->
+                stringResource(R.string.suggestion_badge_needs_review)
+        }
+        val timeFormat = remember {
+            java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.SHORT,
+                java.text.DateFormat.SHORT
+            )
+        }
+        // No fabricated confidence: this sheet explains WHERE the text came from and WHEN it arrived,
+        // and offers only the one action the contract defines — report it.
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { suggestionReportTarget = null },
+            title = { Text(stringResource(R.string.suggestion_why_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(text = card.text, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = stringResource(R.string.suggestion_source_fmt, "GOD AI · $sourceLabel"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.suggestion_received_fmt,
+                            timeFormat.format(Date(card.receivedAtMs))
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.suggestion_expires_fmt,
+                            timeFormat.format(Date(card.expiresAtMs))
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        // The sender's own estimate when it gave one; otherwise the device's real
+                        // encoding-aware count (UCS-2 for Persian), never a made-up number.
+                        text = stringResource(
+                            R.string.suggestion_segments_fmt,
+                            card.segments
+                                ?: com.autonomousone.messages.utils.SmsSegmentCounter.count(card.text).segments
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        suggestionFeedbackPublisher.publish(
+                            SuggestionFeedback(
+                                threadId = threadId,
+                                suggestionId = card.id,
+                                action = SuggestionFeedback.Action.REPORTED,
+                                forMessageRef = card.anchorMessageId,
+                                conversationGeneration = card.generation
+                            )
+                        )
+                        suggestionReportTarget = null
+                    }
+                ) {
+                    Text(stringResource(R.string.suggestion_report_action))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { suggestionReportTarget = null }) {
+                    Text(stringResource(R.string.suggestion_close_action))
+                }
+            }
+        )
+    }
+
     // v2.6.7: the LazyColumn renders reverseLayout, so the DATA order is
     // newest→oldest and the mapper owns the date-separator placement.
     // Canonical ViewModel order (oldest→newest) never changes.
+    //
+    // XR-GA-017 adds ONE row to that data: the suggestion slot, inserted under the inbound message it
+    // answers. It is computed here (not in the mapper) because its content is POLICY — expiry, a newer
+    // inbound message, LOCAL_ONLY — while `buildReverseChatItems` stays a pure message-ordering function.
     val chatItems by remember {
-        derivedStateOf { buildReverseChatItems(conversationRows) }
+        derivedStateOf {
+            val rows = searchJumpWindow?.rows ?: messages
+            val newestInbound = rows.lastOrNull { it.type == 1 }
+            val newestInboundId = newestInbound?.let { suggestionAnchorId(it) }
+            val localOnly = newestInbound != null && ThreadLocalOnlyPolicy.isLocalOnly(
+                sender = newestInbound.sender,
+                body = newestInbound.message,
+                prefs = suggestionPrivacyPrefs
+            )
+            val slot = SuggestionSlotPolicy.resolve(
+                cards = suggestionCards,
+                newestInboundMessageId = newestInboundId,
+                threadLocalOnly = localOnly,
+                nowMs = suggestionNowMs,
+                quickReplies = suggestionQuickReplies,
+                composerEmpty = message.isBlank()
+            )
+            withSuggestionSlot(
+                items = buildReverseChatItems(rows),
+                slot = slot,
+                anchorMessageId = SuggestionSlotPolicy.anchorOf(slot, newestInboundId)
+            )
+        }
     }
     // Long-lived scroll collectors must see the latest mapped list without
     // restarting (and potentially missing) a one-shot SharedFlow command.
@@ -1020,6 +1211,12 @@ fun ConversationScreen(
                     selectedKeys = viewModel.messageSelection.keys,
                     onEnterSelection = { sms -> viewModel.enterMessageSelection(sms) },
                     onToggleSelection = { sms -> viewModel.toggleMessageSelection(sms) },
+                    // XR-GA-017: a tap fills the composer (never sends), a long-press opens the
+                    // source/time sheet, and dismissing the batch reports it as rejected.
+                    onSuggestionSelected = { card -> selectSuggestion(card) },
+                    onSuggestionLongPress = { card -> suggestionReportTarget = card },
+                    onSuggestionDismiss = { dismissSuggestions() },
+                    onQuickReplySelected = { reply -> message = reply.text }
                 )
 
                     ConversationEmptyContent.FAILED -> ConversationLoadFailure(
@@ -1504,6 +1701,26 @@ fun ConversationScreen(
                                             // yet, where there is no threadId to store it against.
                                             subscriptionOverride = pendingFirstSendSubId
                                         )
+                                    }
+
+                                    // XR-GA-017 feedback: `selected` was reported when the draft was
+                                    // inserted; if the user changed it before sending, that edit is
+                                    // reported HERE — after the send call, with no influence over it.
+                                    // The send path itself (SmsSender / lane / SIM policy) is untouched.
+                                    activeSuggestion?.let { card ->
+                                        if (msgToSend != card.text) {
+                                            suggestionFeedbackPublisher.publish(
+                                                SuggestionFeedback(
+                                                    threadId = threadId,
+                                                    suggestionId = card.id,
+                                                    action = SuggestionFeedback.Action.EDITED,
+                                                    forMessageRef = card.anchorMessageId,
+                                                    editedText = msgToSend,
+                                                    conversationGeneration = card.generation
+                                                )
+                                            )
+                                        }
+                                        activeSuggestion = null
                                     }
 
                                     if (sendingIntoHistory) {

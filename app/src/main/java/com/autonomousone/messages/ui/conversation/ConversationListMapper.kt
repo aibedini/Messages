@@ -30,6 +30,18 @@ sealed interface ChatListItem {
         /** Localized display text ("Today", "Yesterday", …). Never an id. */
         val dateText: String
     ) : ChatListItem
+
+    /**
+     * XR-GA-017: the suggestion slot, inserted directly UNDER the inbound message it answers.
+     *
+     * It is a list row rather than an overlay so it scrolls with the conversation: a card pinned above
+     * the composer would still claim to answer a message the user has scrolled far away from. This
+     * mapper does not create it — [withSuggestionSlot] does, because the slot's content is policy, not
+     * message ordering ([buildReverseChatItems] stays a pure function of the messages alone).
+     */
+    data class SuggestionRow(
+        val slot: SuggestionSlotState
+    ) : ChatListItem
 }
 
 /**
@@ -77,6 +89,9 @@ fun chatItemKey(item: ChatListItem): String = when (item) {
     is ChatListItem.DateSeparator -> "date_${item.dayKey}"
     // MMS model ids are negative; "msg_-7_date" stays unique vs "msg_7_date".
     is ChatListItem.MessageItem -> "msg_${item.sms.id}_${item.sms.date}_${item.sms.type}"
+    // ONE slot per conversation; its content is not part of the key, so a refreshed batch animates in
+    // place instead of being treated as a new row (which would re-run the entry animation).
+    is ChatListItem.SuggestionRow -> "suggestion_slot"
 }
 
 private fun localDayKey(epochMillis: Long): String {
