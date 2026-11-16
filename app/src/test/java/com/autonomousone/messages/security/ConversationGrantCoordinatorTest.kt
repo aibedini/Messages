@@ -31,12 +31,14 @@ class ConversationGrantCoordinatorTest {
     private val keys = FakeKeySource()
     private val outbox = RecordingOutbox()
     private val epoch = FakeEpoch("epoch-7")
+    private val aiDevices = FakeAiDevices()
 
     private fun coordinator(
         store: ConversationScopeStore = this.store,
         keys: ConversationKeySource = this.keys,
         outbox: GrantOutbox = this.outbox,
         epoch: GrantEpochSource = this.epoch,
+        aiDevices: AiAgentDeviceSource = this.aiDevices,
     ): ConversationGrantCoordinator = ConversationGrantCoordinator(
         store = store,
         keys = keys,
@@ -44,6 +46,7 @@ class ConversationGrantCoordinatorTest {
         signer = FakeSigner(),
         wrapper = FakeWrapper(),
         epoch = epoch,
+        aiDevices = aiDevices,
         now = { now },
         grantValidityMillis = ONE_DAY,
     )
@@ -479,6 +482,13 @@ class ConversationGrantCoordinatorTest {
     private class FakeEpoch(private val id: String?) : GrantEpochSource {
         override suspend fun epochId(): String =
             id ?: throw IllegalStateException("no READ_MESSAGES epoch yet")
+    }
+
+    /** No linked AI devices: slice 2b's cases never fan a revoke out to one. */
+    private class FakeAiDevices(
+        private val targets: List<GrantTarget> = emptyList(),
+    ) : AiAgentDeviceSource {
+        override suspend fun aiAgentDevices(): List<GrantTarget> = targets
     }
 
     /** Deterministic DER-shaped signature: 64 distinct bytes, no key involved. */

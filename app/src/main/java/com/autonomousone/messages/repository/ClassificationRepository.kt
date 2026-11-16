@@ -14,6 +14,9 @@ import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.ThreadEffectiveCategory
 import com.autonomousone.messages.messaging.KnownContactLookup
 import com.autonomousone.messages.messaging.MessageClassifier
+import com.autonomousone.messages.security.ClassifiedConversation
+import com.autonomousone.messages.security.SensitiveReclassificationHook
+import com.autonomousone.messages.security.SensitiveReclassificationWiring
 import com.autonomousone.messages.utils.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -58,7 +61,19 @@ class ClassificationRepository(
             ContactRepository(context).getContactNameMap()
                 .containsKey(ContactRepository.normalizePhone(sender))
         }
-    )
+    ),
+    /**
+     * LDV-004 PR-E slice 2c: the classification → revocation seam. A conversation that
+     * becomes sensitive after it was granted must lose its AI grant (design §4.5/§4.6); this
+     * writer is the only place that knows a category just changed, so it is where the hook
+     * belongs.
+     *
+     * `null` (production) builds the real wiring on first use. It is deliberately LAZY and
+     * failure-tolerant: constructing this repository must never open the database, so a
+     * broken wiring can never make classification (or the ingest path that schedules it)
+     * throw — the hook is an enhancement, not a dependency.
+     */
+    providedScopeRevocation: SensitiveReclassificationHook? = null
 ) {
 
     private val appContext = context.applicationContext
@@ -69,6 +84,23 @@ class ClassificationRepository(
     private val conversationDao: ConversationClassificationDao
         get() = db.conversationClassificationDao()
     private val preferenceDao: ConversationPreferenceDao get() = db.conversationPreferenceDao()
+
+    /**
+     * The LDV-004 revocation seam, built on first use (see [providedScopeRevocation]).
+     *
+     * Safe by construction: a wiring/database failure yields `null` and a content-free
+     * diagnostic, so the classification write that triggered it still succeeds.
+     */
+    private val scopeRevocation: SensitiveReclassificationHook? by lazy {
+        providedScopeRevocation ?: try {
+            SensitiveReclassificationWiring.create(appContext)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (error: Throwable) {
+            DiagnosticLog.event("CATEGORY", "scope-revoke-wiring-unavailable")
+            null
+        }
+    }
 
     // ── Read side (Home filter + diagnostics) ───────────────────────────────
 
@@ -169,6 +201,12 @@ class ClassificationRepository(
                     messageDao.upsert(row)
                     projectionFor(message.threadId)
                 }
+                // LDV-004 slice 2c: a sensitive category withdraws any AI grant for the
+                // conversation. Already off the ingest path (this runs in the classifier's own
+                // background scope / worker), idempotent, and fail-safe.
+                notifyScopeRevocation(
+                    listOf(ClassifiedConversation(message.threadId, result.category.name))
+                )
                 true
             } catch (error: Throwable) {
                 // Fail-safe: classification must never break ingest. The
@@ -192,12 +230,14 @@ class ClassificationRepository(
             try {
                 val now = System.currentTimeMillis()
                 val rows = ArrayList<MessageClassificationEntity>(messages.size)
+                val classified = ArrayList<ClassifiedConversation>(messages.size)
                 for (message in messages) {
                     val result = classifier.classify(
                         sender = message.rawAddress,
                         body = message.body,
                         type = message.messageType
                     )
+                    classified += ClassifiedConversation(message.threadId, result.category.name)
                     val previous = messageDao.get(message.source, message.providerId)
                     rows += MessageClassificationEntity(
                         source = message.source,
@@ -222,6 +262,7 @@ class ClassificationRepository(
                         if (threadId > 0L) projectionFor(threadId)
                     }
                 }
+                notifyScopeRevocation(classified)
                 rows.size
             } catch (error: Throwable) {
                 DiagnosticLog.event("CATEGORY", "batch-classify-failed size=${messages.size}")
@@ -338,6 +379,26 @@ class ClassificationRepository(
                 updatedAt = System.currentTimeMillis()
             )
         )
+    }
+
+    /**
+     * Hand a just-classified batch to the LDV-004 revocation seam (slice 2c).
+     *
+     * Fail-safe by construction: the hook reports its own failures through diagnostics, and
+     * anything that still escapes is logged as a count and swallowed (never a body, an address
+     * or a conversation id). A classification must never fail or be delayed because a scope
+     * revocation could not be attempted.
+     */
+    private suspend fun notifyScopeRevocation(classified: List<ClassifiedConversation>) {
+        if (classified.isEmpty()) return
+        val hook = scopeRevocation ?: return
+        try {
+            hook.onClassified(classified)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (error: Throwable) {
+            DiagnosticLog.event("CATEGORY", "scope-revoke-hook-failed size=${classified.size}")
+        }
     }
 
     /**

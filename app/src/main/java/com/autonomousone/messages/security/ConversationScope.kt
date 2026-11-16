@@ -164,6 +164,20 @@ object ConversationScope {
         category.trim().uppercase(Locale.ROOT)
 
     /**
+     * True when a stored category is one of [SENSITIVE_CATEGORIES] (trimmed,
+     * case-insensitive) and therefore must never stay granted.
+     *
+     * This is the revoke-side twin of [eligible]: slice 2c calls it when a classification
+     * makes an ALREADY granted conversation sensitive, and it deliberately answers `false`
+     * for a category outside both lists. That is safe in this direction only because
+     * [eligible] fails closed — an unknown category can never have been granted, so there is
+     * no grant to withdraw. `LOCAL_ONLY` is included: a thread that becomes local-only after
+     * being granted must lose its grant too.
+     */
+    fun isSensitiveCategory(category: String): Boolean =
+        categoryKey(category) in SENSITIVE_CATEGORIES
+
+    /**
      * True only if this conversation may receive an AI grant.
      *
      * Returns `false` for:

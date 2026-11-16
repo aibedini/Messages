@@ -5,7 +5,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * LDV-004 PR-E (slice 2b) — the producer coordinator: persisted scope in, `KEY_GRANT`
+ * LDV-004 PR-E (slice 2b + 2c) — the producer coordinator: persisted scope in, `KEY_GRANT`
  * events out.
  *
  * This file joins the three pure pieces already on the branch — [ConversationScope]
@@ -19,6 +19,8 @@ import kotlinx.coroutines.sync.withLock
  *  - [ConversationKeySource] — the plaintext `READ_MESSAGES` CKE to wrap;
  *  - [GrantEpochSource] — the epoch id the grant authorises (design §4.2 `epochId`);
  *  - [GrantOutbox] — the durable outbox row `EventUploader` drains;
+ *  - [AiAgentDeviceSource] — the linked `AI_AGENT` devices a sensitive reclassification must
+ *    reach (slice 2c);
  *  - [GrantSigner]/[GrantKeyWrapper] — ECDSA over the binding and the HPKE wrap
  *    (slice 1's interfaces, unchanged).
  *
@@ -37,6 +39,53 @@ import kotlinx.coroutines.sync.withLock
  * 5. Only after **every** enqueue succeeded, persist the new state. A failure at any earlier
  *    step leaves the persisted scope untouched, so the device keeps the last scope the
  *    operator actually approved (design §4.6 failure mode: never a silently broader one).
+ *
+ * ## Revocation (slice 2c, design §4.5)
+ *
+ * Two explicit revoke operations complete the lifecycle. Both are **key-less**: every event
+ * they build is a `gmweb-conversation-key-revoke` tombstone (no `wrappedKey`, no `epochId`,
+ * no `expiresAt`), so neither asks [ConversationKeySource] for a CKE and neither can leak key
+ * material. Both use the same one-sequence-per-decision rule and the same all-or-nothing
+ * order as [applySelection]: build every tombstone, enqueue every one, and only then persist
+ * the revoked state.
+ *
+ *  - [pauseAll] is the "Pause AI access to all conversations" decision and the unlink hook.
+ *    It withdraws an account-wide grant with an account tombstone, and a conversation-mode
+ *    grant with one tombstone per ENABLED conversation. The persisted state becomes
+ *    `mode="conversation"` with no enabled row (slice 2a's encoding of "revoked"), which is
+ *    why re-pausing is idempotent ([ScopeRevokeResult.AlreadyRevoked]) and why the next grant
+ *    must start a new sequence. It publishes tombstone denies explicitly for every level
+ *    rather than relying on the DB state: god-ai treats a tombstone as an explicit deny, and a
+ *    "pause" that only changed local rows would leave the device reading everything.
+ *  - [revokeConversation] is the single-conversation revoke (the sensitive-reclassification
+ *    hook, design §4.5 "conversation" level). It tombstones exactly one conversation and
+ *    persists that conversation's `enabled=0` decision plus the narrowed selection. A
+ *    conversation that is not granted locally is not tombstoned ([ScopeRevokeResult.NotGranted]):
+ *    there is no grant to withdraw, and publishing a deny for a conversation the operator
+ *    never granted would be an unrequested sticky deny in god-ai. An already-revoked
+ *    conversation (or a fully paused device) is [ScopeRevokeResult.AlreadyRevoked].
+ *    An **account-wide** device has no enumerable conversation list locally, so a
+ *    single-conversation revoke cannot narrow it without inventing a scope; the fail-closed
+ *    answer is the account-level pause ([pauseAll]) — the device loses more than one
+ *    conversation rather than keeping a grant for a sensitive one.
+ *  - [revokeForSensitiveReclassification] fans [revokeConversation] out over every linked
+ *    `AI_AGENT` device, with reason `superseded` (the wire reasons are
+ *    revoked|superseded|unlinked|expired; a classification-superseded grant is literally
+ *    superseded, so no new wire value is invented). Non-sensitive categories are skipped
+ *    without touching the devices. A failure for one device never stops another; the caller
+ *    gets one typed outcome per device.
+ *
+ * ### Residual gaps this slice records but does not close
+ *
+ *  - Revokes do not retry. A failed enqueue is reported ([ScopeRevokeResult.Failed]) and the
+ *    DB state is left unchanged, so the next classification of a sensitive message in that
+ *    conversation tries again; there is no durable revocation job yet.
+ *  - A tombstone still carries its own deterministic id rather than the superseded grant's
+ *    (slice 2b's gap: the v30 rows do not persist the published `grantId`/`epochId`).
+ *  - The unlink hook enqueues its tombstones before the primary identity is un-enrolled, but
+ *    `EventUploader`'s gate closes with that identity: the tombstones are durable and
+ *    deterministic, yet the device-level `DEVICE_REVOKED` statement (design §4.5 device level)
+ *    is the authoritative kill switch for that path.
  *
  * ## One sequence per decision
  *
@@ -67,7 +116,7 @@ import kotlinx.coroutines.sync.withLock
  * grants"). Narrowing the other way — account-wide → explicit list — does publish the
  * account tombstone, because nothing else on the wire can withdraw a whole-account grant.
  *
- * ### Known wire limitation (needs slice 2c, not fixable here)
+ * ### Known wire limitation (still open after slice 2c)
  *
  * A tombstone built by this coordinator carries its OWN deterministic `grantId`
  * (`tombstoneGrantIdFor(deviceId, scopeMode, conversationId, sequence)`), not the id of the
@@ -75,8 +124,8 @@ import kotlinx.coroutines.sync.withLock
  * `grantId`/`epochId` that was actually published, so the superseded id is not recoverable.
  * god-ai's policy half is keyed by conversation (`RevokeGrant(ref)`), which a tombstone naming
  * the conversation satisfies; a consumer that keys revocations by `(device_id, grant_id)` row
- * identity (design §4.7.4) needs the persisted id to flip the exact row. Slice 2c should add
- * `grantId`/`epochId` to the conversation scope row and use
+ * identity (design §4.7.4) needs the persisted id to flip the exact row. A later slice should
+ * add `grantId`/`epochId` to the conversation scope row and use
  * [ConversationGrantPublisher.buildTombstone]'s superseded-grant overload.
  *
  * ## Failure semantics
@@ -146,6 +195,22 @@ interface ConversationScopeStore {
 
     /** @return true when the state was persisted; false when a newer decision won. */
     suspend fun save(deviceId: String, state: ScopeState): Boolean
+}
+
+/**
+ * The linked AI devices a [ConversationGrantCoordinator.revokeForSensitiveReclassification]
+ * must reach.
+ *
+ * The coordinator cannot read the trust registry (it is Android-free), so the production
+ * adapter enumerates `trusted_devices` rows whose `deviceType` is `AI_AGENT` (see
+ * [com.autonomousone.messages.security.TrustedAiAgentDeviceSource]).
+ *
+ * Only [GrantTarget.deviceId] is used: a revoke is key-less, so an unreadable or rotated
+ * `encryptionPublicKey` must never hide a device from revocation. The adapter therefore fills
+ * the key best-effort.
+ */
+fun interface AiAgentDeviceSource {
+    suspend fun aiAgentDevices(): List<GrantTarget>
 }
 
 /** Which step of [ConversationGrantCoordinator.applySelection] failed. */
@@ -219,7 +284,70 @@ data class PublishedGrant(
 )
 
 /**
- * The one producer entry point the scope UI calls.
+ * The outcome of one revoke — [ConversationGrantCoordinator.pauseAll] or
+ * [ConversationGrantCoordinator.revokeConversation] (slice 2c).
+ *
+ * The variants answer three different questions, and the caller must not confuse them:
+ * `Revoked` means tombstones were enqueued AND the revoked state is durable; `AlreadyRevoked`
+ * means there was nothing left to withdraw (a second pause, a conversation already disabled —
+ * the idempotent no-op, with no new sequence and no event); `NotGranted` means this phone has
+ * no grant to withdraw for that conversation/device at all (fail-closed by doing nothing,
+ * because publishing a deny nobody asked for would be an unrequested sticky deny in god-ai).
+ *
+ * [Failed] means nothing was persisted: `publishedBeforeFailure` counts the tombstones that
+ * already reached the outbox (never a payload or a key), and a retry re-enqueues the same
+ * deterministic event ids.
+ */
+sealed interface ScopeRevokeResult {
+    /** The tombstones were enqueued and the revoked state is now durable. */
+    data class Revoked(
+        val state: ScopeState,
+        val published: List<PublishedGrant>,
+    ) : ScopeRevokeResult
+
+    /** Nothing to revoke: the scope/conversation was already disabled. No event, no sequence. */
+    data object AlreadyRevoked : ScopeRevokeResult
+
+    /** Nothing was ever granted here: no local state, so no tombstone is published. */
+    data object NotGranted : ScopeRevokeResult
+
+    /** A step failed; the persisted scope is unchanged. Revokes only use LOAD/BUILD/OUTBOX/PERSIST. */
+    data class Failed(
+        val stage: ScopeApplyStage,
+        val publishedBeforeFailure: Int = 0,
+        val cause: Throwable? = null,
+    ) : ScopeRevokeResult
+}
+
+/** One device's outcome of a sensitive-reclassification revoke. */
+data class DeviceRevokeOutcome(
+    val deviceId: String,
+    val result: ScopeRevokeResult,
+)
+
+/**
+ * The outcome of [ConversationGrantCoordinator.revokeForSensitiveReclassification].
+ *
+ * [NotSensitive] is the common case and deliberately cheap: the category is not in
+ * [ConversationScope.SENSITIVE_CATEGORIES], so no device was read and nothing was published.
+ * [Evaluated] carries one entry per linked `AI_AGENT` device — including devices that held no
+ * grant for the conversation (`ScopeRevokeResult.NotGranted`) — so a caller can report honest
+ * counts. [Failed] means the device enumeration itself failed, so it is unknown whether any
+ * grant was withdrawn; the caller must treat that as "not revoked".
+ */
+sealed interface SensitiveRevocationResult {
+    /** The category cannot make a granted conversation sensitive: nothing was done. */
+    data object NotSensitive : SensitiveRevocationResult
+
+    /** Every linked AI device was evaluated; see [outcomes]. */
+    data class Evaluated(val outcomes: List<DeviceRevokeOutcome>) : SensitiveRevocationResult
+
+    /** The linked AI devices could not be enumerated; nothing is known to be revoked. */
+    data class Failed(val cause: Throwable? = null) : SensitiveRevocationResult
+}
+
+/**
+ * The producer entry points: the scope UI, the unlink hook and the classification hook.
  *
  * Stateless apart from [mutex] (which serialises overlapping saves in this process) and the
  * injected clock; every durable decision is read from, and written to, [store].
@@ -231,6 +359,7 @@ class ConversationGrantCoordinator(
     private val signer: GrantSigner,
     private val wrapper: GrantKeyWrapper,
     private val epoch: GrantEpochSource,
+    private val aiDevices: AiAgentDeviceSource,
     private val now: () -> Long = System::currentTimeMillis,
     private val grantValidityMillis: Long = DEFAULT_GRANT_VALIDITY_MILLIS,
 ) {
@@ -432,57 +561,376 @@ class ConversationGrantCoordinator(
             return@withLock ScopeApplyResult.Failed(ScopeApplyStage.BUILD, 0, t)
         }
 
-        // ── 6. Enqueue, then ────────────────────────────────────────────────────
+        // ── 6. Enqueue every payload ────────────────────────────────────────────
+        val enqueued = when (val outcome = enqueuePayloads(device.deviceId, payloads)) {
+            is EnqueueOutcome.Enqueued -> outcome.count
+            is EnqueueOutcome.Failed -> return@withLock ScopeApplyResult.Failed(
+                ScopeApplyStage.OUTBOX,
+                publishedBeforeFailure = outcome.enqueued,
+                cause = outcome.cause,
+            )
+        }
+
+        // ── 7. Persist the new scope only now ───────────────────────────────────
+        persistDecision(device.deviceId, newState)?.let { failure ->
+            return@withLock ScopeApplyResult.Failed(
+                failure.stage,
+                publishedBeforeFailure = enqueued,
+                cause = failure.cause,
+            )
+        }
+        ScopeApplyResult.Applied(
+            state = newState,
+            published = publishedFrom(payloads),
+        )
+    }
+
+    /**
+     * Revoke the WHOLE scope of [device] — the "Pause AI access to all conversations" decision
+     * and the primary-unlink hook (slice 2c, design §4.5 "whole scope").
+     *
+     * Builds one key-less tombstone per level that is actually live:
+     *
+     *  - an **account** tombstone when the persisted mode is [ScopeSelection.AccountWide]
+     *    (nothing else on the wire can withdraw a whole-account grant), and
+     *  - one tombstone per ENABLED conversation for a conversation-mode scope, in sorted id
+     *    order (deterministic payloads, deterministic event ids).
+     *
+     * Then persists the revoked state: mode `conversation` with no enabled row (slice 2a's
+     * encoding of "paused"), at this decision's sequence. Every tombstone of the batch shares
+     * that one sequence, exactly like a grant batch.
+     *
+     * Idempotent: an already revoked (paused) device is [ScopeRevokeResult.AlreadyRevoked] —
+     * no sequence, no event, no save. A device with no scope row at all was never configured
+     * and has nothing to withdraw: [ScopeRevokeResult.NotGranted], and deliberately no
+     * tombstone (a deny for a device that was never granted is an unrequested sticky deny).
+     *
+     * No key material: the tombstones carry none, so neither [ConversationKeySource] nor
+     * [GrantEpochSource] is consulted.
+     *
+     * @param reason `revoked` for the operator's pause (default), `unlinked` for an unlink.
+     */
+    suspend fun pauseAll(
+        device: GrantTarget,
+        reason: GrantRevokeReason = GrantRevokeReason.REVOKED,
+    ): ScopeRevokeResult = mutex.withLock {
+        val loaded = loadForRevoke(device)
+        if (loaded is LoadOutcome.Failed) {
+            return@withLock ScopeRevokeResult.Failed(ScopeApplyStage.LOAD, cause = loaded.cause)
+        }
+        val previous = (loaded as LoadOutcome.Loaded).state
+            ?: return@withLock ScopeRevokeResult.NotGranted
+        if (previous.revoked) return@withLock ScopeRevokeResult.AlreadyRevoked
+        pauseLocked(device, previous, reason)
+    }
+
+    /**
+     * Revoke ONE conversation of [device] (slice 2c, design §4.5 "conversation" level).
+     *
+     * Publishes exactly one key-less tombstone for [conversationId] at the decision's new
+     * sequence and persists the narrowed scope (the conversation's row becomes `enabled=0`;
+     * revoking the LAST granted conversation leaves the device in the revoked/paused state,
+     * because an empty allowlist is not a legal scope).
+     *
+     * Fail-closed bookkeeping, in order:
+     *  - no scope row for the device → [ScopeRevokeResult.NotGranted] (never granted);
+     *  - already paused, or this conversation already disabled →
+     *    [ScopeRevokeResult.AlreadyRevoked] (idempotent, no event);
+     *  - the device is account-wide → the account-level [pauseAll] with the same [reason]:
+     *    the model cannot narrow an account scope without inventing a conversation list, and
+     *    leaving the sensitive conversation granted would be the fail-open answer.
+     *
+     * @param reason a wire reason: `revoked` for an operator action, `superseded` when a
+     *   classification or a newer decision replaced the grant.
+     */
+    suspend fun revokeConversation(
+        device: GrantTarget,
+        conversationId: String,
+        reason: GrantRevokeReason = GrantRevokeReason.REVOKED,
+    ): ScopeRevokeResult {
+        if (conversationId.isBlank()) {
+            return ScopeRevokeResult.Failed(ScopeApplyStage.BUILD)
+        }
+        return mutex.withLock {
+            val loaded = loadForRevoke(device)
+            if (loaded is LoadOutcome.Failed) {
+                return@withLock ScopeRevokeResult.Failed(ScopeApplyStage.LOAD, cause = loaded.cause)
+            }
+            val previous = (loaded as LoadOutcome.Loaded).state
+                ?: return@withLock ScopeRevokeResult.NotGranted
+            if (previous.revoked) return@withLock ScopeRevokeResult.AlreadyRevoked
+            if (previous.selection is ScopeSelection.AccountWide) {
+                // No enumerable conversation list locally: the only consistent, fail-closed
+                // revoke is the account-level tombstone.
+                return@withLock pauseLocked(device, previous, reason)
+            }
+            if (!previous.grants(conversationId)) {
+                // "Already disabled" (recorded as revoked) and "never granted" are different
+                // facts: the former is an idempotent retry, the latter is a no-op.
+                return@withLock if (previous.entries.any { it.conversationId == conversationId }) {
+                    ScopeRevokeResult.AlreadyRevoked
+                } else {
+                    ScopeRevokeResult.NotGranted
+                }
+            }
+
+            val issuedAt = now()
+            if (issuedAt <= 0L) return@withLock ScopeRevokeResult.Failed(ScopeApplyStage.BUILD)
+            val newState = try {
+                previous.revoke(conversationId, issuedAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                return@withLock ScopeRevokeResult.Failed(ScopeApplyStage.BUILD, cause = t)
+            }
+            val payload = try {
+                ConversationGrantPublisher.buildTombstone(
+                    deviceId = device.deviceId,
+                    conversationId = conversationId,
+                    issuedAt = issuedAt,
+                    sequence = newState.scopeSequence,
+                    reason = reason,
+                    signer = signer,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                return@withLock ScopeRevokeResult.Failed(ScopeApplyStage.BUILD, cause = t)
+            }
+            val payloads = listOf(payload)
+            val enqueued = when (val outcome = enqueuePayloads(device.deviceId, payloads)) {
+                is EnqueueOutcome.Enqueued -> outcome.count
+                is EnqueueOutcome.Failed -> return@withLock ScopeRevokeResult.Failed(
+                    ScopeApplyStage.OUTBOX,
+                    publishedBeforeFailure = outcome.enqueued,
+                    cause = outcome.cause,
+                )
+            }
+            persistDecision(device.deviceId, newState)?.let { failure ->
+                return@withLock ScopeRevokeResult.Failed(
+                    failure.stage,
+                    publishedBeforeFailure = enqueued,
+                    cause = failure.cause,
+                )
+            }
+            ScopeRevokeResult.Revoked(
+                state = newState,
+                published = publishedFrom(payloads),
+            )
+        }
+    }
+
+    /**
+     * Withdraw a conversation from every linked AI device after a classification made it
+     * sensitive (slice 2c).
+     *
+     * The classification hook calls this for EVERY newly stored category, so the first thing
+     * it does is the cheap, in-memory [ConversationScope.isSensitiveCategory] check:
+     * a non-sensitive category returns [SensitiveRevocationResult.NotSensitive] without
+     * reading the trust registry or any scope row. (An unknown category is not sensitive here
+     * because [ConversationScope.eligible] would never have granted it.)
+     *
+     * For a sensitive category every linked `AI_AGENT` device is evaluated with
+     * [revokeConversation] at reason `superseded`; a device with no grant for the
+     * conversation answers [ScopeRevokeResult.NotGranted] and publishes nothing. One device's
+     * failure never conceals another's result — each outcome is reported.
+     *
+     * Nothing here logs, and the conversation id never reaches a string: this method only
+     * carries it to the store and the payload builder (which treats `conversationId` as public
+     * routing metadata, design §4.2). The caller is responsible for not logging it.
+     */
+    suspend fun revokeForSensitiveReclassification(
+        conversationId: String,
+        category: String,
+    ): SensitiveRevocationResult {
+        if (!ConversationScope.isSensitiveCategory(category)) {
+            return SensitiveRevocationResult.NotSensitive
+        }
+        if (conversationId.isBlank()) {
+            // No device can hold a grant for a blank conversation reference.
+            return SensitiveRevocationResult.Evaluated(emptyList())
+        }
+        val targets = try {
+            aiDevices.aiAgentDevices()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            return SensitiveRevocationResult.Failed(t)
+        }
+        val outcomes = targets.distinctBy { it.deviceId }.map { target ->
+            DeviceRevokeOutcome(
+                deviceId = target.deviceId,
+                result = revokeConversation(
+                    device = target,
+                    conversationId = conversationId,
+                    reason = GrantRevokeReason.SUPERSEDED,
+                ),
+            )
+        }
+        return SensitiveRevocationResult.Evaluated(outcomes)
+    }
+
+    /**
+     * The shared body of [pauseAll] and [revokeConversation]'s account-wide fallback.
+     * The caller holds [mutex] and has loaded a non-revoked [previous].
+     */
+    private suspend fun pauseLocked(
+        device: GrantTarget,
+        previous: ScopeState,
+        reason: GrantRevokeReason,
+    ): ScopeRevokeResult {
+        val issuedAt = now()
+        if (issuedAt <= 0L) return ScopeRevokeResult.Failed(ScopeApplyStage.BUILD)
+        val newState = try {
+            previous.revokeAll(issuedAt)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            return ScopeRevokeResult.Failed(ScopeApplyStage.BUILD, cause = t)
+        }
+        if (newState === previous) return ScopeRevokeResult.AlreadyRevoked
+
+        // Every conversation that is currently authorised must be named explicitly: the wire
+        // has no "paused" flag, only per-conversation/account denies (design §4.5).
+        val conversationIds = buildList {
+            addAll(previous.activeConversationIds)
+            for (entry in previous.entries) {
+                if (!entry.revoked) add(entry.conversationId)
+            }
+        }.distinct().sorted()
+        val accountWide = previous.selection is ScopeSelection.AccountWide
+
+        val payloads = try {
+            buildList<ConversationGrantPayload> {
+                if (accountWide) {
+                    add(
+                        ConversationGrantPublisher.buildTombstone(
+                            deviceId = device.deviceId,
+                            conversationId = null,
+                            issuedAt = issuedAt,
+                            sequence = newState.scopeSequence,
+                            reason = reason,
+                            signer = signer,
+                        )
+                    )
+                }
+                for (conversationId in conversationIds) {
+                    add(
+                        ConversationGrantPublisher.buildTombstone(
+                            deviceId = device.deviceId,
+                            conversationId = conversationId,
+                            issuedAt = issuedAt,
+                            sequence = newState.scopeSequence,
+                            reason = reason,
+                            signer = signer,
+                        )
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            return ScopeRevokeResult.Failed(ScopeApplyStage.BUILD, cause = t)
+        }
+
+        val enqueued = when (val outcome = enqueuePayloads(device.deviceId, payloads)) {
+            is EnqueueOutcome.Enqueued -> outcome.count
+            is EnqueueOutcome.Failed -> return ScopeRevokeResult.Failed(
+                ScopeApplyStage.OUTBOX,
+                publishedBeforeFailure = outcome.enqueued,
+                cause = outcome.cause,
+            )
+        }
+        persistDecision(device.deviceId, newState)?.let { failure ->
+            return ScopeRevokeResult.Failed(
+                failure.stage,
+                publishedBeforeFailure = enqueued,
+                cause = failure.cause,
+            )
+        }
+        return ScopeRevokeResult.Revoked(
+            state = newState,
+            published = publishedFrom(payloads),
+        )
+    }
+
+    /**
+     * Load the persisted scope for a revoke.
+     *
+     * [LoadOutcome.Loaded.state] is `null` for a device that was never configured; a failed
+     * read is a typed outcome instead of a `null` scope, because "never granted" and "the
+     * database is unreadable" must not be reported as the same thing.
+     */
+    private suspend fun loadForRevoke(device: GrantTarget): LoadOutcome = try {
+        LoadOutcome.Loaded(store.load(device.deviceId))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        LoadOutcome.Failed(t)
+    }
+
+    /** Enqueue every built payload in order; fail at the first outbox error. */
+    private suspend fun enqueuePayloads(
+        deviceId: String,
+        payloads: List<ConversationGrantPayload>,
+    ): EnqueueOutcome {
         var enqueued = 0
         for (payload in payloads) {
             try {
                 outbox.enqueue(
                     eventId = payload.grantId,
-                    deviceId = device.deviceId,
+                    deviceId = deviceId,
                     payloadJson = payload.toJson().toByteArray(Charsets.UTF_8),
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                return@withLock ScopeApplyResult.Failed(
-                    ScopeApplyStage.OUTBOX,
-                    publishedBeforeFailure = enqueued,
-                    cause = t,
-                )
+                return EnqueueOutcome.Failed(enqueued, t)
             }
             enqueued++
         }
+        return EnqueueOutcome.Enqueued(enqueued)
+    }
 
-        // ── 7. Persist the new scope only now ───────────────────────────────────
-        val saved = try {
-            store.save(device.deviceId, newState)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            return@withLock ScopeApplyResult.Failed(
-                ScopeApplyStage.PERSIST,
-                publishedBeforeFailure = enqueued,
-                cause = t,
+    /** Persist a decision; `null` on success. The store's monotonic guard is the authority. */
+    private suspend fun persistDecision(
+        deviceId: String,
+        state: ScopeState,
+    ): PersistFailure? = try {
+        if (store.save(deviceId, state)) {
+            null
+        } else {
+            PersistFailure(ScopeApplyStage.PERSIST, null)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        PersistFailure(ScopeApplyStage.PERSIST, t)
+    }
+
+    private fun publishedFrom(payloads: List<ConversationGrantPayload>): List<PublishedGrant> =
+        payloads.map { payload ->
+            PublishedGrant(
+                grantId = payload.grantId,
+                kind = payload.kind,
+                scopeMode = payload.scopeMode,
+                conversationId = payload.conversationId,
+                scopeSequence = payload.scopeSequence,
             )
         }
-        if (!saved) {
-            return@withLock ScopeApplyResult.Failed(
-                ScopeApplyStage.PERSIST,
-                publishedBeforeFailure = enqueued,
-            )
-        }
-        ScopeApplyResult.Applied(
-            state = newState,
-            published = payloads.map { payload ->
-                PublishedGrant(
-                    grantId = payload.grantId,
-                    kind = payload.kind,
-                    scopeMode = payload.scopeMode,
-                    conversationId = payload.conversationId,
-                    scopeSequence = payload.scopeSequence,
-                )
-            },
-        )
+
+    private sealed interface EnqueueOutcome {
+        data class Enqueued(val count: Int) : EnqueueOutcome
+
+        data class Failed(val enqueued: Int, val cause: Throwable?) : EnqueueOutcome
+    }
+
+    private data class PersistFailure(val stage: ScopeApplyStage, val cause: Throwable?)
+
+    private sealed interface LoadOutcome {
+        data class Loaded(val state: ScopeState?) : LoadOutcome
+
+        data class Failed(val cause: Throwable) : LoadOutcome
     }
 
     companion object {

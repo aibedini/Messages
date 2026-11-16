@@ -140,6 +140,34 @@ class ConversationScopeTest {
         assertFalse(ConversationScope.eligible("conversation-1", "READ_EVERYTHING"))
     }
 
+    // LDV-004 PR-E slice 2c: the revoke-side twin of `eligible`. A classification hook uses
+    // it to decide whether an already-granted conversation must lose its grant.
+    @Test
+    fun `isSensitiveCategory matches the sensitive set and ignores case and padding`() {
+        for (category in ConversationScope.SENSITIVE_CATEGORIES) {
+            assertTrue("$category must be sensitive", ConversationScope.isSensitiveCategory(category))
+            assertTrue(
+                "$category lowercase must be sensitive",
+                ConversationScope.isSensitiveCategory(category.lowercase()),
+            )
+            assertTrue(
+                "$category padded must be sensitive",
+                ConversationScope.isSensitiveCategory("  $category  "),
+            )
+        }
+        for (category in ConversationScope.NON_SENSITIVE_CATEGORIES) {
+            assertFalse(
+                "$category must not trigger a revoke",
+                ConversationScope.isSensitiveCategory(category),
+            )
+        }
+        assertFalse(
+            "an unknown category cannot have been granted, so it revokes nothing",
+            ConversationScope.isSensitiveCategory("SOMETHING_NEW"),
+        )
+        assertTrue(ConversationScope.isSensitiveCategory(ConversationScope.LOCAL_ONLY))
+    }
+
     @Test
     fun `blank ids and an explicit local-only verdict are never eligible`() {
         assertFalse(ConversationScope.eligible("", ""))

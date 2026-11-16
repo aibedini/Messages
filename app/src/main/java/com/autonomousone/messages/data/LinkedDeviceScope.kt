@@ -420,6 +420,27 @@ abstract class LinkedDeviceScopeDao {
         deleteState(deviceId)
     }
 
+    @Query("DELETE FROM linked_device_conversation_scope")
+    abstract suspend fun deleteEveryConversation(): Int
+
+    @Query("DELETE FROM linked_device_scope_state")
+    abstract suspend fun deleteEveryState(): Int
+
+    /**
+     * Primary unlink/forget: clear BOTH scope tables entirely.
+     *
+     * Called inside `PrimaryDeviceController`'s single teardown transaction, after the
+     * LDV-004 tombstones were enqueued: the trust registry is emptied and the keyring epochs
+     * are dropped, so a leftover scope row would describe a device this phone no longer
+     * trusts. Clearing every row (not just the ids still in the registry) is what makes the
+     * teardown total.
+     */
+    @Transaction
+    open suspend fun clearAll() {
+        deleteEveryConversation()
+        deleteEveryState()
+    }
+
     /** A consistent read of both tables for one device. */
     @Transaction
     open suspend fun snapshot(deviceId: String): LinkedDeviceScopeSnapshot =

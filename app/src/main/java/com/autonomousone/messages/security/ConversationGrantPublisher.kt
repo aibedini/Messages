@@ -590,6 +590,35 @@ object ConversationGrantPublisher {
         signer: GrantSigner,
     ): ConversationGrantPayload {
         validateTarget(target)
+        return buildTombstone(
+            deviceId = target.deviceId,
+            conversationId = conversationId,
+            issuedAt = issuedAt,
+            sequence = sequence,
+            reason = reason,
+            signer = signer,
+        )
+    }
+
+    /**
+     * The same tombstone addressed by [deviceId] alone.
+     *
+     * A revoke carries **no key material** (design §4.2), so it must not depend on the
+     * recipient's encryption key being readable or well formed: requiring the P-256 point
+     * would make exactly the failure that matters most — withdrawing a grant from a device
+     * whose key row is unusable — impossible. Only the device id is validated (non-blank, at
+     * most [ConversationGrantSchema.MAX_DEVICE_ID_LENGTH] characters), because that is the
+     * whole of what the tombstone and its signature bind.
+     */
+    fun buildTombstone(
+        deviceId: String,
+        conversationId: String?,
+        issuedAt: Long,
+        sequence: Long,
+        reason: GrantRevokeReason,
+        signer: GrantSigner,
+    ): ConversationGrantPayload {
+        validateDeviceId(deviceId)
         require(sequence > 0) { "sequence must be positive" }
         require(issuedAt > 0) { "issuedAt must be positive" }
         val scopeMode = if (conversationId.isNullOrBlank()) {
@@ -602,9 +631,9 @@ object ConversationGrantPublisher {
             conversation == null ||
                 conversation.length <= ConversationGrantSchema.MAX_CONVERSATION_ID_LENGTH
         ) { "conversationId must be at most ${ConversationGrantSchema.MAX_CONVERSATION_ID_LENGTH} chars" }
-        val grantId = tombstoneGrantIdFor(target.deviceId, scopeMode, conversation, sequence)
+        val grantId = tombstoneGrantIdFor(deviceId, scopeMode, conversation, sequence)
         return tombstoneFor(
-            target = target,
+            deviceId = deviceId,
             conversationId = conversation,
             grantId = grantId,
             issuedAt = issuedAt,
@@ -638,7 +667,7 @@ object ConversationGrantPublisher {
         }
         require(issuedAt > 0) { "issuedAt must be positive" }
         return tombstoneFor(
-            target = target,
+            deviceId = target.deviceId,
             conversationId = grantedGrant.conversationId,
             grantId = grantedGrant.grantId,
             issuedAt = issuedAt,
@@ -649,7 +678,7 @@ object ConversationGrantPublisher {
     }
 
     private fun tombstoneFor(
-        target: GrantTarget,
+        deviceId: String,
         conversationId: String?,
         grantId: String,
         issuedAt: Long,
@@ -659,7 +688,7 @@ object ConversationGrantPublisher {
     ): ConversationGrantPayload {
         val signatureBinding = revokeSignatureBinding(
             grantId = grantId,
-            deviceId = target.deviceId,
+            deviceId = deviceId,
             conversationId = conversationId,
             scopeSequence = sequence,
             issuedAt = issuedAt,
@@ -673,7 +702,7 @@ object ConversationGrantPublisher {
         return ConversationGrantPayload(
             kind = GrantKind.REVOKE,
             grantId = grantId,
-            deviceId = target.deviceId,
+            deviceId = deviceId,
             conversationId = conversationId,
             scopeSequence = sequence,
             issuedAt = issuedAt,
@@ -756,16 +785,21 @@ object ConversationGrantPublisher {
     )
 
     private fun validateTarget(target: GrantTarget) {
-        require(target.deviceId.isNotBlank()) { "deviceId must not be blank" }
-        require(target.deviceId.length <= ConversationGrantSchema.MAX_DEVICE_ID_LENGTH) {
-            "deviceId must be at most ${ConversationGrantSchema.MAX_DEVICE_ID_LENGTH} chars"
-        }
+        validateDeviceId(target.deviceId)
         require(target.encryptionPublicKey.size == ConversationGrantSchema.P256_PUBLIC_KEY_BYTES) {
             "encryptionPublicKey must be a raw uncompressed P-256 point " +
                 "(${ConversationGrantSchema.P256_PUBLIC_KEY_BYTES} bytes)"
         }
         require(target.encryptionPublicKey[0] == ConversationGrantSchema.P256_UNCOMPRESSED_PREFIX) {
             "encryptionPublicKey must start with 0x04"
+        }
+    }
+
+    /** The only target field a key-less tombstone binds. */
+    private fun validateDeviceId(deviceId: String) {
+        require(deviceId.isNotBlank()) { "deviceId must not be blank" }
+        require(deviceId.length <= ConversationGrantSchema.MAX_DEVICE_ID_LENGTH) {
+            "deviceId must be at most ${ConversationGrantSchema.MAX_DEVICE_ID_LENGTH} chars"
         }
     }
 }

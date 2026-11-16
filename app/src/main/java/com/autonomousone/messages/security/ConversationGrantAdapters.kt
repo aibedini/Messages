@@ -195,6 +195,38 @@ object TinkHpkeGrantKeyWrapper : GrantKeyWrapper {
 }
 
 /**
+ * [AiAgentDeviceSource] over the authoritative local trust registry.
+ *
+ * Only `AI_AGENT` rows are returned: a `WEB_PWA` device can never hold a conversation grant
+ * (the capability contract forbids it), so tombstoning one would be an unrequested deny.
+ *
+ * The `encryptionPublicKey` is decoded best-effort and may be empty. That is deliberate: a
+ * revoke is **key-less** (design §4.2), so a device whose key row is missing, rotated or
+ * malformed must still be reachable by its `deviceId` — otherwise exactly the revocation that
+ * matters most would be skipped. A target built from this source can only ever be used for
+ * grants through the publisher's validated overload, which refuses an unusable key.
+ */
+class TrustedAiAgentDeviceSource(
+    private val db: MessagesDatabase,
+) : AiAgentDeviceSource {
+    override suspend fun aiAgentDevices(): List<GrantTarget> =
+        db.trustedDeviceDao().byType(PairingCapabilityContract.DEVICE_TYPE_AI_AGENT)
+            .map { row ->
+                GrantTarget(
+                    deviceId = row.deviceId,
+                    encryptionPublicKey = decodeP256(row.encryptionPublicKey),
+                )
+            }
+
+    private fun decodeP256(encoded: String): ByteArray {
+        val raw = runCatching { MessageCrypto.unb64(encoded) }.getOrNull() ?: return ByteArray(0)
+        val isP256 = raw.size == ConversationGrantSchema.P256_PUBLIC_KEY_BYTES &&
+            raw[0] == ConversationGrantSchema.P256_UNCOMPRESSED_PREFIX
+        return if (isP256) raw else ByteArray(0)
+    }
+}
+
+/**
  * Production wiring: one coordinator over the app database and the Android Keystore.
  *
  * The key source is constructed ONCE and passed as both the key and the epoch port, so the
@@ -211,6 +243,7 @@ object ConversationGrantWiring {
             signer = PrimaryTrustRootGrantSigner,
             wrapper = TinkHpkeGrantKeyWrapper,
             epoch = keySource,
+            aiDevices = TrustedAiAgentDeviceSource(db),
         )
     }
 }

@@ -102,6 +102,10 @@ interface TrustedDeviceDao {
     @Query("SELECT * FROM trusted_devices ORDER BY approvedAt DESC")
     suspend fun all(): List<TrustedDeviceEntity>
 
+    /** Every linked device of one kind (`AI_AGENT` for LDV-004 scope revocations). */
+    @Query("SELECT * FROM trusted_devices WHERE deviceType = :deviceType ORDER BY approvedAt DESC")
+    suspend fun byType(deviceType: String): List<TrustedDeviceEntity>
+
     @Query("SELECT * FROM trusted_devices WHERE deviceId = :deviceId")
     suspend fun byId(deviceId: String): TrustedDeviceEntity?
 
