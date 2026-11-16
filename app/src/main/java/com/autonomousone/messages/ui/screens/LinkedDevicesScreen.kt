@@ -34,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustedDeviceEntity
+import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.security.AiDeviceApprovalState
 import com.autonomousone.messages.security.PairingCapabilityContract
 import com.autonomousone.messages.security.PairingClient
@@ -472,6 +473,23 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                 editedCapabilities = deviceCapabilities(d.capabilitiesJson)
                                                 manageTarget = d
                                             }) { Text("Manage") }
+                                        }
+                                        // LDV-004 / XR-GA-008 (PR-E slice 2b): an AI device gets a
+                                        // per-conversation scope screen. The WEB_PWA branch above is
+                                        // deliberately untouched — a browser grant is still
+                                        // account-wide by design and has no scope screen.
+                                        if (d.deviceType == PairingCapabilityContract.DEVICE_TYPE_AI_AGENT &&
+                                            (d.status == TrustedDeviceEntity.STATUS_ACTIVE ||
+                                                d.status == TrustedDeviceEntity.STATUS_PENDING_PUBLICATION)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    navController.navigate(
+                                                        Screen.ConversationScope.createRoute(d.deviceId)
+                                                    )
+                                                },
+                                                modifier = Modifier.padding(top = 8.dp),
+                                            ) { Text("مدیریت دامنهٔ مکالمات") }
                                         }
                                         OutlinedButton(
                                             onClick = { revokeTarget = d },

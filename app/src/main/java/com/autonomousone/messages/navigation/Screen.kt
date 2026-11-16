@@ -58,6 +58,20 @@ sealed class Screen(val route: String) {
 
     object LinkedDevices : Screen("linked_devices")
 
+    /**
+     * LDV-004 / XR-GA-008 (PR-E slice 2b) — which conversations one linked `AI_AGENT` device
+     * may read.
+     *
+     * `deviceId` is the trust-registry id of the AI device the action was tapped on. It is
+     * percent-encoded on the way in ([encode]) and read back through [cleanArg], so a leaked
+     * route PATTERN can never be mistaken for a real device id. The WEB_PWA flow has no route
+     * here at all: an AI device is the only thing with a conversation scope.
+     */
+    object ConversationScope : Screen("linked_device_scope/{deviceId}") {
+
+        fun createRoute(deviceId: String): String = "linked_device_scope/${encode(deviceId)}"
+    }
+
     object AppearanceSettings : Screen("appearance_settings")
 
     object QuickReplies : Screen("quick_replies")
