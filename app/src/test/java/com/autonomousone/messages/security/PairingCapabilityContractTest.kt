@@ -1,5 +1,6 @@
 package com.autonomousone.messages.security
 
+import com.autonomousone.messages.ui.screens.capabilityLabel
 import com.autonomousone.messages.ui.screens.deviceCapabilityLabels
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -59,19 +60,82 @@ class PairingCapabilityContractTest {
     }
 
     @Test
+    fun `Kotlin AI capabilities match the protocol schema ai group`() {
+        assertEquals(
+            strings(schemaDefinitions().getJSONArray("ai")),
+            PairingCapabilityContract.AI_CAPABILITIES,
+        )
+        // AI_SUGGEST is an AI-device capability, never a browser grant.
+        assertFalse(PairingCapabilityContract.AI_CAPABILITIES.any {
+            it in PairingCapabilityContract.ALLOWLISTED_BY_ANDROID
+        })
+    }
+
+    @Test
+    fun `Kotlin device type policy mirrors device_type_policy exactly`() {
+        val policy = fixtureJson().getJSONObject("device_type_policy")
+
+        val web = policy.getJSONObject(PairingCapabilityContract.DEVICE_TYPE_WEB_PWA)
+        assertEquals(strings(web.getJSONArray("required_capabilities")), PairingCapabilityContract.BASE_CAPABILITIES)
+        assertEquals(
+            strings(web.getJSONArray("optional_capabilities")),
+            PairingCapabilityContract.SENSITIVE_CAPABILITIES + PairingCapabilityContract.RESERVED_CAPABILITIES,
+        )
+        assertEquals(
+            strings(web.getJSONArray("forbidden_capabilities")),
+            PairingCapabilityContract.WEB_PWA_FORBIDDEN_CAPABILITIES,
+        )
+        assertEquals(
+            strings(web.getJSONArray("history_grant")),
+            listOf(PairingCapabilityContract.HISTORY_FULL, PairingCapabilityContract.HISTORY_FROM_NOW_ON),
+        )
+
+        val ai = policy.getJSONObject(PairingCapabilityContract.DEVICE_TYPE_AI_AGENT)
+        assertEquals(
+            strings(ai.getJSONArray("required_capabilities")),
+            PairingCapabilityContract.AI_AGENT_REQUIRED_CAPABILITIES,
+        )
+        assertEquals(strings(ai.getJSONArray("optional_capabilities")), emptyList<String>())
+        assertEquals(
+            strings(ai.getJSONArray("forbidden_capabilities")),
+            PairingCapabilityContract.AI_AGENT_FORBIDDEN_CAPABILITIES,
+        )
+        assertEquals(
+            strings(ai.getJSONArray("history_grant")),
+            listOf(PairingCapabilityContract.HISTORY_FROM_NOW_ON),
+        )
+
+        // Exactly READ_MESSAGES + AI_SUGGEST; SEND_MESSAGES is explicitly banned.
+        assertEquals(listOf("READ_MESSAGES", "AI_SUGGEST"), PairingCapabilityContract.AI_AGENT_REQUIRED_CAPABILITIES)
+        assertTrue("SEND_MESSAGES" in PairingCapabilityContract.AI_AGENT_FORBIDDEN_CAPABILITIES)
+        assertTrue("MARK_READ" in PairingCapabilityContract.AI_AGENT_FORBIDDEN_CAPABILITIES)
+        assertTrue("MANAGE_DEVICES" in PairingCapabilityContract.AI_AGENT_FORBIDDEN_CAPABILITIES)
+    }
+
+    @Test
     fun `capability groups are disjoint, non-empty and fully labeled in the UI`() {
         assertTrue(PairingCapabilityContract.BASE_CAPABILITIES.isNotEmpty())
         assertTrue(PairingCapabilityContract.SENSITIVE_CAPABILITIES.isNotEmpty())
+        assertTrue(PairingCapabilityContract.AI_CAPABILITIES.isNotEmpty())
         val all = PairingCapabilityContract.ALLOWLISTED_BY_ANDROID
         assertEquals(all.size, all.toSet().size)
         assertFalse(PairingCapabilityContract.BASE_CAPABILITIES.any { it in PairingCapabilityContract.SENSITIVE_CAPABILITIES })
         assertFalse(PairingCapabilityContract.SENSITIVE_CAPABILITIES.any { it in PairingCapabilityContract.RESERVED_CAPABILITIES })
+        assertFalse(PairingCapabilityContract.AI_CAPABILITIES.any { it in PairingCapabilityContract.RESERVED_CAPABILITIES })
+        assertEquals(
+            PairingCapabilityContract.AI_AGENT_REQUIRED_CAPABILITIES.size +
+                PairingCapabilityContract.AI_AGENT_FORBIDDEN_CAPABILITIES.size,
+            (PairingCapabilityContract.BASE_CAPABILITIES + PairingCapabilityContract.SENSITIVE_CAPABILITIES +
+                PairingCapabilityContract.RESERVED_CAPABILITIES + PairingCapabilityContract.AI_CAPABILITIES).size,
+        )
 
         // The linked-device edit UI shows exactly the grantable universe, in
         // contract order, with a human label for every capability.
         val labels = deviceCapabilityLabels
         assertEquals(all, labels.keys.toList())
         assertTrue(labels.values.all { it.isNotBlank() })
+        // AI_SUGGEST must have a display label even though it is not a browser grant.
+        assertTrue(capabilityLabel["AI_SUGGEST"]?.isNotBlank() == true)
     }
 
     @Test
