@@ -34,6 +34,15 @@ enum class CommandRoute {
      */
     CONVERSATION_SIM,
 
+    /**
+     * `SUGGESTIONS_READY`: store the AI's reply suggestions for one conversation (XR-GA-017).
+     *
+     * Its own route rather than reusing [READ_THREAD]: a suggestion delivery is neither a read nor a
+     * send. It writes ONLY the suggestion-card table (never a message), and a failure means the cards
+     * were not shown — not that the user's unread state or a conversation's SIM changed.
+     */
+    SUGGESTIONS,
+
     /** Not implemented by this build: must reach a durable terminal failure. */
     UNSUPPORTED
 }
@@ -56,6 +65,16 @@ object CommandRouting {
     const val SET_CONVERSATION_PREFERRED_SIM = "SET_CONVERSATION_PREFERRED_SIM"
 
     /**
+     * `SUGGESTIONS_READY` — the AI's reply suggestions for one conversation (XR-GA-017).
+     *
+     * Advertised because all of its halves exist and are tested together: the executor validates the
+     * payload against the local mirror, the cards are sealed into `suggestion_cards`, the conversation
+     * UI renders them, and the feedback event has a durable outbox path. Advertising the type is how
+     * GMweb learns the device can receive it at all.
+     */
+    const val SUGGESTIONS_READY = SuggestionsReadyCommand.TYPE
+
+    /**
      * THE single source of truth for what this build can execute.
      *
      * It is used for two things that must never disagree: the `runtime.commandTypes` array advertised in
@@ -72,7 +91,8 @@ object CommandRouting {
         MARK_THREAD_READ,
         REFRESH_DEVICE_TELEMETRY,
         FETCH_THREAD_HISTORY,
-        SET_CONVERSATION_PREFERRED_SIM
+        SET_CONVERSATION_PREFERRED_SIM,
+        SUGGESTIONS_READY
     )
 
     /** Types this build can actually route to an executor. Derived, never typed twice. */
@@ -85,6 +105,7 @@ object CommandRouting {
         REFRESH_DEVICE_TELEMETRY -> CommandRoute.TELEMETRY_REFRESH
         FETCH_THREAD_HISTORY -> CommandRoute.THREAD_HISTORY
         SET_CONVERSATION_PREFERRED_SIM -> CommandRoute.CONVERSATION_SIM
+        SUGGESTIONS_READY -> CommandRoute.SUGGESTIONS
         else -> CommandRoute.UNSUPPORTED
     }
 }

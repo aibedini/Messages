@@ -63,7 +63,11 @@ class CommandRoutingTest {
         val supported = listOf(
             CommandRouting.SEND_SMS,
             CommandRouting.MARK_THREAD_READ,
-            CommandRouting.REFRESH_DEVICE_TELEMETRY
+            CommandRouting.REFRESH_DEVICE_TELEMETRY,
+            CommandRouting.SET_CONVERSATION_PREFERRED_SIM,
+            // XR-GA-017: the drain must know this type, or a suggestion command stranded by a crash
+            // would be resolved as UNKNOWN instead of being driven through its freshness checks.
+            CommandRouting.SUGGESTIONS_READY
         )
         for (type in supported) {
             assertTrue(

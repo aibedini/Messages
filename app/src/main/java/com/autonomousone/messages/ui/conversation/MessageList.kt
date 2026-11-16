@@ -39,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autonomousone.messages.R
+import com.autonomousone.messages.messaging.QuickReply
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.ui.components.ChatBubble
@@ -82,6 +83,16 @@ fun MessageList(
     selectedKeys: Set<MessageIdentity.Key> = emptySet(),
     onEnterSelection: (Sms) -> Unit = {},
     onToggleSelection: (Sms) -> Unit = {},
+    /**
+     * XR-GA-017: a suggestion card was tapped. It fills the composer — this callback must NEVER send.
+     */
+    onSuggestionSelected: (SuggestionCardUi) -> Unit = {},
+    /** XR-GA-017: long-press → "why this suggestion?" (source, time) and the report action. */
+    onSuggestionLongPress: (SuggestionCardUi) -> Unit = {},
+    /** XR-GA-017: dismiss the card batch (reported as `rejected`). */
+    onSuggestionDismiss: () -> Unit = {},
+    /** XR-GA-017: the local quick-reply fallback was tapped. */
+    onQuickReplySelected: (QuickReply) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -130,7 +141,13 @@ fun MessageList(
                 items(
                     items = chatItems,
                     key = ::chatItemKey,
-                    contentType = { if (it is ChatListItem.DateSeparator) "date" else "message" }
+                    contentType = { item ->
+                        when (item) {
+                            is ChatListItem.DateSeparator -> "date"
+                            is ChatListItem.SuggestionRow -> "suggestion"
+                            is ChatListItem.MessageItem -> "message"
+                        }
+                    }
                 ) { item ->
                     when (item) {
                         is ChatListItem.DateSeparator -> {
@@ -184,6 +201,14 @@ fun MessageList(
                                 )
                             }
                         }
+                        is ChatListItem.SuggestionRow -> SuggestionSlotRow(
+                            slot = item.slot,
+                            onSelect = onSuggestionSelected,
+                            onLongPress = onSuggestionLongPress,
+                            onDismiss = onSuggestionDismiss,
+                            onQuickReply = onQuickReplySelected,
+                            modifier = Modifier.animateItem()
+                        )
                     }
                 }
                 // OLDER crawl spinner at the data tail = visual TOP edge.

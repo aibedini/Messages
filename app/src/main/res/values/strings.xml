@@ -156,6 +156,22 @@
     <string name="conv_loading_multimedia">Reading multimedia</string>
     <string name="conv_loading_generic">Loading</string>
 
+    <!-- XR-GA-017: AI suggestion cards (under the last inbound message) -->
+    <string name="suggestion_badge_knowledge">From knowledge</string>
+    <string name="suggestion_badge_needs_review">Needs review</string>
+    <string name="suggestion_insert_action">Insert into reply</string>
+    <string name="suggestion_long_press_action">Why this suggestion?</string>
+    <string name="suggestion_dismiss_action">Dismiss suggestions</string>
+    <string name="suggestion_why_title">Why this suggestion?</string>
+    <string name="suggestion_source_fmt">Source: %1$s</string>
+    <string name="suggestion_received_fmt">Received: %1$s</string>
+    <string name="suggestion_expires_fmt">Valid until: %1$s</string>
+    <string name="suggestion_segments_fmt">Length: about %1$d SMS</string>
+    <string name="suggestion_report_action">Report bad suggestion</string>
+    <string name="suggestion_close_action">Close</string>
+    <string name="suggestion_card_a11y_fmt">%1$s. %2$s. Double tap to put this text in the reply box.</string>
+    <string name="quick_replies_fallback_label">Quick replies</string>
+
     <!-- SIM switcher -->
     <string name="sim_default_label">Default SIM</string>
     <string name="sim_switch">Switch SIM</string>
@@ -543,7 +559,7 @@
     <string name="nav_support">Support</string>
     <string name="nav_unread_fmt">%1$s, %2$d unread</string>
 
-    <string name="eve_title">Support</string>
+    <string name="eve_title">Support</string>
     <string name="eve_visitor">Visitor</string>
     <string name="eve_unknown_agent">Another agent</string>
 
@@ -642,7 +658,7 @@
     <string name="eve_server_scheme">Only http or https addresses are supported</string>
 
     <!-- Visitor profile sheet -->
-    <string name="eve_profile_open">Visitor details</string>
+    <string name="eve_profile_open">Visitor details</string>
     <string name="eve_profile_identity">Identity</string>
     <string name="eve_profile_subscription">Plan and subscription</string>
     <string name="eve_profile_device">Device</string>
@@ -653,7 +669,7 @@
     <string name="eve_profile_reference">Reference</string>
     <string name="eve_profile_empty">The server sent no profile details for this visitor.</string>
     <string name="eve_profile_refresh">Refresh</string>
-    <string name="eve_profile_updated_fmt">Updated %1$s</string>
+    <string name="eve_profile_updated_fmt">Updated %1$s</string>
 
     <string name="eve_field_name">Name</string>
     <string name="eve_field_mobile">Mobile</string>
@@ -676,12 +692,12 @@
     <string name="eve_field_visitor_id">Visitor ID</string>
     <string name="eve_field_conversation_id">Conversation ID</string>
     <string name="eve_field_channel">Channel</string>
-    <string name="eve_field_agent">Agent</string>
+    <string name="eve_field_agent">Agent</string>
 
     <string name="eve_no_subscription">No subscription</string>
     <string name="eve_days_left_fmt">%1$d days left</string>
     <string name="eve_expired">Expired</string>
-    <string name="eve_banned">Banned</string>
+    <string name="eve_banned">Banned</string>
     <string name="eve_copied">Copied to clipboard</string>
 
     <string name="eve_err_network">Couldn\'t reach the server</string>
@@ -693,7 +709,7 @@
     <string name="eve_err_rate_limited">Too many requests — wait a moment</string>
     <string name="eve_err_server">Server error — try again shortly</string>
     <string name="eve_err_client">The request was rejected</string>
-    <string name="eve_err_parse">Unreadable response from the server</string>
+    <string name="eve_err_parse">Unreadable response from the server</string>
     <string name="eve_session_expired">Your session expired — please sign in again</string>
     <string name="eve_load_failed">Couldn\'t load the conversation</string>
 </resources>

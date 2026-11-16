@@ -182,11 +182,21 @@ class SyncErrorCodeTest {
             SyncErrorCode.SIM_NOT_FOUND,
             SyncErrorCode.SIM_INACTIVE,
             SyncErrorCode.INVALID_SIM_REFERENCE,
-            SyncErrorCode.PREFERENCE_UPDATE_FAILED
+            SyncErrorCode.PREFERENCE_UPDATE_FAILED,
+            // The suggestion-command family (SUGGESTIONS_READY, XR-GA-017). A suggestion that is
+            // late, superseded, expired, anchored to an unknown message or addressed to a LOCAL_ONLY
+            // thread is none of a send, a read or a preference — and "the AI answered a question the
+            // conversation had already moved past" must be searchable on its own.
+            SyncErrorCode.SUGGESTIONS_INVALID_PAYLOAD,
+            SyncErrorCode.SUGGESTIONS_STALE,
+            SyncErrorCode.SUGGESTIONS_EXPIRED,
+            SyncErrorCode.SUGGESTIONS_UNKNOWN_MESSAGE,
+            SyncErrorCode.SUGGESTIONS_LOCAL_ONLY_THREAD,
+            SyncErrorCode.SUGGESTIONS_PERSIST_FAILED
         )
         assertEquals(
-            "the mission's minimum codes plus 16 that had no honest minimum equivalent",
-            36,
+            "the mission's minimum codes plus 22 that had no honest minimum equivalent",
+            42,
             SyncErrorCode.entries.size
         )
         assertEquals(

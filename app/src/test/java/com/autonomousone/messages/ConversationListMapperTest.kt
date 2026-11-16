@@ -73,6 +73,9 @@ class ConversationListMapperTest {
             when (it) {
                 is ChatListItem.MessageItem -> "m"
                 is ChatListItem.DateSeparator -> it.dateText
+                // XR-GA-017: the suggestion slot is inserted by `withSuggestionSlot`, never by the
+                // message mapper — so seeing one here would itself be a bug.
+                is ChatListItem.SuggestionRow -> error("buildReverseChatItems must not emit a slot")
             }
         }
         // Newest first, each group trailing with its own header; oldest group

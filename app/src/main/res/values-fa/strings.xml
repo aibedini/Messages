@@ -137,6 +137,21 @@
     <string name="conv_status_sending"> · در حال ارسال…</string>
     <string name="conv_syncing_older">در حال همگام‌سازی پیام‌های قدیمی…</string>
     <string name="conv_syncing_newer">در حال همگام‌سازی پیام‌های جدیدتر…</string>
+    <!-- XR-GA-017: کارت‌های پیشنهاد پاسخ -->
+    <string name="suggestion_badge_knowledge">از دانشنامه</string>
+    <string name="suggestion_badge_needs_review">نیازمند بازبینی</string>
+    <string name="suggestion_insert_action">درج در پاسخ</string>
+    <string name="suggestion_long_press_action">چرا این پیشنهاد؟</string>
+    <string name="suggestion_dismiss_action">بستن پیشنهادها</string>
+    <string name="suggestion_why_title">چرا این پیشنهاد؟</string>
+    <string name="suggestion_source_fmt">منبع: %1$s</string>
+    <string name="suggestion_received_fmt">زمان دریافت: %1$s</string>
+    <string name="suggestion_expires_fmt">اعتبار تا: %1$s</string>
+    <string name="suggestion_segments_fmt">طول: حدود %1$d پیامک</string>
+    <string name="suggestion_report_action">گزارش پیشنهاد بد</string>
+    <string name="suggestion_close_action">بستن</string>
+    <string name="suggestion_card_a11y_fmt">%1$s. %2$s. برای درج در کادر پاسخ دو بار ضربه بزنید.</string>
+    <string name="quick_replies_fallback_label">پاسخ‌های سریع</string>
     <string name="conv_go_to_first_message">رفتن به اولین پیام</string>
     <string name="jump_to_latest">پرش به آخرین پیام</string>
     <string name="conv_load_failed">بارگذاری بخشی از پیام‌ها ممکن نشد. با باز کردن دوباره گفتگو تازه می‌شوند.</string>
@@ -537,7 +552,7 @@
     <string name="nav_support">پشتیبانی</string>
     <string name="nav_unread_fmt">%1$s، %2$d خوانده‌نشده</string>
 
-    <string name="eve_title">پشتیبانی</string>
+    <string name="eve_title">پشتیبانی</string>
     <string name="eve_visitor">بازدیدکننده</string>
     <string name="eve_unknown_agent">کارشناس دیگر</string>
 
@@ -636,7 +651,7 @@
     <string name="eve_server_scheme">فقط آدرس http یا https پذیرفته می‌شود</string>
 
     <!-- مشخصات بازدیدکننده -->
-    <string name="eve_profile_open">مشخصات بازدیدکننده</string>
+    <string name="eve_profile_open">مشخصات بازدیدکننده</string>
     <string name="eve_profile_identity">هویت</string>
     <string name="eve_profile_subscription">پلن و اشتراک</string>
     <string name="eve_profile_device">دستگاه</string>
@@ -647,7 +662,7 @@
     <string name="eve_profile_reference">شناسه‌ها</string>
     <string name="eve_profile_empty">سرور جزئیاتی برای این بازدیدکننده نفرستاده است.</string>
     <string name="eve_profile_refresh">به‌روزرسانی</string>
-    <string name="eve_profile_updated_fmt">آخرین به‌روزرسانی %1$s</string>
+    <string name="eve_profile_updated_fmt">آخرین به‌روزرسانی %1$s</string>
 
     <string name="eve_field_name">نام</string>
     <string name="eve_field_mobile">موبایل</string>
@@ -670,12 +685,12 @@
     <string name="eve_field_visitor_id">شناسه بازدیدکننده</string>
     <string name="eve_field_conversation_id">شناسه گفت‌وگو</string>
     <string name="eve_field_channel">کانال</string>
-    <string name="eve_field_agent">کارشناس</string>
+    <string name="eve_field_agent">کارشناس</string>
 
     <string name="eve_no_subscription">بدون اشتراک</string>
     <string name="eve_days_left_fmt">%1$d روز باقی‌مانده</string>
     <string name="eve_expired">منقضی</string>
-    <string name="eve_banned">مسدود</string>
+    <string name="eve_banned">مسدود</string>
     <string name="eve_copied">در کلیپ‌بورد کپی شد</string>
 
     <string name="eve_err_network">اتصال به سرور برقرار نشد</string>
@@ -687,7 +702,7 @@
     <string name="eve_err_rate_limited">درخواست‌ها زیاد است؛ کمی صبر کنید</string>
     <string name="eve_err_server">خطای سرور؛ کمی بعد دوباره تلاش کنید</string>
     <string name="eve_err_client">درخواست نامعتبر است</string>
-    <string name="eve_err_parse">پاسخ نامعتبر از سرور</string>
+    <string name="eve_err_parse">پاسخ نامعتبر از سرور</string>
     <string name="eve_session_expired">نشست شما منقضی شد؛ لطفاً دوباره وارد شوید</string>
     <string name="eve_load_failed">بارگذاری گفت‌وگو ممکن نشد</string>
 </resources>
