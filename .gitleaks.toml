@@ -33,3 +33,11 @@ paths = ['''app/src/test/java/com/autonomousone/messages/LogRedactorTest\.kt$'''
 description = "Sequential dummy device ID in the diagnostics sanitizer test"
 targetRules = ["generic-api-key"]
 paths = ['''app/src/test/java/com/autonomousone/messages/sync/diagnostics/SyncDiagnosticsTest\.kt$''']
+
+# LDV-004 cross-implementation HPKE vector: a throwaway P-256 test key, not a
+# credential and never used by the app. Scoped to one rule and one test-only
+# resource path; allowlisting by value would hide a real secret pasted there.
+[[allowlists]]
+description = "Synthetic HPKE grant vector test key in a test-only resource"
+targetRules = ["generic-api-key"]
+paths = ['''app/src/test/resources/hpke-p256-grant-v1\.json$''']
