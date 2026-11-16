@@ -253,6 +253,24 @@ fun AppNavigation(
             )
         }
 
+        // LDV-004 / XR-GA-008 (PR-E slice 2b): per-conversation scope for ONE AI device.
+        // The id is the registry id of the AI device the operator tapped; it is decoded through
+        // Screen.cleanArg so a leaked route pattern can never be used as a device id.
+        composable(
+            route = Screen.ConversationScope.route,
+            arguments = listOf(
+                navArgument("deviceId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            com.autonomousone.messages.ui.screens.ConversationScopeScreen(
+                navController = navController,
+                deviceId = Screen.cleanArg(backStackEntry.arguments?.getString("deviceId")),
+            )
+        }
+
         composable(Screen.AppearanceSettings.route) {
             com.autonomousone.messages.ui.screens.AppearanceSettingsScreen(
                 navController = navController
