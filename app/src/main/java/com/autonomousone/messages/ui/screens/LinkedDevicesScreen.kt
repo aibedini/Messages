@@ -36,13 +36,18 @@ import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustedDeviceEntity
 import com.autonomousone.messages.navigation.Screen
 import com.autonomousone.messages.security.AiDeviceApprovalState
+import com.autonomousone.messages.security.ConversationGrantWiring
+import com.autonomousone.messages.security.GrantTarget
+import com.autonomousone.messages.security.MessageCrypto
 import com.autonomousone.messages.security.PairingCapabilityContract
 import com.autonomousone.messages.security.PairingClient
+import com.autonomousone.messages.security.SingleDeviceUnlinkScope
 import com.autonomousone.messages.security.TrustedDeviceRegistry
 import com.autonomousone.messages.security.PairingEndpointResolver
 import com.autonomousone.messages.gateway.TrustStatementPublisher
 import com.autonomousone.messages.gateway.RegistrationManager
 import com.autonomousone.messages.gateway.ConnectionDiagnostics
+import com.autonomousone.messages.utils.DiagnosticLog
 import com.autonomousone.messages.utils.showBiometricPrompt
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -52,6 +57,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 
 /**
@@ -359,13 +365,52 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                       "Revocation",
                                                       "revoke_initiated deviceId=${t.deviceId} display=${t.displayName}"
                                                   )
-                                                  val sequence = TrustedDeviceRegistry.recordRevocation(context, t.deviceId)
+                                                  // LDV-004 PR-E slice 2d: for an AI device, withdraw its
+                                                  // conversation scope BEFORE the trust-registry revocation is
+                                                  // recorded, then forget its scope rows afterwards. Both steps
+                                                  // are best-effort and logged without key material; a pause
+                                                  // failure never aborts the unlink, and
+                                                  // TrustedDeviceRegistry.recordRevocation remains the
+                                                  // authoritative device-level kill switch. WEB_PWA devices
+                                                  // take the old path untouched (the helper makes no scope call).
+                                                  val unlink = withContext(Dispatchers.IO) {
+                                                      val publicKey = runCatching {
+                                                          MessageCrypto.unb64(t.encryptionPublicKey)
+                                                      }.getOrDefault(ByteArray(0))
+                                                      ConversationGrantWiring.createSingleDeviceUnlink(
+                                                          context = context,
+                                                          onWarning = { message, error ->
+                                                              DiagnosticLog.event("CONV_SCOPE", message, error)
+                                                          },
+                                                      ).run(
+                                                          device = GrantTarget(
+                                                              deviceId = t.deviceId,
+                                                              encryptionPublicKey = publicKey,
+                                                          ),
+                                                          isAiDevice = t.deviceType ==
+                                                              PairingCapabilityContract.DEVICE_TYPE_AI_AGENT,
+                                                          revoke = {
+                                                              TrustedDeviceRegistry
+                                                                  .recordRevocation(context, t.deviceId)
+                                                                  ?.toLong()
+                                                          },
+                                                      )
+                                                  }
                                                   android.util.Log.i(
                                                       "Revocation",
-                                                      "revoke_committed deviceId=${t.deviceId} sequence=${sequence ?: "pending"} — awaiting DEVICE_REVOKED publication"
+                                                      "revoke_committed deviceId=${t.deviceId} sequence=${unlink.revocationSequence ?: "pending"} " +
+                                                          "isAi=${unlink.isAiDevice} scopePause=${unlink.pauseOutcome} " +
+                                                          "scopeRowsCleared=${unlink.scopeRowsCleared} — awaiting DEVICE_REVOKED publication"
                                                   )
                                                   refreshDevices()
-                                                  result = "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
+                                                  result = if (unlink.isAiDevice &&
+                                                      unlink.pauseOutcome ==
+                                                      SingleDeviceUnlinkScope.PauseOutcome.FAILED
+                                                  ) {
+                                                      "🛡 ${t.displayName} revoked — AI conversation scope was not paused; DEVICE_REVOKED still revokes the device"
+                                                  } else {
+                                                      "🛡 ${t.displayName} revoked — publishing DEVICE_REVOKED"
+                                                  }
                                               } catch (e: Exception) {
                                                   android.util.Log.e("Revocation", "revoke_failed deviceId=${t.deviceId}", e)
                                                   result = "Could not save revocation: ${e.message}"

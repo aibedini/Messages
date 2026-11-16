@@ -12,7 +12,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +31,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +46,8 @@ import com.autonomousone.messages.viewmodel.ConversationScopeEditor
 import com.autonomousone.messages.viewmodel.ConversationScopeViewModel
 import com.autonomousone.messages.viewmodel.ScopeConversationRow
 import com.autonomousone.messages.viewmodel.ScopeEditorNotice
+import com.autonomousone.messages.viewmodel.ScopePauseNotice
+import com.autonomousone.messages.viewmodel.ScopePauseState
 import java.text.DateFormat
 import java.util.Date
 
@@ -70,9 +77,19 @@ import java.util.Date
  *  - A sensitive or `LOCAL_ONLY` conversation is never listed (design §4.6/§5.8); the count of
  *    hidden conversations is shown so the operator is not surprised by a shorter list.
  *  - An empty cut-down list is not a scope: Save stays disabled (the policy refuses
- *    `Conversations(emptySet())`; "pause everything" is a separate decision that PR-E slice 2c
- *    will add).
+ *    `Conversations(emptySet())`). Withdrawing everything is a different decision, the
+ *    explicit master pause below (slice 2d) — never the absence of checkmarks.
  *  - There is no "publish anyway" path: a failure leaves the device on its last approved scope.
+ *
+ * ## Master pause (slice 2d)
+ *
+ * «توقف دسترسی AI به همهٔ مکالمات» is the only action that WITHDRAWS access. It is a
+ * danger-styled, full-width action at the bottom of the list, disabled while a decision is in
+ * flight and once the device is already paused. Tapping it opens a Persian confirmation dialog
+ * that says plainly that every grant is revoked and the AI can no longer read future messages;
+ * only its confirm button calls [ConversationScopeViewModel.pauseAll]. A successful pause
+ * replaces the editor with the revoked (empty) scope, so the list re-renders with nothing
+ * checked and Save disabled.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +104,9 @@ fun ConversationScopeScreen(
         factory = ConversationScopeViewModel.Factory(application, deviceId),
     )
     val state by viewModel.uiState.collectAsState()
+    // The pause is NEVER silent: this flag only opens the explicit Persian danger dialog, and
+    // the decision is submitted from its confirm button (slice 2d).
+    var pauseDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -141,16 +161,43 @@ fun ConversationScopeScreen(
                 }
             }
 
-            is ConversationScopeViewModel.UiState.Content -> ConversationScopeContent(
-                deviceName = current.deviceName,
-                editor = current.editor,
-                onToggle = viewModel::toggle,
-                onAllConversations = viewModel::setAllConversations,
-                onSave = viewModel::save,
-                onCancel = { navController.popBackStack() },
-                onDismissNotice = viewModel::dismissNotice,
-                modifier = Modifier.padding(padding),
-            )
+            is ConversationScopeViewModel.UiState.Content -> {
+                ConversationScopeContent(
+                    deviceName = current.deviceName,
+                    editor = current.editor,
+                    onToggle = viewModel::toggle,
+                    onAllConversations = viewModel::setAllConversations,
+                    onSave = viewModel::save,
+                    onCancel = { navController.popBackStack() },
+                    onDismissNotice = viewModel::dismissNotice,
+                    onRequestPause = { pauseDialog = true },
+                    onDismissPauseNotice = viewModel::dismissPauseNotice,
+                    modifier = Modifier.padding(padding),
+                )
+                if (pauseDialog) {
+                    AlertDialog(
+                        onDismissRequest = { pauseDialog = false },
+                        title = { Text(ConversationScopeTexts.PAUSE_DIALOG_TITLE) },
+                        text = { Text(ConversationScopeTexts.PAUSE_DIALOG_BODY) },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pauseDialog = false
+                                    viewModel.pauseAll()
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) { Text(ConversationScopeTexts.PAUSE_DIALOG_CONFIRM) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pauseDialog = false }) {
+                                Text(ConversationScopeTexts.CANCEL)
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -164,6 +211,8 @@ private fun ConversationScopeContent(
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onDismissNotice: () -> Unit,
+    onRequestPause: () -> Unit,
+    onDismissPauseNotice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -193,7 +242,7 @@ private fun ConversationScopeContent(
                 Checkbox(
                     checked = editor.accountWide,
                     onCheckedChange = { onAllConversations(it) },
-                    enabled = !editor.saving,
+                    enabled = !editor.busy,
                 )
                 Column(
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
@@ -254,7 +303,7 @@ private fun ConversationScopeContent(
                 // checked but not editable: a box that could be un-checked while the account
                 // grant still covers the conversation would be a lie.
                 checked = editor.isChecked(row.conversationId),
-                enabled = !editor.accountWide && !editor.saving,
+                enabled = !editor.accountWide && !editor.busy,
                 onCheckedChange = { enabled -> onToggle(row.conversationId, enabled) },
             )
         }
@@ -279,6 +328,76 @@ private fun ConversationScopeContent(
                     )
                     TextButton(onClick = onDismissNotice) {
                         Text(ConversationScopeTexts.DISMISS)
+                    }
+                }
+            }
+        }
+
+        // ── The master pause (slice 2d) ───────────────────────────────────────
+        // The only action on this screen that WITHDRAWS access. It is separated from Save,
+        // coloured as a danger action, and reachable only through the explicit confirmation
+        // dialog in the parent composable. After a success the editor is the revoked (empty)
+        // scope, so every row renders unchecked and Save is disabled.
+        item {
+            HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    ConversationScopeTexts.PAUSE_SECTION_TITLE,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    ConversationScopeTexts.PAUSE_EXPLAINER,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = onRequestPause,
+                    enabled = editor.pauseActionEnabled,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (editor.pause == ScopePauseState.Pausing) {
+                            ConversationScopeTexts.PAUSE_IN_PROGRESS
+                        } else {
+                            ConversationScopeTexts.PAUSE_ACTION
+                        }
+                    )
+                }
+                if (editor.pause == ScopePauseState.Paused) {
+                    Text(
+                        ConversationScopeTexts.PAUSE_ACTIVE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                editor.pauseNotice?.let { notice ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            pauseNoticeText(notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (notice == ScopePauseNotice.PAUSED ||
+                                notice == ScopePauseNotice.ALREADY_PAUSED ||
+                                notice == ScopePauseNotice.NOTHING_GRANTED
+                            ) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onDismissPauseNotice) {
+                            Text(ConversationScopeTexts.DISMISS)
+                        }
                     }
                 }
             }
@@ -364,6 +483,15 @@ private fun noticeText(notice: ScopeEditorNotice): String = when (notice) {
     ScopeEditorNotice.FAILED_OTHER -> ConversationScopeTexts.NOTICE_OTHER
 }
 
+private fun pauseNoticeText(notice: ScopePauseNotice): String = when (notice) {
+    ScopePauseNotice.PAUSED -> ConversationScopeTexts.NOTICE_PAUSED
+    ScopePauseNotice.ALREADY_PAUSED -> ConversationScopeTexts.NOTICE_ALREADY_PAUSED
+    ScopePauseNotice.NOTHING_GRANTED -> ConversationScopeTexts.NOTICE_NOTHING_GRANTED
+    ScopePauseNotice.FAILED_OUTBOX -> ConversationScopeTexts.NOTICE_PAUSE_OUTBOX
+    ScopePauseNotice.FAILED_PERSIST -> ConversationScopeTexts.NOTICE_PAUSE_PERSIST
+    ScopePauseNotice.FAILED_OTHER -> ConversationScopeTexts.NOTICE_PAUSE_OTHER
+}
+
 /**
  * Every user-facing word this screen says, in one place.
  *
@@ -407,6 +535,35 @@ internal object ConversationScopeTexts {
     const val NOTICE_OUTBOX = "ارسال در صف قرار نگرفت؛ دامنه تغییری نکرد."
     const val NOTICE_PERSIST = "ذخیرهٔ دامنه ناموفق بود؛ دامنه تغییری نکرد."
     const val NOTICE_OTHER = "خطای پیش‌بینی‌نشده؛ دامنه تغییری نکرد."
+
+    // ── Master pause (slice 2d) ─────────────────────────────────────────────
+
+    const val PAUSE_SECTION_TITLE = "توقف دسترسی"
+    const val PAUSE_EXPLAINER =
+        "این تنها کاری است که دسترسی این دستگاه را می‌گیرد، نه می‌دهد. " +
+            "با توقف، همهٔ مجوزهای خواندنِ فعلی باطل می‌شوند. برای بازگرداندن دسترسی، " +
+            "دوباره مکالمه‌ها را انتخاب و ذخیره کنید."
+
+    /** The required action label: the master pause of every conversation. */
+    const val PAUSE_ACTION = "توقف دسترسی AI به همهٔ مکالمات"
+    const val PAUSE_IN_PROGRESS = "در حال توقف دسترسی…"
+    const val PAUSE_ACTIVE = "دسترسی AI به مکالمات متوقف است."
+
+    const val PAUSE_DIALOG_TITLE = "توقف دسترسی AI به همهٔ مکالمات؟"
+    const val PAUSE_DIALOG_BODY =
+        "با تأیید، همهٔ مجوزهایی که به این دستگاه هوش مصنوعی داده شده باطل می‌شوند " +
+            "(همهٔ مجوزهای مکالمه و مجوز حساب) و از این پس هوش مصنوعی نمی‌تواند پیام‌های " +
+            "جدید را بخواند. پیام‌هایی که پیش از این خوانده شده‌اند روی آن دستگاه باقی " +
+            "می‌مانند و پاک نمی‌شوند. این کار فقط با انتخاب دوبارهٔ مکالمه‌ها و ذخیره " +
+            "برگشت‌پذیر است."
+    const val PAUSE_DIALOG_CONFIRM = "بله، دسترسی را متوقف کن"
+
+    const val NOTICE_PAUSED = "دسترسی AI به همهٔ مکالمات متوقف شد و مجوزها باطل شدند."
+    const val NOTICE_ALREADY_PAUSED = "دسترسی AI از قبل متوقف بود."
+    const val NOTICE_NOTHING_GRANTED = "هیچ مجوز فعالی برای توقف نبود."
+    const val NOTICE_PAUSE_OUTBOX = "دستور توقف ارسال نشد؛ دسترسی متوقف نشد."
+    const val NOTICE_PAUSE_PERSIST = "ثبت توقف ناموفق بود؛ دسترسی متوقف نشد."
+    const val NOTICE_PAUSE_OTHER = "خطای پیش‌بینی‌نشده در توقف دسترسی؛ دوباره تلاش کنید."
 
     fun deviceLine(name: String): String = "دستگاه: $name"
 

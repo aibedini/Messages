@@ -246,4 +246,28 @@ object ConversationGrantWiring {
             aiDevices = TrustedAiAgentDeviceSource(db),
         )
     }
+
+    /**
+     * Slice 2d — the single-device unlink hook over the same coordinator and the same v30
+     * tables, for a screen that does not hold a coordinator instance.
+     *
+     * Both halves are the production adapters: the pause goes through
+     * [ConversationGrantCoordinator.pauseAll] (key-less `unlinked` tombstones) and the
+     * post-revocation cleanup through slice 2a's transactional
+     * [com.autonomousone.messages.data.LinkedDeviceScopeDao.deleteAll]. The caller is
+     * responsible for invoking it OFF the main thread and for passing a warning sink that does
+     * not log message content or keys.
+     */
+    fun createSingleDeviceUnlink(
+        context: Context,
+        onWarning: (message: String, error: Throwable?) -> Unit = { _, _ -> },
+    ): SingleDeviceUnlinkScope {
+        val db = MessagesDatabase.get(context.applicationContext)
+        val coordinator = create(context)
+        return SingleDeviceUnlinkScope(
+            pauseAll = { device, reason -> coordinator.pauseAll(device, reason) },
+            deleteScopeRows = { deviceId -> db.linkedDeviceScopeDao().deleteAll(deviceId) },
+            onWarning = onWarning,
+        )
+    }
 }

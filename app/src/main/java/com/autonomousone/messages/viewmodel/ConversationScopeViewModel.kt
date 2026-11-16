@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * LDV-004 PR-E (slice 2b) — the conversation-scope screen's ViewModel.
+ * LDV-004 PR-E (slice 2b + 2d) — the conversation-scope screen's ViewModel.
  *
  * It owns the three reads the screen needs and nothing else:
  *
@@ -41,12 +41,16 @@ import kotlinx.coroutines.withContext
  *     cloud identity (`remote_conversation_map`) because that id is what a grant names, and
  *     it must pass [ConversationScope.eligible], so a sensitive or LOCAL_ONLY conversation is
  *     never even listed (design §4.6/§5.8);
- *  3. the scope persisted for that device (slice 2a).
+ *  3. the scope persisted for that device (slice 2a), including whether it is revoked
+ *     ("paused") so the master-pause action starts out disabled.
  *
  * Saving delegates the whole decision to [ConversationGrantCoordinator] through the production
  * wiring; the ViewModel never builds a payload, touches a key or writes the outbox itself. All
- * interactive state lives in the pure [ConversationScopeEditor], so the behaviour is unit
- * tested without Android.
+ * interactive state lives in the pure [ConversationScopeEditor] and the pause transitions in
+ * `ConversationScopePause.kt`, so the behaviour is unit tested without Android. [pauseAll] is
+ * the master "stop AI access to every conversation" decision (slice 2d): it revokes EVERY
+ * grant of this device with reason `revoked` and replaces the editor with the revoked (empty)
+ * scope on success, keeping the pending selection untouched on failure.
  *
  * ## Why the keyring producer is nudged before a save
  *
@@ -142,6 +146,49 @@ class ConversationScopeViewModel(
         updateEditor { it.setAllConversations(enabled) }
 
     fun dismissNotice() = updateEditor { it.copy(notice = null) }
+
+    fun dismissPauseNotice() = updateEditor { it.dismissPauseNotice() }
+
+    /**
+     * Master pause (slice 2d): revoke EVERY conversation grant of this AI device.
+     *
+     * This is the only action on the screen that withdraws access, so it is never invoked
+     * implicitly: the screen calls it only after the operator confirms the Persian danger
+     * dialog. The transition is installed synchronously by [startPause] before the coroutine
+     * starts, so a double tap launches at most one decision; the coordinator's own idempotency
+     * (`AlreadyRevoked`) is the backstop.
+     *
+     * The decision itself runs off the main thread through the production wiring, with reason
+     * `revoked` (the operator's pause, not an unlink). A pause is key-less, so the device's
+     * encryption key is not needed — it is passed only as target metadata, best effort.
+     *
+     * Failure keeps the persisted scope and the operator's pending ticks exactly as they were
+     * (`ScopePauseNotice.FAILED_*`); success replaces the editor with the revoked (empty)
+     * scope, which is what the list then renders.
+     */
+    fun pauseAll() {
+        val content = mutableState.value as? UiState.Content ?: return
+        val snapshot = device ?: return
+        val started = content.editor.startPause() ?: return
+        val target = GrantTarget(
+            deviceId = snapshot.deviceId,
+            // Key-less decision: an unreadable key must never block a revocation.
+            encryptionPublicKey = runCatching { MessageCrypto.unb64(snapshot.encryptionPublicKey) }
+                .getOrDefault(ByteArray(0)),
+        )
+        mutableState.value = content.copy(editor = started)
+        viewModelScope.launch {
+            val next = withContext(Dispatchers.IO) {
+                started.runPause(
+                    device = target,
+                    pauseAll = { grantTarget, reason -> coordinator.pauseAll(grantTarget, reason) },
+                    onError = { e -> DiagnosticLog.event("CONV_SCOPE", "pause-failed", e) },
+                )
+            }
+            val current = mutableState.value as? UiState.Content ?: return@launch
+            mutableState.value = current.copy(editor = next)
+        }
+    }
 
     /**
      * Publish the editor's selection.
@@ -257,13 +304,18 @@ class ConversationScopeViewModel(
 
         device = target
         categories = resolvedCategories
-        val persisted = db.linkedDeviceScopeDao().snapshot(deviceId).toSelection()
+        val scope = db.linkedDeviceScopeDao().snapshot(deviceId)
+        val scopeState = scope.toScopeState()
         UiState.Content(
             deviceName = target.displayName,
             editor = ConversationScopeEditor.fromPersisted(
                 rows = rows,
                 hiddenSensitiveCount = hiddenSensitive,
-                persisted = persisted,
+                persisted = scope.toSelection(),
+                // `persisted == null` means "never configured OR paused"; the state row is
+                // the only way to tell them apart, so the pause action can start disabled
+                // for a device whose scope is already revoked (slice 2d).
+                scopeRevoked = scopeState?.revoked == true,
             ),
         )
     }

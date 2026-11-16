@@ -88,6 +88,16 @@ data class ConversationScopeEditor(
     val selected: Set<String> = emptySet(),
     val saving: Boolean = false,
     val notice: ScopeEditorNotice? = null,
+    /**
+     * Where the master "pause AI access to all conversations" action stands (slice 2d).
+     *
+     * [ScopePauseState.Paused] is set by loading a revoked scope and by a successful pause; a
+     * successful save resets it to [ScopePauseState.NotStarted] because the device is granted
+     * again. See `ConversationScopePause.kt` for the transitions.
+     */
+    val pause: ScopePauseState = ScopePauseState.NotStarted,
+    /** One-shot outcome of the last pause attempt; the screen maps it to Persian copy. */
+    val pauseNotice: ScopePauseNotice? = null,
 ) {
     private val visibleIds: Set<String>
         get() = rows.mapTo(mutableSetOf()) { it.conversationId }
@@ -121,7 +131,22 @@ data class ConversationScopeEditor(
 
     /** Save is offered only for a real, publishable change. */
     val canSave: Boolean
-        get() = !saving && selection() != null && isDirty
+        get() = !saving &&
+            pause != ScopePauseState.Pausing &&
+            selection() != null &&
+            isDirty
+
+    /**
+     * The pause action is offered while no decision is in flight and the device still has
+     * something to withdraw. A failed attempt can be retried; a paused device cannot be
+     * paused again (the coordinator would report `AlreadyRevoked`, which is not a decision).
+     */
+    val pauseActionEnabled: Boolean
+        get() = !saving && (pause == ScopePauseState.NotStarted || pause is ScopePauseState.Failed)
+
+    /** True while any decision (save or pause) is in flight; the list and save are frozen. */
+    val busy: Boolean
+        get() = saving || pause == ScopePauseState.Pausing
 
     /** True when the editor is in explicit mode with nothing selected. */
     val emptySelection: Boolean
@@ -135,6 +160,7 @@ data class ConversationScopeEditor(
      */
     fun toggle(conversationId: String, enabled: Boolean): ConversationScopeEditor {
         if (accountWide || conversationId !in visibleIds) return this
+        if (pause is ScopePauseState.Pausing) return this
         val next = if (enabled) selected + conversationId else selected - conversationId
         return if (next == selected) this else copy(selected = next, notice = null)
     }
@@ -148,6 +174,7 @@ data class ConversationScopeEditor(
      */
     fun setAllConversations(enabled: Boolean): ConversationScopeEditor {
         if (enabled == accountWide) return this
+        if (pause is ScopePauseState.Pausing) return this
         return if (enabled) {
             copy(accountWide = true, notice = null)
         } else {
@@ -176,6 +203,10 @@ data class ConversationScopeEditor(
             selected = result.state.activeConversationIds,
             saving = false,
             notice = ScopeEditorNotice.SAVED,
+            // A grant was just published, so the device is no longer paused: the master
+            // pause action is offered again (slice 2d).
+            pause = ScopePauseState.NotStarted,
+            pauseNotice = null,
         )
 
         ScopeApplyResult.Unchanged -> copy(saving = false, notice = ScopeEditorNotice.UP_TO_DATE)
@@ -220,17 +251,23 @@ data class ConversationScopeEditor(
          * @param rows the eligible conversations, most recent first.
          * @param hiddenSensitiveCount conversations omitted because the policy refuses them.
          * @param persisted the stored decision (`null` = never configured / paused).
+         * @param scopeRevoked true when the persisted scope exists and is revoked ("paused",
+         *   slice 2a's `mode=conversation` with no enabled row). That is the only way the
+         *   screen knows to disable the pause action before the operator taps it; `persisted`
+         *   alone cannot express it because a never-configured device is also `null`.
          */
         fun fromPersisted(
             rows: List<ScopeConversationRow>,
             hiddenSensitiveCount: Int,
             persisted: ScopeSelection?,
+            scopeRevoked: Boolean = false,
         ): ConversationScopeEditor = ConversationScopeEditor(
             rows = rows.sortedByDescending { it.lastActivity },
             hiddenSensitiveCount = hiddenSensitiveCount,
             persisted = persisted,
             accountWide = persisted is ScopeSelection.AccountWide,
             selected = (persisted as? ScopeSelection.Conversations)?.ids.orEmpty(),
+            pause = if (scopeRevoked) ScopePauseState.Paused else ScopePauseState.NotStarted,
         )
     }
 }
