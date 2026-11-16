@@ -21,7 +21,7 @@ data class TrustedDeviceEntity(
     @PrimaryKey val deviceId: String,
     val accountId: String,
     val displayName: String,          // display-only ("Chrome on Windows")
-    val deviceType: String,           // e.g. WEB_PWA
+    val deviceType: String,           // WEB_PWA | AI_AGENT (XR-GA-008)
     val origin: String,               // https://gmweb...
     val signingPublicKey: String,     // SPKI DER Base64
     val encryptionPublicKey: String,  // SPKI DER Base64

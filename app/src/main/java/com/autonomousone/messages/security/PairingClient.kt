@@ -45,6 +45,8 @@ object PairingClient {
         val expiresAt: Long,
         val transcriptHash: String,
         val apiOrigin: String = "",
+        /** XR-GA-008: WEB_PWA (default, unchanged) or AI_AGENT. */
+        val deviceType: String = PairingCapabilityContract.DEVICE_TYPE_WEB_PWA,
         val rawMetadata: JSONObject? = null
     )
 
@@ -53,9 +55,11 @@ object PairingClient {
         require(o.getString("protocol") == PairingProtocol.PROTOCOL)
         require(o.getLong("expiresAt") > System.currentTimeMillis())
         require(PairingProtocol.transcriptHash(o) == o.getString("transcriptHash"))
+        val deviceType = o.optString("deviceType", PairingCapabilityContract.DEVICE_TYPE_WEB_PWA)
+        require(PairingCapabilityContract.isSupportedDeviceType(deviceType))
         SessionInfo(o.getString("pairingSessionId"), o.getString("webDeviceId"),
             o.getString("webOrigin"), o.getLong("expiresAt"), o.getString("transcriptHash"),
-            o.getString("apiOrigin"), o)
+            o.getString("apiOrigin"), deviceType, o)
     }.getOrNull()
 
     fun originMatches(serverOrigin: String, scanned: SessionInfo): Boolean =
@@ -137,12 +141,15 @@ object PairingClient {
             val info = SessionInfo(
                 o.getString("pairingSessionId"), o.getString("webDeviceId"),
                 o.getString("webOrigin"), o.optLong("expiresAt", 0L),
-                o.optString("transcriptHash", ""), o.getString("apiOrigin"), o
+                o.optString("transcriptHash", ""), o.getString("apiOrigin"),
+                o.optString("deviceType", PairingCapabilityContract.DEVICE_TYPE_WEB_PWA), o
             )
-            if (info.transcriptHash != scanned.transcriptHash ||
+            if (!PairingCapabilityContract.isSupportedDeviceType(info.deviceType) ||
+                info.transcriptHash != scanned.transcriptHash ||
                 PairingProtocol.transcriptHash(o) != scanned.transcriptHash ||
                 info.apiOrigin != scanned.apiOrigin || info.origin != scanned.origin ||
                 info.webDeviceId != scanned.webDeviceId || info.pairingSessionId != scanned.pairingSessionId ||
+                info.deviceType != scanned.deviceType ||
                 info.expiresAt <= System.currentTimeMillis())
                 return@withContext null to "transcript mismatch or expired QR"
             info to null
@@ -169,6 +176,22 @@ object PairingClient {
             val deviceId = prefs.agentDeviceId(context)
             val meta = info.rawMetadata ?: error("server transcript metadata missing")
             val issuedAt = System.currentTimeMillis()
+            // XR-GA-008 fail-closed: the phone refuses to sign a certificate
+            // that violates the shared device_type_policy, so an AI device can
+            // never be issued SEND_MESSAGES / MARK_READ / sensitive grants or
+            // FULL_HISTORY even if a caller passes them.
+            val deviceType = info.deviceType
+            require(PairingCapabilityContract.isSupportedDeviceType(deviceType)) {
+                "stage=PREPARING_APPROVAL reason=unsupported_device_type"
+            }
+            require(PairingCapabilityContract.capabilitiesAreValidFor(deviceType, capabilities)) {
+                "stage=PREPARING_APPROVAL reason=certificate_capability_policy_violation"
+            }
+            require(historyGrant == PairingCapabilityContract.HISTORY_FROM_NOW_ON ||
+                (deviceType == PairingCapabilityContract.DEVICE_TYPE_WEB_PWA &&
+                    historyGrant == PairingCapabilityContract.HISTORY_FULL)) {
+                "stage=PREPARING_APPROVAL reason=history_grant_policy_violation"
+            }
             val certificate = JSONObject().apply {
                 put("protocol", PairingProtocol.PROTOCOL)
                 put("pairingSessionId", info.pairingSessionId)
@@ -176,7 +199,7 @@ object PairingClient {
                 put("webOrigin", info.origin)
                 put("accountId", "default")
                 put("deviceId", info.webDeviceId)
-                put("deviceType", "WEB_PWA")
+                put("deviceType", deviceType)
                 put("signingPublicKey", meta.optString("webSigningPublicKey", ""))
                 put("encryptionPublicKey", meta.optString("webEncryptionPublicKey", ""))
                 put("capabilities", JSONArray(capabilities))
@@ -221,12 +244,16 @@ object PairingClient {
                 // FIX 2/3 (single choke point): EVERY successful approve — QR scan
                 // OR "Enter pairing code" — triggers the encrypted cloud-history
                 // backfill + key-grant drain in the coordinator. Idempotent.
-                try {
-                    com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
-                        .requestCloudBackfillForLinkedDevice(info.webDeviceId)
-                    Log.i(TAG, "backfill_triggered_after_approve webDeviceId=${short(info.webDeviceId)}")
-                } catch (t: Throwable) {
-                    Log.w(TAG, "post-approve backfill scheduling failed", t)
+                // XR-GA-008: an AI_AGENT is FROM_NOW_ON only, so it must never
+                // receive a full-history backfill key grant.
+                if (deviceType != PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
+                    try {
+                        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+                            .requestCloudBackfillForLinkedDevice(info.webDeviceId)
+                        Log.i(TAG, "backfill_triggered_after_approve webDeviceId=${short(info.webDeviceId)}")
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "post-approve backfill scheduling failed", t)
+                    }
                 }
 
                 Log.i(TAG, "stage=LINKED endpoint=$path status=$status session=${short(info.pairingSessionId)} device=${short(deviceId)}")

@@ -34,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.data.TrustedDeviceEntity
+import com.autonomousone.messages.security.AiDeviceApprovalState
 import com.autonomousone.messages.security.PairingCapabilityContract
 import com.autonomousone.messages.security.PairingClient
 import com.autonomousone.messages.security.TrustedDeviceRegistry
@@ -115,6 +116,10 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
     var grantReset by remember { mutableStateOf(false) }
     var grantAuth by remember { mutableStateOf(false) }
     var grantFinancial by remember { mutableStateOf(false) }
+    // XR-GA-008 / LDV-003: an AI device requires an explicit acknowledgement in
+    // addition to the "Link device" tap and the biometric prompt.
+    var aiAcknowledged by remember { mutableStateOf(false) }
+    LaunchedEffect(scanned?.pairingSessionId) { aiAcknowledged = false }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -443,8 +448,15 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (d.deviceType == PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
+                                        Text(
+                                            "AI device · read + suggest only · send messages never granted",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                     Text(
-                                        deviceCapabilities(d.capabilitiesJson).joinToString(" · ") { deviceCapabilityLabels[it] ?: it.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase) },
+                                        deviceCapabilities(d.capabilitiesJson).joinToString(" · ") { capabilityLabel[it] ?: it.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase) },
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Text(
@@ -454,7 +466,8 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     if (d.status != TrustedDeviceEntity.STATUS_REVOKED &&
                                         d.status != TrustedDeviceEntity.STATUS_REVOKE_PENDING
                                     ) {
-                                        if (d.status == TrustedDeviceEntity.STATUS_ACTIVE) {
+                                        if (d.status == TrustedDeviceEntity.STATUS_ACTIVE &&
+                                            d.deviceType != PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
                                             OutlinedButton(onClick = {
                                                 editedCapabilities = deviceCapabilities(d.capabilitiesJson)
                                                 manageTarget = d
@@ -665,10 +678,18 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                         step = "LIST"
                         return@Column
                     }
+                    // XR-GA-008 / LDV-003: AI devices get a dedicated approval
+                    // variant. The WEB_PWA variant below is deliberately unchanged.
+                    val isAiDevice = info.deviceType == PairingCapabilityContract.DEVICE_TYPE_AI_AGENT
+                    val aiApproval = AiDeviceApprovalState(acknowledged = aiAcknowledged)
                     cameraError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Link new device?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isAiDevice) "Link AI device?" else "Link new device?",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                     val display = info.origin.removePrefix("https://").removePrefix("http://")
                     Text(
                         "$display",
@@ -677,42 +698,81 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Requested access", style = MaterialTheme.typography.labelLarge)
-                    Text("✓ Read messages\n✓ Send messages\n✓ Receive notifications", style = MaterialTheme.typography.bodyMedium)
+                    if (isAiDevice) {
+                        Text("✓ Read messages\n✓ Suggest replies (AI_SUGGEST)", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "✗ Send messages — never granted",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            "This AI device also never gets mark-read, device management, " +
+                                "notifications or sensitive categories.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text("✓ Read messages\n✓ Send messages\n✓ Receive notifications", style = MaterialTheme.typography.bodyMedium)
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Requested history access", style = MaterialTheme.typography.labelLarge)
-                    Text("This choice controls encrypted history access. Sensitive categories below remain private unless you explicitly enable them.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = historyFull, onClick = { historyFull = true })
-                        Text("Full history")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = !historyFull, onClick = { historyFull = false })
-                        Text("From now on")
+                    if (isAiDevice) {
+                        Text(
+                            "From now on. AI devices cannot request full history.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text("This choice controls encrypted history access. Sensitive categories below remain private unless you explicitly enable them.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = historyFull, onClick = { historyFull = true })
+                            Text("Full history")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = !historyFull, onClick = { historyFull = false })
+                            Text("From now on")
+                        }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    // ADR-006 Amendment: sensitive access is USER-SELECTABLE
-                    // per linked device (privacy-first defaults = OFF). Each
-                    // grant becomes a signed capability in the certificate.
-                    Text("Sensitive messages", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        "Choose what this device may see. Everything stays on " +
-                            "this phone unless you enable it here.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    SensitiveGrantRow("Contacts", grantContacts) { grantContacts = it }
-                    SensitiveGrantRow("OTP & login codes", grantOtp) { grantOtp = it }
-                    SensitiveGrantRow("Bank security codes", grantBank) { grantBank = it }
-                    SensitiveGrantRow("Password reset codes", grantReset) { grantReset = it }
-                    SensitiveGrantRow("Authentication / 2FA codes", grantAuth) { grantAuth = it }
-                    SensitiveGrantRow("Bank transaction notifications", grantFinancial) { grantFinancial = it }
+                    if (!isAiDevice) {
+                        // ADR-006 Amendment: sensitive access is USER-SELECTABLE
+                        // per linked device (privacy-first defaults = OFF). Each
+                        // grant becomes a signed capability in the certificate.
+                        Text("Sensitive messages", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "Choose what this device may see. Everything stays on " +
+                                "this phone unless you enable it here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        SensitiveGrantRow("Contacts", grantContacts) { grantContacts = it }
+                        SensitiveGrantRow("OTP & login codes", grantOtp) { grantOtp = it }
+                        SensitiveGrantRow("Bank security codes", grantBank) { grantBank = it }
+                        SensitiveGrantRow("Password reset codes", grantReset) { grantReset = it }
+                        SensitiveGrantRow("Authentication / 2FA codes", grantAuth) { grantAuth = it }
+                        SensitiveGrantRow("Bank transaction notifications", grantFinancial) { grantFinancial = it }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = aiAcknowledged,
+                                onCheckedChange = { aiAcknowledged = it }
+                            )
+                            Text(
+                                AiDeviceApprovalState.ACKNOWLEDGEMENT,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = { step = "LIST" }, modifier = Modifier.weight(1f)) {
                             Text("Cancel")
                         }
                         Button(
+                            // An AI device needs an explicit acknowledgement before
+                            // the biometric prompt is even offered.
+                            enabled = !isAiDevice || aiApproval.isReadyToConfirm,
                             onClick = {
                                 val act = context as? androidx.appcompat.app.AppCompatActivity
                                 if (act == null) {
@@ -728,19 +788,18 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                     onSuccess = {
                                         val info0 = scanned
                                         if (info0 != null) {
-                                            val caps = buildList {
-                                                // Capability contract is schema-driven
-                                                // (protocol/pairing-protocol-v1.json): the base
-                                                // set is always granted; sensitive grants only
-                                                // when the user enabled that row.
-                                                addAll(PairingCapabilityContract.BASE_CAPABILITIES)
-                                                val grants = arrayOf(grantContacts, grantOtp, grantBank, grantReset, grantAuth, grantFinancial)
-                                                PairingCapabilityContract.SENSITIVE_CAPABILITIES
-                                                    .forEachIndexed { index, capability ->
-                                                        if (grants[index]) add(capability)
-                                                    }
-                                            }
-                                            val grant = if (historyFull) "FULL_HISTORY" else "FROM_NOW_ON"
+                                            // XR-GA-008: capability construction is now
+                                            // contract-driven for BOTH device types. AI_AGENT is
+                                            // always exactly READ_MESSAGES + AI_SUGGEST and
+                                            // ignores every sensitive toggle; WEB_PWA keeps the
+                                            // base set plus the operator's sensitive grants.
+                                            val caps = PairingCapabilityContract.capabilitiesFor(
+                                                info0.deviceType,
+                                                PairingCapabilityContract.SENSITIVE_CAPABILITIES.filterIndexed { index, _ ->
+                                                    arrayOf(grantContacts, grantOtp, grantBank, grantReset, grantAuth, grantFinancial)[index]
+                                                },
+                                            )
+                                            val grant = PairingCapabilityContract.historyGrantFor(info0.deviceType, historyFull)
                                             // FIX 1: network must leave the UI thread —
                                             // the callback only launches a coroutine.
                                             CoroutineScope(Dispatchers.Main).launch {
@@ -755,7 +814,11 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                     val approved = com.autonomousone.messages.security
                                                         .TrustedDeviceRegistry.ApprovedDevice(
                                                             deviceId = info0.webDeviceId,
-                                                            displayName = "Web · ${info0.origin.removePrefix("https://").take(32)}",
+                                                            displayName = if (info0.deviceType == PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
+                                                                "AI · ${info0.origin.removePrefix("https://").take(32)}"
+                                                            } else {
+                                                                "Web · ${info0.origin.removePrefix("https://").take(32)}"
+                                                            },
                                                             origin = info0.origin,
                                                             signingPublicKey = meta0.optString("webSigningPublicKey", ""),
                                                             encryptionPublicKey = meta0.optString("webEncryptionPublicKey", ""),
@@ -763,6 +826,7 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                             historyGrant = grant,
                                                             certificateJson = "",
                                                             certificateSignature = "",
+                                                            deviceType = info0.deviceType,
                                                             expiresAt = System.currentTimeMillis() + 180L * 24 * 60 * 60 * 1000
                                                         )
                                                     step = "APPROVING_ON_SERVER"
@@ -789,8 +853,12 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                                         // FIX 2: a REAL approve happened — auto-backfill the encrypted
                                                             // cloud history and emit one v3 history key for this device
                                                         // instead of waiting for the uploader's own drain cycle.
-                                                        com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
-                                                            .requestCloudBackfillForLinkedDevice(info0.webDeviceId)
+                                                        // XR-GA-008: an AI device is FROM_NOW_ON only, so it must
+                                                        // never receive a full-history backfill key grant.
+                                                        if (info0.deviceType != PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
+                                                            com.autonomousone.messages.data.TelephonySyncCoordinator.get(context)
+                                                                .requestCloudBackfillForLinkedDevice(info0.webDeviceId)
+                                                        }
                                                         result = "✅ Device linked — continue in the browser"
                                                         step = "LINKED"
                                                     } else {
@@ -812,14 +880,20 @@ fun LinkedDevicesScreen(navController: androidx.navigation.NavController) {
                                 )
                             },
                             modifier = Modifier.weight(1f)
-                        ) { Text("Link device") }
+                        ) { Text(if (isAiDevice) "Confirm AI device" else "Link device") }
                     }
                 }
 
                 "APPROVING_ON_SERVER" -> Text("Approving on server…")
 
                 "LINKED" -> {
-                    Text("Device linked — continue in the browser")
+                    Text(
+                        if (scanned?.deviceType == PairingCapabilityContract.DEVICE_TYPE_AI_AGENT) {
+                            "AI device linked — read + suggest only"
+                        } else {
+                            "Device linked — continue in the browser"
+                        }
+                    )
                     Button(onClick = { step = "LIST" }) { Text("Done") }
                 }
 
@@ -982,7 +1056,7 @@ private class QrBoundsView(context: android.content.Context) : android.view.View
 internal val capabilityLabel: Map<String, String> = mapOf(
     "READ_MESSAGES" to "Read messages", "SEND_MESSAGES" to "Send messages",
     "MARK_READ" to "Mark messages read", "RECEIVE_NOTIFICATIONS" to "Notifications",
-    "CONTACTS_READ" to "Contacts",
+    "CONTACTS_READ" to "Contacts", "AI_SUGGEST" to "Suggest replies",
     "READ_OTP" to "OTP and login codes", "READ_BANK_SECURITY" to "Bank security codes",
     "READ_PASSWORD_RESET" to "Password reset codes", "READ_AUTH_CODES" to "Authentication codes",
     "READ_FINANCIAL_NOTIFICATIONS" to "Bank transaction notifications"

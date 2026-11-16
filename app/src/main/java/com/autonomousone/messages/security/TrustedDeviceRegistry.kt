@@ -32,6 +32,8 @@ object TrustedDeviceRegistry {
         val certificateJson: String,
         val certificateSignature: String,
         val expiresAt: Long,
+        /** XR-GA-008: WEB_PWA (default, unchanged) or AI_AGENT. */
+        val deviceType: String = PairingCapabilityContract.DEVICE_TYPE_WEB_PWA,
     )
 
     /** Candidate only: recordApproval rechecks it transactionally before any HTTP approval. */
@@ -53,6 +55,10 @@ object TrustedDeviceRegistry {
         device: ApprovedDevice,
         accountId: String = "default",
     ): Int {
+        require(PairingCapabilityContract.isSupportedDeviceType(device.deviceType) &&
+            PairingCapabilityContract.capabilitiesAreValidFor(device.deviceType, device.capabilities)) {
+            "XR-GA-008 device capability policy violation"
+        }
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
         return db.withTransaction {
@@ -62,7 +68,7 @@ object TrustedDeviceRegistry {
                     deviceId = device.deviceId,
                     accountId = accountId,
                     displayName = device.displayName,
-                    deviceType = "WEB_PWA",
+                    deviceType = device.deviceType,
                     origin = device.origin,
                     signingPublicKey = device.signingPublicKey,
                     encryptionPublicKey = device.encryptionPublicKey,
@@ -134,6 +140,13 @@ object TrustedDeviceRegistry {
         accountId: String = "default",
         trustSequence: Int? = null,
     ): Int {
+        // XR-GA-008 / LDV-002: the authoritative local registry refuses an
+        // AI_AGENT row carrying anything beyond READ_MESSAGES + AI_SUGGEST (and
+        // refuses a WEB_PWA row carrying AI_SUGGEST). Fail closed before Room.
+        require(PairingCapabilityContract.isSupportedDeviceType(device.deviceType) &&
+            PairingCapabilityContract.capabilitiesAreValidFor(device.deviceType, device.capabilities)) {
+            "XR-GA-008 device capability policy violation"
+        }
         val db = MessagesDatabase.get(context.applicationContext)
         val now = System.currentTimeMillis()
         val sequence = db.withTransaction {
@@ -148,7 +161,7 @@ object TrustedDeviceRegistry {
                     deviceId = device.deviceId,
                     accountId = accountId,
                     displayName = device.displayName,
-                    deviceType = "WEB_PWA",
+                    deviceType = device.deviceType,
                     origin = device.origin,
                     signingPublicKey = device.signingPublicKey,
                     encryptionPublicKey = device.encryptionPublicKey,
