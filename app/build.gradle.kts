@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // XR-GA-017 (suggestion cards): versionCode +1, patch release, matching the repo's convention
-        // (163 / 3.11.5 follows 162 / 3.11.4).
-        versionCode = 163
-        versionName = "3.11.5"
+        // v3.11.6: data-tools backup/export fix — versionCode +1, patch release
+        // (164 / 3.11.6 follows 163 / 3.11.5).
+        versionCode = 164
+        versionName = "3.11.6"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

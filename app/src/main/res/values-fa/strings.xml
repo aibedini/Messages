@@ -294,6 +294,29 @@
     <string name="data_before">قبل</string>
     <string name="data_after">بعد</string>
 
+    <!-- ابزارهای داده: پیشرفت زنده پشتیبان‌گیری/خروجی/بازیابی -->
+    <string name="data_progress_counting">در حال خواندن پیام‌ها…</string>
+    <string name="data_progress_backup_writing">در حال نوشتن نسخه پشتیبان…</string>
+    <string name="data_progress_export_writing">در حال نوشتن خروجی…</string>
+    <string name="data_progress_saving">در حال ذخیره فایل…</string>
+    <string name="data_progress_restoring">در حال بازیابی پیام‌ها…</string>
+    <string name="data_progress_deleting">در حال حذف پیام‌ها…</string>
+    <string name="data_progress_count_fmt">%1$s از %2$s (%3$d٪)</string>
+    <string name="data_progress_bytes_fmt">%1$s از %2$s</string>
+    <string name="data_cancel">لغو</string>
+    <string name="data_canceled">لغو شد</string>
+    <string name="data_unknown_error">خطای نامشخص</string>
+    <string name="data_backup_ok_detail_fmt">%1$d پیام پشتیبان گرفته شد (%2$s)</string>
+    <string name="data_export_ok_detail_fmt">%1$d پیام در %2$d گفتگو خروجی گرفته شد (%3$s)</string>
+    <string name="data_backup_failed_detail_fmt">پشتیبان‌گیری ناموفق بود: %1$s</string>
+    <string name="data_export_failed_detail_fmt">خروجی‌گیری ناموفق بود: %1$s</string>
+    <string name="data_restore_failed_detail_fmt">بازیابی ناموفق بود: %1$s</string>
+    <string name="data_restore_ok_skipped_fmt">%1$d پیام بازیابی شد (%2$d رد شد)</string>
+    <string name="data_delete_failed">حذف ناموفق بود</string>
+    <string name="data_delete_failed_detail_fmt">حذف ناموفق بود: %1$s</string>
+    <string name="data_share_export">به اشتراک‌گذاری خروجی</string>
+    <string name="data_export_share_failed">هیچ برنامه‌ای برای دریافت خروجی پیدا نشد</string>
+
     <!-- دیالوگ شماره‌های مسدود -->
     <string name="blocked_none_yet">هنوز شماره‌ای مسدود نشده. روی مکالمه لمس طولانی کنید و \"مسدود کردن شماره\" را انتخاب نمایید.</string>
     <string name="blocked_title">شماره‌های مسدود</string>
