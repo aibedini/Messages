@@ -123,13 +123,10 @@ class BackupRepository(private val context: Context) {
             if (writtenRows == 0) {
                 throw DataTransferException("The SMS provider returned no rows during the backup.")
             }
-            if (writtenRows < providerTotal) {
-                Log.w(
-                    TAG,
-                    "Provider reported $providerTotal messages but $writtenRows were written; " +
-                        "messages may have been deleted while the backup was running"
-                )
-            }
+            // A short read is a failure: never hand out a partial backup that
+            // looks complete. New messages arriving during the run are fine
+            // (written > total); deleted ones are not (written < total).
+            requireCompleteArchive(writtenRows, providerTotal, "backup")
             xmlStage.flush()
 
             onProgress(

@@ -55,6 +55,27 @@ class DataTransferException(
 internal const val UNKNOWN_ADDRESS = "Unknown"
 
 /**
+ * Refuses to accept an archive that read fewer messages than the provider
+ * reported before the operation started.
+ *
+ * A short read is not a warning: the old export logged it and still reported
+ * "Exported 500 messages" while the inbox held tens of thousands. Producing a
+ * partial archive silently is worse than failing, so callers discard the file
+ * and surface this error instead.
+ *
+ * Reading MORE than expected is fine: messages can arrive while the archive is
+ * being written, and the file's own counts remain exact.
+ */
+internal fun requireCompleteArchive(read: Int, expected: Int, label: String) {
+    if (read < expected) {
+        throw DataTransferException(
+            "Only $read of $expected messages could be read; " +
+                "the $label was discarded instead of saving an incomplete file."
+        )
+    }
+}
+
+/**
  * One SMS row as both archive writers consume it.
  *
  * [id] is the provider row id and is used ONLY for keyset paging. It is never

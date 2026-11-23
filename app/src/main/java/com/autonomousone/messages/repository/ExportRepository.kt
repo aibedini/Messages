@@ -32,18 +32,26 @@ import kotlin.coroutines.cancellation.CancellationException
  * }
  * ```
  *
- * ## Why this streams
+ * ## Why this reads thread by thread
  *
- * The old implementation loaded every `Sms` object, grouped the whole inbox,
- * then built a `JSONObject` tree for all of it. At 40–50k messages that is
- * hundreds of MB of short-lived objects on a phone: garbage-collection thrash
- * at best, an OOM kill at worst — the user-visible "Export all chats goes to
- * Working and never returns".
+ * The first streaming version paged the whole inbox with a multi-column keyset
+ * (`thread_id, date, _id`). On a real device the SMS provider did not apply
+ * that sort, the second page came back empty, and the archive reported
+ * "500 messages in 1 conversation" as a success — one page and a false count.
  *
- * Here the conversations are written one at a time, in provider
- * `(thread_id, date, _id)` order, into a private staging file. Only one page of
- * rows is in memory. The header counts are taken from the writer's accounting,
- * so the document can never claim more messages than it contains.
+ * The current flow never depends on provider-side multi-column sorting:
+ *
+ * 1. count every SMS row (`_id` paging),
+ * 2. scan every row's `thread_id` (`_id` paging),
+ * 3. read each conversation with `thread_id = ? AND _id > ?`, `ORDER BY _id`.
+ *
+ * Only the primary key and plain columns are used, so paging works on every
+ * provider. The archive is then verified: if fewer messages were read than the
+ * provider reported, the file is deleted and the export fails instead of
+ * handing the user a partial archive.
+ *
+ * Only one page of rows is in memory; conversations are written one at a time
+ * to a private staging file.
  */
 class ExportRepository(private val context: Context) {
 
@@ -52,6 +60,8 @@ class ExportRepository(private val context: Context) {
         const val COPY_BUFFER_BYTES = 256 * 1024
         const val STALE_EXPORT_MS = 24 * 60 * 60 * 1000L
         const val WORK_FILE_PREFIX = ".work-"
+        const val PROGRESS_ROW_STEP = 200
+        const val PROGRESS_TIME_STEP_MS = 250L
     }
 
     private val source = SmsProviderSource(context)
@@ -74,13 +84,27 @@ class ExportRepository(private val context: Context) {
         onProgress: (TransferProgress) -> Unit
     ): ExportResult {
         onProgress(TransferProgress(DataTransferPhase.COUNTING))
-        val providerTotal = source.count { count ->
+        val countedMessages = source.count { count ->
             onProgress(TransferProgress(DataTransferPhase.COUNTING, count, 0))
         }
-        onProgress(TransferProgress(DataTransferPhase.COUNTING, providerTotal, providerTotal))
-        if (providerTotal == 0) {
+        onProgress(
+            TransferProgress(DataTransferPhase.COUNTING, countedMessages, countedMessages)
+        )
+        if (countedMessages == 0) {
             throw DataTransferException("No SMS messages were found on this phone; nothing was exported.")
         }
+
+        val scan = source.scanThreads { scannedRows ->
+            onProgress(TransferProgress(DataTransferPhase.COUNTING, scannedRows, countedMessages))
+        }
+        if (scan.rowCount < countedMessages) {
+            throw DataTransferException(
+                "The SMS provider counted $countedMessages messages but the conversation scan " +
+                    "returned only ${scan.rowCount}; the export was aborted instead of saving a partial archive."
+            )
+        }
+        val expectedTotal = scan.rowCount
+        onProgress(TransferProgress(DataTransferPhase.COUNTING, expectedTotal, expectedTotal))
 
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
         cleanStaleFiles(dir)
@@ -98,40 +122,61 @@ class ExportRepository(private val context: Context) {
                 256 * 1024
             ).use { writer ->
                 val body = SmsJsonBodyWriter(writer)
+                var lastReportedCount = 0
+                var lastReportedAt = 0L
 
-                // 1) Threaded rows, streamed conversation by conversation.
-                var cursor: SmsProviderSource.ThreadKeys? = null
-                var openThread: Long? = null
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val page = source.readByThreadPage(cursor)
-                    if (page.rows.isEmpty()) break
-
-                    for (row in page.rows) {
-                        val thread = row.threadId
-                        if (openThread == null || thread != openThread) {
-                            if (openThread != null) body.endConversation()
-                            body.startConversation(
-                                address = row.address.ifBlank { UNKNOWN_ADDRESS },
-                                threadId = thread
+                fun reportProgress(force: Boolean) {
+                    val now = System.currentTimeMillis()
+                    if (force ||
+                        messagesWritten - lastReportedCount >= PROGRESS_ROW_STEP ||
+                        now - lastReportedAt >= PROGRESS_TIME_STEP_MS
+                    ) {
+                        lastReportedCount = messagesWritten
+                        lastReportedAt = now
+                        onProgress(
+                            TransferProgress(
+                                DataTransferPhase.WRITING,
+                                messagesWritten,
+                                expectedTotal
                             )
-                            openThread = thread
-                        }
-                        body.writeMessage(row)
-                    }
-
-                    messagesWritten = body.messageCount
-                    val next = page.next
-                    if (next == null || next == cursor) {
-                        throw DataTransferException(
-                            "The SMS provider returned rows out of order; the export was aborted to avoid a corrupt file."
                         )
                     }
-                    cursor = next
-                    onProgress(TransferProgress(DataTransferPhase.WRITING, messagesWritten, providerTotal))
-                    if (page.rows.size < SmsProviderSource.PAGE_SIZE) break
                 }
-                if (openThread != null) body.endConversation()
+
+                // 1) One conversation at a time, paged by _id only.
+                for (threadId in scan.threadIds) {
+                    if (threadId <= 0L) continue // handled by the unthreaded pass below
+                    currentCoroutineContext().ensureActive()
+
+                    var afterId = -1L
+                    var conversationOpen = false
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val page = source.readThreadPage(threadId, afterId)
+                        if (page.rows.isEmpty()) break
+
+                        if (!conversationOpen) {
+                            body.startConversation(
+                                address = page.rows.first().address.ifBlank { UNKNOWN_ADDRESS },
+                                threadId = threadId
+                            )
+                            conversationOpen = true
+                        }
+                        for (row in page.rows) body.writeMessage(row)
+                        messagesWritten = body.messageCount
+
+                        if (page.lastId <= afterId) {
+                            throw DataTransferException(
+                                "The SMS provider returned rows out of order while reading " +
+                                    "conversation $threadId; the export was aborted."
+                            )
+                        }
+                        afterId = page.lastId
+                        reportProgress(force = false)
+                        if (page.rows.size < SmsProviderSource.PAGE_SIZE) break
+                    }
+                    if (conversationOpen) body.endConversation()
+                }
 
                 // 2) Rows without a thread: group by address, exactly like the
                 //    previous exporter did. Usually empty; loaded only then.
@@ -144,13 +189,14 @@ class ExportRepository(private val context: Context) {
                         grouped.getOrPut(address) { ArrayList() }.add(row)
                     }
                     for ((address, rows) in grouped) {
+                        currentCoroutineContext().ensureActive()
                         body.startConversation(address = address, threadId = 0L)
                         for (row in rows) body.writeMessage(row)
                         body.endConversation()
                     }
                     messagesWritten = body.messageCount
-                    onProgress(TransferProgress(DataTransferPhase.WRITING, messagesWritten, providerTotal))
                 }
+                reportProgress(force = true)
 
                 conversationsWritten = body.conversationCount
             }
@@ -158,13 +204,12 @@ class ExportRepository(private val context: Context) {
             if (messagesWritten == 0) {
                 throw DataTransferException("The SMS provider returned no rows during the export.")
             }
-            if (messagesWritten < providerTotal) {
-                Log.w(
-                    TAG,
-                    "Provider reported $providerTotal messages but $messagesWritten were exported; " +
-                        "messages may have been deleted while the export was running"
-                )
-            }
+            requireCompleteArchive(messagesWritten, expectedTotal, "export")
+            Log.i(
+                TAG,
+                "SMS export: scanned ${scan.rowCount} rows / ${scan.threadIds.size} threads, " +
+                    "wrote $messagesWritten messages in $conversationsWritten conversations"
+            )
 
             val prefix = SmsJsonFormat.documentStart(
                 app = context.packageName,
@@ -178,7 +223,7 @@ class ExportRepository(private val context: Context) {
                 TransferProgress(
                     phase = DataTransferPhase.SAVING,
                     done = messagesWritten,
-                    total = providerTotal,
+                    total = expectedTotal,
                     bytesDone = 0L,
                     bytesTotal = bodyBytes
                 )
@@ -200,7 +245,7 @@ class ExportRepository(private val context: Context) {
                             TransferProgress(
                                 phase = DataTransferPhase.SAVING,
                                 done = messagesWritten,
-                                total = providerTotal,
+                                total = expectedTotal,
                                 bytesDone = copiedBytes,
                                 bytesTotal = bodyBytes
                             )
@@ -227,7 +272,7 @@ class ExportRepository(private val context: Context) {
                 TransferProgress(
                     phase = DataTransferPhase.SAVING,
                     done = messagesWritten,
-                    total = providerTotal,
+                    total = expectedTotal,
                     bytesDone = bodyBytes,
                     bytesTotal = bodyBytes
                 )

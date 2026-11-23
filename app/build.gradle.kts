@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.6: data-tools backup/export fix — versionCode +1, patch release
-        // (164 / 3.11.6 follows 163 / 3.11.5).
-        versionCode = 164
-        versionName = "3.11.6"
+        // v3.11.7: export every conversation (per-thread id paging) — versionCode +1, patch release
+        // (165 / 3.11.7 follows 164 / 3.11.6).
+        versionCode = 165
+        versionName = "3.11.7"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
