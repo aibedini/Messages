@@ -836,6 +836,9 @@ fun ConversationScreen(
         mutableStateOf(webVisibility.isHidden(recipientPhone))
     }
     var confirmHideFromWeb by remember { mutableStateOf(false) }
+    val hiddenFromWebDone = stringResource(R.string.conv_hide_from_web_done)
+    val shownOnWebDone = stringResource(R.string.conv_show_on_web_done)
+    val hideFromWebFailed = stringResource(R.string.conv_hide_from_web_failed)
 
     fun applyWebVisibility(hidden: Boolean) {
         screenScope.launch {
@@ -843,15 +846,10 @@ fun ConversationScreen(
             if (ok) {
                 webHidden = hidden
                 snackbarHostState.showSnackbar(
-                    context.getString(
-                        if (hidden) R.string.conv_hide_from_web_done
-                        else R.string.conv_show_on_web_done
-                    )
+                    if (hidden) hiddenFromWebDone else shownOnWebDone
                 )
             } else {
-                snackbarHostState.showSnackbar(
-                    context.getString(R.string.conv_hide_from_web_failed)
-                )
+                snackbarHostState.showSnackbar(hideFromWebFailed)
             }
         }
     }
