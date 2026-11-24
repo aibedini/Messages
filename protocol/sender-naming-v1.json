@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "name": "sender-naming",
+  "description": "How the phone names a conversation/sender for replicas such as GMweb. The phone sends identity and provenance; the replica owns user overrides and the shared directory.",
+  "fields": {
+    "address": {
+      "type": "string",
+      "description": "Raw provider sender, byte for byte. This is the identity; never normalize or replace it for display."
+    },
+    "senderKind": {
+      "type": "string",
+      "enum": ["PHONE", "SHORT_CODE", "ALPHANUMERIC", "UNKNOWN"],
+      "description": "How the address must be interpreted. A short code or alphanumeric sender is not a subscriber number."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A human name when source is CONTACT; otherwise the address itself. Never blank."
+    },
+    "displayNameSource": {
+      "type": "string",
+      "producerEnum": ["CONTACT", "ADDRESS", "UNKNOWN"],
+      "reservedForConsumers": ["USER", "DIRECTORY"],
+      "description": "Provenance of displayName. ADDRESS means 'fallback, not a human name'; a consumer MUST NOT replace a USER, CONTACT or DIRECTORY name with it."
+    },
+    "namingVersion": {
+      "type": "integer",
+      "const": 1
+    }
+  },
+  "precedence": ["USER", "CONTACT", "DIRECTORY", "ADDRESS"],
+  "rules": [
+    "address is always the raw provider sender and is always present in conversation and message payloads (it may be empty only when the provider truly supplied nothing).",
+    "displayName is never an empty string. When no contact name exists, the producer sets displayName = address and displayNameSource = ADDRESS.",
+    "displayNameSource = ADDRESS is a fallback. A consumer must not overwrite a USER, CONTACT or DIRECTORY name with it; that is what turned a known bank name into 'Unknown conversation'.",
+    "When displayNameSource = ADDRESS the consumer must render the address (or a directory name), never the literal label 'Unknown conversation'.",
+    "USER is the operator's rename and has the highest precedence. DIRECTORY is a shared/curated sender directory (bank/service short codes); the phone does not ship one.",
+    "A consumer may add its own USER/DIRECTORY names but must keep the producer's address and senderKind untouched.",
+    "Consumers must not infer a bank name from message body text; that requires the shared directory, not guessing."
+  ],
+  "examples": [
+    {
+      "address": "PARSIANBANK",
+      "senderKind": "ALPHANUMERIC",
+      "displayName": "PARSIANBANK",
+      "displayNameSource": "ADDRESS"
+    },
+    {
+      "address": "80000965911001",
+      "senderKind": "PHONE",
+      "displayName": "80000965911001",
+      "displayNameSource": "ADDRESS",
+      "note": "A long numeric bank sender id. A directory may name it; without one, render the address, not 'Unknown conversation'."
+    },
+    {
+      "address": "09121234567",
+      "senderKind": "PHONE",
+      "displayName": "Ali",
+      "displayNameSource": "CONTACT"
+    },
+    {
+      "address": "3000",
+      "senderKind": "SHORT_CODE",
+      "displayName": "3000",
+      "displayNameSource": "ADDRESS"
+    },
+    {
+      "address": "",
+      "senderKind": "UNKNOWN",
+      "displayName": "Unknown",
+      "displayNameSource": "UNKNOWN"
+    }
+  ]
+}

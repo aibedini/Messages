@@ -1,5 +1,6 @@
 package com.autonomousone.messages.data
 
+import com.autonomousone.messages.sync.SenderNaming
 import java.util.Base64
 import java.util.UUID
 import org.json.JSONObject
@@ -222,6 +223,7 @@ object GatewayEventFactory {
         clientMessageId: String?,
         androidThreadId: Long
     ): JSONObject {
+        val naming = SenderNaming.resolve(address, null, contactName)
         val payload = JSONObject()
             .put("messageId", messageIdFor(source, providerId, dateMs))
             .put("source", source)
@@ -231,6 +233,8 @@ object GatewayEventFactory {
             .put("dateMs", dateMs)
             .put("status", status)
             .put("address", address)
+            .put("senderKind", naming.senderKind)
+            .put("namingVersion", SenderNaming.VERSION)
             .put("read", read)
         if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
         if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
@@ -329,7 +333,12 @@ object GatewayEventFactory {
         if (androidThreadId > 0L) payload.put("androidThreadId", androidThreadId)
         if (direction != null) payload.put("direction", direction)
         if (body != null) payload.put("body", body)
-        if (address != null) payload.put("address", address)
+        if (address != null) {
+            val naming = SenderNaming.resolve(address, null, contactName)
+            payload.put("address", address)
+            payload.put("senderKind", naming.senderKind)
+            payload.put("namingVersion", SenderNaming.VERSION)
+        }
         if (!contactName.isNullOrBlank()) payload.put("contactName", contactName)
         if (!originCommandId.isNullOrBlank()) payload.put("originCommandId", originCommandId)
         if (!clientMessageId.isNullOrBlank()) payload.put("clientMessageId", clientMessageId)
@@ -449,10 +458,14 @@ object GatewayEventFactory {
          */
         preferredSim: PreferredSimPayload = PreferredSimPayload.Absent
     ): JSONObject {
+        val naming = SenderNaming.resolve(address, null, displayName)
         val payload = JSONObject()
             .put("conversationId", conversationId)
-            .put("displayName", displayName ?: address)
-            .put("address", address)
+            .put("displayName", naming.displayName)
+            .put("displayNameSource", naming.displayNameSource)
+            .put("senderKind", naming.senderKind)
+            .put("namingVersion", SenderNaming.VERSION)
+            .put("address", naming.address)
             .put("lastMessagePreview", lastMessagePreview)
             .put("lastMessageDirection", lastMessageDirection)
             .put("lastMessageAt", lastMessageAt)

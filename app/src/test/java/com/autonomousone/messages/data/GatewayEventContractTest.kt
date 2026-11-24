@@ -89,6 +89,35 @@ class GatewayEventContractTest {
         assertEquals(552L, payload.getLong("androidThreadId"))
         // displayName falls back to the address, never to an empty string.
         assertEquals("PARSIANBANK", payload.getString("displayName"))
+        assertEquals("ALPHANUMERIC", payload.getString("senderKind"))
+        assertEquals("ADDRESS", payload.getString("displayNameSource"))
+        assertEquals(1, payload.getInt("namingVersion"))
+    }
+
+    @Test
+    fun `a contact name is marked CONTACT so a replica cannot confuse it with the address`() {
+        val payload = GatewayEventFactory.conversationUpsertedPayload(
+            conversationId = "conv-2", displayName = "Ali", address = "09121234567",
+            lastMessagePreview = "preview", lastMessageDirection = "in", lastMessageAt = 10L,
+            unreadCount = 0, pinned = false, archived = false, androidThreadId = 7L
+        )
+
+        assertEquals("09121234567", payload.getString("address"))
+        assertEquals("Ali", payload.getString("displayName"))
+        assertEquals("CONTACT", payload.getString("displayNameSource"))
+        assertEquals("PHONE", payload.getString("senderKind"))
+    }
+
+    @Test
+    fun `a short code is never formatted as a subscriber number`() {
+        val payload = GatewayEventFactory.messageCreatedPayload(
+            source = "sms", providerId = 8L, direction = "in", body = "b", dateMs = 1L,
+            status = 0, address = "3000", contactName = null, read = false,
+            originCommandId = null, clientMessageId = null, androidThreadId = 9L
+        )
+
+        assertEquals("SHORT_CODE", payload.getString("senderKind"))
+        assertEquals(1, payload.getInt("namingVersion"))
     }
 
     @Test

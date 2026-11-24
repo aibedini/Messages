@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.10: fix lint in the hide-from-web UI — versionCode +1, patch release
-        // (168 / 3.11.10 follows 167 / 3.11.9).
-        versionCode = 168
-        versionName = "3.11.10"
+        // v3.11.11: versioned sender-naming contract (senderKind/displayNameSource) — patch release
+        // (169 / 3.11.11 follows 168 / 3.11.10).
+        versionCode = 169
+        versionName = "3.11.11"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
