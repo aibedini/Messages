@@ -139,6 +139,13 @@
     <string name="conv_syncing_older">Syncing older messages…</string>
     <string name="conv_syncing_newer">Syncing newer messages…</string>
     <string name="conv_go_to_first_message">Go to first message</string>
+    <string name="conv_hide_from_web">Hide from web</string>
+    <string name="conv_show_on_web">Show on web</string>
+    <string name="conv_hide_from_web_confirm_title">Hide from web?</string>
+    <string name="conv_hide_from_web_confirm_body">This conversation and contact will be removed from the web version. Messages stay on this phone, and new messages will not be sent to the web until you show it again.</string>
+    <string name="conv_hide_from_web_done">Hidden from web</string>
+    <string name="conv_show_on_web_done">Shown on web again</string>
+    <string name="conv_hide_from_web_failed">Could not update web visibility</string>
     <string name="jump_to_latest">Jump to latest</string>
     <string name="conv_load_failed">Couldn\'t load some messages. They\'ll refresh when you reopen this chat.</string>
     <string name="conv_load_error_title">Couldn\'t load messages</string>
@@ -720,7 +727,7 @@
     <string name="eve_no_subscription">No subscription</string>
     <string name="eve_days_left_fmt">%1$d days left</string>
     <string name="eve_expired">Expired</string>
-    <string name="eve_banned">Banned</string>
+    <string name="eve_banned">Banned</string>
     <string name="eve_copied">Copied to clipboard</string>
 
     <string name="eve_err_network">Couldn\'t reach the server</string>
@@ -732,7 +739,7 @@
     <string name="eve_err_rate_limited">Too many requests — wait a moment</string>
     <string name="eve_err_server">Server error — try again shortly</string>
     <string name="eve_err_client">The request was rejected</string>
-    <string name="eve_err_parse">Unreadable response from the server</string>
+    <string name="eve_err_parse">Unreadable response from the server</string>
     <string name="eve_session_expired">Your session expired — please sign in again</string>
     <string name="eve_load_failed">Couldn\'t load the conversation</string>
 </resources>

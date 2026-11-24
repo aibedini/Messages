@@ -283,9 +283,9 @@ fun GatewayHealthCard(
             if (health.eventUpload.deadLetter > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 DimensionRow(
-                    label = "Historical sync failures",
-                    detail = "${health.eventUpload.deadLetter} retained items",
-                    supporting = "Review advanced details",
+                    label = "Historical sync backlog",
+                    detail = "${health.eventUpload.deadLetter} retained uploads",
+                    supporting = "Old outbox rows kept for review — not live failures. Review advanced details",
                     tone = HealthTone.WARN
                 )
             }

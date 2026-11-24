@@ -137,6 +137,7 @@ import com.autonomousone.messages.repository.MessageIdentity
 import com.autonomousone.messages.repository.ParticipantContactAction
 import com.autonomousone.messages.repository.SuggestionCardsRepository
 import com.autonomousone.messages.repository.SuggestionFeedbackPublisher
+import com.autonomousone.messages.repository.WebVisibilityRepository
 import com.autonomousone.messages.security.ThreadLocalOnlyPolicy
 import com.autonomousone.messages.sync.SuggestionFeedback
 import com.autonomousone.messages.ui.components.ChatBubble
@@ -826,6 +827,34 @@ fun ConversationScreen(
     }
     // For the single Send intent (insert bubble → follow it smoothly).
     val screenScope = rememberCoroutineScope()
+
+    // ── Web visibility ("Hide from web") ────────────────────────────────────
+    // The phone is the authority. Hiding removes the conversation/contact from the web replica and
+    // keeps new events off-cloud until the user shows it again; local messages are untouched.
+    val webVisibility = remember(context) { WebVisibilityRepository.get(context) }
+    var webHidden by remember(threadId, recipientPhone) {
+        mutableStateOf(webVisibility.isHidden(recipientPhone))
+    }
+    var confirmHideFromWeb by remember { mutableStateOf(false) }
+
+    fun applyWebVisibility(hidden: Boolean) {
+        screenScope.launch {
+            val ok = webVisibility.setHidden(threadId, recipientPhone, hidden)
+            if (ok) {
+                webHidden = hidden
+                snackbarHostState.showSnackbar(
+                    context.getString(
+                        if (hidden) R.string.conv_hide_from_web_done
+                        else R.string.conv_show_on_web_done
+                    )
+                )
+            } else {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.conv_hide_from_web_failed)
+                )
+            }
+        }
+    }
     // Windowed history: pull older pages when the OLDER boundary is crossed.
     var loadingOlder by remember { mutableStateOf(false) }
     var loadingNewer by remember { mutableStateOf(false) }
@@ -1062,7 +1091,11 @@ fun ConversationScreen(
                     onAddToContacts = ::addParticipantToContacts,
                     onViewContact = ::viewParticipantContact,
                     onGoToFirstMessage = { viewModel.jumpToOldest() },
-                    onSearchClick = { viewModel.openSearch() }
+                    onSearchClick = { viewModel.openSearch() },
+                    webHidden = webHidden,
+                    onToggleWebVisibility = {
+                        if (webHidden) applyWebVisibility(false) else confirmHideFromWeb = true
+                    }
                 )
             }
         }
@@ -1898,6 +1931,27 @@ fun ConversationScreen(
         )
     }
 
+    if (confirmHideFromWeb) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmHideFromWeb = false },
+            title = { Text(stringResource(R.string.conv_hide_from_web_confirm_title)) },
+            text = { Text(stringResource(R.string.conv_hide_from_web_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmHideFromWeb = false
+                    applyWebVisibility(true)
+                }) {
+                    Text(stringResource(R.string.conv_hide_from_web))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmHideFromWeb = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
     if (showParticipantActions) {
         ParticipantActionDialog(
             participant = participant,
@@ -1917,6 +1971,11 @@ fun ConversationScreen(
             onViewContact = {
                 showParticipantActions = false
                 viewParticipantContact()
+            },
+            webHidden = webHidden,
+            onToggleWebVisibility = {
+                showParticipantActions = false
+                if (webHidden) applyWebVisibility(false) else confirmHideFromWeb = true
             }
         )
     }
@@ -1929,7 +1988,9 @@ private fun ParticipantActionDialog(
     onCall: () -> Unit,
     onCopy: () -> Unit,
     onAddContact: () -> Unit,
-    onViewContact: () -> Unit
+    onViewContact: () -> Unit,
+    webHidden: Boolean,
+    onToggleWebVisibility: () -> Unit
 ) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -1958,6 +2019,14 @@ private fun ParticipantActionDialog(
                             Text(stringResource(R.string.conv_view_contact))
                         }
                     ParticipantContactAction.NONE -> Unit
+                }
+                TextButton(onClick = onToggleWebVisibility) {
+                    Text(
+                        stringResource(
+                            if (webHidden) R.string.conv_show_on_web
+                            else R.string.conv_hide_from_web
+                        )
+                    )
                 }
             }
         },

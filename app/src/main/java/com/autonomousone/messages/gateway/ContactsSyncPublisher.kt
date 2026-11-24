@@ -59,6 +59,8 @@ class ContactsSyncPublisher(
     }
 
     private val db = MessagesDatabase.get(context.applicationContext)
+    private val messagingPrefs =
+        com.autonomousone.messages.messaging.MessagingPreferences(context.applicationContext)
     private var job: Job? = null
     private var debounce: Job? = null
     private var previous = emptyMap<String, ContactRecord>()
@@ -158,6 +160,9 @@ class ContactsSyncPublisher(
                 while (cursor.moveToNext()) {
                     val normalized = ContactRepository.normalizePhone(cursor.getString(number) ?: "")
                     if (normalized.isBlank()) continue
+                    // "Hide from web" is a contact-level decision too: the excluded number is never
+                    // part of a snapshot, and publishChanges() reports it as deleted to GMweb.
+                    if (messagingPrefs.isHiddenFromWebAddress(normalized)) continue
                     val photoUri = cursor.getString(photo)
                     rows[normalized] = ContactRecord(
                         normalizedPhone = normalized,

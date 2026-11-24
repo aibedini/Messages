@@ -1419,6 +1419,19 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         }
         return run {
             val row = build()
+            // "Hide from web" is a USER decision on this phone. Every event of a hidden opaque
+            // conversation (or a hidden contact address, which also covers a new thread split) is
+            // skipped before encryption/insertion; the web replica is removed by the
+            // CONVERSATION_DELETED control event queued by setConversationWebVisibility.
+            if (messagingPrefs.isHiddenFromWebConversation(row.aggregateId) ||
+                messagingPrefs.isHiddenFromWebAddress(sender)
+            ) {
+                Log.i(
+                    TAG,
+                    "WEB_VISIBILITY: skipped ${row.eventType} for hidden conversation"
+                )
+                return@run EnqueueAttempt.SKIPPED_HIDDEN_FROM_WEB
+            }
             if (db.gatewayEventOutboxDao().idOf(row.eventUuid) != null) {
                 return@run EnqueueAttempt.ALREADY_PRESENT
             }
@@ -1501,6 +1514,12 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         if (!syncAllowed) return@withContext false
         val conversation = db.conversationDao().byThread(threadId) ?: return@withContext false
         if (conversationId.isBlank()) return@withContext false
+        // A hidden conversation must not reappear on the web through a SIM-preference upsert.
+        if (messagingPrefs.isHiddenFromWebConversation(conversationId) ||
+            messagingPrefs.isHiddenFromWebAddress(conversation.rawAddress)
+        ) {
+            return@withContext false
+        }
 
         val direction = cloudMessageDirection(conversation.lastMessageType) ?: "inbound"
         return@withContext try {
@@ -1540,6 +1559,104 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
             )
             false
         }
+    }
+
+    /**
+     * Hide or show one conversation/contact on the web companion.
+     *
+     * Hiding is a USER privacy decision and has three parts:
+     *  1. persist the address aliases and the opaque conversation id (the phone is the authority),
+     *  2. suppress every not-yet-delivered event of that conversation and make all future enqueues
+     *     return [EnqueueAttempt.SKIPPED_HIDDEN_FROM_WEB],
+     *  3. queue `CONVERSATION_DELETED` so GMweb removes the conversation and its messages.
+     *
+     * Showing reverses (1) and (2) and queues a summary upsert; historical events that were already
+     * hidden are made eligible again, so the web copy can be rebuilt from them.
+     *
+     * @return true when the local decision and its control event were durably written.
+     */
+    suspend fun setConversationWebVisibility(
+        threadId: Long,
+        rawAddress: String,
+        hidden: Boolean,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (threadId <= 0L) return@withContext false
+        try {
+            val conversationId = conversationIdFor(threadId)
+            if (conversationId.isBlank()) return@withContext false
+            val now = System.currentTimeMillis()
+
+            if (hidden) {
+                messagingPrefs.hideAddressFromWeb(rawAddress)
+                messagingPrefs.hideConversationFromWeb(conversationId)
+                db.gatewayEventOutboxDao().hideOutboxForAggregate(conversationId, now)
+                insertControlEvent(
+                    GatewayEventFactory.conversationDeleted(conversationId, revision = now)
+                )
+            } else {
+                messagingPrefs.showAddressOnWeb(rawAddress)
+                messagingPrefs.showConversationOnWeb(conversationId)
+                db.gatewayEventOutboxDao().restoreHiddenOutboxForAggregate(conversationId)
+                publishConversationSummary(threadId, conversationId, now)
+            }
+
+            // The contact snapshot excludes hidden numbers. Nudging the observer makes the web
+            // contact disappear on the next debounce instead of waiting for the next app start.
+            runCatching {
+                appContext.contentResolver.notifyChange(
+                    android.provider.ContactsContract.Contacts.CONTENT_URI,
+                    null
+                )
+            }
+            DiagnosticLog.event(
+                "WEB_VISIBILITY",
+                if (hidden) "hidden thread=$threadId" else "shown thread=$threadId"
+            )
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "setConversationWebVisibility failed thread=$threadId", e)
+            false
+        }
+    }
+
+    /**
+     * Inserts an already-built conversation control event, bypassing the hidden gate.
+     *
+     * Only used by [setConversationWebVisibility]: the delete that hides a conversation and the
+     * upsert that shows it must be publishable while that same conversation is hidden/being hidden.
+     * These payloads carry no message body and no contact details.
+     */
+    private suspend fun insertControlEvent(row: GatewayEventOutboxEntity): Boolean {
+        val encrypted = com.autonomousone.messages.security.ConversationKeyRepository(db)
+            .encrypt(row, "")
+        return db.gatewayEventOutboxDao().insertOrIgnore(encrypted) != -1L
+    }
+
+    private suspend fun publishConversationSummary(
+        threadId: Long,
+        conversationId: String,
+        now: Long,
+    ): Boolean {
+        val conversation = db.conversationDao().byThread(threadId) ?: return false
+        val direction = cloudMessageDirection(conversation.lastMessageType) ?: "inbound"
+        val event = GatewayEventFactory.conversationUpserted(
+            conversationId = conversationId,
+            displayName = contactNameFor(conversation.rawAddress, conversation.normalizedAddress),
+            address = SenderIdentity.eventAddress(
+                conversation.rawAddress,
+                conversation.normalizedAddress
+            ),
+            lastMessagePreview = conversation.snippet,
+            lastMessageDirection = direction,
+            lastMessageAt = conversation.lastMessageDate,
+            unreadCount = conversation.unreadCount,
+            pinned = conversation.pinned,
+            archived = conversation.archived,
+            revision = now,
+            priority = GatewayEventOutboxEntity.PRIORITY_REALTIME,
+            androidThreadId = threadId
+        )
+        return insertControlEvent(event)
     }
 
     // ── Reconcile path (repair/recovery) ───────────────────────────────────
@@ -1803,7 +1920,8 @@ class TelephonySyncCoordinator internal constructor(context: Context, private va
         // §70 exists to count.
         return if (attempt == EnqueueAttempt.SKIPPED_LOCAL_ONLY ||
             attempt == EnqueueAttempt.SKIPPED_ASK_PENDING ||
-            attempt == EnqueueAttempt.SKIPPED_SYNC_OFF
+            attempt == EnqueueAttempt.SKIPPED_SYNC_OFF ||
+            attempt == EnqueueAttempt.SKIPPED_HIDDEN_FROM_WEB
         ) {
             HistoryScanAccounting.classify(HistoryRowObservation.Attempted(attempt))
         } else {

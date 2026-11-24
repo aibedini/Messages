@@ -275,6 +275,9 @@ class ConversationScopeViewModel(
             // Only a thread with an opaque cloud identity can be named by a grant.
             val conversationId = mappings[conversation.threadId]?.conversationId ?: continue
             val address = conversation.rawAddress.ifBlank { conversation.normalizedAddress }
+            // A conversation the user hid from the web companion is never offered to an AI device
+            // either; hiding is a broader visibility decision than a grant.
+            if (prefs.isHiddenFromWebAddress(address)) continue
             val newestInbound = runCatching {
                 db.messageDao().recentInbound(conversation.threadId, 1).firstOrNull()
             }.getOrNull()

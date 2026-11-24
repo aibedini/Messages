@@ -70,6 +70,17 @@ class SuggestionFeedbackPublisher private constructor(context: Context) {
         // knows about carries the SAME id rather than a fresh one.
         val conversationId = GatewaySyncRepository(db).ensureConversationIdForThread(feedback.threadId)
 
+        // A hidden conversation is hidden for every web-bound event, feedback included: the user
+        // asked that neither the conversation nor its contact appear on the web at all.
+        val prefs = com.autonomousone.messages.messaging.MessagingPreferences(appContext)
+        val conversation = db.conversationDao().byThread(feedback.threadId)
+        if (prefs.isHiddenFromWebConversation(conversationId) ||
+            (conversation != null && prefs.isHiddenFromWebAddress(conversation.rawAddress))
+        ) {
+            DiagnosticLog.event("GM_SUGGEST", "feedback suppressed: hidden from web")
+            return@withContext false
+        }
+
         val event = GatewayEventFactory.suggestionFeedback(
             conversationId = conversationId,
             payloadJson = feedback.payloadJson(),

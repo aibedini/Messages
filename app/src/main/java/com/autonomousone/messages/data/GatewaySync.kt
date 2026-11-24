@@ -395,7 +395,8 @@ data class GatewayEventOutboxEntity(
                 "nextAttemptAt = 0, failureCategory = NULL, failureHttpStatus = NULL, " +
                 "deadLetteredAt = NULL, failureAppVersion = NULL, lastErrorCode = NULL, " +
                 "lastErrorMessageSafe = NULL, leaseId = NULL, inFlightSince = NULL " +
-                "WHERE state = 'DEAD_LETTER' AND cryptoVersion >= :minCryptoVersion"
+                "WHERE state = 'DEAD_LETTER' AND cryptoVersion >= :minCryptoVersion " +
+                "AND (failureCategory IS NULL OR failureCategory <> 'HIDDEN_FROM_WEB')"
 
         /**
          * Attach history ordinal metadata to a row that already exists (mission §33).
@@ -432,6 +433,17 @@ data class GatewayEventOutboxEntity(
         const val STATE_RETRY_WAIT = "RETRY_WAIT"
         const val STATE_ACKED = "ACKED"
         const val STATE_DEAD_LETTER = "DEAD_LETTER"
+
+        /**
+         * Failure category for rows suppressed by the user's "Hide from web" decision.
+         *
+         * They reuse DEAD_LETTER because a hidden conversation's pending history rows must be
+         * terminal for the history watermark (a new non-terminal state would stall the contiguous
+         * walk), but they are NOT server failures: health, dead-letter depth and the report all
+         * exclude this category. [restoreHiddenOutboxForAggregate] puts them back to PENDING when the
+         * user shows the conversation again.
+         */
+        const val FAILURE_HIDDEN_FROM_WEB = "HIDDEN_FROM_WEB"
 
         /** The two states a row can be claimed from. */
         const val CLAIMABLE_STATES_SQL = "'PENDING', 'RETRY_WAIT'"
@@ -767,8 +779,37 @@ interface GatewayEventOutboxDao {
     @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE priority = 'REALTIME' AND state IN ("+ GatewayEventOutboxEntity.OUTSTANDING_STATES_SQL +")")
     suspend fun pendingRealtimeDepth(): Int
 
-    @Query("SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'")
+    @Query(
+        "SELECT COUNT(*) FROM gateway_event_outbox WHERE state = 'DEAD_LETTER' " +
+            "AND (failureCategory IS NULL OR failureCategory <> 'HIDDEN_FROM_WEB')"
+    )
     suspend fun deadLetterDepth(): Int
+
+    /**
+     * Suppress every not-yet-delivered event of one conversation for "Hide from web".
+     *
+     * ACKED rows are left alone: the server already has them, and the CONVERSATION_DELETED control
+     * event is what removes them from the web replica. SENDING rows are included because a batch may
+     * be in flight; the delete event is queued after this call and wins on the replica.
+     */
+    @Query(
+        "UPDATE gateway_event_outbox SET state = 'DEAD_LETTER', " +
+            "failureCategory = 'HIDDEN_FROM_WEB', lastErrorCode = 'HIDDEN_FROM_WEB', " +
+            "failureHttpStatus = NULL, lastErrorMessageSafe = NULL, " +
+            "deadLetteredAt = :at, failureAppVersion = NULL, leaseId = NULL, inFlightSince = NULL " +
+            "WHERE aggregateId = :aggregateId AND state != 'ACKED'"
+    )
+    suspend fun hideOutboxForAggregate(aggregateId: String, at: Long): Int
+
+    /** Undo [hideOutboxForAggregate]: hidden rows become eligible again when the user shows it. */
+    @Query(
+        "UPDATE gateway_event_outbox SET state = 'PENDING', attemptCount = 0, nextAttemptAt = 0, " +
+            "failureCategory = NULL, failureHttpStatus = NULL, lastErrorCode = NULL, " +
+            "lastErrorMessageSafe = NULL, deadLetteredAt = NULL, failureAppVersion = NULL, " +
+            "leaseId = NULL, inFlightSince = NULL " +
+            "WHERE aggregateId = :aggregateId AND state = 'DEAD_LETTER' AND failureCategory = 'HIDDEN_FROM_WEB'"
+    )
+    suspend fun restoreHiddenOutboxForAggregate(aggregateId: String): Int
 
     /**
      * Every key that not-yet-uploaded events are encrypted under, with counts (mission §42).
@@ -825,6 +866,7 @@ interface GatewayEventOutboxDao {
                MAX(deadLetteredAt) AS lastDeadLetteredAt
         FROM gateway_event_outbox
         WHERE state = 'DEAD_LETTER'
+              AND (failureCategory IS NULL OR failureCategory <> 'HIDDEN_FROM_WEB')
         GROUP BY eventType, cryptoVersion, priority
         ORDER BY count DESC, eventType ASC
         """
@@ -837,7 +879,8 @@ interface GatewayEventOutboxDao {
             "MAX(deadLetteredAt) AS lastDeadLetteredAt, " +
             "SUM(CASE WHEN deadLetteredAt >= :lastHour THEN 1 ELSE 0 END) AS newLastHour, " +
             "SUM(CASE WHEN deadLetteredAt >= :last24Hours THEN 1 ELSE 0 END) AS newLast24Hours " +
-            "FROM gateway_event_outbox WHERE state = 'DEAD_LETTER'"
+            "FROM gateway_event_outbox WHERE state = 'DEAD_LETTER' " +
+            "AND (failureCategory IS NULL OR failureCategory <> 'HIDDEN_FROM_WEB')"
     )
     suspend fun deadLetterSummary(lastHour: Long, last24Hours: Long): DeadLetterSummary
 

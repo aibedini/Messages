@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.8: LDV-004 per-conversation AI grants + scope — versionCode +1, patch release
-        // (166 / 3.11.8 follows 165 / 3.11.7).
-        versionCode = 166
-        versionName = "3.11.8"
+        // v3.11.9: hide conversations/contacts from the web companion — versionCode +1, patch release
+        // (167 / 3.11.9 follows 166 / 3.11.8).
+        versionCode = 167
+        versionName = "3.11.9"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

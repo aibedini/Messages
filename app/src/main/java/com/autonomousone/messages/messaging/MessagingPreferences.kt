@@ -97,6 +97,28 @@ class MessagingPreferences(context: Context) {
         private const val KEY_AUTOMATIC_FINANCIAL_SYNC_MIGRATED =
             "automatic_financial_sync_migrated_v3"
 
+        /**
+         * Conversations/contacts the user explicitly hid from the web companion.
+         *
+         * Stored as the opaque cloud conversation ids AND the address aliases, because the two
+         * consumers need different keys: the sync choke point has a conversation id, while the
+         * contact snapshot has only the normalized phone number.
+         */
+        private const val KEY_HIDDEN_FROM_WEB_ADDRESSES = "hidden_from_web_addresses"
+        private const val KEY_HIDDEN_FROM_WEB_CONVERSATIONS = "hidden_from_web_conversations"
+
+        /*
+         * Process-wide, because several MessagingPreferences instances exist (UI repository,
+         * coordinator, contact publisher). An instance-local cache would let one instance keep
+         * serving a stale "not hidden" answer after another instance hides a conversation — the
+         * exact leak this feature exists to prevent.
+         */
+        @Volatile
+        private var hiddenAddressCache: Set<String>? = null
+
+        @Volatile
+        private var hiddenConversationCache: Set<String>? = null
+
         /** Sentinel meaning "the user has not picked a SIM line yet". */
         const val SUBSCRIPTION_UNSET = -1
     }
@@ -192,4 +214,75 @@ class MessagingPreferences(context: Context) {
             )
         }.getOrDefault(com.autonomousone.messages.security.SensitiveMessageFirewall.AmbiguityMode.BALANCED)
         set(value) = prefs.edit().putString(KEY_AMBIGUITY_MODE, value.name).apply()
+
+    // ── Web visibility ("Hide from web") ────────────────────────────────────
+    //
+    // The phone is the authority: hiding a conversation queues a CONVERSATION_DELETED control
+    // event, suppresses every future event for that opaque conversation id, and excludes the
+    // contact from the next contact snapshot. These are USER decisions, not defaults.
+
+    fun hiddenFromWebAddresses(): Set<String> =
+        hiddenAddressCache ?: (prefs.getStringSet(KEY_HIDDEN_FROM_WEB_ADDRESSES, emptySet())
+            ?.toSet()
+            .orEmpty()).also { hiddenAddressCache = it }
+
+    fun hiddenFromWebConversations(): Set<String> =
+        hiddenConversationCache ?: (prefs.getStringSet(KEY_HIDDEN_FROM_WEB_CONVERSATIONS, emptySet())
+            ?.toSet()
+            .orEmpty()).also { hiddenConversationCache = it }
+
+    /** True when any spelling of [address] was hidden from the web companion. */
+    fun isHiddenFromWebAddress(address: String): Boolean {
+        // Fast path: with no hidden contacts (the common case) do not allocate the alias set for
+        // every message event in a 300k-row history scan.
+        val hidden = hiddenFromWebAddresses()
+        if (hidden.isEmpty()) return false
+        val keys = com.autonomousone.messages.security.WebVisibility.hideKeys(address)
+        if (keys.isEmpty()) return false
+        return keys.any { it in hidden }
+    }
+
+    /** True when this opaque cloud conversation id was hidden from the web companion. */
+    fun isHiddenFromWebConversation(conversationId: String): Boolean =
+        conversationId.isNotBlank() &&
+            com.autonomousone.messages.security.WebVisibility.isConversationHidden(
+                hiddenFromWebConversations(),
+                conversationId
+            )
+
+    fun hideAddressFromWeb(address: String) {
+        val keys = com.autonomousone.messages.security.WebVisibility.hideKeys(address)
+        if (keys.isEmpty()) return
+        updateHiddenFromWebAddresses { it + keys }
+    }
+
+    fun showAddressOnWeb(address: String) {
+        val keys = com.autonomousone.messages.security.WebVisibility.hideKeys(address)
+        if (keys.isEmpty()) return
+        updateHiddenFromWebAddresses { it - keys }
+    }
+
+    fun hideConversationFromWeb(conversationId: String) {
+        if (conversationId.isBlank()) return
+        updateHiddenFromWebConversations { it + conversationId }
+    }
+
+    fun showConversationOnWeb(conversationId: String) {
+        if (conversationId.isBlank()) return
+        updateHiddenFromWebConversations { it - conversationId }
+    }
+
+    @Synchronized
+    private fun updateHiddenFromWebAddresses(transform: (Set<String>) -> Set<String>) {
+        val next = transform(hiddenFromWebAddresses())
+        prefs.edit().putStringSet(KEY_HIDDEN_FROM_WEB_ADDRESSES, next).apply()
+        hiddenAddressCache = next
+    }
+
+    @Synchronized
+    private fun updateHiddenFromWebConversations(transform: (Set<String>) -> Set<String>) {
+        val next = transform(hiddenFromWebConversations())
+        prefs.edit().putStringSet(KEY_HIDDEN_FROM_WEB_CONVERSATIONS, next).apply()
+        hiddenConversationCache = next
+    }
 }

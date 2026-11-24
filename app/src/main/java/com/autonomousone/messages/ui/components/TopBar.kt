@@ -16,6 +16,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -150,6 +152,9 @@ fun ConversationTopBar(
     onGoToFirstMessage: () -> Unit = {},
     /** v3.4.0 FEATURE 1 — enter in-conversation search. */
     onSearchClick: () -> Unit = {},
+    /** XR-GA web visibility: this conversation/contact is hidden from the web companion. */
+    webHidden: Boolean = false,
+    onToggleWebVisibility: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -229,6 +234,30 @@ fun ConversationTopBar(
                         onClick = {
                             showMenu = false
                             onSearchClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (webHidden) R.string.conv_show_on_web
+                                    else R.string.conv_hide_from_web
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (webHidden) {
+                                    Icons.Default.Visibility
+                                } else {
+                                    Icons.Default.VisibilityOff
+                                },
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleWebVisibility()
                         }
                     )
                     when (ConversationParticipantActions.primaryContactAction(participant)) {

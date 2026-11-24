@@ -83,6 +83,7 @@ enum class EnqueueAttempt {
     SKIPPED_LOCAL_ONLY,
     SKIPPED_ASK_PENDING,
     SKIPPED_SYNC_OFF,
+    SKIPPED_HIDDEN_FROM_WEB,
 }
 
 /**
@@ -243,6 +244,9 @@ object HistoryScanAccounting {
             EnqueueAttempt.SKIPPED_LOCAL_ONLY -> HistoryRowOutcome.SKIPPED_LOCAL_ONLY
             EnqueueAttempt.SKIPPED_ASK_PENDING -> HistoryRowOutcome.SKIPPED_ASK_PENDING
             EnqueueAttempt.SKIPPED_SYNC_OFF -> HistoryRowOutcome.SKIPPED_SYNC_OFF
+            // Kept on the phone by the user's explicit "Hide from web" choice. The accounting
+            // vocabulary's existing "local only" bucket is exactly that fact.
+            EnqueueAttempt.SKIPPED_HIDDEN_FROM_WEB -> HistoryRowOutcome.SKIPPED_LOCAL_ONLY
         }
     }
 

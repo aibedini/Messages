@@ -153,6 +153,13 @@
     <string name="suggestion_card_a11y_fmt">%1$s. %2$s. برای درج در کادر پاسخ دو بار ضربه بزنید.</string>
     <string name="quick_replies_fallback_label">پاسخ‌های سریع</string>
     <string name="conv_go_to_first_message">رفتن به اولین پیام</string>
+    <string name="conv_hide_from_web">پنهان‌کردن از وب</string>
+    <string name="conv_show_on_web">نمایش در وب</string>
+    <string name="conv_hide_from_web_confirm_title">از نسخه وب پنهان شود؟</string>
+    <string name="conv_hide_from_web_confirm_body">این گفتگو و مخاطب از نسخه وب حذف می‌شوند. پیام‌ها روی همین گوشی می‌مانند و تا زمانی که دوباره نمایش را فعال نکنید، پیام جدیدی به وب فرستاده نمی‌شود.</string>
+    <string name="conv_hide_from_web_done">از وب پنهان شد</string>
+    <string name="conv_show_on_web_done">دوباره در وب نمایش داده می‌شود</string>
+    <string name="conv_hide_from_web_failed">تغییر وضعیت نمایش در وب انجام نشد</string>
     <string name="jump_to_latest">پرش به آخرین پیام</string>
     <string name="conv_load_failed">بارگذاری بخشی از پیام‌ها ممکن نشد. با باز کردن دوباره گفتگو تازه می‌شوند.</string>
     <string name="conv_load_error_title">بارگذاری پیام‌ها ممکن نشد</string>
@@ -713,7 +720,7 @@
     <string name="eve_no_subscription">بدون اشتراک</string>
     <string name="eve_days_left_fmt">%1$d روز باقی‌مانده</string>
     <string name="eve_expired">منقضی</string>
-    <string name="eve_banned">مسدود</string>
+    <string name="eve_banned">مسدود</string>
     <string name="eve_copied">در کلیپ‌بورد کپی شد</string>
 
     <string name="eve_err_network">اتصال به سرور برقرار نشد</string>
@@ -725,7 +732,7 @@
     <string name="eve_err_rate_limited">درخواست‌ها زیاد است؛ کمی صبر کنید</string>
     <string name="eve_err_server">خطای سرور؛ کمی بعد دوباره تلاش کنید</string>
     <string name="eve_err_client">درخواست نامعتبر است</string>
-    <string name="eve_err_parse">پاسخ نامعتبر از سرور</string>
+    <string name="eve_err_parse">پاسخ نامعتبر از سرور</string>
     <string name="eve_session_expired">نشست شما منقضی شد؛ لطفاً دوباره وارد شوید</string>
     <string name="eve_load_failed">بارگذاری گفت‌وگو ممکن نشد</string>
 </resources>

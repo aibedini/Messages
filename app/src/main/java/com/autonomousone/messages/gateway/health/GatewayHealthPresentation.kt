@@ -82,7 +82,7 @@ object GatewayHealthPresentation {
         GatewayConclusion.ACK_FAILING ->
             "Tasks are arriving, but the latest result could not be acknowledged."
         GatewayConclusion.HISTORICAL_FAILURES ->
-            "Gateway is connected. Historical sync failures need review."
+            "Gateway is connected. Old retained uploads need review; live delivery is healthy."
         GatewayConclusion.UNKNOWN_FAILURE -> "A failure was recorded that does not match a known cause."
     }
 
