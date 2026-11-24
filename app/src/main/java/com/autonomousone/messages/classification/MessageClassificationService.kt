@@ -26,6 +26,12 @@ import kotlinx.coroutines.launch
  * backfill worker picks it up, because `unclassifiedBatch` is exactly "rows with
  * no classification row". Losing a classification is therefore self-healing;
  * delaying or failing a message ingest would not be.
+ *
+ * LDV-004 (PR-E slice 2c): this path also withdraws an AI device's grant when a
+ * conversation becomes sensitive, but the call lives inside
+ * `ClassificationRepository` — the single writer every classification path goes
+ * through — so this immediate hook and the backfill worker are covered by one
+ * seam, and both of them are already off SMS handling.
  */
 object MessageClassificationService {
 

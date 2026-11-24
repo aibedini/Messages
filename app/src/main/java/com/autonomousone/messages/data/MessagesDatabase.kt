@@ -88,9 +88,13 @@ import com.autonomousone.messages.BuildConfig
         // v24 — Inbound messages held until they can be written to the provider (ADDITIVE).
         PendingInboundSmsEntity::class,
         // v29 — AI reply suggestions per conversation (XR-GA-017; ADDITIVE; see SuggestionCards.kt).
-        SuggestionCardEntity::class
+        SuggestionCardEntity::class,
+        // v30 — Per-conversation AI scope for linked devices (LDV-004/XR-GA-008; ADDITIVE;
+        // see LinkedDeviceScope.kt).
+        LinkedDeviceScopeStateEntity::class,
+        LinkedDeviceConversationScopeEntity::class
     ],
-    version = 29,
+    version = 30,
     exportSchema = true
 )
 abstract class MessagesDatabase : RoomDatabase() {
@@ -132,6 +136,8 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun pendingInboundSmsDao(): PendingInboundSmsDao
     // v29 — AI reply suggestions per conversation (XR-GA-017).
     abstract fun suggestionCardDao(): SuggestionCardDao
+    // v30 — Per-conversation AI scope for linked devices (LDV-004/XR-GA-008).
+    abstract fun linkedDeviceScopeDao(): LinkedDeviceScopeDao
 
     companion object {
         @Volatile
@@ -573,10 +579,10 @@ abstract class MessagesDatabase : RoomDatabase() {
         }
 
         /** Room schema version this build's entity set matches. */
-        const val CURRENT_SCHEMA_VERSION = 29
+        const val CURRENT_SCHEMA_VERSION = 30
 
         /** Previous schema version the newest migration starts from. */
-        const val PREVIOUS_SCHEMA_VERSION = 28
+        const val PREVIOUS_SCHEMA_VERSION = 29
 
         /**
          * v16 -> v17 (FEATURE 11, Send delay / Undo Send).
@@ -999,6 +1005,63 @@ abstract class MessagesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v29 -> v30: the durable per-conversation AI scope for linked devices (LDV-004 /
+         * XR-GA-008, design `docs/status/ldv-004-cke-grant-design.md` §4.6).
+         *
+         * Purely ADDITIVE: two fresh `CREATE TABLE` statements and one index. No existing
+         * table, column or index is rebuilt, so the message mirror, the trust registry, the
+         * CKE keyring and the v29 suggestion cards are untouched.
+         *
+         * ## Why two tables
+         *
+         * `linked_device_scope_state` holds the account-wide/conversation mode and the
+         * device's monotonic `scopeSequence` (one row per AI device).
+         * `linked_device_conversation_scope` holds the per-conversation decision: an
+         * `enabled` flag plus the sequence that made it. `enabled = 0` is a TOMBSTONE, not
+         * a deletion — the publisher needs the conversation id and the revoking sequence to
+         * emit `gmweb-conversation-key-revoke`.
+         *
+         * ## Why the upgrade starts empty
+         *
+         * An upgrading install gets ZERO scope rows, which is the honest state: no AI device
+         * has been granted a per-conversation scope by this build. Seeding an account-wide
+         * row would silently grant every device access the operator never approved, and
+         * seeding per-conversation rows would invent a selection. The absence of a state row
+         * means "not configured"; only an explicit state row can mean "paused" or "granted".
+         *
+         * The TEXT `mode` column is `account` | `conversation` — the same wire values the
+         * grant producer uses — so no `TypeConverter` (and no converter-dependent migration)
+         * is needed for the enum-like state.
+         *
+         * `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` on purpose, matching
+         * the v17+ additive migrations: Room re-runs a migration after a partially-failed
+         * open.
+         */
+        internal val UPGRADE_TO_V30_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS `linked_device_scope_state` (" +
+                "`deviceId` TEXT NOT NULL, " +
+                "`mode` TEXT NOT NULL, " +
+                "`scopeSequence` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`deviceId`))",
+            "CREATE TABLE IF NOT EXISTS `linked_device_conversation_scope` (" +
+                "`deviceId` TEXT NOT NULL, " +
+                "`conversationId` TEXT NOT NULL, " +
+                "`enabled` INTEGER NOT NULL, " +
+                "`scopeSequence` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`deviceId`, `conversationId`))",
+            "CREATE INDEX IF NOT EXISTS `index_linked_device_conversation_scope_deviceId` " +
+                "ON `linked_device_conversation_scope` (`deviceId`)"
+        )
+
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                UPGRADE_TO_V30_SQL.forEach(db::execSQL)
+            }
+        }
+
         fun get(context: Context): MessagesDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -1010,7 +1073,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                 MessagesDatabase::class.java,
                 "messages.db"
             )
-                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                .addMigrations(MIGRATION_2_4, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
 
             // v2.6.10: destructive fallback is a DEBUG-only convenience. In
             // release, a missing migration must fail loudly in QA — never

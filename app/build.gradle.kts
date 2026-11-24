@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.7: export every conversation (per-thread id paging) — versionCode +1, patch release
-        // (165 / 3.11.7 follows 164 / 3.11.6).
-        versionCode = 165
-        versionName = "3.11.7"
+        // v3.11.8: LDV-004 per-conversation AI grants + scope — versionCode +1, patch release
+        // (166 / 3.11.8 follows 165 / 3.11.7).
+        versionCode = 166
+        versionName = "3.11.8"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
