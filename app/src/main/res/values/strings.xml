@@ -304,6 +304,29 @@
     <string name="data_before">Before</string>
     <string name="data_after">After</string>
 
+    <!-- Data tools: live progress for backup / export / restore -->
+    <string name="data_progress_counting">Reading messages…</string>
+    <string name="data_progress_backup_writing">Writing backup…</string>
+    <string name="data_progress_export_writing">Writing export…</string>
+    <string name="data_progress_saving">Saving file…</string>
+    <string name="data_progress_restoring">Restoring messages…</string>
+    <string name="data_progress_deleting">Deleting messages…</string>
+    <string name="data_progress_count_fmt">%1$s / %2$s (%3$d%%)</string>
+    <string name="data_progress_bytes_fmt">%1$s / %2$s</string>
+    <string name="data_cancel">Cancel</string>
+    <string name="data_canceled">Canceled</string>
+    <string name="data_unknown_error">unknown error</string>
+    <string name="data_backup_ok_detail_fmt">Backed up %1$d messages (%2$s)</string>
+    <string name="data_export_ok_detail_fmt">Exported %1$d messages in %2$d conversations (%3$s)</string>
+    <string name="data_backup_failed_detail_fmt">Backup failed: %1$s</string>
+    <string name="data_export_failed_detail_fmt">Export failed: %1$s</string>
+    <string name="data_restore_failed_detail_fmt">Restore failed: %1$s</string>
+    <string name="data_restore_ok_skipped_fmt">Restored %1$d messages (%2$d skipped)</string>
+    <string name="data_delete_failed">Delete failed</string>
+    <string name="data_delete_failed_detail_fmt">Delete failed: %1$s</string>
+    <string name="data_share_export">Share export</string>
+    <string name="data_export_share_failed">No app can receive the export</string>
+
     <!-- Blocked numbers dialog -->
     <string name="blocked_none_yet">No blocked numbers yet. Long-press a conversation and choose \"Block number\".</string>
     <string name="blocked_title">Blocked numbers</string>

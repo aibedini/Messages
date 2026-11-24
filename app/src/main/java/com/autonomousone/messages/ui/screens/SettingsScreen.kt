@@ -1,11 +1,13 @@
 package com.autonomousone.messages.ui.screens
 
 import android.content.Intent
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +40,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,10 +63,16 @@ import com.autonomousone.messages.gateway.GatewayPreferences
 import com.autonomousone.messages.gateway.wake.WakeCertificatePins
 import com.autonomousone.messages.gateway.wake.WakeMode
 import com.autonomousone.messages.navigation.Screen
+import com.autonomousone.messages.repository.DataTransferOperation
+import com.autonomousone.messages.repository.DataTransferPhase
+import com.autonomousone.messages.viewmodel.DataToolsState
 import com.autonomousone.messages.viewmodel.DataToolsViewModel
+import com.autonomousone.messages.viewmodel.DataTransferProgress
+import com.autonomousone.messages.viewmodel.PendingExport
 import com.autonomousone.messages.diagnostics.DiagnosticsPreferences
 import com.autonomousone.messages.diagnostics.MainThreadStallWatchdog
 import com.autonomousone.messages.utils.DiagnosticLog
+import java.text.NumberFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -281,12 +291,24 @@ fun SettingsScreen(
                 val context = LocalContext.current
                 val diagnosticsExportTitle = stringResource(R.string.diagnostics_export)
                 val dataExportTitle = stringResource(R.string.data_export_all)
-                val backupOkFormat = stringResource(R.string.data_backup_ok_fmt)
-                val backupFailed = stringResource(R.string.data_backup_failed)
-                val restoreOkFormat = stringResource(R.string.data_restore_ok_fmt)
-                val restoreFailed = stringResource(R.string.data_restore_failed)
                 val dataTools: DataToolsViewModel = viewModel()
+                val dataToolsState by dataTools.state.collectAsState()
                 var showDeleteDialog by remember { mutableStateOf(false) }
+                var expectingExport by remember { mutableStateOf(false) }
+                val transferRunning = dataToolsState.progress != null
+
+                // Share a finished export immediately when this screen is still
+                // open. If the user left Settings while it ran (the operation is
+                // process-scoped), the result row offers an explicit
+                // "Share export" action instead of popping a chooser later.
+                LaunchedEffect(dataToolsState.pendingExport?.uri) {
+                    val pending = dataToolsState.pendingExport ?: return@LaunchedEffect
+                    if (expectingExport) {
+                        expectingExport = false
+                        shareExportedChats(context, pending, dataExportTitle)
+                        dataTools.consumePendingExport()
+                    }
+                }
 
                 // v3.4.0 FEATURE 8: Recently Deleted (Trash). Additive entry point
                 // for the durable tombstone list — restore, delete forever, or empty.
@@ -374,28 +396,16 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !dataTools.busy) {
-                            dataTools.exportAll { uri ->
-                                if (uri != null) {
-                                    val share = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/json"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(
-                                        Intent.createChooser(share, dataExportTitle)
-                                    )
-                                } else {
-                                    Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
-                                }
-                            }
+                        .clickable(enabled = !transferRunning) {
+                            expectingExport = true
+                            dataTools.export()
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (dataTools.busy) stringResource(R.string.settings_working) else stringResource(R.string.data_export_all),
+                            text = stringResource(R.string.data_export_all),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -412,6 +422,15 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                DataTransferStatusBlock(
+                    operation = DataTransferOperation.EXPORT,
+                    state = dataToolsState,
+                    onCancel = dataTools::cancel,
+                    onShareExport = { pending ->
+                        shareExportedChats(context, pending, dataExportTitle)
+                        dataTools.consumePendingExport()
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -419,18 +438,12 @@ fun SettingsScreen(
                 val backupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/xml")
                 ) { uri ->
-                    if (uri != null) dataTools.backupTo(uri) { count ->
-                        Toast.makeText(
-                            context,
-                            if (count != null) backupOkFormat.format(count) else backupFailed,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    if (uri != null) dataTools.backup(uri)
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !dataTools.busy) {
+                        .clickable(enabled = !transferRunning) {
                             backupLauncher.launch("messages-backup.xml")
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -438,7 +451,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (dataTools.busy) stringResource(R.string.settings_working) else stringResource(R.string.data_backup),
+                            text = stringResource(R.string.data_backup),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -455,6 +468,11 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                DataTransferStatusBlock(
+                    operation = DataTransferOperation.BACKUP,
+                    state = dataToolsState,
+                    onCancel = dataTools::cancel
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -468,7 +486,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !dataTools.busy) {
+                        .clickable(enabled = !transferRunning) {
                             restoreLauncher.launch(arrayOf("application/xml", "text/xml", "text/plain", "*/*"))
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -503,15 +521,7 @@ fun SettingsScreen(
                             TextButton(onClick = {
                                 val uri = confirmRestore
                                 confirmRestore = null
-                                if (uri != null) {
-                                    dataTools.restoreFrom(uri) { count ->
-                                        Toast.makeText(
-                                            context,
-                                            if (count != null) restoreOkFormat.format(count) else restoreFailed,
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
+                                if (uri != null) dataTools.restore(uri)
                             }) { Text(stringResource(R.string.action_restore)) }
                         },
                         dismissButton = {
@@ -519,6 +529,11 @@ fun SettingsScreen(
                         }
                     )
                 }
+                DataTransferStatusBlock(
+                    operation = DataTransferOperation.RESTORE,
+                    state = dataToolsState,
+                    onCancel = dataTools::cancel
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -526,7 +541,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !dataTools.busy) { showDeleteDialog = true },
+                        .clickable(enabled = !transferRunning) { showDeleteDialog = true },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -549,22 +564,18 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                dataTools.lastStatus?.let {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                DataTransferStatusBlock(
+                    operation = DataTransferOperation.DELETE,
+                    state = dataToolsState,
+                    onCancel = dataTools::cancel
+                )
 
                 if (showDeleteDialog) {
                     DeleteByPeriodDialog(
                         onDismiss = { showDeleteDialog = false },
                         onConfirm = { cutoffMillis, before ->
                             showDeleteDialog = false
-                            dataTools.deleteByRange(cutoffMillis, before) { _, _ -> }
+                            dataTools.deleteByRange(cutoffMillis, before)
                         }
                     )
                 }
@@ -1091,4 +1102,159 @@ private fun DeleteByPeriodDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
+}
+
+
+/**
+ * Live progress / result / share affordance for one Data-tools operation.
+ *
+ * The progress numbers are the whole point of this block: the user asked to see
+ * that a 50k-message backup is actually moving (rows written, bytes copied),
+ * not just a static "Working…" label.
+ */
+@Composable
+private fun DataTransferStatusBlock(
+    operation: DataTransferOperation,
+    state: DataToolsState,
+    onCancel: () -> Unit,
+    onShareExport: ((PendingExport) -> Unit)? = null
+) {
+    val progress = state.progress?.takeIf { it.operation == operation }
+    val result = state.lastResult?.takeIf { it.operation == operation }
+    val pendingExport = state.pendingExport?.takeIf { operation == DataTransferOperation.EXPORT }
+    if (progress == null && result == null && pendingExport == null) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        if (progress != null) {
+            Text(
+                text = stringResource(progressLabelRes(progress)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            val fraction = progressFraction(progress)
+            if (fraction == null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            val detail = progressDetailText(progress)
+            if (detail != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (operation != DataTransferOperation.DELETE) {
+                TextButton(onClick = onCancel, contentPadding = PaddingValues(0.dp)) {
+                    Text(stringResource(R.string.data_cancel))
+                }
+            }
+        }
+        if (result != null) {
+            Text(
+                text = result.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (result.isError) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+            )
+        }
+        if (pendingExport != null && onShareExport != null) {
+            TextButton(
+                onClick = { onShareExport(pendingExport) },
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(stringResource(R.string.data_share_export))
+            }
+        }
+    }
+}
+
+@Composable
+private fun progressDetailText(progress: DataTransferProgress): String? {
+    val context = LocalContext.current
+    return when {
+        progress.phase == DataTransferPhase.SAVING && progress.bytesTotal > 0L -> stringResource(
+            R.string.data_progress_bytes_fmt,
+            Formatter.formatFileSize(context, progress.bytesDone).toString(),
+            Formatter.formatFileSize(context, progress.bytesTotal).toString()
+        )
+
+        progress.total > 0 -> {
+            val percent = ((progress.done.toLong() * 100L) / progress.total.toLong())
+                .toInt()
+                .coerceIn(0, 100)
+            stringResource(
+                R.string.data_progress_count_fmt,
+                formatCount(progress.done),
+                formatCount(progress.total),
+                percent
+            )
+        }
+
+        progress.done > 0 -> formatCount(progress.done)
+
+        else -> null
+    }
+}
+
+private fun progressLabelRes(progress: DataTransferProgress): Int =
+    when (progress.operation) {
+        DataTransferOperation.BACKUP -> when (progress.phase) {
+            DataTransferPhase.COUNTING -> R.string.data_progress_counting
+            DataTransferPhase.WRITING -> R.string.data_progress_backup_writing
+            DataTransferPhase.SAVING -> R.string.data_progress_saving
+            else -> R.string.settings_working
+        }
+
+        DataTransferOperation.EXPORT -> when (progress.phase) {
+            DataTransferPhase.COUNTING -> R.string.data_progress_counting
+            DataTransferPhase.WRITING -> R.string.data_progress_export_writing
+            DataTransferPhase.SAVING -> R.string.data_progress_saving
+            else -> R.string.settings_working
+        }
+
+        DataTransferOperation.RESTORE -> R.string.data_progress_restoring
+        DataTransferOperation.DELETE -> R.string.data_progress_deleting
+    }
+
+private fun progressFraction(progress: DataTransferProgress): Float? {
+    val fraction = when {
+        progress.phase == DataTransferPhase.SAVING && progress.bytesTotal > 0L ->
+            progress.bytesDone.toDouble() / progress.bytesTotal.toDouble()
+
+        progress.total > 0 ->
+            progress.done.toDouble() / progress.total.toDouble()
+
+        else -> return null
+    }
+    return fraction.toFloat().coerceIn(0f, 1f)
+}
+
+private fun formatCount(value: Int): String =
+    NumberFormat.getIntegerInstance().format(value.toLong())
+
+private fun shareExportedChats(
+    context: android.content.Context,
+    pending: PendingExport,
+    title: String
+) {
+    val share = Intent(Intent.ACTION_SEND).apply {
+        type = "application/json"
+        putExtra(Intent.EXTRA_STREAM, pending.uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    try {
+        context.startActivity(Intent.createChooser(share, title))
+    } catch (e: Exception) {
+        Toast.makeText(context, R.string.data_export_share_failed, Toast.LENGTH_SHORT).show()
+    }
 }
