@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.11: versioned sender-naming contract (senderKind/displayNameSource) — patch release
-        // (169 / 3.11.11 follows 168 / 3.11.10).
-        versionCode = 169
-        versionName = "3.11.11"
+        // v3.11.12: naming-contract test fixtures (no production change) — patch release
+        // (170 / 3.11.12 follows 169 / 3.11.11).
+        versionCode = 170
+        versionName = "3.11.12"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

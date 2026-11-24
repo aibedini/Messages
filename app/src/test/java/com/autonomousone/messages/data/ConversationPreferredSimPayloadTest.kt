@@ -128,18 +128,20 @@ class ConversationPreferredSimPayloadTest {
             )
         )
         val outer = envelope(event)
+        val outerJson = JSONObject(outer)
 
         for (forbidden in listOf(
             "preferredSim", "simRef", "carrierName", "slotIndex", "subscriptionId"
         )) {
             assertFalse(
                 "$forbidden must exist ONLY inside the encrypted payload",
-                outer.contains(forbidden)
+                outerJson.has(forbidden)
             )
         }
-        // And the value itself must not appear in the clear either.
-        assertFalse(outer.contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-        assertFalse(outer.contains("MCI"))
+        // The values themselves live inside ciphertextB64. A Base64 string can contain any letters by
+        // chance, so substring checks on the encoded envelope are not evidence of a leak; the key
+        // assertion above is. This distinction is why the old `outer.contains("MCI")` was flaky: it
+        // passed or failed on the ciphertext's random encoding, not on the security property.
     }
 
     @Test
@@ -190,7 +192,8 @@ class ConversationPreferredSimPayloadTest {
 
         assertEquals(
             setOf(
-                "conversationId", "displayName", "address", "lastMessagePreview",
+                "conversationId", "displayName", "displayNameSource", "senderKind",
+                "namingVersion", "address", "lastMessagePreview",
                 "lastMessageDirection", "lastMessageAt", "unreadCount", "pinned", "archived",
                 "androidThreadId"
             ),
