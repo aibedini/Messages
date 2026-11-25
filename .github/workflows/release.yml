@@ -199,10 +199,12 @@ jobs:
 
         if [ -f CHANGELOG.md ]; then
           awk -v tag="$TAG" '
-            $0 ~ "^## " tag "([[:space:]]|$)" { capturing=1; next }
+            $0 ~ "^## " tag "([[:space:]]|$)" { print; capturing=1; next }
             capturing && /^## / { exit }
             capturing { print }
           ' CHANGELOG.md > "$NOTES_FILE"
+          # The section separator before the next release is not part of this release's notes.
+          perl -0pi -e 's/\n+---\s*$/\n/' "$NOTES_FILE"
         fi
 
         if [ ! -s "$NOTES_FILE" ]; then
