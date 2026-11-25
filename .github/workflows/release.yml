@@ -15,6 +15,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        # The release-notes fallback walks the commits since the previous tag.
+        fetch-depth: 0
       
     - name: Set up JDK 21
       uses: actions/setup-java@v5
@@ -183,10 +186,43 @@ jobs:
           echo "| size | \`$(stat -c%s "$APK")\` bytes |"
         } >> "$GITHUB_STEP_SUMMARY"
 
+    # ── RELEASE NOTES ───────────────────────────────────────────────────────
+    # A tag without a changelog section still gets useful notes (the commit list), but the
+    # intended path is a curated `## vX.Y.Z` section in CHANGELOG.md. This is what makes
+    # "what changed and why" visible on the Releases page instead of an empty body.
+    - name: Prepare release notes
+      run: |
+        set -euo pipefail
+        TAG="${GITHUB_REF_NAME}"
+        NOTES_FILE="release-notes.md"
+        : > "$NOTES_FILE"
+
+        if [ -f CHANGELOG.md ]; then
+          awk -v tag="$TAG" '
+            $0 ~ "^## " tag "([[:space:]]|$)" { capturing=1; next }
+            capturing && /^## / { exit }
+            capturing { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+        fi
+
+        if [ ! -s "$NOTES_FILE" ]; then
+          echo "## 🚀 $TAG" > "$NOTES_FILE"
+          echo "" >> "$NOTES_FILE"
+          PREVIOUS="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$PREVIOUS" ]; then
+            git log --no-merges --pretty='- %s (`%h`)' "$PREVIOUS..$TAG" >> "$NOTES_FILE"
+          else
+            git log --no-merges -20 --pretty='- %s (`%h`)' "$TAG" >> "$NOTES_FILE"
+          fi
+        fi
+
+        cat "$NOTES_FILE"
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
         files: app/build/outputs/apk/release/app-release.apk
+        body_path: release-notes.md
         name: Release ${{ github.ref_name }}
         draft: false
         prerelease: false
