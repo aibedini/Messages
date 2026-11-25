@@ -8,6 +8,28 @@ All notable changes to **Messages** are recorded here. Every release tag gets a 
 
 ---
 
+## v3.11.13 — 2026-11-25
+
+### 📞 SMS during a phone call
+
+- **Use the call's own line:** if you did not pin a line for the conversation, a message sent during a
+  call now goes out on the SIM carrying that call instead of the system-default SIM (which a
+  single-radio phone cannot use while the other SIM is on a call).
+- **Correct dual-SIM call detection:** the phone now scans the active subscriptions for a non-IDLE
+  call state. Previously, the sending SIM reporting `IDLE` was treated as proof that the call was on
+  the *other* SIM, which could hold a perfectly valid VoLTE/LTE send.
+- **Held messages keep their line:** a message queued behind a call remembers the resolved SIM and is
+  released on that same line when the call ends, not re-routed through the system default.
+- **Explicit choices still win:** a sticky conversation SIM, a per-message SIM, or the global SIM
+  preference is never silently overridden; if that line is blocked by a call, the message waits.
+
+> 📡 **Incoming SMS:** the app has no call-state gate on the receive path. Delivery during a call
+> depends on the carrier supporting SMS over IMS (VoLTE). On a 2G/3G call the network cannot deliver
+> an SMS until the call ends; if it still does not arrive after hang-up, the issue is outside the
+> app (carrier or default-SMS-app state).
+
+---
+
 ## v3.11.12 — 2026-11-24
 
 ### 🏷️ Sender naming contract

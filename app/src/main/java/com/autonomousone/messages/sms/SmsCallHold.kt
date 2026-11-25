@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
 import android.provider.Telephony
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import com.autonomousone.messages.data.MessageEntity
 import com.autonomousone.messages.data.MessageMutation
@@ -64,6 +65,16 @@ object SmsCallHoldPolicy {
      */
     fun shouldHold(call: CallSnapshot): Boolean =
         call.inCall && (call.callOnOtherSim || !isImsVoice(call.voiceNetworkType))
+
+    /**
+     * The line that should carry an SMS sent while a call is up, when the caller did not name one.
+     *
+     * A single-radio phone cannot submit on the idle SIM while the other SIM owns the call, so the
+     * call's own line is the only immediate choice. An explicit line always wins; the caller may
+     * still be held and sent after the call rather than silently moved.
+     */
+    fun sendingLine(explicitSubscriptionId: Int?, callSubscriptionId: Int?): Int? =
+        explicitSubscriptionId ?: callSubscriptionId
 
     private val CALL_CODES = setOf(SmsSendFailure.BlockedDueToCall.code)
 
@@ -124,9 +135,37 @@ object SmsCallGuard {
         if (hasPhoneState(context)) {
             runCatching {
                 context.getSystemService(TelephonyManager::class.java)?.callState
-            }.getOrNull()?.let { return it != TelephonyManager.CALL_STATE_IDLE }
+            }.getOrNull()?.let { if (it != TelephonyManager.CALL_STATE_IDLE) return true }
+            // getCallState() is documented for the default subscription; on dual-SIM devices a call
+            // on the non-default SIM can leave it at IDLE. Ask each subscription before giving up.
+            if (activeCallSubscriptionId(context) != null) return true
         }
         return context.getSystemService(AudioManager::class.java)?.mode == AudioManager.MODE_IN_CALL
+    }
+
+    /**
+     * The subscription carrying the active call, or null when it cannot be proven.
+     *
+     * `callStateForSubscription` is the only API that attributes a call to a line, but it is also
+     * the API that made the old code hold every IMS send whenever it returned IDLE for the sending
+     * SIM. This scans the active inventory and only returns a REAL non-IDLE state; "IDLE" is never
+     * evidence that the call belongs to another SIM.
+     */
+    fun activeCallSubscriptionId(context: Context): Int? {
+        if (!hasPhoneState(context) || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        val base = context.getSystemService(TelephonyManager::class.java) ?: return null
+        val subscriptions = runCatching {
+            context.getSystemService(SubscriptionManager::class.java)
+                ?.activeSubscriptionInfoList
+                ?.map { it.subscriptionId }
+        }.getOrNull().orEmpty()
+        for (subscriptionId in subscriptions) {
+            val state = runCatching {
+                base.createForSubscriptionId(subscriptionId).callStateForSubscription
+            }.getOrNull()
+            if (state != null && state != TelephonyManager.CALL_STATE_IDLE) return subscriptionId
+        }
+        return null
     }
 
     fun snapshot(context: Context, subscriptionId: Int?): CallSnapshot {
@@ -145,11 +184,12 @@ object SmsCallGuard {
             base
         }
         val voiceType = runCatching { tm.voiceNetworkType }.getOrNull()
-        val otherSim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && subscriptionId != null && subscriptionId >= 0) {
-            runCatching { tm.callStateForSubscription == TelephonyManager.CALL_STATE_IDLE }.getOrDefault(false)
-        } else {
-            false
-        }
+        // A call is on another SIM only when we can SEE that SIM in a non-IDLE state. The old code
+        // treated "the sending SIM reports IDLE" as proof of another SIM, which is not the same fact
+        // and held same-SIM IMS sends (the common VoLTE case) behind the call for no reason.
+        val callSubscriptionId = activeCallSubscriptionId(context)
+        val otherSim = callSubscriptionId != null && subscriptionId != null &&
+            subscriptionId >= 0 && callSubscriptionId != subscriptionId
         return CallSnapshot(inCall = true, voiceNetworkType = voiceType, callOnOtherSim = otherSim)
     }
 }

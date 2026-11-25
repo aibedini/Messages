@@ -737,7 +737,18 @@ class SmsSender(
         val explicitSubId = requestedSimId
             ?: subscriptionIdOverride
             ?: prefs.sendSubscriptionId.takeIf { it != MessagingPreferences.SUBSCRIPTION_UNSET }
-        val defaultResolution = if (explicitSubId == null) {
+        // If the user did not name a line, a call's own SIM is the only line that can carry an SMS
+        // immediately on a single-radio phone. This is also what makes "call on line 1 → SMS on
+        // line 1" true without forcing the user to change the system default during every call.
+        val callSubscriptionId = SmsCallGuard.activeCallSubscriptionId(context)
+        val requestedSubId = SmsCallHoldPolicy.sendingLine(explicitSubId, callSubscriptionId)
+        if (explicitSubId == null && callSubscriptionId != null) {
+            DiagnosticLog.event(
+                "SMS_SEND",
+                "line=call-sim sub=$callSubscriptionId (no explicit line was chosen)"
+            )
+        }
+        val defaultResolution = if (requestedSubId == null) {
             SendSimPolicy.resolveDefault(platformDefaultSmsSubscriptionId())
         } else {
             null
@@ -747,18 +758,18 @@ class SmsSender(
             // arbitrary active subscription instead is precisely what the mission forbids.
             return rejectForNoDefaultSubscription(sentId, phone, showToast)
         }
-        val requestedSubId = explicitSubId
+        val selectedSubId = requestedSubId
             ?: (defaultResolution as? SendSimPolicy.DefaultSimResolution.Use)?.subscriptionId
 
-        val bound = resolveSmsManager(requestedSubId)
+        val bound = resolveSmsManager(selectedSubId)
         // The manager is created for the chosen line, but the read-back is not always trustworthy:
         // some OEM builds report the subscription they were created for and still route by the
         // system default. Record the discrepancy here (the ledger keeps the manager's claim) so a
         // 'sent on the wrong SIM' report can be answered from diagnostics instead of guessed at.
-        if (requestedSubId != null && bound.actualSubscriptionId != requestedSubId) {
+        if (selectedSubId != null && bound.actualSubscriptionId != selectedSubId) {
             DiagnosticLog.event(
                 "SMS_SEND",
-                "sim-readback-unconfirmed requested=$requestedSubId actual=${bound.actualSubscriptionId} " +
+                "sim-readback-unconfirmed requested=$selectedSubId actual=${bound.actualSubscriptionId} " +
                     "proceeding=true"
             )
         }
@@ -777,16 +788,16 @@ class SmsSender(
         // and only the second belongs in the ledger. Deciding here — before anything is handed to the
         // radio — is what makes the refusal possible at all.
         val decision = SendSimPolicy.decide(
-            requested = requestedSubId,
+            requested = selectedSubId,
             actual = bound.actualSubscriptionId,
-            requestedSimActive = requestedSimActive(requestedSubId)
+            requestedSimActive = requestedSimActive(selectedSubId)
         )
         // The ONE refusal left: the chosen SIM is provably absent from the active-subscription list.
         // A read-back disagreement no longer refuses — it attempts the send through the manager that
         // was created for the chosen line, because refusing made a chosen SIM unusable on OEM builds
         // whose read-back is unreliable.
         if (decision is SimDecision.Refuse) {
-            return rejectForSimMismatch(sentId, phone, requestedSubId, bound.actualSubscriptionId, showToast)
+            return rejectForSimMismatch(sentId, phone, selectedSubId, bound.actualSubscriptionId, showToast)
         }
         val manager = bound.manager
         // The line that will actually carry the message (or an explicit "unknown"), never the request.
@@ -800,16 +811,21 @@ class SmsSender(
             if (call.inCall) {
                 val store = SmsCallHoldStore(context)
                 if (SmsCallHoldPolicy.shouldHold(call)) {
+                    // Preserve the line that actually resolved for this send. A later release must
+                    // not re-resolve through the system default (which may be the other SIM): the
+                    // user asked for this line, and a held message is still that message. The
+                    // recorded id is authoritative even when the original request was "default".
+                    val heldOnSubscriptionId = recordedSubId.takeIf { it >= 0 } ?: subscriptionIdOverride
                     store.put(
                         HeldSend(
                             rowId = sentId,
                             kind = HeldSend.Kind.HOLD,
                             phone = phone,
-                            subscriptionIdOverride = subscriptionIdOverride,
+                            subscriptionIdOverride = heldOnSubscriptionId,
                             smscOverride = smscOverride,
                             threadId = threadId,
                             assertedSimRef = assertedSimRef,
-                            oneShotOverride = oneShotOverride,
+                            oneShotOverride = true,
                             heldAt = System.currentTimeMillis()
                         )
                     )
@@ -828,7 +844,7 @@ class SmsSender(
             }
         }
         val scAddress = smscOverride?.trim()?.takeIf { it.isNotBlank() }
-            ?: prefs.smscForSim(requestedSubId ?: MessagingPreferences.SUBSCRIPTION_UNSET)
+            ?: prefs.smscForSim(selectedSubId ?: MessagingPreferences.SUBSCRIPTION_UNSET)
             ?: prefs.smscAddress.trim().takeIf { it.isNotBlank() }
         // A GATEWAY-ORIGINATED SEND ALWAYS ASKS FOR A DELIVERY REPORT.
         //

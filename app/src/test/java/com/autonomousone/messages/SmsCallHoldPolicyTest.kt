@@ -46,6 +46,19 @@ class SmsCallHoldPolicyTest {
         assertTrue(SmsCallHoldPolicy.shouldHold(call(net = TelephonyManager.NETWORK_TYPE_LTE, otherSim = true)))
     }
 
+    @Test
+    fun `an unnamed send uses the line carrying the call`() {
+        assertEquals(1, SmsCallHoldPolicy.sendingLine(explicitSubscriptionId = null, callSubscriptionId = 1))
+        assertEquals(2, SmsCallHoldPolicy.sendingLine(explicitSubscriptionId = null, callSubscriptionId = 2))
+        assertNull(SmsCallHoldPolicy.sendingLine(explicitSubscriptionId = null, callSubscriptionId = null))
+    }
+
+    @Test
+    fun `an explicit line always wins over the call line`() {
+        assertEquals(2, SmsCallHoldPolicy.sendingLine(explicitSubscriptionId = 2, callSubscriptionId = 1))
+        assertEquals(1, SmsCallHoldPolicy.sendingLine(explicitSubscriptionId = 1, callSubscriptionId = 2))
+    }
+
     private val blocked = SmsSendFailure.BlockedDueToCall.code
     private val noService = SmsSendFailure.NoService.code
     private fun failed(code: String?, at: Long = 100L) = Part(FAILED, code, at)

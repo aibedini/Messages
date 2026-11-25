@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.12: naming-contract test fixtures (no production change) — patch release
-        // (170 / 3.11.12 follows 169 / 3.11.11).
-        versionCode = 170
-        versionName = "3.11.12"
+        // v3.11.13: in-call SMS line routing and dual-SIM call detection — patch release
+        // (171 / 3.11.13 follows 170 / 3.11.12).
+        versionCode = 171
+        versionName = "3.11.13"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
