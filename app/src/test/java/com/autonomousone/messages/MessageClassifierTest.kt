@@ -248,6 +248,16 @@ class MessageClassifierTest {
     }
 
     @Test
+    fun `an outgoing advertisement is never auto-spam`() {
+        val result = classifier().classify(
+            "20001",
+            "تخفیف ویژه فقط امروز! خرید کنید https://shop.example",
+            sent
+        )
+        assertTrue("only received messages can be quarantined", result.category != MessageCategory.SPAM)
+    }
+
+    @Test
     fun `a known contact forwarding an advertisement is still PERSONAL`() {
         val result = classifier().classify(
             "+989121234567",

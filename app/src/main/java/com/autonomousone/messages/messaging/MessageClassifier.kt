@@ -78,9 +78,9 @@ class MessageClassifier(
      *
      * @param type provider message type (`1` = inbox, `2` = sent, …). Accepted
      *   because it is part of the frozen v3.4.0 classifier contract and is the
-     *   dimension the OTP-retention workstream filters on; no current rule
-     *   branches on it, so incoming and outgoing messages that look alike are
-     *   classified alike.
+     *   dimension the OTP-retention workstream filters on. The one branch is
+     *   SPAM: only an INBOX message can be quarantined; a sent advertisement is
+     *   just a sent message.
      */
     fun classify(sender: String, body: String, type: Int): ClassificationResult {
         val normalizedSender = DigitNormalizer.toAsciiDigits(sender).trim()
@@ -128,8 +128,10 @@ class MessageClassifier(
         }
 
         // ── 4. SPAM — high-confidence local heuristic ───────────────────────
+        // Only an INBOX message can be spam. Classifying the user's own outgoing text as spam would
+        // hide their side of a conversation; a sent advertisement is still just a sent message.
         val spam = SpamHeuristics.assess(sender, text, knownContact = known)
-        if (spam.isSpam) {
+        if (type == INBOX_MESSAGE_TYPE && spam.isSpam) {
             return ClassificationResult(
                 MessageCategory.SPAM,
                 spam.score,
@@ -246,6 +248,9 @@ class MessageClassifier(
         private const val SHORTCODE_MIN_DIGITS = 5
         private const val MSISDN_MIN_DIGITS = 10
         private const val MSISDN_MAX_DIGITS = 15
+
+        /** `Telephony.Sms.MESSAGE_TYPE_INBOX`; only received messages can be quarantined. */
+        private const val INBOX_MESSAGE_TYPE = 1
 
         /**
          * Advertising / discount / marketing wording (English + Persian).
