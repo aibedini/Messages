@@ -20,8 +20,8 @@ import org.junit.Test
  *
  * Priority contract under test:
  *   OTP (high confidence only) → PERSONAL (known contact) → TRANSACTION →
- *   PROMOTION → PERSONAL (person-like sender) → UNKNOWN.
- * SPAM is deliberately NOT reachable from the classifier: it is a user action.
+ *   SPAM (high-confidence local heuristic) → PROMOTION → PERSONAL → UNKNOWN.
+ * A manual spam report remains a separate, stronger decision in SpamReportPolicy.
  */
 class MessageClassifierTest {
 
@@ -158,13 +158,13 @@ class MessageClassifierTest {
     }
 
     @Test
-    fun `a prize announcement is a promotion and not a transaction`() {
+    fun `a prize announcement is spam`() {
         val result = classifier().classify(
             "20001",
-            "Congratulations! You have won 5000000 tomans",
+            "Congratulations! You have won a prize. Claim it at https://bit.ly/prize",
             inbox
         )
-        assertEquals(MessageCategory.PROMOTION, result.category)
+        assertEquals(MessageCategory.SPAM, result.category)
     }
 
     // ── PERSONAL ───────────────────────────────────────────────────────────
@@ -218,24 +218,43 @@ class MessageClassifierTest {
         assertEquals(0f, result.confidence, 0f)
     }
 
-    // ── The classifier never originates SPAM (v3.4.0 rule) ─────────────────
+    // ── The automatic spam heuristic (high-confidence only) ─────────────────
 
     @Test
-    fun `the classifier never returns SPAM from a heuristic`() {
+    fun `aggressive service advertising is SPAM`() {
         val hostile = listOf(
             "WINNER!!! claim your prize now",
-            "FREE FREE FREE click here",
             "تبریک! شما برنده جایزه شدید",
-            "limited time offer buy now",
-            "????????????????"
+            "برای ادامه، رمز پویا خود را ارسال کنید",
+            "تخفیف ویژه فقط امروز! خرید کنید https://shop.example",
         )
         for (body in hostile) {
             val result = classifier().classify("20001", body, inbox)
-            assertTrue(
-                "spam must be a user action, not a heuristic: $body -> ${result.category}",
-                result.category != MessageCategory.SPAM
-            )
+            assertEquals("expected SPAM for: $body", MessageCategory.SPAM, result.category)
         }
+    }
+
+    @Test
+    fun `ordinary promotions stay PROMOTION and are not quarantined`() {
+        val campaigns = listOf(
+            "جشنواره فروش ویژه با ۵۰ درصد تخفیف",
+            "Big sale this week only! Reply STOP to unsubscribe",
+            "Buy now and get 50% off your next purchase",
+        )
+        for (body in campaigns) {
+            val result = classifier().classify("20001", body, inbox)
+            assertEquals("expected PROMOTION for: $body", MessageCategory.PROMOTION, result.category)
+        }
+    }
+
+    @Test
+    fun `a known contact forwarding an advertisement is still PERSONAL`() {
+        val result = classifier().classify(
+            "+989121234567",
+            "این تخفیف را ببین https://shop.example",
+            inbox
+        )
+        assertEquals(MessageCategory.PERSONAL, result.category)
     }
 
     // ── Number look-alikes: not an OTP, not a transaction ──────────────────

@@ -156,6 +156,13 @@ interface SpamBlockPort {
     fun unblock(address: String)
     suspend fun markSpam(threadId: Long, blockedByReport: Boolean, now: Long)
     suspend fun clearSpam(threadId: Long, clearBlockProvenance: Boolean, now: Long)
+
+    /**
+     * Learn from "Not spam": stop the automatic heuristic from filing this conversation as spam
+     * again. The production port pins the category to PERSONAL; a test fake may keep the default
+     * no-op, because the spam-flag write above is the only durable contract those tests assert.
+     */
+    suspend fun markNotSpam(threadId: Long, now: Long) = Unit
 }
 
 /**
@@ -207,10 +214,13 @@ class SpamRepository(
         val plan = SpamActionPlan.notSpam(normalized, blockedByReport)
         if (plan.unblockAddress) port.unblock(address)
         port.clearSpam(threadId, plan.clearBlockProvenanceOnUndo, now())
+        // The user has explicitly said this sender is not spam. Without this, the automatic
+        // classifier would put the conversation straight back into Spam on the next message.
+        port.markNotSpam(threadId, now())
 
         DiagnosticLog.event(
             "SPAM_ACTION",
-            "thread=$threadId reported=0 unblocked=${plan.unblockAddress}"
+            "thread=$threadId reported=0 unblocked=${plan.unblockAddress} learned=not_spam"
         )
         return SpamReportOutcome.NotSpam(unblocked = plan.unblockAddress)
     }

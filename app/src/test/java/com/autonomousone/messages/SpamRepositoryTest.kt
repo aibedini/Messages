@@ -126,6 +126,7 @@ class SpamRepositoryTest {
         val blockedRemovals = mutableListOf<String>()
         val spamWrites = mutableListOf<Pair<Long, Boolean>>()
         val spamClears = mutableListOf<Pair<Long, Boolean>>()
+        val notSpamLearns = mutableListOf<Long>()
 
         /**
          * Trash writes. STRUCTURALLY ALWAYS EMPTY: [SpamBlockPort] exposes no way to
@@ -153,6 +154,10 @@ class SpamRepositoryTest {
             now: Long
         ) {
             spamClears += threadId to clearBlockProvenance
+        }
+
+        override suspend fun markNotSpam(threadId: Long, now: Long) {
+            notSpamLearns += threadId
         }
     }
 
@@ -187,6 +192,7 @@ class SpamRepositoryTest {
 
         assertEquals(listOf("09123456789"), port.blockedRemovals)
         assertEquals(listOf(42L to true), port.spamClears)
+        assertEquals("Not-spam is learned so the heuristic cannot re-file it", listOf(42L), port.notSpamLearns)
     }
 
     @Test

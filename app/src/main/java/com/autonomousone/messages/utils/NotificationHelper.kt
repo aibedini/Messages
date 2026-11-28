@@ -15,7 +15,10 @@ import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.autonomousone.messages.MainActivity
 import com.autonomousone.messages.R
+import com.autonomousone.messages.data.MessageCategory
 import com.autonomousone.messages.messaging.ConversationNotificationChannels
+import com.autonomousone.messages.messaging.KnownContactLookup
+import com.autonomousone.messages.messaging.MessageClassifier
 import com.autonomousone.messages.messaging.OtpDetector
 import com.autonomousone.messages.model.Sms
 import com.autonomousone.messages.navigation.AppLaunchIntent
@@ -101,8 +104,34 @@ object NotificationHelper {
         val displayName = contactMap[normalizedSender] ?: contactMap[sms.sender] ?: sms.sender
         val notificationId = sms.sender.hashCode()
 
+        // ── SPAM GATE (automatic, local) ─────────────────────────────────────
+        // The same classifier that files a conversation under Spam also decides whether it should
+        // buzz. OTP and transaction messages are classified before spam, so a bank receipt or a
+        // verification code is never silenced here. "Not spam" pins the category to PERSONAL; an
+        // explicit category (including SPAM) always outranks the heuristic.
+        val categoryOverride = preferences.categoryOverrideBlocking(sms.threadId)
+        val automaticCategory = try {
+            MessageClassifier(
+                knownContacts = KnownContactLookup { sender ->
+                    contactMap.containsKey(ContactRepository.normalizePhone(sender)) ||
+                        contactMap.containsKey(sender)
+                }
+            ).classify(sms.sender, sms.message, 1).category
+        } catch (_: Throwable) {
+            MessageCategory.UNKNOWN
+        }
+        if (categoryOverride == MessageCategory.SPAM.name) {
+            DiagnosticLog.event("NOTIFICATION", "thread=${sms.threadId} suppressed=category_spam")
+            return
+        }
+        if (automaticCategory == MessageCategory.SPAM && categoryOverride.isNullOrBlank()) {
+            DiagnosticLog.event("NOTIFICATION", "thread=${sms.threadId} suppressed=suspected_spam")
+            return
+        }
+
         // Check for OTP code in message
         val otpCode = extractOtpCode(sms.message)
+
 
         // v2.6.9: the tap used to put extra_thread_id/extra_phone/extra_name
         // on a plain MainActivity intent nobody parsed — tapping a

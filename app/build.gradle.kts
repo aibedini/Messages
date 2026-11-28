@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.13: in-call SMS line routing and dual-SIM call detection — patch release
-        // (171 / 3.11.13 follows 170 / 3.11.12).
-        versionCode = 171
-        versionName = "3.11.13"
+        // v3.11.14: on-device spam shield (sender shape + promo/phishing language) — patch release
+        // (172 / 3.11.14 follows 171 / 3.11.13).
+        versionCode = 172
+        versionName = "3.11.14"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

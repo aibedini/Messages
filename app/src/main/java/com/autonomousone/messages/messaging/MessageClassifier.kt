@@ -38,12 +38,16 @@ fun interface KnownContactLookup {
  *  3. TRANSACTION — bank/money movement, receipts, invoices. A security OTP is
  *     never a transaction (rule 1 claimed it) and promotional copy is never a
  *     transaction (guarded below).
- *  4. PROMOTION — advertising, discounts, marketing, unsubscribe footers.
- *  5. PERSONAL (person-like sender) — a long, ordinary phone number.
- *  6. SPAM — NEVER derived from a heuristic in v3.4.0. Spam is a USER action
- *     (`conversation_preferences.spam` / `categoryOverride`), so this classifier
- *     never returns it. The constant is listed so the vocabulary stays total.
+ *  4. SPAM — only when the local [SpamHeuristics] reach their high threshold:
+ *     service-sender shape plus promotional/phishing language plus a link or a
+ *     call to action. A plain discount remains PROMOTION; a known contact is
+ *     never spam.
+ *  5. PROMOTION — advertising, discounts, marketing, unsubscribe footers.
+ *  6. PERSONAL (person-like sender) — a long, ordinary phone number.
  *  7. UNKNOWN — fallback, kept at 0.0 confidence.
+ *
+ * The user's manual spam report is still a separate, stronger decision in
+ * `SpamReportPolicy`; this classifier only supplies the automatic suggestion.
  *
  * PRIVACY / SAFETY
  * ----------------
@@ -123,7 +127,17 @@ class MessageClassifier(
             }
         }
 
-        // ── 4. PROMOTION ────────────────────────────────────────────────────
+        // ── 4. SPAM — high-confidence local heuristic ───────────────────────
+        val spam = SpamHeuristics.assess(sender, text, knownContact = known)
+        if (spam.isSpam) {
+            return ClassificationResult(
+                MessageCategory.SPAM,
+                spam.score,
+                isOtp = false
+            )
+        }
+
+        // ── 5. PROMOTION ────────────────────────────────────────────────────
         if (promoMarker != null) {
             return ClassificationResult(
                 MessageCategory.PROMOTION,
@@ -132,7 +146,7 @@ class MessageClassifier(
             )
         }
 
-        // ── 5. PERSONAL — an ordinary person-like phone number ──────────────
+        // ── 6. PERSONAL — an ordinary person-like phone number ──────────────
         //
         // A plain subscriber number (10-15 digits) whose text fired neither the OTP,
         // the transaction nor the promotion rules is PERSONAL. There is deliberately
@@ -149,7 +163,7 @@ class MessageClassifier(
             )
         }
 
-        // ── 6./7. SPAM is user-only in v3.4.0 → UNKNOWN fallback ────────────
+        // ── 7. UNKNOWN fallback ─────────────────────────────────────────────
         return ClassificationResult(MessageCategory.UNKNOWN, 0f, isOtp = false)
     }
 

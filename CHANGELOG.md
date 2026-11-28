@@ -8,6 +8,27 @@ All notable changes to **Messages** are recorded here. Every release tag gets a 
 
 ---
 
+## v3.11.14 — 2026-11-28
+
+### 🛡️ On-device spam shield
+
+- **Automatic spam category:** a **service sender** (short code or alphanumeric originator) plus
+  promotional/phishing language plus a **link or call-to-action** now files the conversation under
+  **Spam** — no cloud, no account, no message content leaving the phone.
+- **Quiet by default:** a message auto-filed as spam does **not** post a notification. OTP and
+  transaction messages are classified first, so bank receipts and verification codes are never
+  silenced by a stray word.
+- **Persian + English patterns:** discounts, “free”, prizes, loans, crypto, card/dynamic-password
+  requests, Telegram/short links and “click/register/buy” actions.
+- **Not spam is learned:** pressing **Not spam** pins the conversation to **Personal**; the automatic
+  heuristic cannot re-file it, and notifications resume. The override can be reset from
+  Conversation Info.
+- **Known contacts are never spam**, even when they forward an advertisement.
+- **Conservative by design:** a plain discount campaign stays in **Promotion**; only high-confidence
+  spam is quarantined. Nothing is ever deleted.
+
+---
+
 ## v3.11.13 — 2026-11-25
 
 ### 📞 SMS during a phone call

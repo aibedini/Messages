@@ -444,6 +444,10 @@ class HomeViewModel(
                     ids.forEach { (chip, threadIds) -> categoryThreadIds[chip] = threadIds }
                     categoryCounts.clear()
                     ids.forEach { (chip, threadIds) -> categoryCounts[chip] = threadIds.size }
+                    // A new automatic SPAM verdict must leave the Inbox immediately, not on the
+                    // next unrelated refresh. This is the same render path a manual spam report
+                    // already triggers.
+                    renderConversations()
                 }
             }
         }
@@ -596,16 +600,25 @@ class HomeViewModel(
      * can re-introduce a reported thread into the inbox.
      */
     private fun List<Sms>.withSpamVisibility(): List<Sms> {
-        if (spamIds.isEmpty()) return this
-        // While the SPAM chip is selected the rows stay in the durable list: the
-        // chip's own thread-id set is what narrows the screen to them, and dropping
-        // them here would make the chip permanently empty. Note this list is the
-        // RAW mirror rows (`roomConversationsState`), which still contain a reported
-        // thread even though its sender is now blocked — the normal inbox excludes
-        // blocked numbers earlier, at the overlay/render merge.
+        // A thread is spam if the USER reported it OR the on-device heuristic placed it there.
+        // Automatic spam must leave the inbox just like a manual report; otherwise the filter
+        // would only label the conversation while still showing it between personal messages.
+        if (spamIds.isEmpty() && !hasAutomaticSpam()) return this
+        // While the SPAM chip is selected the rows stay in the durable list: the chip's own
+        // thread-id set is what narrows the screen to them, and dropping them here would make the
+        // chip permanently empty. Note this list is the RAW mirror rows
+        // (`roomConversationsState`), which still contain a reported thread even though its sender
+        // is now blocked — the normal inbox excludes blocked numbers earlier, at the
+        // overlay/render merge.
         return if (spamCategoryVisible) this
-        else filter { it.threadId !in spamIds }
+        else filter { !isSpamThread(it.threadId) }
     }
+
+    private fun hasAutomaticSpam(): Boolean =
+        effectiveCategories.values.any { it == MessageCategory.SPAM }
+
+    private fun isSpamThread(threadId: Long): Boolean =
+        threadId in spamIds || effectiveCategories[threadId] == MessageCategory.SPAM
 
     /**
      * The reported-spam conversation rows for the SPAM chip.
@@ -616,9 +629,9 @@ class HomeViewModel(
      * badge. Bounded by the report set, never a scan.
      */
     fun spamConversations(): List<Sms> {
-        if (spamIds.isEmpty()) return emptyList()
+        if (spamIds.isEmpty() && !hasAutomaticSpam()) return emptyList()
         return roomConversationsState
-            .filter { it.threadId in spamIds }
+            .filter { isSpamThread(it.threadId) }
             .withManualUnread()
             .sortedByDescending { it.date }
     }
@@ -1411,7 +1424,8 @@ class HomeViewModel(
      * Read defensively by the screen and combined with the chip's own thread-id
      * set; empty when the user has reported nothing.
      */
-    fun spamThreadIds(): Set<Long> = spamIds.toSet()
+    fun spamThreadIds(): Set<Long> =
+        spamIds + effectiveCategories.filterValues { it == MessageCategory.SPAM }.keys
 
     /**
      * The screen tells Home whether the SPAM chip is selected.

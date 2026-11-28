@@ -3,6 +3,7 @@ package com.autonomousone.messages.repository
 import android.content.Context
 import com.autonomousone.messages.data.ConversationPreferenceDao
 import com.autonomousone.messages.data.ConversationPreferenceEntity
+import com.autonomousone.messages.data.MessageCategory
 import com.autonomousone.messages.data.MessagesDatabase
 import com.autonomousone.messages.messaging.ConversationReadAudit
 import com.autonomousone.messages.utils.DiagnosticLog
@@ -65,6 +66,15 @@ class ConversationPreferenceRepository(context: Context) {
     /** Blocking variant for the notification channel decision. */
     fun hasCustomNotificationChannelBlocking(threadId: Long): Boolean =
         dao.getBlocking(threadId)?.customNotificationChannel == true
+
+    /**
+     * The user's explicit category override, read synchronously by the notification path.
+     *
+     * A non-null value means the user has made a category decision (notably "Not spam" →
+     * PERSONAL), and the automatic spam heuristic must not override it.
+     */
+    fun categoryOverrideBlocking(threadId: Long): String? =
+        dao.getBlocking(threadId)?.categoryOverride
 
     suspend fun hasCustomNotificationChannel(threadId: Long): Boolean =
         dao.get(threadId)?.customNotificationChannel == true
@@ -274,6 +284,15 @@ class ConversationPreferenceRepository(context: Context) {
             now: Long
         ) {
             this@ConversationPreferenceRepository.clearSpam(threadId, clearBlockProvenance, now)
+        }
+
+        /**
+         * "Not spam" is a learning signal: pin the conversation to PERSONAL. The category override
+         * outranks the automatic projection, so a later promotional message cannot silently move it
+         * back to Spam. The user can restore automatic categorisation from Conversation Info.
+         */
+        override suspend fun markNotSpam(threadId: Long, now: Long) {
+            setCategoryOverride(threadId, MessageCategory.PERSONAL.name, now)
         }
     }
 }
