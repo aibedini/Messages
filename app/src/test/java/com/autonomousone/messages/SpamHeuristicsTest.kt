@@ -69,6 +69,18 @@ class SpamHeuristicsTest {
     }
 
     @Test
+    fun `a delivery tracking message is not spam`() {
+        val result = spam("20001", "سفارش شما ارسال شد. کد رهگیری: https://track.example/123")
+        assertFalse(result.isSpam)
+    }
+
+    @Test
+    fun `an order confirmation with a tracking link is not spam`() {
+        val result = spam("20001", "خرید شما با موفقیت انجام شد. رهگیری: https://track.example/1")
+        assertFalse(result.isSpam)
+    }
+
+    @Test
     fun `a neutral link from a person is not spam`() {
         val result = spam("+989121234567", "این لینک را ببین https://example.com")
         assertFalse(result.isSpam)

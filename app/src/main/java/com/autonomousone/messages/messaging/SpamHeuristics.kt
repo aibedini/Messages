@@ -75,6 +75,7 @@ object SpamHeuristics {
         val hasShortLink = SHORT_LINK_MARKERS.any { body.contains(it) }
         val hasCallToAction = CTA_MARKERS.any { body.contains(it) }
         val hasOptOut = OPT_OUT_MARKERS.any { body.contains(it) }
+        val serviceUpdate = SERVICE_UPDATE_MARKERS.any { body.contains(it) }
 
         val reasons = ArrayList<Reason>(6)
         var score = 0f
@@ -118,6 +119,11 @@ object SpamHeuristics {
         // A link or a CTA on a neutral personal message is not spam.
         if (promoHits == 0 && phishingHits == 0) score = 0f
 
+        // Transactional/service updates ("your order shipped", "payment successful") often carry a
+        // tracking link and words like "order" or "purchase". They are not advertising. Phishing
+        // messages deliberately never get this discount.
+        if (serviceUpdate && phishingHits == 0) score -= 0.35f
+
         return Assessment(
             score = score.coerceIn(0f, 1f),
             reasons = reasons.distinct(),
@@ -142,7 +148,7 @@ object SpamHeuristics {
      */
     private val PROMO_MARKERS = listOf(
         "تخفیف", "حراج", "فروش ویژه", "جشنواره", "کد تخفیف", "پیشنهاد ویژه",
-        "فقط امروز", "رایگان", "هدیه", "خرید", "سفارش", "محصول", "فروشگاه",
+        "فقط امروز", "رایگان", "هدیه", "خرید", "فروشگاه",
         "اشتراک", "پکیج", "بسته اینترنت", "تبلیغ", "لغو تبلیغ",
         "discount", "sale", "free", "offer", "shop", "buy now", "order now",
         "limited time", "promo", "coupon", "deal",
@@ -170,6 +176,14 @@ object SpamHeuristics {
 
     private val OPT_OUT_MARKERS = listOf(
         "لغو", "unsubscribe", "reply stop", "stop to", "لغو 11", "لغو تبلیغ",
+    )
+
+    /** Receipts, order tracking and security notices — not advertising. */
+    private val SERVICE_UPDATE_MARKERS = listOf(
+        "سفارش شما", "خرید شما", "ارسال شد", "تحویل", "رهگیری", "پیگیری",
+        "پرداخت موفق", "تراکنش", "واریز", "برداشت", "قبض", "صورتحساب",
+        "مانده", "موجودی", "order shipped", "out for delivery", "tracking",
+        "payment successful", "transaction",
     )
 
     /** http(s), www, Telegram/WhatsApp/Instagram links and common shorteners. */

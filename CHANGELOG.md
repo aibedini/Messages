@@ -24,8 +24,9 @@ All notable changes to **Messages** are recorded here. Every release tag gets a 
   heuristic cannot re-file it, and notifications resume. The override can be reset from
   Conversation Info.
 - **Known contacts are never spam**, even when they forward an advertisement.
-- **Conservative by design:** a plain discount campaign stays in **Promotion**; only high-confidence
-  spam is quarantined. Nothing is ever deleted.
+- **Conservative by design:** a plain discount campaign stays in **Promotion**; order/payment/tracking
+  updates and bank security warnings are excluded; only high-confidence spam is quarantined. Nothing
+  is ever deleted.
 
 ---
 
