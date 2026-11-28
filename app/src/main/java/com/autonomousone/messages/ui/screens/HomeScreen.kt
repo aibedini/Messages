@@ -180,6 +180,9 @@ fun HomeScreen(
     // row here and Home asks for confirmation first — a thumb grazing
     // the edge while scrolling must never archive or delete.
     var pendingArchive by remember { mutableStateOf<Sms?>(null) }
+    // Whether the pending archive action is actually an unarchive (Archived tab, or an archived
+    // conversation that is currently being reviewed in the Spam folder).
+    var pendingArchiveUnarchive by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Sms?>(null) }
 
     // Global (all-messages) search: debounce 400 ms after typing stops.
@@ -205,6 +208,11 @@ fun HomeScreen(
 
     val smsList = viewModel.conversations
     val archivedList = viewModel.archivedConversations
+    val autoSpamBadge = stringResource(R.string.spam_badge_auto)
+    val reportedSpamBadge = stringResource(R.string.spam_badge_reported)
+    val archivedSpamBadge = stringResource(R.string.spam_badge_archived)
+    val notSpamMessage = stringResource(R.string.spam_not_spam_done)
+    val notSpamArchivedMessage = stringResource(R.string.spam_not_spam_archived_done)
 
     // Live drafts (shared StateFlow) — the list updates the moment a chat
     // screen saves a draft, no refresh signal needed.
@@ -214,20 +222,16 @@ fun HomeScreen(
     // on the Smart Categories chip (null = every category).
     val sourceList by remember(selectedFilter, selectedCategory) {
         derivedStateOf {
-            val tabList =
-                if (selectedFilter == ConversationFilter.Archived) archivedList else smsList
-            // FEATURE 15: the SPAM chip reads the reported conversations directly.
-            // A reported sender is BLOCKED, and a blocked conversation is removed
-            // from the rendered lists by design — so the chip cannot be served from
-            // the normal lists without being permanently empty.
-            if (selectedCategory == CategoryFilter.Spam) {
-                viewModel.spamConversations()
-            } else {
-                // The category narrows the tab list through the indexed thread-id set
-                // the ViewModel already resolved; null means "no category selected".
-                viewModel.smartCategoryThreadIds(selectedCategory)
-                    ?.let { ids -> tabList.filter { it.threadId in ids } }
-                    ?: tabList
+            when (selectedFilter) {
+                // Spam and Archive are two separate folders now. Spam is never served from the
+                // archived list: an archived spam thread appears here with an Unarchive action.
+                ConversationFilter.Spam -> viewModel.spamConversations()
+                ConversationFilter.Archived -> viewModel.smartCategoryThreadIds(selectedCategory)
+                    ?.let { ids -> archivedList.filter { it.threadId in ids } }
+                    ?: archivedList
+                else -> viewModel.smartCategoryThreadIds(selectedCategory)
+                    ?.let { ids -> smsList.filter { it.threadId in ids } }
+                    ?: smsList
             }
         }
     }
@@ -240,6 +244,7 @@ fun HomeScreen(
                     ConversationFilter.All -> true
                     ConversationFilter.Unread -> sms.unread
                     ConversationFilter.Archived -> true   // archivedList is already filtered
+                    ConversationFilter.Spam -> true       // spamConversations is already exact
                 }
                 searchMatch && filterMatch
             }
@@ -359,20 +364,15 @@ fun HomeScreen(
             HomeFilterBar(selected = selectedFilter, onSelect = { selectedFilter = it })
 
             // FEATURE 12 — Smart Categories (additive): a second, independently
-            // selected axis under the All/Unread/Archived tabs. Chips appear only
-            // for categories that actually contain conversations.
-            CategoryFilterBar(
-                selected = selectedCategory,
-                counts = viewModel.smartCategoryCounts(),
-                onSelect = {
-                    selectedCategory = it
-                    // FEATURE 15: a reported-spam conversation is blocked, so it is
-                    // hidden from every normal list. The Spam chip is the one place it
-                    // stays reachable, which means the ViewModel has to re-render with
-                    // that intent before the chip's rows are read.
-                    viewModel.onCategoryChipSelected(it)
-                }
-            )
+            // selected axis under the All/Unread/Archived tabs. Spam is its own
+            // folder, so category chips do not apply there (everything is SPAM).
+            if (selectedFilter != ConversationFilter.Spam) {
+                CategoryFilterBar(
+                    selected = selectedCategory,
+                    counts = viewModel.smartCategoryCounts(),
+                    onSelect = { selectedCategory = it }
+                )
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -384,6 +384,7 @@ fun HomeScreen(
             }
 
             val isInArchivedView = selectedFilter == ConversationFilter.Archived
+            val isInSpamView = selectedFilter == ConversationFilter.Spam
 
             // Skeleton ONLY when there is no cache to show at all (cold start).
             if (viewModel.isLoading && smsList.isEmpty() && archivedList.isEmpty()) {
@@ -401,11 +402,13 @@ fun HomeScreen(
                     EmptyView(
                         title = when {
                             search.isNotBlank() -> stringResource(R.string.home_search_no_results)
+                            isInSpamView -> stringResource(R.string.home_empty_spam_title)
                             isInArchivedView -> stringResource(R.string.home_empty_archived_title)
                             else -> stringResource(R.string.home_empty_title)
                         },
                         subtitle = when {
                             search.isNotBlank() -> stringResource(R.string.home_search_no_results_fmt, search)
+                            isInSpamView -> stringResource(R.string.home_empty_spam_subtitle)
                             isInArchivedView -> stringResource(R.string.home_empty_archived_subtitle)
                             else -> stringResource(R.string.home_empty_subtitle)
                         },
@@ -435,7 +438,7 @@ fun HomeScreen(
                         draftKey = DraftRepository.keyFor(sms.threadId, sms.sender),
                         draftText = draftMap[DraftRepository.keyFor(sms.threadId, sms.sender)].orEmpty(),
                         isPinned = sms.threadId in viewModel.pinnedIds,
-                        isArchived = isInArchivedView,
+                        isArchived = isInArchivedView || viewModel.isArchivedThread(sms.threadId),
                         showYouMarker = sms.type == 2,
                         selected = sms.threadId in viewModel.selection.keys,
                     )
@@ -521,8 +524,40 @@ fun HomeScreen(
                             )
                         }
                     },
-                    onRowArchive = { row -> pendingArchive = row.sms },
+                    onRowArchive = { row ->
+                        pendingArchive = row.sms
+                        pendingArchiveUnarchive = row.isArchived
+                    },
                     onRowDelete = { row -> pendingDelete = row.sms },
+                    spamBadgeFor = { row ->
+                        if (!isInSpamView) {
+                            null
+                        } else {
+                            val provenance = when {
+                                viewModel.isReportedSpam(row.sms.threadId) -> reportedSpamBadge
+                                viewModel.isAutomaticSpam(row.sms.threadId) -> autoSpamBadge
+                                else -> null
+                            }
+                            when {
+                                provenance == null -> if (row.isArchived) archivedSpamBadge else null
+                                row.isArchived -> "$provenance · $archivedSpamBadge"
+                                else -> provenance
+                            }
+                        }
+                    },
+                    onRowNotSpam = if (isInSpamView) {
+                        { row ->
+                            viewModel.notSpamConversation(row.sms)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = if (row.isArchived) notSpamArchivedMessage else notSpamMessage,
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
                     selectionMode = selectionActive,
                     onRowLongPress = { row -> viewModel.enterSelection(row.sms.threadId) },
                     onRowToggleSelect = { row -> viewModel.toggleSelection(row.sms.threadId) },
@@ -537,14 +572,16 @@ fun HomeScreen(
                     val confirmUndo = stringResource(R.string.action_undo)
                     HomeConfirmDialog(
                         title = stringResource(
-                            if (isInArchivedView) R.string.home_confirm_unarchive_title
+                            if (pendingArchiveUnarchive) R.string.home_confirm_unarchive_title
                             else R.string.home_confirm_archive_title
                         ),
                         body = viewModel.displayNameFor(target.sender),
                         destructive = false,
                         onConfirm = {
                             pendingArchive = null
-                            if (isInArchivedView) {
+                            val wasArchived = pendingArchiveUnarchive
+                            pendingArchiveUnarchive = false
+                            if (wasArchived) {
                                 viewModel.unarchiveConversation(target)
                                 scope.launch {
                                     val r = snackbarHostState.showSnackbar(
@@ -566,7 +603,10 @@ fun HomeScreen(
                                 }
                             }
                         },
-                        onDismiss = { pendingArchive = null }
+                        onDismiss = {
+                            pendingArchive = null
+                            pendingArchiveUnarchive = false
+                        }
                     )
                 }
 

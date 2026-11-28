@@ -51,7 +51,7 @@ It is an **independent, actively developed project**: the messaging UI, gateway,
 - 📝 **Drafts** — leave a chat mid-typing and the draft is saved; the list shows a live *Draft:* line.
 - 📌 **Pin · 🗂️ archive · 🗑️ trash** — swipe actions with undo, plus a durable **Recently Deleted** screen.
 - 🚫 **Block & report spam** — silent blocking with provenance, so a Not-Spam action never silently unblocks someone.
-- 🛡️ **On-device spam shield** — service-sender shape + Persian/English promo and phishing patterns + links; high-confidence spam moves to **Spam**, its notification is silenced, and **Not spam** teaches the filter to leave that conversation alone.
+- 🛡️ **On-device spam shield** — service-sender shape + Persian/English promo and phishing patterns + links; high-confidence spam moves to a dedicated **Spam tab** (separate from **Archived**), its notification is silenced, and each row shows **Auto-filtered** vs **Reported**. **Not spam** in the row menu returns it to the Inbox.
 - 🔍 **Search everywhere** — conversation names and message bodies, with Persian-aware prefix matching.
 - 📶 **Dual-SIM aware** — in-chat SIM switcher and a sticky per-conversation SIM preference.
 - 📊 **Standards-based segment counter** — GSM-7 160/153 and UCS-2 70/67 per 3GPP TS 23.038.

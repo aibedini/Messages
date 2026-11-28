@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Payments
@@ -109,5 +108,4 @@ private fun CategoryFilter.icon(): ImageVector = when (this) {
     CategoryFilter.Otp -> Icons.Default.Password
     CategoryFilter.Transaction -> Icons.Default.Payments
     CategoryFilter.Promotion -> Icons.Default.LocalOffer
-    CategoryFilter.Spam -> Icons.Default.Block
 }

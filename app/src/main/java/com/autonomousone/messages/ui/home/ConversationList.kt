@@ -78,6 +78,10 @@ fun ConversationList(
     onRowBlock: (HomeRow) -> Unit,
     onRowArchive: (HomeRow) -> Unit,
     onRowDelete: (HomeRow) -> Unit,
+    /** Optional badge on a Spam-tab row: Auto-filtered vs Reported. */
+    spamBadgeFor: (HomeRow) -> String? = { null },
+    /** Optional direct "Not spam" action on a Spam-tab row. */
+    onRowNotSpam: ((HomeRow) -> Unit)? = null,
     /** FEATURE 9: multi-select is on; taps toggle and a long-press enters it. */
     selectionMode: Boolean = false,
     onRowLongPress: (HomeRow) -> Unit = {},
@@ -181,10 +185,12 @@ fun ConversationList(
                     isArchived = row.isArchived,
                     draftText = row.draftText,
                     showYouMarker = row.showYouMarker,
+                    spamBadge = spamBadgeFor(row),
                     onClick = { onRowClick(row) },
                     onPin = { onRowPin(row) },
                     onBlock = { onRowBlock(row) },
                     onArchive = { onRowArchive(row) },
+                    onNotSpam = onRowNotSpam?.let { action -> { action(row) } },
                     onDelete = { onRowDelete(row) },
                     selectionMode = selectionMode,
                     selected = row.selected,

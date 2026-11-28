@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
@@ -78,6 +79,10 @@ fun SmsItem(
     onPin: (() -> Unit)? = null,
     /** Long-press → Block number. */
     onBlock: (() -> Unit)? = null,
+    /** Spam folder → "Not spam", returning the conversation to the Inbox. */
+    onNotSpam: (() -> Unit)? = null,
+    /** Short provenance badge shown on a Spam-folder row ("Auto-filtered" / "Reported"). */
+    spamBadge: String? = null,
     /** True when this thread is pinned (shows a filled pin badge). */
     isPinned: Boolean = false,
     /** Non-empty → show italic "Draft: …" instead of the message snippet. */
@@ -107,7 +112,8 @@ fun SmsItem(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    val hasRowMenu = onPin != null || onBlock != null || onArchive != null || onDelete != null
+    val hasRowMenu = onPin != null || onBlock != null || onArchive != null ||
+        onNotSpam != null || onDelete != null
 
     val dismissState = rememberSwipeToDismissBoxState(
         // v2.6.19: accidental side-drags while scrolling vertically used
@@ -301,6 +307,22 @@ fun SmsItem(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
+                                if (!spamBadge.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer
+                                    ) {
+                                        Text(
+                                            text = spamBadge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
@@ -442,6 +464,21 @@ fun SmsItem(
 
                     // Long-press conversation menu
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (onNotSpam != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.spam_not_spam)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onNotSpam()
+                                }
+                            )
+                        }
                         if (onPin != null) {
                             DropdownMenuItem(
                                 text = { Text(if (isPinned) stringResource(R.string.list_unpin) else stringResource(R.string.list_pin_to_top)) },

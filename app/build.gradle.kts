@@ -45,10 +45,10 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        // v3.11.14: on-device spam shield (sender shape + promo/phishing language) — patch release
-        // (172 / 3.11.14 follows 171 / 3.11.13).
-        versionCode = 172
-        versionName = "3.11.14"
+        // v3.11.15: separate Spam and Archived folders with auto/reported provenance — patch release
+        // (173 / 3.11.15 follows 172 / 3.11.14).
+        versionCode = 173
+        versionName = "3.11.15"
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

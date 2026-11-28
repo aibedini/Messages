@@ -48,6 +48,7 @@
     <string name="home_tab_all">همه پیام‌ها</string>
     <string name="home_tab_unread">خوانده‌نشده</string>
     <string name="home_tab_archived">بایگانی‌شده</string>
+    <string name="home_tab_spam">هرزنامه</string>
 
     <!-- ══════════ دسته‌بندی هوشمند (ویژگی ۱۲ نسخه ۳.۴.۰) ══════════ -->
     <string name="category_chip_personal">شخصی</string>
@@ -61,6 +62,11 @@
     <string name="home_empty_subtitle">هنوز پیامی ندارید. برای شروع، یک گفتگوی جدید باز کنید.</string>
     <string name="home_empty_archived_title">مکالمه بایگانی‌شده‌ای نیست</string>
     <string name="home_empty_archived_subtitle">برای بایگانی، هر مکالمه را به راست بکشید.</string>
+    <string name="home_empty_spam_title">گفتگوی هرزنامه‌ای وجود ندارد</string>
+    <string name="home_empty_spam_subtitle">هرزنامه‌های مشکوک به‌صورت خودکار اینجا فیلتر می‌شوند. یکی را باز کنید و «هرزنامه نیست» را بزنید تا برگردد.</string>
+    <string name="spam_badge_auto">تشخیص خودکار</string>
+    <string name="spam_badge_reported">گزارش‌شده</string>
+    <string name="spam_badge_archived">بایگانی</string>
     <string name="home_search_no_results">نتیجه‌ای یافت نشد</string>
     <string name="home_search_no_results_fmt">پیامی حاوی «%1$s» پیدا نشد. جستجوی دیگری امتحان کنید.</string>
     <string name="home_search_global_header">در متن همه پیام‌ها</string>
@@ -401,6 +407,7 @@
     <string name="spam_report_undo">برگرداندن</string>
     <string name="spam_not_spam">هرزنامه نیست</string>
     <string name="spam_not_spam_done">به صندوق ورودی برگشت</string>
+    <string name="spam_not_spam_archived_done">به بایگانی برگشت</string>
     <string name="spam_block">مسدود کردن</string>
     <string name="spam_unblock">رفع مسدودی</string>
     <string name="spam_blocked_snackbar">فرستنده مسدود شد</string>

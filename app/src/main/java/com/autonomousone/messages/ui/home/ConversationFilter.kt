@@ -7,5 +7,12 @@ import com.autonomousone.messages.R
 enum class ConversationFilter(@StringRes val labelRes: Int) {
     All(R.string.home_tab_all),
     Unread(R.string.home_tab_unread),
-    Archived(R.string.home_tab_archived)
+    Archived(R.string.home_tab_archived),
+
+    /**
+     * A folder, not a category filter: it lists every conversation the local heuristic or the user
+     * placed in Spam. Archived spam lives here too (with an Unarchive action), so the Archived tab
+     * stays a spam-free view of deliberately archived conversations.
+     */
+    Spam(R.string.home_tab_spam)
 }

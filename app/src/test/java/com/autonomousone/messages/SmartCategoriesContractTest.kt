@@ -128,15 +128,22 @@ class SmartCategoriesContractTest {
         assertEquals(1, counts[CategoryFilter.Promotion])
         assertNull("an empty category must not offer a chip", counts[CategoryFilter.Personal])
         assertNull(counts[CategoryFilter.Transaction])
-        assertNull(counts[CategoryFilter.Spam])
         assertFalse(counts.containsKey(CategoryFilter.Personal))
     }
 
     @Test
-    fun `chip order is personal otp transactions promotions spam`() {
+    fun `chip order is personal otp transactions promotions`() {
         assertEquals(
-            listOf("Personal", "Otp", "Transaction", "Promotion", "Spam"),
+            listOf("Personal", "Otp", "Transaction", "Promotion"),
             CategoryFilter.displayOrder.map { it.name }
+        )
+    }
+
+    @Test
+    fun `spam is a folder, not a category chip`() {
+        assertTrue(
+            "Spam must not be a category chip anymore",
+            CategoryFilter.displayOrder.none { it.category == MessageCategory.SPAM }
         )
     }
 

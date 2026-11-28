@@ -31,6 +31,7 @@ import com.autonomousone.messages.repository.ConversationPreferenceRepository
 import com.autonomousone.messages.repository.PinRepository
 import com.autonomousone.messages.repository.ProgressListener
 import com.autonomousone.messages.repository.SmsRepository
+import com.autonomousone.messages.repository.SpamRepository
 import com.autonomousone.messages.repository.ThreadMessageCache
 import com.autonomousone.messages.repository.ThreadSnippet
 import com.autonomousone.messages.ui.home.CategoryFilter
@@ -99,6 +100,11 @@ class HomeViewModel(
 
     /** FEATURE 9/10: the `manualUnread` bookmark store (never Telephony READ). */
     private val preferenceRepository = ConversationPreferenceRepository(application)
+
+    /** One repository per Home: its block/spam ports are stateless wrappers. */
+    private val spamRepository by lazy {
+        SpamRepository(preferenceRepository.spamBlockPort(blocklistRepository))
+    }
 
     /** All conversations that are NOT archived — shown in "All" and "Unread" tabs. */
     val conversations = mutableStateListOf<Sms>()
@@ -603,15 +609,9 @@ class HomeViewModel(
         // A thread is spam if the USER reported it OR the on-device heuristic placed it there.
         // Automatic spam must leave the inbox just like a manual report; otherwise the filter
         // would only label the conversation while still showing it between personal messages.
+        // Spam is now its own tab and reads [spamConversations]; the normal tabs never include it.
         if (spamIds.isEmpty() && !hasAutomaticSpam()) return this
-        // While the SPAM chip is selected the rows stay in the durable list: the chip's own
-        // thread-id set is what narrows the screen to them, and dropping them here would make the
-        // chip permanently empty. Note this list is the RAW mirror rows
-        // (`roomConversationsState`), which still contain a reported thread even though its sender
-        // is now blocked — the normal inbox excludes blocked numbers earlier, at the
-        // overlay/render merge.
-        return if (spamCategoryVisible) this
-        else filter { !isSpamThread(it.threadId) }
+        return filter { !isSpamThread(it.threadId) }
     }
 
     private fun hasAutomaticSpam(): Boolean =
@@ -1412,9 +1412,6 @@ class HomeViewModel(
      */
     private val spamIds = mutableStateSetOf<Long>()
 
-    /** True while the SPAM category chip is the selected one. */
-    private var spamCategoryVisible: Boolean = false
-
     /** Threads muted RIGHT NOW; drives the Mute/Unmute toggle. */
     private val mutedIds = mutableStateSetOf<Long>()
 
@@ -1427,20 +1424,34 @@ class HomeViewModel(
     fun spamThreadIds(): Set<Long> =
         spamIds + effectiveCategories.filterValues { it == MessageCategory.SPAM }.keys
 
+    /** True when the USER explicitly reported this conversation. */
+    fun isReportedSpam(threadId: Long): Boolean = threadId in spamIds
+
+    /** Durable archive state for a row that may be shown outside the Archived tab (Spam). */
+    fun isArchivedThread(threadId: Long): Boolean = threadId in archivedIds
+
+    /** True when the automatic heuristic (not the user) placed this conversation in Spam. */
+    fun isAutomaticSpam(threadId: Long): Boolean =
+        effectiveCategories[threadId] == MessageCategory.SPAM
+
     /**
-     * The screen tells Home whether the SPAM chip is selected.
-     *
-     * WHY THIS LIVES HERE: a reported conversation must be hidden from the normal
-     * inbox but VISIBLE under Spam. The blocklist filter runs at render time, so
-     * the render has to know which of the two states it is rendering. The flag is a
-     * plain field (not a Compose state) because the caller re-renders explicitly,
-     * exactly like the category chip selection does.
+     * "Not spam" from the Spam tab. The spam flag and block are cleared through the same
+     * provenance-aware repository as Conversation Info, then the production port pins the category
+     * to PERSONAL so the heuristic cannot immediately re-file the conversation.
      */
-    fun onCategoryChipSelected(selected: CategoryFilter?) {
-        val visible = selected == CategoryFilter.Spam
-        if (visible == spamCategoryVisible) return
-        spamCategoryVisible = visible
-        renderConversations()
+    fun notSpamConversation(sms: Sms) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val blockedByReport = preferenceRepository.get(sms.threadId)?.spamBlockedByReport == true
+            runCatching {
+                spamRepository.notSpam(
+                    threadId = sms.threadId,
+                    address = sms.sender,
+                    blockedByReport = blockedByReport
+                )
+            }.onFailure {
+                DiagnosticLog.event("SPAM_ACTION", "home-not-spam-failed thread=${sms.threadId}")
+            }
+        }
     }
 
     /** Called by the screen once the snackbar for [bulkFeedback] was shown. */

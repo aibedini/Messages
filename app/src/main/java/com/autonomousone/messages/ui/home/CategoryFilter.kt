@@ -13,7 +13,11 @@ import com.autonomousone.messages.data.MessageCategory
  * replaces the existing tabs.
  *
  * The declaration order IS the display order:
- * Personal / OTP / Transactions / Promotions / Spam.
+ * Personal / OTP / Transactions / Promotions.
+ *
+ * Spam is deliberately NOT a category chip anymore: it is a Home tab/folder
+ * ([ConversationFilter.Spam]) so auto-filtered spam and archived conversations
+ * are two distinct, always-reachable places.
  */
 enum class CategoryFilter(
     @StringRes val labelRes: Int,
@@ -23,8 +27,7 @@ enum class CategoryFilter(
     Personal(R.string.category_chip_personal, MessageCategory.PERSONAL),
     Otp(R.string.category_chip_otp, MessageCategory.OTP),
     Transaction(R.string.category_chip_transactions, MessageCategory.TRANSACTION),
-    Promotion(R.string.category_chip_promotions, MessageCategory.PROMOTION),
-    Spam(R.string.category_chip_spam, MessageCategory.SPAM);
+    Promotion(R.string.category_chip_promotions, MessageCategory.PROMOTION);
 
     companion object {
         /**
@@ -32,7 +35,7 @@ enum class CategoryFilter(
          * cannot silently reshuffle the row.
          */
         val displayOrder: List<CategoryFilter> = listOf(
-            Personal, Otp, Transaction, Promotion, Spam
+            Personal, Otp, Transaction, Promotion
         )
     }
 }

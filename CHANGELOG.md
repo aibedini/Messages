@@ -8,6 +8,23 @@ All notable changes to **Messages** are recorded here. Every release tag gets a 
 
 ---
 
+## v3.11.15 — 2026-11-28
+
+### 🗂️ Spam and Archived are separate folders
+
+- **Spam is now a Home tab**, not a category chip. It lists every conversation the heuristic or the
+  user put in Spam, while **Archived** stays a spam-free list of deliberately archived conversations.
+- **Know who flagged it:** each Spam row is badged **Auto-filtered** or **Reported**; an archived spam
+  row also shows **Archived**.
+- **Direct Not spam:** the row’s 3-dot menu returns an auto- or user-reported conversation to the
+  Inbox and teaches the filter to leave it alone.
+- **Direct Unarchive:** archived spam keeps its Unarchive action inside the Spam folder (menu or
+  swipe), with the same confirm/undo flow as the Archived tab.
+- **Category chips** are now Personal / OTP / Transactions / Promotions only; Spam is always one tap
+  away as a folder.
+
+---
+
 ## v3.11.14 — 2026-11-28
 
 ### 🛡️ On-device spam shield
